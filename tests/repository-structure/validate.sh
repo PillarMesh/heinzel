@@ -1,0 +1,92 @@
+#!/bin/sh
+
+set -u
+
+TARGET=${1:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}
+
+if [ ! -d "$TARGET" ]; then
+    printf 'ERROR: repository target is not a directory: %s\n' "$TARGET" >&2
+    exit 2
+fi
+
+status=0
+
+required_paths='
+.editorconfig
+.gitattributes
+.gitignore
+.github
+.github/pull_request_template.md
+.github/workflows/repository-structure.yml
+AGENTS.md
+CONTRIBUTING.md
+README.md
+SECURITY.md
+apps
+apps/README.md
+deploy
+deploy/README.md
+docs
+docs/architecture/decisions/ADR-0001-monorepo-structure.md
+docs/architecture/repository-layout.md
+docs/architecture/specifications/enterprise-data-compiler-foundational-architecture-v0.3.docx
+docs/architecture/specifications/enterprise-data-compiler-revenue-to-cash-mvp-implementation-plan-v1.4.docx
+docs/superpowers/specs/2026-08-12-initial-monorepo-structure-design.md
+packages
+packages/README.md
+providers
+providers/README.md
+services
+services/README.md
+tests
+tests/repository-structure/test.sh
+tests/repository-structure/validate.sh
+'
+
+for path in $required_paths; do
+    if [ ! -e "$TARGET/$path" ]; then
+        printf 'MISSING: %s\n' "$path" >&2
+        status=1
+    fi
+done
+
+for entry_path in "$TARGET"/* "$TARGET"/.[!.]* "$TARGET"/..?*; do
+    [ -e "$entry_path" ] || continue
+    entry=${entry_path##*/}
+    case "$entry" in
+        .git|.editorconfig|.gitattributes|.gitignore|.github|AGENTS.md|CONTRIBUTING.md|README.md|SECURITY.md|apps|deploy|docs|packages|providers|services|tests)
+            ;;
+        *)
+            printf 'UNEXPECTED: %s\n' "$entry" >&2
+            status=1
+            ;;
+    esac
+done
+
+validate_components() {
+    area=$1
+    allowed=$2
+
+    [ -d "$TARGET/$area" ] || return
+    for component_path in "$TARGET/$area"/*; do
+        [ -d "$component_path" ] || continue
+        component=${component_path##*/}
+        case " $allowed " in
+            *" $component "*) ;;
+            *)
+                printf 'UNEXPECTED: %s/%s\n' "$area" "$component" >&2
+                status=1
+                ;;
+        esac
+    done
+}
+
+validate_components apps 'console'
+validate_components services 'authoring-mcp compiler connection-broker context-exposure contract dbt-adapter evidence knowledge-graph provider-registry reconciliation relay runtime state'
+validate_components packages 'client-sdk contract-model execution-graph iir observability provider-sdk'
+
+if [ "$status" -eq 0 ]; then
+    printf 'OK: repository structure is valid\n'
+fi
+
+exit "$status"

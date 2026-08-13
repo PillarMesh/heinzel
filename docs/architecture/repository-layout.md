@@ -1,0 +1,67 @@
+# PillarMesh Repository Layout
+
+This document is the canonical repository placement guide. Component directories are created lazily with their first substantive implementation; the map defines permitted ownership boundaries before those directories exist.
+
+## Applications
+
+| Path | Owns | Must not own |
+| --- | --- | --- |
+| `apps/console` | Operator-facing product experience | Compiler, runtime, state, credentials, or provider implementations |
+
+## Services
+
+The service map mirrors the concrete control-plane components in Revenue-to-Cash MVP Implementation Plan v1.4 Table 4 and the data-plane boundaries in §3.2, with names normalized to the EDC vocabulary.
+
+| Path | Owns | Must not own |
+| --- | --- | --- |
+| `services/authoring-mcp` | Host-neutral authoring tools/resources, sessions, authorization filtering, draft mutations | Semantic validity or execution state |
+| `services/compiler` | Contract parsing, semantic IIR, legality, feasibility, plan selection, deployment compilation | Runtime retries or record-level nondeterminism |
+| `services/connection-broker` | OAuth attempts/callbacks, token exchange and rotation, opaque connection handles | Raw secrets in MCP results |
+| `services/context-exposure` | Authorization-filtered finance and sales resources, freshness, provenance | Unrestricted SQL or action authority |
+| `services/contract` | Versioned drafts, activation digests, approvals, lifecycle | Credentials or physical scheduling |
+| `services/dbt-adapter` | Version-pinned invocation and manifest/test/lineage observation | Business transformation semantics or SQL authoring |
+| `services/evidence` | Append-only contract, decision, execution, reconciliation, and incident facts | Unverifiable health synthesis |
+| `services/knowledge-graph` | Provenance-bearing compiler projection, metadata snapshots, lineage | Replacement enterprise catalog or authoritative metadata mutation |
+| `services/provider-registry` | Versioned declarations, conformance tier, evidence validity | Trust based on provider assertion alone |
+| `services/reconciliation` | Declared lifecycle predicates, deadlines, exceptions, evidence links | Source mutation or probabilistic matching |
+| `services/relay` | Restricted private-network capability invocation of signed fragments | Planning authority or general scheduling |
+| `services/runtime` | Signed-graph verification, deterministic operators, grants, execution evidence | Semantic reinterpretation or physical plan selection |
+| `services/state` | Epochs, partitions, leases, checkpoints, cutover, migration admission, contract-scoped control loops | Global execution serialization or general scheduling |
+
+The compiler legality table has a stable internal boundary:
+
+```text
+services/compiler/legality/
+├── fixtures/
+├── proof-notes/
+└── rules/
+```
+
+## Providers
+
+`providers/<provider>` contains provider-specific capability declarations, adapters or implementations, configuration schemas, and conformance fixtures. Provider names are intentionally extensible; source/destination subdivisions are forbidden because one provider can advertise several capability types.
+
+## Shared Packages
+
+| Path | Owns | Must not own |
+| --- | --- | --- |
+| `packages/client-sdk` | Supported client-facing interfaces | Control-plane implementation |
+| `packages/contract-model` | Permanent, user-owned Integration Contract model and validation | API/event/configuration contracts by implication |
+| `packages/execution-graph` | Disposable signed-graph shape, digest/signature verification, compatibility | Planning logic or execution state |
+| `packages/iir` | Compiler-owned, versioned semantic IIR and serialization | Physical Plan or Execution Graph state |
+| `packages/observability` | Shared telemetry conventions and helpers | Evidence authority |
+| `packages/provider-sdk` | Provider authoring interfaces, declaration helpers, conformance utilities | Provider-specific code |
+
+## Other Top-Level Areas
+
+- `deploy/`: infrastructure-neutral deployment material after an ADR selects technology.
+- `docs/`: architecture, decisions, specifications, and substantive product/operations/security material.
+- `tests/`: repository structure and cross-component integration, compatibility, conformance, fault-injection, and end-to-end suites. Unit tests remain colocated.
+
+## Structural Change Rule
+
+Adding a top-level area or governed immediate component under `apps/`, `services/`, or `packages/` requires, in the same change:
+
+1. an update to this document;
+2. ADR-0001 or a superseding ADR; and
+3. an update to `tests/repository-structure/validate.sh`.
