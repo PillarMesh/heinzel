@@ -34,3 +34,17 @@ Legality rules live under `services/compiler/legality/`. Adding or widening a ru
 - Adding a top-level area or governed component requires updating the repository layout, an ADR, and the structure validator in the same change.
 - Run `./tests/repository-structure/test.sh` before committing.
 - Use Conventional Commits and do not commit directly to `main`.
+
+## GitHub Account
+
+Use the GitHub account `ks2002119` for this repository's `gh` commands and authenticated remote Git operations, including fetch, push, pull-request, workflow, and repository-administration actions.
+
+Before an authenticated remote operation, run:
+
+```sh
+gh auth switch --hostname github.com --user ks2002119
+gh auth setup-git
+test "$(gh api user --jq '.login')" = "ks2002119"
+```
+
+Some execution environments can restore a different active account between shell invocations. When several remote commands must use the same identity, switch and verify the account in the same shell invocation as those commands. Git commit authorship (`user.name` and `user.email`) is separate from GitHub authentication and must not be changed merely to select this account.
