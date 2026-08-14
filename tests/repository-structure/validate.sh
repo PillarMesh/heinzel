@@ -18,10 +18,13 @@ required_paths='
 .github
 .github/pull_request_template.md
 .github/workflows/repository-structure.yml
+.python-version
 AGENTS.md
 CONTRIBUTING.md
 README.md
 SECURITY.md
+pyproject.toml
+uv.lock
 apps
 apps/README.md
 deploy
@@ -54,7 +57,7 @@ for entry_path in "$TARGET"/* "$TARGET"/.[!.]* "$TARGET"/..?*; do
     [ -e "$entry_path" ] || continue
     entry=${entry_path##*/}
     case "$entry" in
-        .git|.editorconfig|.gitattributes|.gitignore|.github|AGENTS.md|CONTRIBUTING.md|README.md|SECURITY.md|apps|deploy|docs|packages|providers|services|tests)
+        .git|.editorconfig|.env.example|.gitattributes|.gitignore|.github|.mypy_cache|.pytest_cache|.python-version|.ruff_cache|.venv|AGENTS.md|CONTRIBUTING.md|README.md|SECURITY.md|apps|deploy|docs|packages|providers|pyproject.toml|services|tests|uv.lock)
             ;;
         *)
             printf 'UNEXPECTED: %s\n' "$entry" >&2

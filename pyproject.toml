@@ -1,0 +1,62 @@
+[project]
+name = "pillarmesh-m0-workspace"
+version = "0.1.0"
+requires-python = "==3.13.*"
+
+[dependency-groups]
+dev = [
+  "hypothesis>=6.138,<7",
+  "mypy>=1.17,<2",
+  "mutmut>=3.3,<4",
+  "pytest>=8.4,<9",
+  "pytest-cov>=6.2,<7",
+  "ruff>=0.12,<1",
+]
+
+[tool.uv.workspace]
+members = [
+  "packages/contract-model",
+  "packages/execution-graph",
+  "packages/iir",
+  "packages/provider-sdk",
+  "providers/postgresql",
+  "providers/snowflake",
+  "services/authoring-mcp",
+  "services/compiler",
+  "services/contract",
+  "services/evidence",
+  "services/runtime",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --import-mode=importlib"
+testpaths = ["packages", "providers", "services", "tests"]
+markers = [
+  "emulator: requires an explicitly started local service emulator",
+  "live: requires dedicated real service credentials or an explicitly started emulator",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+packages = [
+  "pillarmesh_contract_model",
+  "pillarmesh_execution_graph",
+  "pillarmesh_iir",
+  "pillarmesh_provider_sdk",
+  "pillarmesh_provider_postgresql",
+  "pillarmesh_provider_snowflake",
+  "pillarmesh_authoring_mcp",
+  "pillarmesh_compiler",
+  "pillarmesh_contract_service",
+  "pillarmesh_evidence",
+  "pillarmesh_runtime",
+  "tests.acceptance.run_m0",
+]

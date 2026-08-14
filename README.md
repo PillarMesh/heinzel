@@ -2,7 +2,7 @@
 
 PillarMesh is an Enterprise Data Compiler: a contract-first platform that compiles declared data outcomes into legal, feasible, signed execution graphs and executes them deterministically with attributable evidence.
 
-This repository is a technology-neutral modular monorepo. It currently establishes architecture boundaries and repository governance; runnable product components will be added incrementally.
+The repository now contains the Python 3.13 M0 evidence thin thread: one curated PostgreSQL snapshot contract can be verified, compiled into a signed graph, executed into Snowflake, and reconstructed from append-only evidence.
 
 ## Start Here
 
@@ -11,13 +11,22 @@ This repository is a technology-neutral modular monorepo. It currently establish
 - [Initial structure design](docs/superpowers/specs/2026-08-12-initial-monorepo-structure-design.md)
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
+- [M0 account setup](docs/m0/setup.md)
+- [M0 LocalStack Snowflake smoke test](docs/m0/local-emulator.md)
+- [M0 acceptance run](docs/m0/acceptance-run.md)
+- [M0 teardown](docs/m0/teardown.md)
 
 ## Validate the Repository
 
-Run the offline structural test from any working directory:
+Install the exact locked workspace and run all offline gates:
 
 ```sh
+uv sync --locked --all-packages
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy
+uv run pytest -m "not live"
 ./tests/repository-structure/test.sh
 ```
 
-No application framework, programming language, package manager, cloud, or deployment topology has been selected yet.
+Real-account tests are deliberately opt-in and require the dedicated environment described in `docs/m0/setup.md`. An offline pass is not evidence that PostgreSQL-to-Snowflake execution works against real accounts.

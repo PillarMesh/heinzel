@@ -4,7 +4,15 @@
 !.env.example
 .idea/
 .vscode/
+.venv/
+.hypothesis/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
 .worktrees/
 worktrees/
+output/
 *.log
 *.tmp

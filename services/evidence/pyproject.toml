@@ -1,0 +1,23 @@
+[project]
+name = "pillarmesh-evidence"
+version = "0.1.0"
+requires-python = "==3.13.*"
+dependencies = [
+  "pillarmesh-compiler",
+  "pillarmesh-contract-model",
+  "pillarmesh-execution-graph",
+  "pillarmesh-iir",
+  "pillarmesh-provider-sdk",
+  "pydantic>=2.11,<3",
+]
+
+[tool.uv.sources]
+pillarmesh-compiler = { workspace = true }
+pillarmesh-contract-model = { workspace = true }
+pillarmesh-execution-graph = { workspace = true }
+pillarmesh-iir = { workspace = true }
+pillarmesh-provider-sdk = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
