@@ -25,7 +25,9 @@ members = [
   "services/compiler",
   "services/contract",
   "services/evidence",
+  "services/request-management",
   "services/runtime",
+  "services/warehouse-control",
 ]
 
 [tool.pytest.ini_options]
@@ -57,6 +59,8 @@ packages = [
   "pillarmesh_compiler",
   "pillarmesh_contract_service",
   "pillarmesh_evidence",
+  "pillarmesh_request_management",
   "pillarmesh_runtime",
+  "pillarmesh_warehouse_control",
   "tests.acceptance.run_m0",
 ]

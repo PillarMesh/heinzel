@@ -15,7 +15,9 @@ members = [
     "pillarmesh-provider-postgresql",
     "pillarmesh-provider-sdk",
     "pillarmesh-provider-snowflake",
+    "pillarmesh-request-management",
     "pillarmesh-runtime",
+    "pillarmesh-warehouse-control",
 ]
 
 [[package]]
@@ -808,6 +810,21 @@ requires-dist = [
 ]
 
 [[package]]
+name = "pillarmesh-request-management"
+version = "0.1.0"
+source = { editable = "services/request-management" }
+dependencies = [
+    { name = "pillarmesh-contract-model" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
 name = "pillarmesh-runtime"
 version = "0.1.0"
 source = { editable = "services/runtime" }
@@ -825,6 +842,21 @@ requires-dist = [
     { name = "pillarmesh-evidence", editable = "services/evidence" },
     { name = "pillarmesh-execution-graph", editable = "packages/execution-graph" },
     { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "pillarmesh-warehouse-control"
+version = "0.1.0"
+source = { editable = "services/warehouse-control" }
+dependencies = [
+    { name = "pillarmesh-contract-model" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
     { name = "pydantic", specifier = ">=2.11,<3" },
 ]
 

@@ -1,0 +1,207 @@
+from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
+from queue import Queue
+from threading import Barrier, Thread
+from typing import cast
+
+import pytest
+from pillarmesh_warehouse_control import (
+    EngineKind,
+    WarehouseBinding,
+    WarehouseBindingState,
+    WarehouseControlService,
+)
+from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from pydantic import ValidationError
+
+NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
+
+
+def service() -> WarehouseControlService:
+    return WarehouseControlService(SQLiteWarehouseRepository(":memory:"), clock=lambda: NOW)
+
+
+def draft(control: WarehouseControlService, tenant_id: str = "tenant-a") -> WarehouseBinding:
+    return control.create_draft(
+        tenant_id=tenant_id,
+        engine_kind=EngineKind.POSTGRESQL,
+        region="us-west",
+        capacity_profile="mvp-fixed",
+    )
+
+
+def test_binding_becomes_immutable_when_provisioning_starts() -> None:
+    control = service()
+    binding = draft(control)
+
+    provisioning = control.transition(
+        "tenant-a",
+        binding.binding_id,
+        WarehouseBindingState.PROVISIONING,
+        expected_revision=binding.revision,
+    )
+
+    assert provisioning.engine_kind is EngineKind.POSTGRESQL
+    with pytest.raises(ValueError, match="immutable after draft"):
+        control.revise_draft(
+            "tenant-a",
+            provisioning.binding_id,
+            engine_kind=EngineKind.CLICKHOUSE,
+            expected_revision=provisioning.revision,
+        )
+
+
+def test_ready_cannot_transition_directly_to_retired() -> None:
+    control = service()
+    binding = control.create_draft(
+        tenant_id="tenant-a",
+        engine_kind=EngineKind.CLICKHOUSE,
+        region="us-west",
+        capacity_profile="mvp-fixed",
+    )
+    for state in (
+        WarehouseBindingState.PROVISIONING,
+        WarehouseBindingState.VALIDATING,
+        WarehouseBindingState.READY,
+    ):
+        binding = control.transition(
+            "tenant-a", binding.binding_id, state, expected_revision=binding.revision
+        )
+
+    with pytest.raises(ValueError, match="transition ready -> retired is not allowed"):
+        control.transition(
+            "tenant-a",
+            binding.binding_id,
+            WarehouseBindingState.RETIRED,
+            expected_revision=binding.revision,
+        )
+
+
+def test_one_tenant_cannot_read_or_move_another_tenants_binding() -> None:
+    control = service()
+    binding = draft(control, tenant_id="tenant-a")
+
+    with pytest.raises(KeyError, match="belongs to another tenant"):
+        control.get("tenant-b", binding.binding_id)
+    with pytest.raises(KeyError, match="belongs to another tenant"):
+        control.transition(
+            "tenant-b",
+            binding.binding_id,
+            WarehouseBindingState.PROVISIONING,
+            expected_revision=binding.revision,
+        )
+    assert control.get("tenant-a", binding.binding_id).lifecycle_state is (
+        WarehouseBindingState.DRAFT
+    )
+
+
+def test_two_drafts_for_one_tenant_receive_distinct_identities() -> None:
+    # Specification section 6.3 requires a migration to create a NEW binding for the
+    # same tenant. Under the frozen clock these are created in the same instant.
+    control = service()
+
+    first = draft(control)
+    second = draft(control)
+
+    assert first.binding_id != second.binding_id
+    assert control.get("tenant-a", first.binding_id).binding_id == first.binding_id
+
+
+def test_stale_revision_loses_the_transition() -> None:
+    control = service()
+    binding = draft(control)
+    control.transition(
+        "tenant-a",
+        binding.binding_id,
+        WarehouseBindingState.PROVISIONING,
+        expected_revision=binding.revision,
+    )
+
+    with pytest.raises(ValueError, match="binding revision is stale"):
+        control.transition(
+            "tenant-a",
+            binding.binding_id,
+            WarehouseBindingState.FAILED,
+            expected_revision=binding.revision,
+        )
+
+
+@pytest.mark.parametrize(
+    "clock_value",
+    (
+        datetime(2026, 8, 17, 12),
+        datetime(2026, 8, 17, 12, tzinfo=timezone(timedelta(hours=1))),
+    ),
+)
+def test_create_draft_rejects_non_utc_clock(clock_value: datetime) -> None:
+    control = WarehouseControlService(
+        SQLiteWarehouseRepository(":memory:"), clock=lambda: clock_value
+    )
+
+    with pytest.raises(ValidationError, match="timezone-aware UTC"):
+        draft(control)
+
+
+def test_revise_draft_rejects_invalid_runtime_engine_before_persisting() -> None:
+    control = service()
+    binding = draft(control)
+
+    with pytest.raises(ValidationError, match="engine_kind"):
+        control.revise_draft(
+            "tenant-a",
+            binding.binding_id,
+            engine_kind=cast(EngineKind, "invalid-engine"),
+            expected_revision=binding.revision,
+        )
+
+    persisted = control.get("tenant-a", binding.binding_id)
+    assert persisted.engine_kind is EngineKind.POSTGRESQL
+    assert persisted.revision == 1
+
+
+def test_two_connection_transition_race_returns_stale_revision(tmp_path: Path) -> None:
+    database_path = tmp_path / "warehouse.db"
+    initializer = WarehouseControlService(
+        SQLiteWarehouseRepository(str(database_path)), clock=lambda: NOW
+    )
+    binding = draft(initializer)
+    barrier = Barrier(2)
+    outcomes: Queue[WarehouseBinding | Exception] = Queue()
+
+    def synchronized_clock() -> datetime:
+        barrier.wait(timeout=5)
+        return NOW
+
+    def transition() -> None:
+        control = WarehouseControlService(
+            SQLiteWarehouseRepository(str(database_path)), clock=synchronized_clock
+        )
+        try:
+            outcomes.put(
+                control.transition(
+                    "tenant-a",
+                    binding.binding_id,
+                    WarehouseBindingState.PROVISIONING,
+                    expected_revision=binding.revision,
+                )
+            )
+        except Exception as error:
+            outcomes.put(error)
+
+    first = Thread(target=transition)
+    second = Thread(target=transition)
+    first.start()
+    second.start()
+    first.join(timeout=10)
+    second.join(timeout=10)
+
+    assert not first.is_alive()
+    assert not second.is_alive()
+    results = [outcomes.get_nowait() for _ in range(2)]
+    assert sum(isinstance(result, WarehouseBinding) for result in results) == 1
+    stale_errors = [
+        result
+        for result in results
+        if isinstance(result, ValueError) and str(result) == "binding revision is stale"
+    ]
+    assert len(stale_errors) == 1

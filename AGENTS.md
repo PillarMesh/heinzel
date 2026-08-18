@@ -176,3 +176,12 @@ test "$(gh api user --jq '.login')" = "ks2002119"
 ```
 
 Some execution environments can restore a different active account between shell invocations. When several remote commands must use the same identity, switch and verify the account in the same shell invocation as those commands. Git commit authorship (`user.name` and `user.email`) is separate from GitHub authentication and must not be changed merely to select this account.
+
+Recognize the drift by its symptom, because it does not look like an authentication failure. An account without access to this private repository reports:
+
+```text
+remote: Repository not found.
+fatal: repository 'https://github.com/PillarMesh/pillarmesh.git/' not found
+```
+
+`gh` reports the same absence as `GraphQL: Could not resolve to a Repository with the name 'PillarMesh/pillarmesh'`. Both read as though the repository was renamed or deleted. Never conclude that a repository, branch, or pull request is missing from such an error until after switching to `ks2002119` in the same shell invocation and retrying.

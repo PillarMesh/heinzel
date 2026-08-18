@@ -18,15 +18,18 @@ The service map mirrors the concrete control-plane components in Revenue-to-Cash
 | `services/compiler` | Contract parsing, semantic IIR, legality, feasibility, plan selection, deployment compilation | Runtime retries or record-level nondeterminism |
 | `services/connection-broker` | OAuth attempts/callbacks, token exchange and rotation, opaque connection handles | Raw secrets in MCP results |
 | `services/context-exposure` | Authorization-filtered finance and sales resources, freshness, provenance | Unrestricted SQL or action authority |
-| `services/contract` | Versioned drafts, activation digests, approvals, lifecycle | Credentials or physical scheduling |
+| `services/contract` | Versioned drafts, process-package intake, activation digests, approvals, lifecycle | Credentials or physical scheduling |
 | `services/dbt-adapter` | Version-pinned invocation and manifest/test/lineage observation | Business transformation semantics or SQL authoring |
 | `services/evidence` | Append-only contract, decision, execution, reconciliation, and incident facts | Unverifiable health synthesis |
 | `services/knowledge-graph` | Provenance-bearing compiler projection, metadata snapshots, lineage | Replacement enterprise catalog or authoritative metadata mutation |
 | `services/provider-registry` | Versioned declarations, conformance tier, evidence validity | Trust based on provider assertion alone |
 | `services/reconciliation` | Declared lifecycle predicates, deadlines, exceptions, evidence links | Source mutation or probabilistic matching |
 | `services/relay` | Restricted private-network capability invocation of signed fragments | Planning authority or general scheduling |
+| `services/request-management` | Typed stakeholder questions, data-access requests, business and engineering requests, incidents, platform proposals, conversations, assignment, dependency edges, and request lifecycle | Semantic approval authority, general workflow definitions, or execution state |
 | `services/runtime` | Signed-graph verification, deterministic operators, grants, execution evidence | Semantic reinterpretation or physical plan selection |
 | `services/state` | Epochs, partitions, leases, checkpoints, cutover, migration admission, contract-scoped control loops | Global execution serialization or general scheduling |
+| `services/trigger` | Versioned trigger policies, deterministic scheduled-window identities, misfire and overlap materialization into run intents | DAG authoring, plan selection, provider access, or direct execution |
+| `services/warehouse-control` | Tenant warehouse-binding lifecycle, managed data-plane provisioning, private infrastructure inventory, backup/restore coordination, upgrade and retirement admission | Database-engine implementation, business semantics, or raw credentials in public artifacts |
 
 The compiler legality table has a stable internal boundary:
 
@@ -39,7 +42,7 @@ services/compiler/legality/
 
 ## Providers
 
-`providers/<provider>` contains provider-specific capability declarations, adapters or implementations, configuration schemas, and conformance fixtures. Provider names are intentionally extensible; source/destination subdivisions are forbidden because one provider can advertise several capability types.
+`providers/<provider>` contains provider-specific capability declarations, adapters or implementations, configuration schemas, and conformance fixtures. Provider names are intentionally extensible; source/destination subdivisions are forbidden because one provider can advertise several capability types. Managed platform capabilities such as OpenMetadata and Superset use the same provider boundary: the durable catalog, dashboard, contract, and evidence models remain in their owning packages or services, while provider-local identifiers and APIs remain quarantined here.
 
 ## Shared Packages
 

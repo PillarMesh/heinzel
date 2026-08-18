@@ -31,9 +31,11 @@ deploy
 deploy/README.md
 docs
 docs/architecture/decisions/ADR-0001-monorepo-structure.md
+docs/architecture/decisions/ADR-0003-managed-data-engineering-platform.md
 docs/architecture/repository-layout.md
 docs/architecture/specifications/enterprise-data-compiler-foundational-architecture-v0.3.docx
 docs/architecture/specifications/enterprise-data-compiler-revenue-to-cash-mvp-implementation-plan-v1.4.docx
+docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md
 docs/superpowers/specs/2026-08-12-initial-monorepo-structure-design.md
 packages
 packages/README.md
@@ -57,7 +59,7 @@ for entry_path in "$TARGET"/* "$TARGET"/.[!.]* "$TARGET"/..?*; do
     [ -e "$entry_path" ] || continue
     entry=${entry_path##*/}
     case "$entry" in
-        .git|.editorconfig|.env.example|.gitattributes|.gitignore|.github|.mypy_cache|.pytest_cache|.python-version|.ruff_cache|.venv|AGENTS.md|CONTRIBUTING.md|README.md|SECURITY.md|apps|deploy|docs|packages|providers|pyproject.toml|services|tests|uv.lock)
+        .git|.editorconfig|.env.example|.gitattributes|.gitignore|.github|.mypy_cache|.pytest_cache|.python-version|.ruff_cache|.venv|AGENTS.md|CLAUDE.md|CONTRIBUTING.md|README.md|SECURITY.md|apps|deploy|docs|packages|providers|pyproject.toml|services|tests|uv.lock)
             ;;
         *)
             printf 'UNEXPECTED: %s\n' "$entry" >&2
@@ -85,7 +87,7 @@ validate_components() {
 }
 
 validate_components apps 'console'
-validate_components services 'authoring-mcp compiler connection-broker context-exposure contract dbt-adapter evidence knowledge-graph provider-registry reconciliation relay runtime state'
+validate_components services 'authoring-mcp compiler connection-broker context-exposure contract dbt-adapter evidence knowledge-graph provider-registry reconciliation relay request-management runtime state trigger warehouse-control'
 validate_components packages 'client-sdk contract-model execution-graph iir observability provider-sdk'
 
 if [ "$status" -eq 0 ]; then
