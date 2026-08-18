@@ -503,7 +503,10 @@ def test_documented_preflight_command_fails_names_only_without_credentials(
         capture_output=True,
         text=True,
         check=False,
-        timeout=5,
+        # Generous: the child pays full interpreter startup plus psycopg,
+        # snowflake.connector and pydantic imports (~3-6s locally). The timeout
+        # is a hang guard, not an assertion about startup latency.
+        timeout=30,
     )
 
     assert result.returncode == 2
@@ -1442,7 +1445,9 @@ def test_real_subprocess_cli_applies_exact_environment_allowlist(tmp_path: Path)
     cli = SubprocessCli(
         repository_root=tmp_path,
         command_prefix=(sys.executable, str(helper)),
-        timeout_seconds=1,
+        # Hang guard only; this test asserts the environment allowlist, not how
+        # fast a loaded machine can start an interpreter.
+        timeout_seconds=30,
     )
 
     result = cli.invoke(
@@ -1487,7 +1492,12 @@ def test_real_subprocess_timeout_quarantines_pessimistically_registered_resource
         "command = sys.argv[1]\n"
         "if command == 'create-draft': print(json.dumps({'contract_digest': 'c' * 64}))\n"
         "elif command == 'verify': print(json.dumps({'summary_digest': 'e' * 64}))\n"
-        "elif command == 'activate-stdin': time.sleep(2); print('{}')\n"
+        # Sleeps far longer than timeout_seconds below so the timeout is reached
+        # deterministically, leaving that budget wide enough for the preceding
+        # create-draft/verify calls to survive interpreter startup on a loaded
+        # runner. subprocess kills the child on timeout, so the full sleep is
+        # never actually served.
+        "elif command == 'activate-stdin': time.sleep(120); print('{}')\n"
         "else: print('{}')\n",
         encoding="utf-8",
     )
@@ -1502,7 +1512,11 @@ def test_real_subprocess_timeout_quarantines_pessimistically_registered_resource
         SubprocessCli(
             repository_root=tmp_path,
             command_prefix=(sys.executable, str(helper)),
-            timeout_seconds=0.5,
+            # The test necessarily waits out this budget, so it is also the test's
+            # wall-clock cost. The two preceding successful helper calls measure
+            # ~35ms each (87ms for both, worst of twelve runs), so 2s leaves ~23x
+            # headroom while keeping the offline suite fast.
+            timeout_seconds=2,
         ),
         FakeInspector(),
         clock=lambda: NOW,
