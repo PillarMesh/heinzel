@@ -2,6 +2,19 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **Status: delivered.** Implemented and merged as `9f8b2d8` (#3), with review findings
+> closed in `2cb17fc` and the four follow-ups on that pull request. The completion gate
+> below is satisfied: every file named in the file map exists; the cross-service journey
+> and the cross-tenant refusal both run in `tests/end-to-end/test_data_architect_foundation.py`;
+> the external-effect review matches nothing and `sqlite3` is the only storage import; and
+> the spec decisions were ratified as addendum sections 6.2, 6.4.1 and 13.3.1 in `db538c8`
+> (#6), then pinned against the code by `tests/conformance/` in `4d00027` (#7).
+>
+> The step checkboxes are left unticked on purpose. Many are process steps -- run this
+> command, observe this denial failing before its rule exists -- whose completion cannot be
+> read back from the tree, and ticking them would assert compliance no one verified.
+> Artefacts and gate conditions are evidenced above; the process steps are not.
+
 **Goal:** Build the durable control-plane foundation for the data architect to create an immutable managed-warehouse binding, upload a versioned business-process package, and receive typed stakeholder and access requests in one inbox.
 
 **Architecture:** Add substantive implementations to the already-governed `services/warehouse-control` and `services/request-management` boundaries, while keeping business-process versions beside Integration Contract lifecycle in `services/contract`. Each service owns strict frozen Pydantic contracts and an injected repository protocol; SQLite adapters provide deterministic local durability without coupling domain behavior to infrastructure. This plan stops before provider provisioning, catalog publication, semantic extraction, query execution, or grant application.
