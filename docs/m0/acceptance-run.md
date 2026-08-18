@@ -1,5 +1,11 @@
 # M0 Witnessed Acceptance Run
 
+> **Historical.** This document records the PostgreSQL-to-Snowflake M0 thin-thread
+> experiment. It remains accurate about what was built and is retained so that evidence
+> stays reproducible. Snowflake is no longer a product destination, and nothing here
+> defines current product scope. See the
+> [managed data engineering platform addendum](../architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md).
+
 This run is the M0 capability proof. A responsive process, passing offline suite, successful SQL
 statement, pre-existing Snowflake row, or successful merge response is not proof. Read
 `setup.md`, inject one complete operator environment, and use a fresh state path, output directory,

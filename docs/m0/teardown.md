@@ -1,5 +1,11 @@
 # M0 Cleanup and Teardown
 
+> **Historical.** This document records the PostgreSQL-to-Snowflake M0 thin-thread
+> experiment. It remains accurate about what was built and is retained so that evidence
+> stays reproducible. Snowflake is no longer a product destination, and nothing here
+> defines current product scope. See the
+> [managed data engineering platform addendum](../architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md).
+
 Cleanup is owner-authorized and operates only on exact identifiers already present in the private
 cleanup ledger. The harness deliberately exposes no cleanup command. Start with the read-only,
 sanitized view:

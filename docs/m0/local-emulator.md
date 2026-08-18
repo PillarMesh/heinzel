@@ -1,5 +1,11 @@
 # M0 LocalStack Snowflake Smoke Test
 
+> **Historical.** This document records the PostgreSQL-to-Snowflake M0 thin-thread
+> experiment. It remains accurate about what was built and is retained so that evidence
+> stays reproducible. Snowflake is no longer a product destination, and nothing here
+> defines current product scope. See the
+> [managed data engineering platform addendum](../architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md).
+
 This opt-in test runs the real PillarMesh Snowflake provider against a local LocalStack Snowflake
 emulator. It exercises schema observation, staged CSV upload, transactional merge and commit-ledger
 write, independent visibility verification, and idempotent replay. It does not change production

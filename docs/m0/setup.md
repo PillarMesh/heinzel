@@ -1,5 +1,11 @@
 # M0 Dedicated Account Setup
 
+> **Historical.** This document records the PostgreSQL-to-Snowflake M0 thin-thread
+> experiment. It remains accurate about what was built and is retained so that evidence
+> stays reproducible. Snowflake is no longer a product destination, and nothing here
+> defines current product scope. See the
+> [managed data engineering platform addendum](../architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md).
+
 M0 uses synthetic, non-sensitive data in disposable PostgreSQL and Snowflake objects. An
 environment owner provisions the objects; an acceptance operator never receives owner
 credentials. Create two independent operator sets before the witnessed window. Operators share

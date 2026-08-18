@@ -1,5 +1,11 @@
 # M0 Evidence Package
 
+> **Historical.** This document records the PostgreSQL-to-Snowflake M0 thin-thread
+> experiment. It remains accurate about what was built and is retained so that evidence
+> stays reproducible. Snowflake is no longer a product destination, and nothing here
+> defines current product scope. See the
+> [managed data engineering platform addendum](../architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md).
+
 `uv run python tests/acceptance/run_m0.py run` exports one ignored package beneath the operator's
 external `PILLARMESH_OUTPUT_DIR`, then independently verifies it. Re-run the deterministic verifier
 with:
