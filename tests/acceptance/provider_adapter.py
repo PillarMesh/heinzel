@@ -37,6 +37,7 @@ POSTGRES_FIXTURE_GRANTS = (
     "CONNECT_DATABASE",
     "DELETE_SOURCE",
     "INSERT_SOURCE",
+    "SELECT_SOURCE_KEY_COLUMN",
     "USAGE_SCHEMA",
 )
 SNOWFLAKE_RUNTIME_GRANTS = (
@@ -118,6 +119,14 @@ def _required_row(value: tuple[Any, ...] | None, context: str) -> tuple[Any, ...
     if value is None:
         raise HarnessError(f"{context} returned no row")
     return value
+
+
+def _error_label(error: BaseException) -> str:
+    """Identify a driver failure without repeating a message that may embed a DSN."""
+    sqlstate = getattr(error, "sqlstate", None)
+    if isinstance(sqlstate, str) and sqlstate:
+        return f"{type(error).__name__} [{sqlstate}]"
+    return type(error).__name__
 
 
 def snowflake_access_denied(error: BaseException) -> bool:
@@ -227,7 +236,7 @@ class FixtureRow:
 
 
 class ProviderActions(Protocol):
-    def admission(self, environment_identity: str) -> AbstractContextManager[None]: ...
+    def admission(self, environment_identity: str) -> AbstractContextManager[ProviderAdmission]: ...
 
     def preflight(self) -> DedicatedEnvironmentAttestation: ...
 
@@ -244,6 +253,47 @@ class ProviderActions(Protocol):
     def reconcile_resources(
         self, acceptance_key: int, batch_id: str | None
     ) -> ProviderResourceState: ...
+
+
+class ProviderAdmission(Protocol):
+    def assert_intact(self) -> None: ...
+
+
+_ADMISSION_INTEGRITY_QUERY = (
+    "SELECT current_database(), pg_backend_pid(), "
+    "(SELECT COUNT(*) FROM pg_catalog.pg_locks "
+    "WHERE pid=pg_catalog.pg_backend_pid() AND locktype='advisory' AND granted)"
+)
+
+
+@dataclass
+class _PostgresAdmission:
+    connection: Any
+    expected_database: str
+    expected_backend_pid: int
+    lost: bool = False
+
+    def assert_intact(self) -> None:
+        try:
+            with self.connection.cursor() as cursor:
+                cursor.execute(_ADMISSION_INTEGRITY_QUERY)
+                database, backend_pid, advisory_locks = _required_row(
+                    cursor.fetchone(), "provider admission integrity probe"
+                )
+        except Exception as error:
+            self.lost = True
+            # The driver message can carry connection detail, so it is dropped; the
+            # exception type and SQLSTATE are what an operator acts on and are safe.
+            raise HarnessError(
+                f"provider admission lock could not be confirmed: {_error_label(error)}"
+            ) from None
+        if (
+            str(database) != self.expected_database
+            or int(backend_pid) != self.expected_backend_pid
+            or int(advisory_locks) != 1
+        ):
+            self.lost = True
+            raise HarnessError("provider admission lock was lost")
 
 
 def validate_attestation(
@@ -360,6 +410,81 @@ def validate_attestation(
         raise HarnessError("dedicated environment attestation failed")
 
 
+def private_attestation_record(
+    config: AcceptanceConfig, attestation: DedicatedEnvironmentAttestation
+) -> dict[str, object]:
+    env = config.environment
+    identities = attestation.identities
+    return {
+        "status": "passed",
+        "environment_identity": config.environment_identity,
+        "declared": {
+            "postgres_database": env["PILLARMESH_POSTGRES_DATABASE"],
+            "postgres_runtime_principal": env["PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL"],
+            "postgres_fixture_principal": env["PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL"],
+            "postgres_owner_principal": env["PILLARMESH_POSTGRES_OWNER_PRINCIPAL"],
+            "postgres_schema": env["PILLARMESH_POSTGRES_SCHEMA"],
+            "postgres_table": env["PILLARMESH_POSTGRES_TABLE"],
+            "postgres_denial_schema": env["PILLARMESH_POSTGRES_DENIAL_SCHEMA"],
+            "snowflake_account": env["PILLARMESH_SNOWFLAKE_ACCOUNT"],
+            "snowflake_runtime_user": env["PILLARMESH_SNOWFLAKE_USER"],
+            "snowflake_owner_user": env["PILLARMESH_SNOWFLAKE_OWNER_USER"],
+            "snowflake_role": env["PILLARMESH_SNOWFLAKE_ROLE"],
+            "snowflake_warehouse": env["PILLARMESH_SNOWFLAKE_WAREHOUSE"],
+            "snowflake_database": env["PILLARMESH_SNOWFLAKE_DATABASE"],
+            "snowflake_schema": env["PILLARMESH_SNOWFLAKE_SCHEMA"],
+            "snowflake_stage": env["PILLARMESH_SNOWFLAKE_STAGE"],
+            "snowflake_target": env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"],
+            "snowflake_negative_target": env["PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE"],
+            "snowflake_ledger": env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"],
+            "snowflake_denial_database": env["PILLARMESH_SNOWFLAKE_DENIAL_DATABASE"],
+        },
+        "observed": {
+            "postgres_runtime_session": identities.postgres_runtime_session,
+            "postgres_runtime_current": identities.postgres_runtime_current,
+            "postgres_fixture_session": identities.postgres_fixture_session,
+            "postgres_fixture_current": identities.postgres_fixture_current,
+            "snowflake_runtime": identities.snowflake_runtime,
+            "postgres_database": attestation.postgres_database,
+            "postgres_database_owner": attestation.postgres_database_owner,
+            "postgres_schema_owner": attestation.postgres_schema_owner,
+            "postgres_marker_environment_id": attestation.postgres_marker_environment_id,
+            "postgres_source_kind": attestation.postgres_source_kind,
+            "postgres_marker_kind": attestation.postgres_marker_kind,
+            "postgres_source_owner": attestation.postgres_source_owner,
+            "postgres_marker_owner": attestation.postgres_marker_owner,
+            "postgres_audit_kind": attestation.postgres_audit_kind,
+            "postgres_audit_owner": attestation.postgres_audit_owner,
+            "postgres_audit_security_definer": attestation.postgres_audit_security_definer,
+            "postgres_audit_language": attestation.postgres_audit_language,
+            "postgres_audit_volatility": attestation.postgres_audit_volatility,
+            "postgres_audit_result": attestation.postgres_audit_result,
+            "postgres_audit_config": attestation.postgres_audit_config,
+            "postgres_audit_body_digest": attestation.postgres_audit_body_digest,
+            "postgres_runtime_grants": attestation.postgres_runtime_grants,
+            "postgres_fixture_grants": attestation.postgres_fixture_grants,
+            "postgres_denial_schema_exists": attestation.postgres_denial_schema_exists,
+            "snowflake_account": attestation.snowflake_account,
+            "snowflake_account_locator": attestation.snowflake_account_locator,
+            "snowflake_role": attestation.snowflake_role,
+            "snowflake_user_roles": attestation.snowflake_user_roles,
+            "snowflake_marker_environment_identity": (
+                attestation.snowflake_marker_environment_identity
+            ),
+            "snowflake_marker_owner_user": attestation.snowflake_marker_owner_user,
+            "snowflake_marker_owner_role": attestation.snowflake_marker_owner_role,
+            "snowflake_marker_denial_database": (attestation.snowflake_marker_denial_database),
+            "snowflake_marker_denial_database_owner_role": (
+                attestation.snowflake_marker_denial_database_owner_role
+            ),
+            "snowflake_object_kinds": attestation.snowflake_object_kinds,
+            "snowflake_object_owners": attestation.snowflake_object_owners,
+            "snowflake_object_grants": attestation.snowflake_object_grants,
+            "snowflake_runtime_grants": attestation.snowflake_runtime_grants,
+        },
+    }
+
+
 def preflight(
     environment: Mapping[str, str],
     *,
@@ -404,7 +529,7 @@ class LiveProviderActions:
         )
 
     @contextmanager
-    def admission(self, environment_identity: str) -> Iterator[None]:
+    def admission(self, environment_identity: str) -> Iterator[ProviderAdmission]:
         if environment_identity != self._config.environment_identity:
             raise HarnessError("provider admission identity is invalid")
         raw = bytes.fromhex(environment_identity)
@@ -413,24 +538,57 @@ class LiveProviderActions:
             int.from_bytes(raw[4:8], "big", signed=True),
         )
         connection = self._postgres_connect(self._environment["PILLARMESH_POSTGRES_DSN"])
+        admission: _PostgresAdmission | None = None
         try:
             with connection.cursor() as cursor:
-                cursor.execute("SELECT current_database(), pg_try_advisory_lock(%s, %s)", lock_key)
-                database, admitted = _required_row(cursor.fetchone(), "provider admission probe")
+                cursor.execute(
+                    "SELECT current_database(), pg_backend_pid(), pg_try_advisory_lock(%s, %s)",
+                    lock_key,
+                )
+                database, backend_pid, admitted = _required_row(
+                    cursor.fetchone(), "provider admission probe"
+                )
                 if str(database) != self._environment["PILLARMESH_POSTGRES_DATABASE"]:
                     raise HarnessError("provider admission database does not match")
                 if not bool(admitted):
                     raise HarnessError("acceptance environment is already admitted")
+                admission = _PostgresAdmission(
+                    connection=connection,
+                    expected_database=self._environment["PILLARMESH_POSTGRES_DATABASE"],
+                    expected_backend_pid=int(backend_pid),
+                )
             try:
-                yield
-            finally:
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT pg_advisory_unlock(%s, %s)", lock_key)
-                    unlocked = _required_row(cursor.fetchone(), "provider admission release")[0]
-                    if not bool(unlocked):
-                        raise HarnessError("provider admission release failed")
+                yield admission
+                admission.assert_intact()
+            except BaseException as error:
+                # A release problem must never replace the failure that ended the run:
+                # that failure is the diagnosis the operator acts on. Attach it to the
+                # original instead, so neither is lost.
+                try:
+                    self._release_admission(connection, lock_key, admission)
+                except Exception as release_error:
+                    error.add_note(
+                        f"provider admission release also failed: {_error_label(release_error)}"
+                    )
+                raise
+            else:
+                self._release_admission(connection, lock_key, admission)
         finally:
             connection.close()
+
+    def _release_admission(
+        self,
+        connection: Any,
+        lock_key: tuple[int, int],
+        admission: _PostgresAdmission | None,
+    ) -> None:
+        if admission is None or admission.lost:
+            return
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_unlock(%s, %s)", lock_key)
+            unlocked = _required_row(cursor.fetchone(), "provider admission release")[0]
+        if not bool(unlocked):
+            raise HarnessError("provider admission release failed")
 
     def _qualified(self, name: str) -> str:
         env = self._environment
@@ -459,16 +617,6 @@ class LiveProviderActions:
             "SELECT_SOURCE": (
                 "has_table_privilege(%s, %s, 'SELECT')",
                 (
-                    principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
-                ),
-            ),
-            "COLUMN_SELECT_SOURCE": (
-                "has_any_column_privilege(%s, %s, 'SELECT') "
-                "AND NOT has_table_privilege(%s, %s, 'SELECT')",
-                (
-                    principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
                     principal,
                     f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
                 ),
@@ -654,6 +802,25 @@ class LiveProviderActions:
             ),
             "EXECUTE_AUDIT": ("has_function_privilege(%s, %s, 'EXECUTE')", (principal, function)),
         }
+        source_table = f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}"
+        for column in (
+            "order_id",
+            "customer_ref",
+            "amount",
+            "currency",
+            "status",
+            "updated_at",
+        ):
+            label = (
+                "SELECT_SOURCE_KEY_COLUMN"
+                if column == "order_id"
+                else f"SELECT_SOURCE_{column.upper()}_COLUMN"
+            )
+            checks[label] = (
+                "has_column_privilege(%s, %s, %s, 'SELECT') "
+                "AND NOT has_table_privilege(%s, %s, 'SELECT')",
+                (principal, source_table, column, principal, source_table),
+            )
         present: list[str] = []
         for label, (expression, parameters) in checks.items():
             cursor.execute(f"SELECT {expression}", parameters)

@@ -15,6 +15,7 @@ import pytest
 from pillarmesh_contract_model import FIXED_PROJECTION, IntegrationContract
 from pillarmesh_evidence import PackageMetadata
 
+from tests.acceptance import run_m0
 from tests.acceptance.config import REQUIRED_VARIABLES
 from tests.acceptance.private_files import atomic_private_replace
 from tests.acceptance.provider_adapter import (
@@ -127,6 +128,7 @@ def _attestation(environment_identity: str) -> DedicatedEnvironmentAttestation:
             "CONNECT_DATABASE",
             "DELETE_SOURCE",
             "INSERT_SOURCE",
+            "SELECT_SOURCE_KEY_COLUMN",
             "USAGE_SCHEMA",
         ),
         postgres_denial_schema_exists=True,
@@ -211,6 +213,7 @@ class FakeProviders:
         negative_observations: tuple[NegativeObservation, NegativeObservation] | None = None,
         reconciliation: ProviderResourceState | None = None,
         reconciliation_error: BaseException | None = None,
+        fail_admission_assertion_at: int | None = None,
     ) -> None:
         self.events = events
         self.environment_identity = ""
@@ -244,15 +247,23 @@ class FakeProviders:
             staged_segment_exists=True,
         )
         self.reconciliation_error = reconciliation_error
+        self.admission_assertions = 0
+        self.fail_admission_assertion_at = fail_admission_assertion_at
 
     @contextmanager
     def admission(self, environment_identity: str) -> Any:
         assert len(environment_identity) == 64
         self.events.append("provider:admission-enter")
         try:
-            yield
+            yield self
         finally:
             self.events.append("provider:admission-exit")
+
+    def assert_intact(self) -> None:
+        self.admission_assertions += 1
+        self.events.append("provider:admission-assert-intact")
+        if self.admission_assertions == self.fail_admission_assertion_at:
+            raise HarnessError("provider admission lock was lost")
 
     def preflight(self) -> DedicatedEnvironmentAttestation:
         self.calls += 1
@@ -841,6 +852,55 @@ def test_run_uses_stdin_activation_and_exact_replay(tmp_path: Path) -> None:
     )
 
 
+def test_run_keeps_attestation_details_only_in_private_ledger(tmp_path: Path) -> None:
+    harness, _providers, _cli, _events = _harness(tmp_path)
+
+    harness.run()
+
+    environment = _environment(tmp_path)
+    ledger = json.loads(
+        Path(environment["PILLARMESH_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
+    )
+    attestation = ledger["context"]["attestation"]
+    assert attestation["status"] == "passed"
+    assert attestation["declared"]["postgres_runtime_principal"] == "runtime_one"
+    assert attestation["declared"]["snowflake_role"] == "PILLARMESH_M0_RUNTIME"
+    assert attestation["observed"]["snowflake_account_locator"] == ("DEDICATED_ACCOUNT_LOCATOR")
+    assert attestation["observed"]["postgres_fixture_grants"] == [
+        "CONNECT_DATABASE",
+        "DELETE_SOURCE",
+        "INSERT_SOURCE",
+        "SELECT_SOURCE_KEY_COLUMN",
+        "USAGE_SCHEMA",
+    ]
+
+    private_attestation = json.dumps(attestation, sort_keys=True)
+    for secret in (
+        environment["PILLARMESH_POSTGRES_DSN"],
+        environment["PILLARMESH_POSTGRES_FIXTURE_DSN"],
+        environment["PILLARMESH_SNOWFLAKE_PASSWORD"],
+        environment["PILLARMESH_SIGNING_PRIVATE_KEY_B64"],
+        "credential-one",
+        "credential-two",
+        environment["PILLARMESH_ROW_VALUE_CANARY"],
+    ):
+        assert secret not in private_attestation
+
+    output_dir = Path(environment["PILLARMESH_OUTPUT_DIR"])
+    public_bytes = b"".join(
+        path.read_bytes()
+        for path in output_dir.rglob("*")
+        if path.is_file() and path.name != "segment.csv"
+    )
+    for private_identifier in (
+        "DEDICATED_ACCOUNT_LOCATOR",
+        "PILLARMESH_M0_RUNTIME",
+        "m0_owner",
+        "pillarmesh_m0.orders",
+    ):
+        assert private_identifier.encode() not in public_bytes
+
+
 def test_absence_precedes_fixture_and_contract_creation(tmp_path: Path) -> None:
     harness, _providers, _cli, events = _harness(tmp_path)
 
@@ -851,6 +911,41 @@ def test_absence_precedes_fixture_and_contract_creation(tmp_path: Path) -> None:
     assert events.index("cli:activate-stdin") < events.index("provider:independent-visibility")
     assert events.index("provider:admission-enter") < events.index("provider:preflight")
     assert events.index("provider:admission-exit") > events.index("cli:export-evidence")
+
+
+def test_run_reasserts_admission_before_each_mutation_capable_boundary(tmp_path: Path) -> None:
+    harness, providers, _cli, events = _harness(tmp_path)
+
+    harness.run()
+
+    assertions = [
+        index for index, event in enumerate(events) if event == "provider:admission-assert-intact"
+    ]
+    insert = events.index("provider:insert-fixture")
+    activations = [index for index, event in enumerate(events) if event == "cli:activate-stdin"]
+    assert providers.admission_assertions == 3
+    assert assertions[0] < insert
+    assert assertions[1] < activations[0]
+    assert assertions[2] < activations[1]
+
+
+@pytest.mark.parametrize(
+    ("failed_assertion", "forbidden_event"),
+    ((1, "provider:insert-fixture"), (2, "cli:activate-stdin")),
+)
+def test_lost_admission_fails_before_next_provider_mutation(
+    tmp_path: Path,
+    failed_assertion: int,
+    forbidden_event: str,
+) -> None:
+    events: list[str] = []
+    providers = FakeProviders(events, fail_admission_assertion_at=failed_assertion)
+    harness, _providers, _cli, _events = _harness(tmp_path, providers=providers)
+
+    with pytest.raises(HarnessError, match="provider admission lock was lost"):
+        harness.run()
+
+    assert forbidden_event not in events
 
 
 def test_negative_plan_preserves_state_provider_counts_and_source_sessions(
@@ -1452,3 +1547,23 @@ def test_base_exception_persists_pessimistic_resource_ledger(tmp_path: Path) -> 
     assert source["cleanup_status"] == "scheduled"
     assert source["retention_deadline"] == "2026-09-12T12:00:00Z"
     assert private["run_state"] == "failed"
+
+
+def test_cli_reports_a_note_attached_to_a_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def failing(*_arguments: object, **_keywords: object) -> object:
+        error = HarnessError("private cleanup ledger is invalid")
+        error.add_note("provider admission release also failed: OperationalError [57P01]")
+        raise error
+
+    monkeypatch.setattr(run_m0, "cleanup_status", failing)
+    monkeypatch.setenv("PILLARMESH_CLEANUP_LEDGER_PATH", str(tmp_path / "ledger.json"))
+
+    assert run_m0.main(["cleanup-status"]) == 2
+
+    reported = capsys.readouterr().err
+    assert "private cleanup ledger is invalid" in reported
+    # Without this the note reaches pytest and nobody else: the operator would see
+    # the primary failure and never learn the advisory lock was not released.
+    assert "provider admission release also failed: OperationalError [57P01]" in reported

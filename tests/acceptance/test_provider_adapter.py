@@ -95,12 +95,21 @@ def _postgres_router(
     *,
     session_principal: str | None = None,
     extra_privileges: frozenset[str] = frozenset(),
+    fixture_select_columns: frozenset[str] = frozenset(("order_id",)),
     audit_body: str = TRUSTED_POSTGRES_AUDIT_BODY,
 ) -> Router:
     env = config.environment
     session = principal if session_principal is None else session_principal
     source = f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}"
     marker = f"{env['PILLARMESH_POSTGRES_SCHEMA']}.environment_marker"
+
+    def table_privilege(privilege: str, table: str) -> bool:
+        granted = principal == "runtime_one" and table in {source, marker} and privilege == "SELECT"
+        granted |= principal == "fixture" and table == source and privilege in {"INSERT", "DELETE"}
+        granted |= (
+            f"TABLE_{privilege}_{'SOURCE' if table == source else 'MARKER'}" in extra_privileges
+        )
+        return granted
 
     def route(query: object, parameters: tuple[Any, ...] | None) -> Result:
         text = str(query)
@@ -152,25 +161,29 @@ def _postgres_router(
                 allowed = True
             elif "has_schema_privilege" in rendered and "'usage'" in rendered:
                 allowed = len(params) > 1 and params[1] == env["PILLARMESH_POSTGRES_SCHEMA"]
+            elif "has_column_privilege" in rendered:
+                table = str(params[1])
+                column = str(params[2])
+                # PostgreSQL reports column privilege for every column when the table
+                # grant exists, and the probe is `has_column_privilege AND NOT
+                # has_table_privilege`, so a table-level grant must suppress the label.
+                column_granted = (
+                    principal == "fixture" and table == source and column in fixture_select_columns
+                ) or table_privilege("SELECT", table)
+                allowed = column_granted and not table_privilege("SELECT", table)
             elif "has_table_privilege" in rendered and "has_any_column" not in rendered:
                 privilege = rendered.rsplit("'", 2)[1].upper()
-                table = str(params[1])
-                allowed = principal == "runtime_one" and table == source and privilege == "SELECT"
-                allowed |= principal == "runtime_one" and table == marker and privilege == "SELECT"
-                allowed |= (
-                    principal == "fixture" and table == source and privilege in {"INSERT", "DELETE"}
-                )
-                allowed |= f"TABLE_{privilege}_{'SOURCE' if table == source else 'MARKER'}" in (
-                    extra_privileges
-                )
+                allowed = table_privilege(privilege, str(params[1]))
             elif "has_any_column_privilege" in rendered:
                 privilege = (
                     rendered.split("has_any_column_privilege", 1)[1].split("'", 2)[1].upper()
                 )
                 table = str(params[1])
-                allowed = f"COLUMN_{privilege}_{'SOURCE' if table == source else 'MARKER'}" in (
-                    extra_privileges
-                )
+                any_column_granted = (
+                    f"COLUMN_{privilege}_{'SOURCE' if table == source else 'MARKER'}"
+                    in extra_privileges
+                ) or table_privilege(privilege, table)
+                allowed = any_column_granted and not table_privilege(privilege, table)
             elif "has_function_privilege" in rendered:
                 allowed = principal == "runtime_one"
             return (((allowed,),), ())
@@ -275,7 +288,7 @@ def _snowflake_router(config: AcceptanceConfig) -> Router:
     return route
 
 
-def test_live_preflight_maps_real_grant_shapes_and_keeps_fixture_write_only(
+def test_live_preflight_maps_real_grant_shapes_and_keeps_fixture_key_limited(
     tmp_path: Path,
 ) -> None:
     config = _config(tmp_path)
@@ -342,16 +355,69 @@ def test_live_preflight_rejects_assumed_postgres_runtime_or_fixture_identity(
         validate_attestation(config, actions.preflight())
 
 
+@pytest.mark.parametrize("fixture_select_columns", (frozenset(),))
+def test_live_preflight_rejects_fixture_without_key_column_select(
+    tmp_path: Path, fixture_select_columns: frozenset[str]
+) -> None:
+    config = _config(tmp_path)
+    runtime = ScriptedConnection(_postgres_router(config, "runtime_one"))
+    fixture = ScriptedConnection(
+        _postgres_router(config, "fixture", fixture_select_columns=fixture_select_columns)
+    )
+
+    def postgres_connect(dsn: str) -> ScriptedConnection:
+        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+
+    actions = LiveProviderActions(
+        config,
+        postgres_connect=postgres_connect,
+        snowflake_connect=lambda **_kwargs: ScriptedConnection(_snowflake_router(config)),
+    )
+
+    with pytest.raises(HarnessError, match="dedicated environment attestation failed"):
+        validate_attestation(config, actions.preflight())
+
+
+@pytest.mark.parametrize(
+    "column",
+    ("customer_ref", "amount", "currency", "status", "updated_at"),
+)
+def test_live_preflight_rejects_fixture_select_on_non_key_column(
+    tmp_path: Path, column: str
+) -> None:
+    config = _config(tmp_path)
+    runtime = ScriptedConnection(_postgres_router(config, "runtime_one"))
+    fixture = ScriptedConnection(
+        _postgres_router(
+            config,
+            "fixture",
+            fixture_select_columns=frozenset(("order_id", column)),
+        )
+    )
+
+    def postgres_connect(dsn: str) -> ScriptedConnection:
+        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+
+    actions = LiveProviderActions(
+        config,
+        postgres_connect=postgres_connect,
+        snowflake_connect=lambda **_kwargs: ScriptedConnection(_snowflake_router(config)),
+    )
+
+    with pytest.raises(HarnessError, match="dedicated environment attestation failed"):
+        validate_attestation(config, actions.preflight())
+
+
 @pytest.mark.parametrize(
     "extra_privilege",
     (
-        "COLUMN_SELECT_SOURCE",
         "COLUMN_SELECT_MARKER",
+        "TABLE_SELECT_SOURCE",
         "TABLE_MAINTAIN_SOURCE",
         "TABLE_MAINTAIN_MARKER",
     ),
 )
-def test_live_preflight_rejects_fixture_column_select_or_maintain_privilege(
+def test_live_preflight_rejects_fixture_broad_select_or_maintain_privilege(
     tmp_path: Path, extra_privilege: str
 ) -> None:
     config = _config(tmp_path)
@@ -408,8 +474,12 @@ def test_live_provider_admission_uses_stable_database_lock_and_releases_it(
 
     def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
         text = str(query)
+        if text == "SELECT current_database(), pg_backend_pid(), pg_try_advisory_lock(%s, %s)":
+            return ((("m0_acceptance", 42, True),), ())
         if "pg_try_advisory_lock" in text:
             return ((("m0_acceptance", True),), ())
+        if "from pg_catalog.pg_locks" in text.casefold():
+            return ((("m0_acceptance", 42, 1),), ())
         if "pg_advisory_unlock" in text:
             return (((True,),), ())
         raise AssertionError(text)
@@ -417,14 +487,49 @@ def test_live_provider_admission_uses_stable_database_lock_and_releases_it(
     connection = ScriptedConnection(route)
     actions = LiveProviderActions(config, postgres_connect=lambda _dsn: connection)
 
-    with actions.admission(config.environment_identity):
+    with actions.admission(config.environment_identity) as admission:
         assert not connection.closed
+        admission.assert_intact()
 
     assert connection.closed
     assert [query for query, _params in connection.statements] == [
-        "SELECT current_database(), pg_try_advisory_lock(%s, %s)",
+        "SELECT current_database(), pg_backend_pid(), pg_try_advisory_lock(%s, %s)",
+        "SELECT current_database(), pg_backend_pid(), "
+        "(SELECT COUNT(*) FROM pg_catalog.pg_locks "
+        "WHERE pid=pg_catalog.pg_backend_pid() AND locktype='advisory' AND granted)",
+        "SELECT current_database(), pg_backend_pid(), "
+        "(SELECT COUNT(*) FROM pg_catalog.pg_locks "
+        "WHERE pid=pg_catalog.pg_backend_pid() AND locktype='advisory' AND granted)",
         "SELECT pg_advisory_unlock(%s, %s)",
     ]
+
+
+def test_live_provider_admission_fails_when_retained_lock_is_lost(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
+        text = str(query)
+        if text == "SELECT current_database(), pg_backend_pid(), pg_try_advisory_lock(%s, %s)":
+            return ((("m0_acceptance", 42, True),), ())
+        if "pg_try_advisory_lock" in text:
+            return ((("m0_acceptance", True),), ())
+        if "from pg_catalog.pg_locks" in text.casefold():
+            return ((("m0_acceptance", 42, 0),), ())
+        if "pg_advisory_unlock" in text:
+            return (((False,),), ())
+        raise AssertionError(text)
+
+    connection = ScriptedConnection(route)
+    actions = LiveProviderActions(config, postgres_connect=lambda _dsn: connection)
+
+    with (
+        pytest.raises(HarnessError, match="provider admission lock was lost"),
+        actions.admission(config.environment_identity) as admission,
+    ):
+        admission.assert_intact()
+
+    assert connection.closed
+    assert sum("pg_try_advisory_lock" in query for query, _ in connection.statements) == 1
 
 
 def test_live_provider_admission_rejects_a_lock_held_on_another_host(tmp_path: Path) -> None:
@@ -432,7 +537,7 @@ def test_live_provider_admission_rejects_a_lock_held_on_another_host(tmp_path: P
 
     def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
         assert "pg_try_advisory_lock" in str(query)
-        return ((("m0_acceptance", False),), ())
+        return ((("m0_acceptance", 42, False),), ())
 
     connection = ScriptedConnection(route)
     actions = LiveProviderActions(config, postgres_connect=lambda _dsn: connection)
@@ -527,3 +632,144 @@ def test_live_destination_absence_proof_rejects_an_existing_key(tmp_path: Path) 
 
     with pytest.raises(HarnessError, match="fresh acceptance key"):
         actions.prove_destination_absent(KEY)
+
+
+def test_admission_probe_reports_driver_failure_without_leaking_its_message(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+
+    class Terminated(Exception):
+        sqlstate = "57P01"
+
+    def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
+        text = str(query)
+        if "pg_try_advisory_lock" in text:
+            return ((("m0_acceptance", 42, True),), ())
+        if "from pg_catalog.pg_locks" in text.casefold():
+            raise Terminated("terminating connection dsn=postgres://secret@host/db")
+        raise AssertionError(text)
+
+    connection = ScriptedConnection(route)
+    actions = LiveProviderActions(config, postgres_connect=lambda _dsn: connection)
+
+    with (
+        pytest.raises(HarnessError) as raised,
+        actions.admission(config.environment_identity) as admission,
+    ):
+        admission.assert_intact()
+
+    message = str(raised.value)
+    assert "Terminated" in message and "57P01" in message
+    assert "secret" not in message and "postgres://" not in message
+    assert raised.value.__cause__ is None
+
+
+def test_admission_probe_does_not_convert_an_operator_interrupt(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
+        text = str(query)
+        if "pg_try_advisory_lock" in text:
+            return ((("m0_acceptance", 42, True),), ())
+        if "from pg_catalog.pg_locks" in text.casefold():
+            raise KeyboardInterrupt
+        if "pg_advisory_unlock" in text:
+            return (((True,),), ())
+        raise AssertionError(text)
+
+    connection = ScriptedConnection(route)
+    actions = LiveProviderActions(config, postgres_connect=lambda _dsn: connection)
+
+    # An interrupt is not evidence that the provider lock was lost.
+    with (
+        pytest.raises(KeyboardInterrupt),
+        actions.admission(config.environment_identity) as admission,
+    ):
+        admission.assert_intact()
+    assert connection.closed
+
+
+def test_admission_release_failure_never_replaces_the_primary_error(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
+        text = str(query)
+        if "pg_try_advisory_lock" in text:
+            return ((("m0_acceptance", 42, True),), ())
+        if "pg_advisory_unlock" in text:
+            return (((False,),), ())
+        raise AssertionError(text)
+
+    connection = ScriptedConnection(route)
+    actions = LiveProviderActions(config, postgres_connect=lambda _dsn: connection)
+
+    with (
+        pytest.raises(HarnessError, match="acceptance run failed for its own reason") as raised,
+        actions.admission(config.environment_identity),
+    ):
+        raise HarnessError("acceptance run failed for its own reason")
+
+    # The release problem is recorded, but the failure the operator must act on wins.
+    assert any(
+        "provider admission release" in note for note in getattr(raised.value, "__notes__", ())
+    )
+    assert connection.closed
+
+
+def test_admission_release_failure_surfaces_when_nothing_else_failed(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+
+    def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
+        text = str(query)
+        if "pg_try_advisory_lock" in text:
+            return ((("m0_acceptance", 42, True),), ())
+        if "from pg_catalog.pg_locks" in text.casefold():
+            return ((("m0_acceptance", 42, 1),), ())
+        if "pg_advisory_unlock" in text:
+            return (((False,),), ())
+        raise AssertionError(text)
+
+    connection = ScriptedConnection(route)
+    actions = LiveProviderActions(config, postgres_connect=lambda _dsn: connection)
+
+    with (
+        pytest.raises(HarnessError, match="provider admission release failed"),
+        actions.admission(config.environment_identity),
+    ):
+        pass
+
+
+def test_live_preflight_reports_table_select_without_the_key_column_label(
+    tmp_path: Path,
+) -> None:
+    config = _config(tmp_path)
+    runtime = ScriptedConnection(_postgres_router(config, "runtime_one"))
+    fixture = ScriptedConnection(
+        _postgres_router(config, "fixture", extra_privileges=frozenset(("TABLE_SELECT_SOURCE",)))
+    )
+
+    def postgres_connect(dsn: str) -> ScriptedConnection:
+        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+
+    actions = LiveProviderActions(
+        config,
+        postgres_connect=postgres_connect,
+        snowflake_connect=lambda **_kwargs: ScriptedConnection(_snowflake_router(config)),
+    )
+
+    attestation = actions.preflight()
+
+    # PostgreSQL suppresses every column label once the table grant exists, because the
+    # probe is `has_column_privilege AND NOT has_table_privilege`. A fixture principal
+    # with table SELECT must therefore be rejected for holding SELECT_SOURCE, never
+    # accepted as if it held only the key column.
+    assert attestation.postgres_fixture_grants == (
+        "CONNECT_DATABASE",
+        "DELETE_SOURCE",
+        "INSERT_SOURCE",
+        "SELECT_SOURCE",
+        "USAGE_SCHEMA",
+    )
+    with pytest.raises(HarnessError, match="dedicated environment attestation failed"):
+        validate_attestation(config, attestation)

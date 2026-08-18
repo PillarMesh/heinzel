@@ -15,8 +15,12 @@ operator/host pseudonyms; the CLI transport decision; limitations; and resource 
 cleanup status, and cleanup operation.
 
 The exact PostgreSQL row key, Snowflake target/ledger/stage identifiers, acceptance key, local
-paths, and owner authorization reference remain only in `PILLARMESH_CLEANUP_LEDGER_PATH`. That
-owner-readable file must be outside the repository with mode 0600. Never share it as evidence.
+paths, owner authorization reference, and explicit declared/observed provider-attestation record
+remain only in `PILLARMESH_CLEANUP_LEDGER_PATH`. The attestation record allowlists identifiers,
+ownership, grants, marker results, and audit-definition findings; it never serializes the complete
+environment and cannot contain DSNs, passwords, private signing keys, credential canaries, or row
+values. That owner-readable file must be outside the repository with mode 0600. Never share it as
+evidence.
 
 The exporter scans artifacts, trace, operations metadata, package index, and final verification
 result for all credential canaries, the synthetic row-value canary, raw acceptance key and common

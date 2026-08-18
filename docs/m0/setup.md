@@ -42,7 +42,10 @@ The harness derives one environment identity from the case-normalized canonical 
 database/schema/source and Snowflake account/database/schema/stage/target/negative-target/ledger,
 namespaced by `pillarmesh-m0-environment-v1` and SHA-256. It derives the local reservation pathname
 from that digest and also holds a PostgreSQL advisory lock for the same digest. Thus operators on
-different paths or hosts still contend at the provider boundary. The fixed derived objects are
+different paths or hosts still contend at the provider boundary. The lock uses a dedicated retained
+connection. The harness records that connection's backend PID and fails closed unless the same
+database and backend still own exactly one granted advisory lock before each mutation-capable
+boundary; it never tests by reacquiring the lock. The fixed derived objects are
 `pillarmesh_m0.environment_marker`, `pillarmesh_m0.runtime_source_read_count()`,
 `PILLARMESH_M0.TRANSFER.M0_CSV`, `PILLARMESH_M0.TRANSFER.ENVIRONMENT_MARKER`, and owner role
 `PILLARMESH_M0_OWNER`.
@@ -123,6 +126,7 @@ GRANT SELECT ON pillarmesh_m0.environment_marker TO
 GRANT EXECUTE ON FUNCTION pillarmesh_m0.runtime_source_read_count() TO
     pillarmesh_m0_runtime_1, pillarmesh_m0_runtime_2;
 GRANT INSERT, DELETE ON pillarmesh_m0.orders TO pillarmesh_m0_fixture;
+GRANT SELECT (order_id) ON pillarmesh_m0.orders TO pillarmesh_m0_fixture;
 ```
 
 The environment owner must configure `pg_stat_statements` in `shared_preload_libraries`, restart
@@ -141,8 +145,9 @@ environment identity. Both dedicated tables must be owner-owned base tables. The
 owner-owned, zero-argument, SQL, `STABLE`, `BIGINT`, SECURITY DEFINER function with the exact fixed
 body and `search_path` above; a same-name constant function fails its body-digest check. Runtime,
 not fixture, executes the source/marker/audit reads. The fixture session performs only identity and
-grant metadata probes plus the bounded INSERT/DELETE. Preflight also requires the denial schema to
-exist before proving the runtime role lacks `USAGE`; absence is not accepted as denial.
+grant metadata probes, the bounded INSERT/DELETE, and key-column access needed to delete by
+`order_id`. Preflight also requires the denial schema to exist before proving the runtime role lacks
+`USAGE`; absence is not accepted as denial.
 
 Both PostgreSQL connections must return identical `session_user` and `current_user` values, and
 each value must equal its declared non-owner principal. A DSN that assumes another role is rejected
@@ -153,8 +158,11 @@ assume, so role switching cannot hide source reads.
 The runtime roles receive no INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, CREATE, or
 MAINTAIN access and no unrelated-schema access. The fixture role is separate from both runtime
 roles and the owner. Its exact privilege probe rejects every supported table privilege other than
-source INSERT/DELETE, including table- or column-level SELECT and MAINTAIN; it also rejects marker
-table privileges and any unexpected database, schema, column, or function privilege.
+source INSERT/DELETE and rejects column `SELECT` except on `order_id`. It also rejects table-level
+SELECT, MAINTAIN, marker-table privileges, and any unexpected database, schema, column, or function
+privilege. PostgreSQL requires `SELECT` on a column referenced by a `DELETE` predicate; without this
+key-only grant the fixture principal could insert a row but could not perform its authorized
+per-run cleanup.
 
 The harness executes a parameterized positive probe and a parameterized privilege-denial probe:
 

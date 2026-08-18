@@ -136,6 +136,19 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _report(message: str, error: BaseException) -> None:
+    """Print a failure with any notes attached to it.
+
+    A note carries a secondary failure that must not displace the primary one --
+    an advisory lock that could not be released, for instance. Printing only
+    str(error) drops it, leaving the operator unaware of the second problem.
+    Notes are harness-authored and name an exception type and SQLSTATE only.
+    """
+    print(message, file=sys.stderr)
+    for note in getattr(error, "__notes__", ()):
+        print(note, file=sys.stderr)
+
+
 def main(argv: list[str] | None = None) -> int:
     command = _parser().parse_args(argv).command
     try:
@@ -178,10 +191,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0
     except HarnessError as error:
-        print(str(error), file=sys.stderr)
+        _report(str(error), error)
         return 2
     except BaseException as error:
-        print(f"acceptance command failed: {type(error).__name__}", file=sys.stderr)
+        _report(f"acceptance command failed: {type(error).__name__}", error)
         return 1
 
 

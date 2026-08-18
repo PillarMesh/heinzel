@@ -237,12 +237,127 @@ One command performs one operator run. It requires a unique operator pseudonym a
 
 The last refusal is about the boundary of the acceptance environment, not about the two operators. Operators share the dedicated tables by design (§6.3); what the harness refuses is a provider object belonging to any schema other than the declared acceptance one, so that no run can read or mutate an object the environment owner has not designated as disposable.
 
+#### 6.1.1 Witnessed connectivity and authorization admission
+
+The harness preflight is stronger than the portable product observation. It proves that the
+dedicated environment is reachable through the intended principals and that their effective
+authority exactly matches the reviewed acceptance fixture before any provider mutation occurs.
+A successful driver connection, metadata query, or product compilation is not a substitute for
+this attestation.
+
+Preflight first validates the exact environment-variable inventory, private path boundaries, and
+opaque connection-handle bindings without printing values. It then creates an exclusive
+owner-private local reservation and acquires a session-level PostgreSQL advisory lock derived from
+the same environment identity. Failure to acquire either lock is a refusal, not a retry or an
+invitation to use another path.
+
+The advisory lock is held on a harness-owned connection opened for that purpose alone, distinct from
+the connections the product CLI subprocesses open for themselves, and it is kept open for the whole
+provider-touching window. Its guarantee is bounded in one way that must be stated: PostgreSQL
+releases a session advisory lock silently when its session ends, so a dropped connection ends the
+exclusivity without notifying anyone. The harness therefore re-asserts the lock — confirming it is
+still held by this session, not merely that it can be acquired — immediately before the fixture
+insertion, before the activation of step 5, and before cleanup. A lost lock fails the run closed at
+the next re-assertion and never converts into a retry or a second acquisition. Because advisory
+locks are scoped to a database, and both operators use the same dedicated database, this serializes
+them by construction: an operator that blocks is observing the mechanism working, and the gate
+report records the wait rather than treating it as a failure. The live-fault campaign of §8.4
+acquires the same lock, which is what makes its exclusive window enforceable rather than a
+convention.
+
+Under the runtime PostgreSQL credential, preflight proves:
+
+- `session_user` and `current_user` both equal the declared runtime principal, so an owner login
+  that used `SET ROLE` cannot pass;
+- current database, database owner, schema owner, source and marker object kinds and owners, and
+  the owner-created environment marker exactly match the dedicated environment;
+- the owner-created source-read audit function has the reviewed kind, owner, security mode,
+  language, volatility, result type, configuration, and body digest;
+- the runtime principal has exactly the reviewed read-only grant set, including no unexpected
+  table- or column-level write privilege; and
+- the dedicated denial schema exists but remains inaccessible.
+
+Identity, ownership, object-kind, and effective-privilege facts are read directly with PostgreSQL's
+catalogs and effective-privilege functions. The audit function is not a shortcut for those facts.
+It exists only to expose the narrow persistent source-read counter used by step 9, because the
+runtime principal cannot inspect other roles' `pg_stat_statements` entries and a before/after
+`pg_stat_activity` sample can miss a short-lived read. Its reviewed SQL counts only data-reading
+statements attributed to the authenticated runtime login or a role it can assume and referencing
+the dedicated source table; it returns only an aggregate count, never statement text or row data.
+
+This is deliberately a `SECURITY DEFINER` boundary and is treated as such. The owner provisions it,
+revokes public execution, grants execution only to the runtime principals, fixes its `search_path`,
+and grants its owner the statistics visibility needed by the function. Preflight fails closed
+unless the function's owner, security mode, language, volatility, result type, configuration, and
+normalized body digest exactly match the reviewed definition. A missing, altered, publicly
+executable, or non-attestable function refuses the run. It is not portable product machinery and
+remains confined to the dedicated witnessed-acceptance environment.
+
+Under the fixture PostgreSQL credential, preflight separately proves that `session_user` and
+`current_user` equal the declared fixture principal, that it reaches the same database, and that it
+has exactly `CONNECT`, `USAGE`, `INSERT`, `DELETE`, and column-level `SELECT` on the key column
+alone for the fixture boundary. Table-level `SELECT`, column-level `SELECT` on any non-key column,
+`UPDATE`, `TRUNCATE`, `MAINTAIN`, ownership, or any other supported privilege fails attestation. The
+fixture DSN is never passed to a product CLI or MCP subprocess.
+
+The key-column `SELECT` is required, not a relaxation. PostgreSQL evaluates a `DELETE`'s `WHERE`
+clause under `SELECT` privilege on every column it references, so a principal holding `INSERT` and
+`DELETE` but no `SELECT` cannot delete the row it just inserted. The runtime principal cannot delete
+it either, and must not be able to: precondition 1 admits the source only when no effective write
+privilege exists. Without this grant no attested principal can perform the fixture cleanup that §6.4
+requires immediately on failure and at the retention deadline on success, and the acceptance
+environment accumulates synthetic rows no procedure can remove.
+
+Scoping the grant to the key column keeps the fixture principal unable to read customer reference,
+amount, currency, status, or timestamp values from any row, including rows it did not write. It can
+therefore delete by key and confirm nothing else. Absence after cleanup is confirmed by the runtime
+read-only principal, which already holds table `SELECT`, so no principal gains authority solely to
+verify its own cleanup.
+
+Under the runtime Snowflake credential, preflight proves:
+
+- current account or account locator, current user, current role, and the user's complete role set;
+- the owner-created marker's environment identity, owner user, owner role, denial database, and
+  denial-database owner role;
+- the exact kinds and owners of the database, schema, warehouse, stage, target, negative target,
+  ledger, and marker;
+- the exact `SHOW GRANTS` inventory, including owner-role `OWNERSHIP` and only the reviewed runtime
+  `USAGE`, stage `READ`/`WRITE`, target `SELECT`/`INSERT`/`UPDATE`, ledger `SELECT`/`INSERT`, and
+  marker/negative-target `SELECT` authorities;
+- a fresh parameterized target read succeeds; and
+- a read against the dedicated denial database fails with recognized authorization semantics.
+  Success or an unclassified error is an inconclusive preflight and therefore a refusal.
+
+Preflight is provider-read-only. It performs no fixture insertion, stage upload, target or ledger
+DML, DDL, grant change, revocation, cleanup, or owner operation. The standalone `preflight`
+command may create only its transient local reservation. The `run` command repeats the complete
+attestation inside its retained reservation and provider-admission lock immediately before it
+generates the acceptance key, proves destination absence, or inserts the fixture row; a prior
+successful preflight cannot be reused as authority.
+
+The only successful public result is a fixed `ready` status. A missing setting reports names only.
+Connectivity, authentication, identity, ownership, grant, marker, positive-probe, denial-probe, or
+lock failure returns nonzero, emits a value-independent diagnostic, and performs no provider
+mutation.
+
+Everything the attestation reads is operator-environment detail: account locators, user and role
+names, role memberships, object owners, qualified object names, and complete grant inventories.
+None of it may leave the operator's machine. §4.3 designates only the acceptance key and the local
+segment path as runtime-private, so it does not cover these; §5.1 and §5.2 keep them out of the
+package by construction, because no attestation value is an artifact field, a package payload, or a
+`resources.json` entry, and `resources.json` already forbids qualified provider identifiers. The
+attestation's inputs and findings live only in the private local ledger of §6.2 step 11, alongside
+the cleanup identifiers that ledger already holds. Credentials, the §4.3 private values, and failed
+probe values never appear in output or the evidence package.
+
 ### 6.2 Transaction sequence
 
 The harness performs and records these steps in order:
 
-1. Validate the exact environment-variable inventory without printing values.
-2. Connect read-only with the runtime roles and execute positive access probes and expected-denial probes.
+1. Complete the full connectivity and authorization admission of §6.1.1 — beginning with the exact
+   environment-variable inventory, without printing values — under the retained local reservation
+   and provider-admission lock.
+2. Re-assert the provider-admission lock, then proceed only while it is held.
 3. Generate a new acceptance key in memory and query Snowflake under a fresh statement to prove absence.
 4. Insert one synthetic PostgreSQL row using only the fixture credential, after step 3's absence proof and before the contract of step 5 is created.
 5. Create the exact fixed-shape contract, verify it, and activate it through CLI subprocesses.
@@ -260,16 +375,31 @@ The harness does not catch an exception and continue to a success report. A fail
 
 #### Proving no source read in step 9
 
-"Unchanged source-read counter" is not a usable assertion. PostgreSQL's `pg_stat_*` counters are cumulative, updated asynchronously, and advanced by autovacuum and by any other session touching the table, so an equality check on them makes gate 9 flaky in the one direction that matters — an intermittent failure on a correct run.
+Generic table statistics are not a usable assertion. PostgreSQL's `pg_stat_*` table counters are
+cumulative, can be updated by autovacuum, and do not reliably attribute a read to the runtime
+principal. The attested function instead reads `pg_stat_statements`, filters to data-reading
+statements attributed to the authenticated runtime login or a role it can assume, and restricts the
+match to the dedicated source table. The retained provider-admission lock excludes another harness
+run during the measurement window. Reset or loss of the statistics state is a failure, not an
+unchanged result.
 
-Step 9 instead asserts, in order:
+Step 9 asserts, in order:
 
-1. that the CLI returned `No Valid Plan` with the expected unsatisfied precondition and `execution_occurred` false;
-2. that no run record, no evidence event, and no `run_private_state` row were created in the operator's store;
-3. that no local segment file exists under the operator's output directory; and
-4. that the source runtime role opened no backend during the step, observed by sampling `pg_stat_activity` for that role's `backend_start` before and after, which is a per-session fact rather than a shared cumulative statistic.
+1. immediately before the negative verification, read and retain the attested source-read count;
+2. require the CLI to return `No Valid Plan` with the expected unsatisfied precondition and
+   `execution_occurred` false;
+3. after the command terminates, read the counter again and require exact equality with the retained
+   value;
+4. require that no run record, evidence event, or `run_private_state` row was created in the
+   operator's store; and
+5. require that no local segment file exists under the operator's output directory.
 
-Assertions 2 and 3 are the load-bearing ones: reading source rows in M0 requires opening a snapshot, encoding a segment, and advancing a checkpoint, none of which can occur without leaving durable local evidence the harness owns exclusively. Assertion 4 is corroborating; if the environment cannot grant visibility of `pg_stat_activity` for that role, it is recorded as unavailable rather than silently skipped, and the gate rests on 1 through 3.
+The counter comparison is the provider-side witness for the no-read claim; the local-store and
+segment assertions independently prove that PillarMesh did not create execution state. Local
+artifact absence cannot replace the provider-side witness, because a defective path could read and
+then fail before persisting a segment or checkpoint. If the counter cannot be read or its trusted
+definition cannot be attested, gate 9 is unavailable and the witnessed run fails; it is never
+silently downgraded to local-artifact evidence alone.
 
 ### 6.3 Two-operator rule
 
@@ -285,6 +415,7 @@ Every created resource is registered before or immediately after creation in the
 - Successful evidence packages and synthetic source/target rows are retained for 30 days.
 - Successful staged files are removed within 24 hours using the exact batch prefix.
 - Failed or indeterminate staged files are quarantined for at most seven days.
+- Source-row cleanup deletes by key under the fixture principal, using the key-column `SELECT` grant of §6.1.1, and confirms absence under the runtime read-only principal.
 - Cleanup confirms absence through fresh provider queries and updates the local resource ledger.
 
 Tests use `try/finally` to record cleanup requirements even when interrupted. They do not drop shared schemas, tables, roles, stages, warehouses, or databases. Full-environment teardown remains a separate owner-authorized procedure.
@@ -298,10 +429,19 @@ Tests use `try/finally` to record cleanup requirements even when interrupted. Th
 - runtime Snowflake;
 - signing;
 - private local state/output;
-- evidence scan canaries; and
-- acceptance operator metadata.
+- evidence scan canaries;
+- acceptance operator metadata; and
+- attested environment identity.
 
-The runbook uses explicit placeholders for the PostgreSQL database identifier rather than the literal `current_database_name`. It supplies parameterized positive and denial probes, a fixed contract example, pre/post visibility queries, replay checks, stage cleanup, row-retention cleanup, and separate Operator 1 and Operator 2 examples. Examples never put passwords, DSNs, private keys, or row values in command arguments.
+The last group exists because §6.1.1 attests facts against declared expectations, and an attestation
+whose expected values are not committed cannot be reproduced by a second operator. It names the
+declared runtime and fixture principals, the owner role, the environment marker and its expected
+contents, the denial schema, the Snowflake denial database and negative target, and the expected
+grant inventories for each principal. Gate 14 asks Operator 2 to work from committed instructions
+alone; every object preflight can refuse on must therefore appear here and in the provisioning
+section of the runbook, with the exact statements the environment owner runs to create it.
+
+The runbook uses explicit placeholders for the PostgreSQL database identifier rather than the literal `current_database_name`. It supplies the owner provisioning statements for every object named above, parameterized positive and denial probes, a fixed contract example, pre/post visibility queries, replay checks, stage cleanup, row-retention cleanup, and separate Operator 1 and Operator 2 examples. Examples never put passwords, DSNs, private keys, or row values in command arguments.
 
 Configuration validation reports missing variable names together and never includes values. The harness rejects credentials that resolve to the owner or fixture principal where a runtime principal is required.
 
@@ -322,6 +462,20 @@ Configuration validation reports missing variable names together and never inclu
 - Broken event order, previous digest, event digest, or terminal linkage fails verification.
 - Exact, encoded, path, file-URI, connection-string, private-key, and row-value canaries fail scanning without appearing in diagnostics.
 - A verification result containing a value outside the fixed verifier vocabulary of §5.4 is rejected by the exporter.
+
+### 8.1.1 Preflight attestation tests
+
+These run offline against provider fakes; the live proof is the witnessed run itself.
+
+- Each attested fact fails admission on its own: wrong `session_user` with a correct `current_user`, wrong current role, unexpected Snowflake role membership, wrong object owner, absent or altered environment marker, a missing expected grant, any unexpected supported grant, and a denial probe that succeeds or fails unrecognizably.
+- The PostgreSQL audit boundary is refused when it is absent; owned by the wrong principal; not a
+  function; not `SECURITY DEFINER`; uses the wrong language, volatility, result type, or
+  configuration; has an altered body digest; or is publicly executable.
+- The fixture principal is refused when it holds table `SELECT`, column `SELECT` beyond the key column, or `UPDATE`, and is refused when it lacks the key-column `SELECT` that cleanup needs.
+- Every refusal path performs no provider mutation and leaves source, stage, target, ledger, grants, and owner-managed objects untouched.
+- No refusal diagnostic contains a credential, account locator, role name, qualified object name, grant inventory, or probe value.
+- A second run is refused while the provider-admission lock is held, and a run whose lock is lost fails closed at the next re-assertion rather than continuing or reacquiring.
+- A successful preflight emits exactly the fixed `ready` status, and a prior success does not satisfy the attestation repeated inside `run`.
 
 ### 8.2 Runtime-before-provider tests
 
@@ -345,7 +499,7 @@ Additional faults cover corrupt staged bytes, modified contract, graph, and prov
 
 Using only the dedicated environment, the witnessed campaign revokes and restores PostgreSQL read, Snowflake stage write, and Snowflake merge permissions one at a time. Each denial is verified before the fault run, and restoration is verified afterward. These operations require the environment owner and are recorded separately from runtime credentials.
 
-Because §6.3 lets both operators hold the same shape of runtime grants, a revocation aimed at one operator can break the other's run in a way that reads as a product defect. The campaign therefore runs in an exclusive window: it is the only acceptance activity against the environment for its duration, it revokes only the grants of the operator role it is testing, and it verifies restoration before the window closes. The gate report records the window and the roles touched. If an exclusive window cannot be arranged, the campaign uses a third role provisioned for fault injection alone and neither operator's grants are modified.
+Because §6.3 lets both operators hold the same shape of runtime grants, a revocation aimed at one operator can break the other's run in a way that reads as a product defect. The campaign therefore runs in an exclusive window enforced by the same provider-admission lock the harness uses (§6.1.1), not by convention: it holds the lock for its duration, so an operator run cannot start underneath it and it cannot start underneath an operator run. It revokes only the grants of the operator role it is testing and verifies restoration before releasing the lock. The gate report records the window and the roles touched. If the campaign must run without the lock, it uses a third role provisioned for fault injection alone and neither operator's grants are modified.
 
 ### 8.5 Legality mutation and review
 
@@ -375,6 +529,16 @@ The report is the only place gate dispositions are recorded (§2 decision 7). It
 
 ## 10. Failure Semantics
 
+- Missing or invalid configuration fails before a provider connection and reports names only.
+- Connectivity or authentication failure, an assumed PostgreSQL role, an unexpected Snowflake
+  role membership, or an ownership/marker mismatch refuses admission and performs no provider
+  mutation.
+- A missing expected grant, any unexpected supported grant, a positive expected-denial probe, or
+  an unclassifiable denial error refuses admission; preflight never repairs permissions.
+- Failure to acquire the local reservation or provider-admission lock refuses the run; changing a
+  path or host does not bypass the environment identity. Because a session advisory lock is released
+  silently when its session ends, loss of the lock is detected at the next re-assertion and fails the
+  run closed; it is never reacquired mid-run.
 - A missing compiler parent artifact prevents activation-summary publication.
 - A private-state write failure prevents extraction checkpoint advancement, because both are rows of one §4.5 transaction.
 - Opening a version 1 evidence store fails the command outright; it is never upgraded, partially upgraded, or opened read-only.
@@ -412,9 +576,22 @@ The acceptance-readiness change is complete when:
 - the complete offline fault matrix produces no false success or unexplained destination divergence;
 - the legality proof has an independent disposition and requirement-mapped mutation evidence;
 - a clean checkout can perform setup and dry-run validation using only committed instructions;
+- standalone preflight and the repeated preflight inside `run` prove the exact connectivity,
+  identity, ownership, grant, marker, positive-read, expected-denial, and exclusive-admission
+  requirements of §6.1.1 before any provider mutation;
+- offline tests demonstrate that every preflight refusal leaves source, stage, target, ledger,
+  grants, and owner-managed objects unchanged and never exposes a supplied credential value,
+  account locator, role name, qualified object name, or grant inventory;
+- every resource the harness creates can be removed by an attested principal, demonstrated by
+  deleting a fixture row under the fixture principal and confirming its absence under the runtime
+  principal;
+- the committed runbook provisions every object preflight can refuse on, so a second operator
+  reaches `ready` without an undocumented step;
 - both live operators complete the bounded transaction with distinct credentials and local state;
 - the same activation and batch produce no duplicate effect;
 - the negative contract produces `No Valid Plan` with no run, no local extraction evidence, and no destination mutation, evidenced as described in §6.2;
+- the negative contract leaves the attested PostgreSQL source-read counter unchanged across its
+  execution window;
 - retained and cleanup-due resources are precisely inventoried and verified; and
 - the committed report contains direct evidence for all fourteen M0 gates and no sensitive values.
 

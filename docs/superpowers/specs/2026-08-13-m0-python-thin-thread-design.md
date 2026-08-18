@@ -240,6 +240,88 @@ Activation therefore requires all of the following, checked against durable stat
 
 Repeating the exact activation request returns the original run identifier and current state without creating another run. Client prose cannot stand in for approval.
 
+#### 7.3.1 Connectivity and authorization admission
+
+M0 separates configuration validity, provider connectivity, legality evidence, and execution
+authorization. A successful TCP or driver connection is not sufficient evidence for execution,
+and a successful verification is not a durable grant that may be reused after its observations or
+graph expire.
+
+The product path applies the following ordered gates:
+
+1. **Configuration validation performs no provider I/O.** It requires every process-local setting,
+   validates identifiers and the Ed25519 key, and resolves each opaque contract connection handle
+   to exactly one configured provider. Credentials remain outside artifacts and are never included
+   in a diagnostic.
+2. **Verification performs metadata-only provider observations.** Authentication or network
+   failure prevents publication of an activation summary. PostgreSQL observation proves that the
+   declared object is a base table, records its exact schema and key, and requires effective
+   `SELECT` with no effective table- or column-level write privilege. Snowflake observation proves
+   that the target and commit ledger are accessible through metadata queries and records their
+   exact kinds, columns, keys, and schema digests.
+3. **Legality distinguishes a disproven fact from an unavailable fact.** A known schema,
+   capability, key, or permission mismatch is `Unsatisfied`; metadata that cannot be established is
+   `Unknown`. Either result produces `No Valid Plan`, creates no run, opens no source snapshot, and
+   performs no destination mutation. A transport or authentication failure that prevents a usable
+   observation fails verification rather than manufacturing `Unknown` evidence.
+   Declared capabilities are exempt from the `Unknown` rule for the reason given in §7.3.2; they are
+   adapter declarations, not environment observations.
+4. **Activation re-observes both providers.** It rejects changed identities, schemas, keys,
+   capabilities, or other legality-relevant facts before run creation. The comparison is against
+   the exact observations and fingerprints pinned by the activation summary.
+5. **Runtime verifies authority-bearing artifacts before credentials are resolved.** It verifies
+   graph digest, signature, signing-key identifier, expiry, schema version, and artifact linkage,
+   then performs the source drift probe of §11 before opening the snapshot.
+6. **Provider operations remain fail-closed.** Authorization and permanent errors are not retried.
+   Retryable or throttled reads receive only the bounded retry policy of §9.8. An ambiguous
+   Snowflake commit is resolved through the commit ledger and is never treated as permission to
+   repeat a write blindly.
+
+The core M0 product observation deliberately does not execute a write-shaped Snowflake probe: such
+a probe would mutate the destination or stage before explicit activation. It relies on metadata,
+declared provider capabilities, and the legality rule. The witnessed harness strengthens this
+boundary by attesting exact roles, ownership, grants, positive reads, and expected denials before
+its first provider mutation; those requirements live in the acceptance-readiness addendum
+§6.1.1. A permission removed after admission therefore still fails the affected provider operation
+without false success, but M0 does not claim that product verification predicts every later
+authorization failure.
+
+M0 also has no second destination metadata probe immediately before stage or commit. Activation
+re-observation bounds that drift window, and a later destination schema or permission failure is
+terminal or resumable according to its provider classification. A reusable product preflight
+artifact, explicit connection and statement budgets, normalized PostgreSQL driver-error
+classification, active non-mutating Snowflake capability probes, and a pre-commit destination
+drift probe are Phase 1 hardening requirements rather than hidden M0 claims.
+
+#### 7.3.2 What a declared capability and a read-only admission do and do not prove
+
+Two admission inputs are weaker than their names suggest, and M0 states both limits rather than
+letting the gate names imply more.
+
+**Declared capabilities are adapter declarations, not environment observations.** The capability
+tuple in a provider observation names the behavior the adapter implements — snapshot read, stable
+key order, drift probe, stage write, idempotent merge, commit ledger, visibility query — and is a
+constant of the adapter, not a fact established against the account. It cannot be otherwise for the
+destination while the product path declines to issue a write-shaped probe, which is the deliberate
+decision above. Precondition 9 therefore proves that the resolved adapter implements the operators
+the physical plan will run; it proves nothing about whether the configured principal is permitted to
+run them. Authority evidence for the destination comes from the witnessed attestation of §6.1.1 and,
+at execution time, from the operations themselves failing closed. A capability declaration is never
+recorded as `Unknown` on the grounds that it was not probed, because probing is out of scope, not
+unavailable; a declaration that a future adapter cannot make honestly must be removed from its
+tuple rather than downgraded.
+
+**Read-only admission is scoped to the effective role, not the session.** The PostgreSQL source
+check evaluates effective privileges for `current_user`, which correctly accounts for role
+inheritance and object ownership. It does not constrain the session: a login that owns the table and
+has issued `SET ROLE` to a read-only role satisfies the check and can return to its own authority
+with `RESET ROLE`. The product path accepts this because it authenticates with whatever principal it
+is configured with and cannot know the operator's intent. The witnessed harness closes the gap for
+the M0 acceptance claim by requiring `session_user` and `current_user` to both equal the declared
+runtime principal, so an owner login that assumed a role is refused. A session-level constraint in
+the product path — checking `session_user`, rejecting superusers, and rejecting principals able to
+assume a writing role — is Phase 1 hardening.
+
 ### 7.4 IIR
 
 The M0 IIR contains a single-source relation and one ordered projection node. Each projected field binds a source field identity to a destination field name without changing value semantics. The IIR excludes connection details, SQL text, staging locations, batch identifiers, and provider driver options.
@@ -356,6 +438,18 @@ Defines narrow typed protocols for:
 
 It also owns reusable conformance-test helpers. It contains no retry loop, persistence, scheduling, secrets, or provider-specific code.
 
+Provider observation is distinct from provider execution. An observed fact — object kind, columns,
+key, schema digest, effective source privileges, commit-ledger metadata — reports only what the
+provider actually established, and must be `Unknown` rather than inferred from a successful
+connection. The capability tuple is not an observed fact: it is the adapter's declaration of the
+operators it implements, is constant for a given adapter, and is exempt from the `Unknown` rule
+under §7.3.2. The two must not be conflated, and a declaration must be removed from the tuple rather
+than downgraded to `Unknown` if it ever stops being honest.
+
+Driver exceptions may not leak across a provider boundary once that provider adopts the common error
+contract. The error classification says whether an operation may be retried; it never grants
+authority and never weakens legality.
+
 ### 9.6 PostgreSQL provider
 
 The provider opens one `REPEATABLE READ`, read-only transaction, observes and records the PostgreSQL snapshot identity, resolves the table and column identities, determines the primary-key bounds, and reads rows in stable primary-key order.
@@ -366,6 +460,16 @@ The source boundary contains the server and database identity in redacted form, 
 
 The provider never synthesizes SQL from unchecked identifiers. Identifiers come from verified metadata and are safely composed with Psycopg identifier primitives. Values are always bound parameters.
 
+The metadata observation also evaluates effective access for the configured principal. M0 admits
+the source only when `SELECT` is effective and table- and column-level write privileges are not.
+The evaluation uses the effective-privilege functions, which account for role inheritance and object
+ownership; a grant listing that enumerates only explicit grants would miss owners and superusers and
+is not sufficient. The check is scoped to `current_user` and its limits are stated in §7.3.2.
+
+The witnessed harness separately proves the exact `session_user`, `current_user`, ownership, grant
+inventory, and expected-denial boundary because those operator-environment facts do not belong in
+the portable provider observation artifact.
+
 ### 9.7 Snowflake provider
 
 The provider writes a deterministic UTF-8 CSV segment under a run- and batch-scoped prefix. The format has a fixed column order, header, LF line endings, RFC 4180 quoting, decimal scale, UTC timestamp representation, and no nullable values. Extraction streams bounded row batches to the segment; it does not retain the complete table in memory. The manifest records the segment byte digest, ordered row-set digest, row count, schema digest, source-boundary digest, and a keyed value digest for the acceptance row. Hash inputs use domain-separated canonical encodings so concatenation cannot create an ambiguous digest. The target and commit-ledger tables are provisioned before execution; runtime DDL is prohibited.
@@ -375,6 +479,13 @@ Commit uses one Snowflake transaction to merge the batch into the target by the 
 If the client loses the commit response, the provider reconnects and queries the commit ledger by batch identity. Presence of the identical manifest resolves the outcome as committed; absence permits a bounded retry; conflicting data is indeterminate and fails closed. The receipt records batch identity, manifest digest, affected-row observations, Snowflake query identifiers, commit-ledger identity, and verification timestamp.
 
 Terminal visibility is established by querying the destination under a fresh Snowflake statement and proving that the acceptance row's stable key and deterministic value digest match the source manifest. The evidence contains the keyed digest, not the row values. A successful merge response alone is not terminal proof.
+
+The product observation authenticates with the configured account, user, role, warehouse,
+database, and schema and reads target and ledger metadata. It does not stage a probe file or issue a
+test merge before activation, so its `stage_write` and `idempotent_merge` capabilities are
+declarations under §7.3.2 rather than proven authority. The witnessed harness therefore owns the
+exact current-user/current-role, role-membership, object-ownership, `SHOW GRANTS`, positive-read,
+and expected-denial attestations required for the M0 live claim.
 
 ### 9.8 Runtime
 
@@ -418,7 +529,10 @@ SQL migrations are ordered, checksummed, and applied explicitly. The database re
 1. The acceptance fixture command inserts a uniquely identified synthetic order row through the PostgreSQL fixture role and records its primary key outside PillarMesh evidence.
 2. The desktop client calls the MCP draft operation with the fixed M0 contract shape.
 3. The contract service validates and persists immutable contract version 1.
-4. Verification observes both provider schemas, lowers the contract to IIR, evaluates `M0-PG-SNAPSHOT-SNOWFLAKE-001` against observations no older than ten minutes, creates the physical plan, signs the graph, and emits an activation summary.
+4. Verification connects to both providers for metadata-only observations, establishes the product
+   connectivity and permission facts of §7.3.1, lowers the contract to IIR, evaluates
+   `M0-PG-SNAPSHOT-SNOWFLAKE-001` against observations no older than ten minutes, creates the
+   physical plan, signs the graph, and emits an activation summary.
 5. The client displays the exact summary and activates by passing both approved digests.
 6. The contract service rechecks digests, graph expiry, supersession, and configured operator identity, **re-observes the minimum provider facts and rejects any drift against the pinned verification observations**, then creates one run.
 7. The runtime verifies the graph digest, signature, key identifier, expiry, artifact linkage, and schema version before resolving credentials.
@@ -436,6 +550,11 @@ Steps 6 and 8 are both drift checks and both are required. Step 6 is cheap, occu
 
 | Failure | Required behavior |
 | --- | --- |
+| Missing or malformed local configuration | Reject before provider construction or resolution; identify names, never values. |
+| Provider network or authentication failure during verification | Publish no activation summary and create no run; preserve a value-independent diagnostic. |
+| PostgreSQL effective access is not read-only | Return `No Valid Plan`; open no source snapshot and perform no destination mutation. |
+| Required provider metadata is unavailable | Record the dependent legality fact as `Unknown` when an observation exists; otherwise fail verification without fabricating evidence. |
+| Snowflake authorization failure during an operation | Do not retry as transient; preserve the authorization classification and never report success. |
 | Invalid or changed contract | Reject before compilation; preserve diagnostics and immutable prior versions. |
 | Unsupported type or legality precondition | Return `No Valid Plan`; create no run and access no source data. |
 | Stale activation digest | Reject activation; require a new verification summary. |
@@ -481,6 +600,12 @@ No exception handler may convert a provider or evidence failure into success. Ev
 - PostgreSQL tests use a real compatible server to verify snapshot repeatability, stable ordering, identifier safety, schema drift detection through the drift probe, permission denial, and connection interruption.
 - Snowflake tests use the dedicated real account to verify staging integrity, duplicate-batch replay, conflicting manifest rejection, transactional ledger behavior, ambiguous commit resolution, and fresh visibility queries.
 - Integration tests isolate their schemas or run identifiers, use their own SQLite store per §10, and clean up only resources they created.
+- Product observation tests cover unreachable endpoints, invalid credentials, unavailable metadata,
+  effective PostgreSQL read-only access, and Snowflake target/ledger metadata access without a
+  pre-activation write.
+- Acceptance-preflight tests cover exact identities and grant shapes, assumed-role rejection,
+  unexpected table- and column-level privileges, object ownership, positive reads, expected
+  denials, and concurrent provider-admission refusal.
 
 ### 13.4 Authoring-surface verification
 

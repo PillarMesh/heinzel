@@ -22,6 +22,13 @@ Confirm the owner authorization reference, retention deadline, creation state, a
 identifier for each selected digest outside recorded terminals. Never infer a target from a
 schema-wide pattern or act on a shared object.
 
+Authorized cleanup tooling must acquire the same environment-derived PostgreSQL advisory lock on a
+dedicated retained connection before touching a provider. It must record the backend PID and, just
+before the first cleanup mutation, query that same session to prove the expected database and
+exactly one granted advisory lock remain. A lost session stops cleanup; tooling must not reacquire
+mid-operation. This repository intentionally provides no mutation-capable cleanup command, so do
+not substitute an unlocked sequence of copied SQL for that tooling.
+
 ## Per-run cleanup schedule
 
 1. Within 24 hours of a successful run, remove only the exact Snowflake stage prefix recorded for
@@ -32,10 +39,16 @@ schema-wide pattern or act on a shared object.
    mechanism where available. Retain a package longer only after its final sensitive-value scan.
 4. Update each private-ledger disposition to `completed` only after a fresh absence query succeeds.
 
-Row absence checks bind values; no raw key belongs in a command argument or transcript:
+Delete the source row under the fixture principal, whose only read authority is column-level SELECT
+on `order_id`. Confirm absence independently under the runtime read-only principal. All statements
+bind values; no raw key belongs in a command argument or transcript:
 
 ```python
-postgres_cursor.execute(
+fixture_postgres_cursor.execute(
+    "DELETE FROM pillarmesh_m0.orders WHERE order_id = %s",
+    (acceptance_key,),
+)
+runtime_postgres_cursor.execute(
     "SELECT count(*) FROM pillarmesh_m0.orders WHERE order_id = %s",
     (acceptance_key,),
 )

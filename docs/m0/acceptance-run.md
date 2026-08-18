@@ -9,7 +9,11 @@ The harness derives the same environment identity and owner-private local reserv
 fixed provider boundary for both operators. It creates that reservation exclusively and retains
 file identities for state and ledger paths. It also holds a PostgreSQL advisory lock keyed by the
 same identity for the complete provider-touching window, so distinct paths or hosts cannot overlap
-against the shared provider environment.
+against the shared provider environment. That lock lives on a connection used for admission only.
+The harness records its backend PID and reasserts that the same backend still owns exactly one
+granted advisory lock before fixture insertion, before initial activation, before replay activation,
+and before normal release. A lost session fails the run; it is never treated as permission to
+reacquire and continue.
 
 The deterministic gate uses the pre-authorized CLI fallback recorded in
 `transport-decision.md`. A desktop MCP-host observation is optional and cannot replace this run.
@@ -41,19 +45,26 @@ One `run` command performs these steps and fails closed:
    expected-denial probes, exact database/account/role/object/grant/ownership attestations, and the
    owner-created environment marker. Both PostgreSQL `session_user` and `current_user` must equal
    the declared runtime or fixture principal; assumed-role sessions fail preflight. The fixture
-   privilege inventory rejects column-level SELECT and every unexpected supported table privilege,
-   including MAINTAIN.
+   privilege inventory requires column-level SELECT on `order_id`, rejects SELECT on every non-key
+   column, and rejects every unexpected supported table privilege, including table SELECT and
+   MAINTAIN.
+   Persist the explicit declared and observed attestation record only in the owner-private cleanup
+   ledger. DSNs, passwords, signing keys, credential canaries, and row values are never fields of
+   that record.
 2. Generate a new acceptance key in memory and execute a fresh parameterized Snowflake query that
    requires the target count to be zero.
-3. Register the exact source-row cleanup target in the private ledger, then insert one synthetic
-   row with the fixture-only PostgreSQL credential. Absence therefore precedes insertion.
+3. Register the exact source-row cleanup target in the private ledger, reassert the retained
+   provider lock, then insert one synthetic row with the fixture-only PostgreSQL credential. Absence
+   therefore precedes insertion.
 4. Create the fixed contract, verify it, and invoke the installed product CLI in subprocesses.
    The fixture DSN is never passed to a product subprocess.
-5. Activate with the raw key on standard input, require terminal `succeeded`, and query Snowflake
-   again under a new connection and statement. The independent row digest must equal both the
-   manifest acceptance digest and visibility-proof digest.
-6. Repeat the identical activation arguments and standard input. Require the original run ID,
-   terminal state, unchanged exact target-row value digest, unchanged ledger manifest digest and
+5. Reassert the retained provider lock, activate with the raw key on standard input, require
+   terminal `succeeded`, and query Snowflake again under a new connection and statement. The
+   independent row digest must equal both the manifest acceptance digest and visibility-proof
+   digest.
+6. Reassert the retained provider lock and repeat the identical activation arguments and standard
+   input. Require the original run ID, terminal state, unchanged exact target-row value digest,
+   unchanged ledger manifest digest and
    committed identity, unchanged stage listing digest, unchanged cardinality, and no additional
    tagged stage/target/ledger mutation (including an UPDATE that leaves row count unchanged).
 7. Verify a contract against the dedicated `ORDERS_UNSUPPORTED_KEY` table. Require `No Valid

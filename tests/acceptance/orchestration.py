@@ -21,6 +21,7 @@ from .provider_adapter import (
     FixtureRow,
     ProviderActions,
     ProviderResourceState,
+    private_attestation_record,
     validate_attestation,
 )
 from .resource_ledger import ONE_DAY, THIRTY_DAYS, PrivateResourceLedger, utc_text
@@ -369,7 +370,9 @@ class AcceptanceHarness:
         activation_started = False
         with ExitStack() as stack:
             reservation = stack.enter_context(RunReservation(self._config))
-            stack.enter_context(self._providers.admission(self._config.environment_identity))
+            admission = stack.enter_context(
+                self._providers.admission(self._config.environment_identity)
+            )
             self._reservation = reservation
             ledger = PrivateResourceLedger(
                 self._config.cleanup_ledger_path,
@@ -399,7 +402,12 @@ class AcceptanceHarness:
             ledger.persist(run_state="running")
             primary_error: BaseException | None = None
             try:
-                validate_attestation(self._config, self._providers.preflight())
+                attestation = self._providers.preflight()
+                validate_attestation(self._config, attestation)
+                ledger.set_context(
+                    attestation=private_attestation_record(self._config, attestation)
+                )
+                ledger.persist(run_state="running")
                 acceptance_key = self._acceptance_key_factory()
                 if acceptance_key <= 0:
                     raise HarnessError("acceptance key generator returned an invalid value")
@@ -415,6 +423,7 @@ class AcceptanceHarness:
                 ledger.set_context(fixture_label=fixture_label)
                 ledger.persist(run_state="running")
                 environment = self._config.environment
+                admission.assert_intact()
                 self._providers.insert_fixture(
                     FixtureRow(
                         order_id=acceptance_key,
@@ -455,6 +464,7 @@ class AcceptanceHarness:
                 activation = ("activate-stdin", contract_digest, summary_digest)
                 private_stdin = f"{acceptance_key}\n"
                 activation_started = True
+                admission.assert_intact()
                 first_run = self._invoke(activation, stdin=private_stdin)
                 run_id = str(first_run.get("run_id", ""))
                 if first_run.get("state") != "succeeded" or run_id != expected.run_id:
@@ -497,6 +507,7 @@ class AcceptanceHarness:
                     is None
                 ):
                     raise HarnessError("replay baseline does not match terminal evidence")
+                admission.assert_intact()
                 replay = self._invoke(activation, stdin=private_stdin)
                 replay_after = self._providers.replay_observation(acceptance_key, evidence.batch_id)
                 if replay.get("run_id") != run_id or replay.get("state") != "succeeded":
