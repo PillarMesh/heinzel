@@ -45,12 +45,14 @@ Each task's second step runs the new tests before any implementation exists, and
 
 So every task has a second red step: once the module imports, comment out or relax the rule under test, confirm the denial assertion itself fails for the intended reason, restore the rule, and confirm it passes. A test that has only ever been green is unverified.
 
-## Spec alignment and open decisions
+## Spec alignment
 
-Two points where this plan goes beyond `managed-data-engineering-platform-addendum-v0.1.md`. Both must be ratified into the addendum before Plan 2 consumes these contracts.
+Two points where this plan went beyond `managed-data-engineering-platform-addendum-v0.1.md`. Both are now ratified there, so Plan 2 may consume these contracts.
 
-1. **Request terminal reachability.** Section 13.3 names the linear chain and lists terminal alternatives, but not which states reach which terminal. Task 3 fixes that table. The spec should adopt it verbatim or correct it.
-2. **`WarehouseBinding` field shape.** Section 6.2 declares `capability_profile_digest` and `provisioned_at`. This plan carries both, adds `revision`/`updated_at` for append-only history, and keeps `capacity_profile` as the named MVP profile that the digest is computed from. `provisioned_at` stays `None` until Plan 2 provisions.
+1. **Request terminal reachability.** Section 13.3 named the linear chain and listed terminal alternatives, but not which states reach which terminal. Ratified as addendum section 13.3.1.
+2. **`WarehouseBinding` field shape.** Section 6.2 declared `capability_profile_digest` and `provisioned_at` only. Ratified: section 6.2 now carries the implemented shape, including `capacity_profile` and the append-only `revision`/`created_at`/`updated_at`, and records that `provisioned_at` stays null until provisioning succeeds.
+
+Ratifying the warehouse binding also surfaced a third gap, now closed as addendum section 6.4.1: the section 6.4 diagram omitted `draft -> retired` and `failed -> retired`, both of which the implementation allows and neither of which passes through `retiring`.
 
 ## File map
 
@@ -1026,4 +1028,4 @@ Plan 1 is complete only when all of the following hold:
 - every mutation is append-only and every stale `expected_revision` is refused;
 - all offline gates pass with no test skipped or xfailed as evidence;
 - the external-effect review matches nothing, and `sqlite3` is the only durable-storage import; and
-- the two open decisions recorded under "Spec alignment and open decisions" — request terminal reachability and the `WarehouseBinding` field shape — are ratified into `managed-data-engineering-platform-addendum-v0.1.md` before Plan 2 begins.
+- the decisions recorded under "Spec alignment" — request terminal reachability, the `WarehouseBinding` field shape, and the warehouse transition table — are ratified into `managed-data-engineering-platform-addendum-v0.1.md` before Plan 2 begins. **Done:** addendum sections 13.3.1, 6.2, and 6.4.1.

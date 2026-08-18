@@ -162,15 +162,31 @@ Every tenant receives one opaque primary `WarehouseBinding`:
 
 ```text
 WarehouseBinding
+  schema_version             1
   binding_id
   tenant_id
-  engine_kind          postgresql | clickhouse
-  deployment_mode      pillarmesh_cloud
+  engine_kind                postgresql | clickhouse
+  deployment_mode            pillarmesh_cloud
   region
-  lifecycle_state
+  capacity_profile           mvp-fixed
   capability_profile_digest
+  lifecycle_state
+  revision
+  created_at
+  updated_at
   provisioned_at
 ```
+
+`capacity_profile` names the profile; `capability_profile_digest` is the digest over
+`capacity_profile`, `engine_kind`, and `deployment_mode`, so a binding carries both the
+name an operator reads and the value a contract can compare.
+
+`revision`, `created_at`, and `updated_at` exist because bindings are stored append-only
+as `(binding_id, revision)`. No row is updated in place, so the lifecycle history of an
+object that is immutable after draft survives, and every mutation supplies the caller's
+expected revision and fails closed when the stored revision has moved.
+
+`provisioned_at` is null until provisioning succeeds.
 
 Contracts reference `binding_id`. Endpoints, credentials, administrator identities, infrastructure identifiers, encryption keys, and backup locations are private operational state and never enter semantic artifacts or customer-visible evidence.
 
@@ -189,6 +205,26 @@ ready → retiring → retired
 ```
 
 Only `ready` bindings accept new activations. Provisioning validates engine identity, version, encryption, network isolation, runtime and administration roles, target and ledger capabilities, backups, monitoring, and positive and denial probes.
+
+### 6.4.1 MVP transition table
+
+For the MVP, warehouse binding lifecycle transitions are fixed as follows.
+
+```text
+draft        → provisioning, retired
+provisioning → validating, failed
+validating   → ready, failed
+ready        → suspended, retiring
+suspended    → ready, retiring
+retiring     → retired
+failed       → retired
+retired      → (terminal)
+```
+
+`draft → retired` abandons a binding that was never provisioned, and `failed → retired`
+retires one whose provisioning did not succeed. Neither passes through `retiring`, which
+exists to drain a binding that carried traffic. `ready → retired` is deliberately absent:
+a ready binding is always drained through `retiring`.
 
 ### 6.5 Managed components
 
