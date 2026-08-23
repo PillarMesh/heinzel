@@ -15,7 +15,11 @@ from .models import (
 
 
 class RequestRepository(Protocol):
+    def peek_next_sequence(self, tenant_id: str) -> int: ...
+
     def next_sequence(self, tenant_id: str) -> int: ...
+
+    def save_prepared(self, request: InboxRequest) -> None: ...
 
     def save(self, request: InboxRequest) -> None: ...
 
@@ -57,6 +61,14 @@ class RequestRepository(Protocol):
     def list_transition_history(
         self, tenant_id: str, request_id: str
     ) -> tuple[TransitionEvent, ...]: ...
+
+    def list_decisions(self, tenant_id: str, request_id: str) -> tuple[DecisionBinding, ...]: ...
+
+    def discard_unapproved_semantic_request(
+        self, tenant_id: str, request_id: str, review_bundle_digest: str
+    ) -> None: ...
+
+    def compensate_transition(self, prior: InboxRequest, attempted_state: RequestState) -> None: ...
 
 
 class StaleRevisionError(Exception):
@@ -123,6 +135,9 @@ class SQLiteRequestRepository:
         )
         self._connection.commit()
 
+    def close(self) -> None:
+        self._connection.close()
+
     def next_sequence(self, tenant_id: str) -> int:
         row = self._connection.execute(
             "INSERT INTO request_sequences (tenant_id, next_sequence) VALUES (?, 2) "
@@ -135,6 +150,29 @@ class SQLiteRequestRepository:
             raise RuntimeError("request sequence allocation did not return a sequence")
         self._connection.commit()
         return int(row[0])
+
+    def peek_next_sequence(self, tenant_id: str) -> int:
+        row = self._connection.execute(
+            "SELECT next_sequence FROM request_sequences WHERE tenant_id = ?", (tenant_id,)
+        ).fetchone()
+        return 1 if row is None else int(row[0])
+
+    def save_prepared(self, request: InboxRequest) -> None:
+        prepared_sequence = int(request.request_id.split("-", 2)[1])
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+            if self.peek_next_sequence(request.tenant_id) != prepared_sequence:
+                raise StaleRevisionError("prepared request sequence is stale")
+            self._connection.execute(
+                "INSERT INTO request_sequences (tenant_id, next_sequence) VALUES (?, ?) "
+                "ON CONFLICT(tenant_id) DO UPDATE SET next_sequence = excluded.next_sequence",
+                (request.tenant_id, prepared_sequence + 1),
+            )
+            self._save_request_revision(request)
+        except BaseException:
+            self._connection.rollback()
+            raise
+        self._connection.commit()
 
     def save(self, request: InboxRequest) -> None:
         try:
@@ -367,6 +405,139 @@ class SQLiteRequestRepository:
             (tenant_id, request_id),
         ).fetchall()
         return tuple(TransitionEvent.model_validate_json(row[0]) for row in rows)
+
+    def list_decisions(self, tenant_id: str, request_id: str) -> tuple[DecisionBinding, ...]:
+        self._load_owned_request(tenant_id, request_id)
+        rows = self._connection.execute(
+            "SELECT payload FROM decision_bindings WHERE tenant_id = ? AND request_id = ? "
+            "ORDER BY created_at, decision_id",
+            (tenant_id, request_id),
+        ).fetchall()
+        return tuple(DecisionBinding.model_validate_json(row[0]) for row in rows)
+
+    def discard_unapproved_semantic_request(
+        self, tenant_id: str, request_id: str, review_bundle_digest: str
+    ) -> None:
+        from .models import SchemaSemanticChangeRequest
+
+        with self._connection:
+            request = self._load_owned_request(tenant_id, request_id)
+            if (
+                not isinstance(request.payload, SchemaSemanticChangeRequest)
+                or request.payload.review_bundle_digest != review_bundle_digest
+                or self.list_decisions(tenant_id, request_id)
+            ):
+                raise ValueError("request is not a compensable semantic submission")
+            revisions = tuple(
+                InboxRequest.model_validate_json(row[0])
+                for row in self._connection.execute(
+                    "SELECT payload FROM request_revisions WHERE tenant_id = ? AND request_id = ? "
+                    "ORDER BY revision",
+                    (tenant_id, request_id),
+                ).fetchall()
+            )
+            expected_states = (
+                RequestState.SUBMITTED,
+                RequestState.INVESTIGATING,
+                RequestState.PROPOSED,
+                RequestState.AWAITING_APPROVAL,
+            )
+            if tuple(value.state for value in revisions) not in tuple(
+                expected_states[:length] for length in range(1, len(expected_states) + 1)
+            ):
+                raise ValueError("request is not a compensable semantic submission")
+            events = self.list_transition_history(tenant_id, request_id)
+            if tuple(event.to_state for event in events) != expected_states[1 : len(revisions)]:
+                raise ValueError("request is not a compensable semantic submission")
+            request_sequence = int(request_id.split("-", 2)[1])
+            if self.peek_next_sequence(tenant_id) != request_sequence + 1:
+                raise ValueError("request sequence advanced beyond compensable submission")
+            transition_sequences = tuple(int(event.event_id.split("-", 2)[1]) for event in events)
+            transition_row = self._connection.execute(
+                "SELECT next_sequence FROM artifact_sequences "
+                "WHERE tenant_id = ? AND artifact_kind = 'transition'",
+                (tenant_id,),
+            ).fetchone()
+            if transition_sequences and (
+                transition_row is None
+                or int(transition_row[0]) != transition_sequences[-1] + 1
+                or transition_sequences
+                != tuple(range(transition_sequences[0], transition_sequences[0] + len(events)))
+            ):
+                raise ValueError("transition sequence advanced beyond compensable submission")
+            self._connection.execute(
+                "DELETE FROM transition_events WHERE request_id = ?", (request_id,)
+            )
+            self._connection.execute(
+                "DELETE FROM request_revisions WHERE request_id = ?", (request_id,)
+            )
+            if request_sequence == 1:
+                self._connection.execute(
+                    "DELETE FROM request_sequences WHERE tenant_id = ?", (tenant_id,)
+                )
+            else:
+                self._connection.execute(
+                    "UPDATE request_sequences SET next_sequence = ? WHERE tenant_id = ?",
+                    (request_sequence, tenant_id),
+                )
+            if transition_sequences:
+                if transition_sequences[0] == 1:
+                    self._connection.execute(
+                        "DELETE FROM artifact_sequences "
+                        "WHERE tenant_id = ? AND artifact_kind = 'transition'",
+                        (tenant_id,),
+                    )
+                else:
+                    self._connection.execute(
+                        "UPDATE artifact_sequences SET next_sequence = ? "
+                        "WHERE tenant_id = ? AND artifact_kind = 'transition'",
+                        (transition_sequences[0], tenant_id),
+                    )
+
+    def compensate_transition(self, prior: InboxRequest, attempted_state: RequestState) -> None:
+        with self._connection:
+            current = self._load_owned_request(prior.tenant_id, prior.request_id)
+            if canonical_bytes(current) == canonical_bytes(prior):
+                return
+            if current.revision != prior.revision + 1 or current.state is not attempted_state:
+                raise ValueError("request transition is not compensable")
+            rows = self._connection.execute(
+                "SELECT payload FROM transition_events "
+                "WHERE tenant_id = ? AND request_id = ? AND request_revision = ?",
+                (prior.tenant_id, prior.request_id, current.revision),
+            ).fetchall()
+            if len(rows) != 1:
+                raise ValueError("request transition is not compensable")
+            event = TransitionEvent.model_validate_json(rows[0][0])
+            if event.from_state is not prior.state or event.to_state is not attempted_state:
+                raise ValueError("request transition is not compensable")
+            transition_sequence = int(event.event_id.split("-", 2)[1])
+            sequence_row = self._connection.execute(
+                "SELECT next_sequence FROM artifact_sequences "
+                "WHERE tenant_id = ? AND artifact_kind = 'transition'",
+                (prior.tenant_id,),
+            ).fetchone()
+            if sequence_row is None or int(sequence_row[0]) != transition_sequence + 1:
+                raise ValueError("transition sequence advanced beyond compensable transition")
+            self._connection.execute(
+                "DELETE FROM transition_events WHERE event_id = ?", (event.event_id,)
+            )
+            self._connection.execute(
+                "DELETE FROM request_revisions WHERE request_id = ? AND revision = ?",
+                (prior.request_id, current.revision),
+            )
+            if transition_sequence == 1:
+                self._connection.execute(
+                    "DELETE FROM artifact_sequences "
+                    "WHERE tenant_id = ? AND artifact_kind = 'transition'",
+                    (prior.tenant_id,),
+                )
+            else:
+                self._connection.execute(
+                    "UPDATE artifact_sequences SET next_sequence = ? "
+                    "WHERE tenant_id = ? AND artifact_kind = 'transition'",
+                    (transition_sequence, prior.tenant_id),
+                )
 
     def _load_owned_request(self, tenant_id: str, request_id: str) -> InboxRequest:
         request = self.load(tenant_id, request_id)

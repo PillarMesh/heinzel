@@ -29,11 +29,14 @@ class ProcessPackageRepository(Protocol):
         original_digest: str,
         manifest: bytes,
         manifest_digest: str,
+        manifest_source_digest: str,
         uploader_id: str,
         received_at: datetime,
     ) -> ProcessPackageReceipt: ...
 
     def load_original(self, tenant_id: str, package_id: str, version: int) -> bytes | None: ...
+
+    def load_manifest(self, tenant_id: str, package_id: str, version: int) -> bytes | None: ...
 
 
 class SQLiteProcessPackageRepository:
@@ -65,9 +68,9 @@ class SQLiteProcessPackageRepository:
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS process_package_manifests ("
             "tenant_id TEXT NOT NULL, "
-            "manifest_digest TEXT NOT NULL, "
+            "manifest_source_digest TEXT NOT NULL, "
             "manifest BLOB NOT NULL, "
-            "PRIMARY KEY (tenant_id, manifest_digest)"
+            "PRIMARY KEY (tenant_id, manifest_source_digest)"
             ")"
         )
         self._connection.execute(
@@ -78,16 +81,21 @@ class SQLiteProcessPackageRepository:
             "media_type TEXT NOT NULL, "
             "original_digest TEXT NOT NULL, "
             "manifest_digest TEXT NOT NULL, "
+            "manifest_source_digest TEXT NOT NULL, "
             "uploader_id TEXT NOT NULL, "
             "received_at TEXT NOT NULL, "
             "PRIMARY KEY (package_id, version), "
             "FOREIGN KEY (tenant_id, original_digest) "
             "REFERENCES process_package_originals(tenant_id, original_digest), "
-            "FOREIGN KEY (tenant_id, manifest_digest) "
-            "REFERENCES process_package_manifests(tenant_id, manifest_digest)"
+            "FOREIGN KEY (tenant_id, manifest_source_digest) "
+            "REFERENCES process_package_manifests(tenant_id, manifest_source_digest)"
             ")"
         )
         self._connection.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._connection.close()
 
     def store(
         self,
@@ -99,6 +107,7 @@ class SQLiteProcessPackageRepository:
         original_digest: str,
         manifest: bytes,
         manifest_digest: str,
+        manifest_source_digest: str,
         uploader_id: str,
         received_at: datetime,
     ) -> ProcessPackageReceipt:
@@ -117,6 +126,7 @@ class SQLiteProcessPackageRepository:
                     media_type=media_type,
                     original_digest=original_digest,
                     manifest_digest=manifest_digest,
+                    manifest_source_digest=manifest_source_digest,
                     uploader_id=uploader_id,
                     received_at=received_at,
                 )
@@ -130,17 +140,17 @@ class SQLiteProcessPackageRepository:
                 )
                 self._save_artifact(
                     "process_package_manifests",
-                    "manifest_digest",
+                    "manifest_source_digest",
                     "manifest",
                     tenant_id,
-                    receipt.manifest_digest,
+                    receipt.manifest_source_digest,
                     manifest,
                 )
                 self._connection.execute(
                     "INSERT INTO process_packages ("
                     "package_id, version, tenant_id, media_type, original_digest, manifest_digest, "
-                    "uploader_id, received_at"
-                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "manifest_source_digest, uploader_id, received_at"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         receipt.package_id,
                         receipt.version,
@@ -148,6 +158,7 @@ class SQLiteProcessPackageRepository:
                         receipt.media_type,
                         receipt.original_digest,
                         receipt.manifest_digest,
+                        receipt.manifest_source_digest,
                         receipt.uploader_id,
                         receipt.received_at.isoformat(),
                     ),
@@ -199,6 +210,29 @@ class SQLiteProcessPackageRepository:
             raise KeyError(f"package {package_id} belongs to another tenant")
         raise RuntimeError("process package receipt points to a missing original")
 
+    def load_manifest(self, tenant_id: str, package_id: str, version: int) -> bytes | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT manifest.manifest "
+                "FROM process_packages AS package "
+                "INNER JOIN process_package_manifests AS manifest "
+                "ON manifest.tenant_id = package.tenant_id "
+                "AND manifest.manifest_source_digest = package.manifest_source_digest "
+                "WHERE package.tenant_id = ? AND package.package_id = ? AND package.version = ?",
+                (tenant_id, package_id, version),
+            ).fetchone()
+            if row is not None:
+                return bytes(row[0])
+            owner = self._connection.execute(
+                "SELECT tenant_id FROM process_packages WHERE package_id = ? AND version = ?",
+                (package_id, version),
+            ).fetchone()
+        if owner is None:
+            return None
+        if owner[0] != tenant_id:
+            raise KeyError(f"package {package_id} belongs to another tenant")
+        raise RuntimeError("process package receipt points to a missing manifest")
+
     def _save_artifact(
         self,
         table: str,
@@ -236,6 +270,47 @@ class ProcessPackageService:
         manifest: BusinessProcessManifest,
         uploader_id: str,
     ) -> ProcessPackageReceipt:
+        return self._upload(
+            tenant_id=tenant_id,
+            original=original,
+            media_type=media_type,
+            manifest=manifest,
+            manifest_source=canonical_bytes(manifest),
+            uploader_id=uploader_id,
+        )
+
+    def upload_manifest_bytes(
+        self,
+        tenant_id: str,
+        original: bytes,
+        media_type: str,
+        manifest_source: bytes,
+        uploader_id: str,
+    ) -> ProcessPackageReceipt:
+        try:
+            manifest_source.decode("utf-8")
+            manifest = BusinessProcessManifest.model_validate_json(manifest_source)
+        except (UnicodeDecodeError, ValueError):
+            raise ValueError("business process manifest JSON is invalid") from None
+        return self._upload(
+            tenant_id=tenant_id,
+            original=original,
+            media_type=media_type,
+            manifest=manifest,
+            manifest_source=manifest_source,
+            uploader_id=uploader_id,
+        )
+
+    def _upload(
+        self,
+        *,
+        tenant_id: str,
+        original: bytes,
+        media_type: str,
+        manifest: BusinessProcessManifest,
+        manifest_source: bytes,
+        uploader_id: str,
+    ) -> ProcessPackageReceipt:
         validated_media_type = _validated_media_type(media_type)
         try:
             original.decode("utf-8")
@@ -258,8 +333,9 @@ class ProcessPackageService:
             media_type=validated_media_type,
             original=original,
             original_digest=sha256(original).hexdigest(),
-            manifest=canonical_bytes(manifest),
+            manifest=manifest_source,
             manifest_digest=digest(manifest),
+            manifest_source_digest=sha256(manifest_source).hexdigest(),
             uploader_id=uploader_id,
             received_at=self._clock(),
         )
@@ -269,3 +345,9 @@ class ProcessPackageService:
         if original is None:
             raise KeyError((package_id, version))
         return original
+
+    def get_manifest(self, tenant_id: str, package_id: str, version: int) -> bytes:
+        manifest = self._repository.load_manifest(tenant_id, package_id, version)
+        if manifest is None:
+            raise KeyError((package_id, version))
+        return manifest

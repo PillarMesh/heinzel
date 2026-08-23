@@ -139,6 +139,18 @@ The managed platform contains six cooperating planes:
 
 No plane may bypass semantic authority. A dashboard, schedule, connector, or warehouse operation cannot create executable meaning by itself.
 
+### 5.1 Durable catalog and semantic artifact envelope
+
+Every newly documented durable artifact — `SemanticCandidateSet`, `CatalogBinding`,
+`AuthorityObservation`, `OntologyReviewBundle`, `ApprovedSemanticVersion`, and
+`ManagedIntegrationContract` — uses canonical serialization, is digest-addressable, and rejects
+unknown input. Its stable ID is derived from its domain tag, tenant identifier, and
+repository-assigned sequence, never from a clock; timestamps remain attributable record metadata
+outside that identity rule.
+
+Every catalog or semantic repository and service lookup requires tenant identity in its initial
+query. Cross-tenant access is denied before reading or deserializing the artifact payload.
+
 ## 6. Tenant setup and managed warehouse
 
 ### 6.1 Customer choices
@@ -301,6 +313,23 @@ The MVP accepts one immutable, versioned `BusinessProcessPackage` consisting of 
 
 PillarMesh may extract and propose process objects, ontology terms, mappings, constraints, and questions from the package. The original upload, extracted candidates, human corrections, approvals, and compiled process version remain distinct and attributable. Re-upload creates a new package version; it never mutates an approved process or silently recompiles an active Integration Contract.
 
+```text
+SemanticCandidateSet
+  schema_version
+  set_id
+  tenant_id
+  revision
+  package_id
+  package_version
+  original_digest
+  manifest_digest
+  extractor_id
+  extractor_version
+  candidates
+  unresolved_questions
+  created_at
+```
+
 ## 9. Catalog and ontology
 
 ### 9.1 Catalog operating model
@@ -312,6 +341,46 @@ At setup, PillarMesh asks whether the customer has an authoritative catalog.
 - PillarMesh retains only the narrow versioned semantic and authority records required to compile and prove its own contracts. That private registry is not exposed as a competing general catalog.
 
 The first external catalog adapter after the bundled path is DataHub. Apache Atlas and commercial enterprise catalogs are deferred. A catalog whose APIs cannot provide stable identities, versioned observations, ownership, glossary/classification authority, and lineage cannot satisfy this mode; the customer must use managed OpenMetadata or wait for a compatible adapter.
+
+### 9.1.1 Catalog binding
+
+`CatalogBinding` is the tenant-scoped, revisioned record that selects and governs a catalog
+deployment. It contains no endpoint, provider identifier, credential, or other private
+operational state.
+
+```text
+CatalogBinding
+  schema_version             1
+  binding_id
+  tenant_id
+  provider_kind              openmetadata
+  deployment_mode            pillarmesh_managed
+  capability_profile_digest
+  lifecycle_state
+  revision
+  created_at
+  updated_at
+  provisioned_at
+```
+
+`provisioned_at` remains null until positive and denial validation succeeds. The private
+resource ledger records exact provider-local resource identifiers, creation state, retention
+deadline, and cleanup status; retirement cleanup acts only on those recorded identifiers.
+
+### 9.1.2 Catalog lifecycle
+
+Catalog binding transitions are fixed as follows:
+
+```text
+draft        → provisioning, retired
+provisioning → validating, failed
+validating   → ready, failed
+ready        → suspended, retiring
+suspended    → ready, retiring
+retiring     → retired
+failed       → retired
+retired      → (terminal)
+```
 
 ### 9.2 Authority
 
@@ -329,11 +398,102 @@ The first external catalog adapter after the bundled path is DataHub. Apache Atl
 
 PillarMesh never turns an unreviewed catalog description, inferred lineage edge, or AI suggestion into executable authority.
 
+Authority is resolved by `(information_kind, source_kind)`, never by one global ranking.
+Only the following source kinds are admitted, in decreasing precedence, for each information
+kind:
+
+| Information kind | Admitted source kinds, in decreasing precedence |
+| --- | --- |
+| Business meaning | Owner decision; approved semantic version; process package |
+| Process semantics | Owner decision; approved semantic version; process package |
+| Imported glossary | Declared catalog authority; owner decision |
+| Imported classification | Declared catalog authority; owner decision |
+| Identity | Owner decision; approved semantic version; process package |
+| Relationship | Owner decision; approved semantic version; process package |
+| Metric | Owner decision; approved semantic version; process package |
+| Integrity constraint | Owner decision; approved semantic version; process package |
+
+An inadmissible source is invalid. A same-kind same-rank disagreement or a cross-kind
+disagreement is unresolved and requires the business owner; an exact higher-precedence
+same-kind observation resolves while retaining the lower observations as evidence. Expired
+observations are rejected. Candidate extraction is proposal evidence, never an authority
+source.
+
+```text
+AuthorityObservation
+  schema_version
+  observation_id
+  tenant_id
+  information_kind
+  source_kind
+  subject_ref
+  assertion
+  authority_ref
+  observed_digest
+  observed_at
+  valid_until
+```
+
 ### 9.3 Publication and proposals
 
 PillarMesh publishes source observations, warehouse assets, data products, ownership, glossary associations, classifications, quality results, freshness, lineage, contracts, incidents, and Superset assets to OpenMetadata.
 
 Catalog changes that may alter execution become typed change requests. Meaning, identity, classification, access, relationship, metric, constraint, and deprecation changes require impact analysis and approval. Cosmetic descriptions may synchronize automatically under policy.
+
+A post-publication catalog edit in any of those governed categories creates a
+`schema_semantic_change` request in `investigating`, bound to its before and after
+observations and to the affected approved semantic and contract versions. It never rewrites
+an approved version or auto-applies the edit.
+
+Ontology review uses that request type and follows this exact path:
+
+```text
+submitted → investigating → proposed → awaiting_approval
+awaiting_approval → executing → verifying → delivered
+awaiting_approval → investigating → no_valid_plan
+awaiting_approval → rejected
+```
+
+`DecisionKind` remains the request-level vocabulary `approve`, `reject`, and
+`request_changes`. Ontology item outcomes use the distinct `ReviewItemDecision` vocabulary
+`accept`, `reject`, `revise`, `merge`, and `unresolved`. An `unresolved` item returns the
+request to `investigating`. When required meaning remains unresolved, the request must transition
+from `investigating` to `no_valid_plan` and cannot progress to `proposed` or execution.
+
+```text
+OntologyReviewBundle
+  schema_version
+  bundle_id
+  tenant_id
+  revision
+  candidate_set_digest
+  authority_observation_digests
+  items
+  required_authority_refs
+  status
+  created_at
+  updated_at
+
+ApprovedSemanticVersion
+  schema_version
+  semantic_version_id
+  tenant_id
+  version
+  process_package_ref
+  candidate_set_digest
+  review_bundle_digest
+  entities
+  events
+  states
+  relationships
+  identity_rules
+  constraints
+  metrics
+  classifications
+  authority_bindings
+  approval_ids
+  created_at
+```
 
 ### 9.4 Lineage
 
@@ -372,6 +532,27 @@ An Integration Contract may be compiled only when:
 The contract binds process version, ontology references, source observations, mappings, integrity constraints, destination product, freshness, quality, scheduling, access, evidence, failure policy, and approvals.
 
 Compilation still produces `Ready to Activate`, `Needs Approval`, or `No Valid Plan`.
+
+```text
+ManagedIntegrationContract
+  schema_version
+  contract_id
+  tenant_id
+  version
+  formation_status
+  semantic_version_ref
+  source_observation_refs
+  mappings
+  integrity_constraints
+  destination_product
+  freshness
+  quality
+  trigger_policy
+  access_policy
+  evidence_policy
+  failure_policy
+  approval_ids
+```
 
 ## 11. Managed integrations
 

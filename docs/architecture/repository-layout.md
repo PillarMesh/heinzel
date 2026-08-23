@@ -15,6 +15,7 @@ The service map mirrors the concrete control-plane components in Revenue-to-Cash
 | Path | Owns | Must not own |
 | --- | --- | --- |
 | `services/authoring-mcp` | Host-neutral authoring tools/resources, sessions, authorization filtering, draft mutations | Semantic validity or execution state |
+| `services/catalog-control` | Tenant catalog-binding lifecycle, provider selection, capability validation, and private resource-ledger cleanup | Semantic authority, approved meaning, contract legality, or public provider identifiers |
 | `services/compiler` | Contract parsing, semantic IIR, legality, feasibility, plan selection, deployment compilation | Runtime retries or record-level nondeterminism |
 | `services/connection-broker` | OAuth attempts/callbacks, token exchange and rotation, opaque connection handles | Raw secrets in MCP results |
 | `services/context-exposure` | Authorization-filtered finance and sales resources, freshness, provenance | Unrestricted SQL or action authority |
@@ -27,6 +28,7 @@ The service map mirrors the concrete control-plane components in Revenue-to-Cash
 | `services/relay` | Restricted private-network capability invocation of signed fragments | Planning authority or general scheduling |
 | `services/request-management` | Typed stakeholder questions, data-access requests, business and engineering requests, incidents, platform proposals, conversations, assignment, dependency edges, and request lifecycle | Semantic approval authority, general workflow definitions, or execution state |
 | `services/runtime` | Signed-graph verification, deterministic operators, grants, execution evidence | Semantic reinterpretation or physical plan selection |
+| `services/semantic-registry` | Immutable semantic candidates, per-information-kind authority resolution, ontology review bundles, approved semantic versions, and catalog drift proposals | Catalog provisioning, provider-local identifiers, execution, or physical plan selection |
 | `services/state` | Epochs, partitions, leases, checkpoints, cutover, migration admission, contract-scoped control loops | Global execution serialization or general scheduling |
 | `services/trigger` | Versioned trigger policies, deterministic scheduled-window identities, misfire and overlap materialization into run intents | DAG authoring, plan selection, provider access, or direct execution |
 | `services/warehouse-control` | Tenant warehouse-binding lifecycle, managed data-plane provisioning, private infrastructure inventory, backup/restore coordination, upgrade and retirement admission | Database-engine implementation, business semantics, or raw credentials in public artifacts |

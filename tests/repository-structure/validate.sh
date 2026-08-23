@@ -87,7 +87,7 @@ validate_components() {
 }
 
 validate_components apps 'console'
-validate_components services 'authoring-mcp compiler connection-broker context-exposure contract dbt-adapter evidence knowledge-graph provider-registry reconciliation relay request-management runtime state trigger warehouse-control'
+validate_components services 'authoring-mcp catalog-control compiler connection-broker context-exposure contract dbt-adapter evidence knowledge-graph provider-registry reconciliation relay request-management runtime semantic-registry state trigger warehouse-control'
 validate_components packages 'client-sdk contract-model execution-graph iir observability provider-sdk'
 
 if [ "$status" -eq 0 ]; then

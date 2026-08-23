@@ -1,0 +1,23 @@
+[project]
+name = "pillarmesh-semantic-registry"
+version = "0.1.0"
+requires-python = "==3.13.*"
+dependencies = [
+  "pillarmesh-catalog-control",
+  "pillarmesh-contract-model",
+  "pillarmesh-contract-service",
+  "pillarmesh-provider-openmetadata",
+  "pillarmesh-request-management",
+  "pydantic>=2.11,<3",
+]
+
+[tool.uv.sources]
+pillarmesh-contract-model = { workspace = true }
+pillarmesh-contract-service = { workspace = true }
+pillarmesh-catalog-control = { workspace = true }
+pillarmesh-provider-openmetadata = { workspace = true }
+pillarmesh-request-management = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

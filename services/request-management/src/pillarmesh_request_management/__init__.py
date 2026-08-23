@@ -5,6 +5,7 @@ from .models import (
     DecisionKind,
     InboxRequest,
     RequestState,
+    SchemaSemanticChangeRequest,
     StakeholderQuestion,
     TransitionEvent,
 )
@@ -21,6 +22,7 @@ __all__ = [
     "RequestRepository",
     "RequestState",
     "SQLiteRequestRepository",
+    "SchemaSemanticChangeRequest",
     "StakeholderQuestion",
     "TransitionEvent",
 ]

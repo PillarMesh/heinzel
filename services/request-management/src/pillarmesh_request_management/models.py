@@ -51,11 +51,26 @@ class DataAccessRequest(ArtifactModel):
         return value.astimezone(UTC)
 
 
+class SchemaSemanticChangeRequest(ArtifactModel):
+    request_type: Literal["schema_semantic_change"] = "schema_semantic_change"
+    purpose: str = Field(min_length=1, max_length=512)
+    review_bundle_id: str = Field(min_length=1)
+    review_bundle_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    required_authority_refs: tuple[str, ...]
+    before_observation_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    after_observation_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    affected_semantic_ref: str | None = Field(default=None, min_length=1)
+    affected_contract_ref: str | None = Field(default=None, min_length=1)
+
+
 class InboxRequest(ArtifactModel):
     request_id: str
     tenant_id: str
     requester_id: str
-    payload: Annotated[StakeholderQuestion | DataAccessRequest, Field(discriminator="request_type")]
+    payload: Annotated[
+        StakeholderQuestion | DataAccessRequest | SchemaSemanticChangeRequest,
+        Field(discriminator="request_type"),
+    ]
     state: RequestState
     revision: int = Field(ge=1)
     submitted_at: datetime

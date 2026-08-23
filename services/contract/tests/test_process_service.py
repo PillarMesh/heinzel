@@ -5,6 +5,7 @@ from queue import Queue
 from threading import Barrier, Thread
 
 import pytest
+from pillarmesh_contract_model import canonical_bytes
 from pillarmesh_contract_service import (
     BusinessProcessManifest,
     ProcessPackageReceipt,
@@ -44,6 +45,7 @@ def receipt(**updates: object) -> ProcessPackageReceipt:
         "media_type": MARKDOWN,
         "original_digest": "a" * 64,
         "manifest_digest": "b" * 64,
+        "manifest_source_digest": "c" * 64,
         "uploader_id": "architect-a",
         "received_at": NOW,
     }
@@ -73,6 +75,40 @@ def test_upload_rejects_non_utf8_narrative() -> None:
 def test_upload_rejects_an_unsupported_media_type() -> None:
     with pytest.raises(ValueError, match="media type"):
         service().upload("tenant-a", b"# ok\n", "application/pdf", manifest(), "architect-a")
+
+
+def test_upload_manifest_bytes_preserves_and_digests_the_exact_input() -> None:
+    packages = service()
+    manifest_bytes = canonical_bytes(manifest()) + b"\n"
+
+    uploaded = packages.upload_manifest_bytes(
+        "tenant-a",
+        b"# Revenue to cash\n",
+        MARKDOWN,
+        manifest_bytes,
+        "architect-a",
+    )
+
+    assert (
+        packages.get_manifest("tenant-a", uploaded.package_id, uploaded.version) == manifest_bytes
+    )
+    assert uploaded.manifest_source_digest != uploaded.manifest_digest
+
+
+def test_upload_manifest_bytes_rejects_unknown_fields() -> None:
+    manifest_bytes = canonical_bytes(manifest()).replace(b"}", b',"unknown":"value"}', 1)
+
+    with pytest.raises(ValueError, match="manifest JSON"):
+        service().upload_manifest_bytes(
+            "tenant-a", b"# Revenue to cash\n", MARKDOWN, manifest_bytes, "architect-a"
+        )
+
+
+def test_upload_manifest_bytes_rejects_invalid_utf8() -> None:
+    with pytest.raises(ValueError, match="manifest JSON"):
+        service().upload_manifest_bytes(
+            "tenant-a", b"# Revenue to cash\n", MARKDOWN, b"\xff", "architect-a"
+        )
 
 
 def test_one_tenant_cannot_read_another_tenants_original() -> None:
@@ -201,9 +237,19 @@ def test_package_row_cannot_reference_a_missing_artifact() -> None:
         repository._connection.execute(
             "INSERT INTO process_packages ("
             "package_id, version, tenant_id, media_type, original_digest, manifest_digest, "
-            "uploader_id, received_at"
-            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            ("bpp-orphan", 1, "tenant-a", MARKDOWN, "f" * 64, "e" * 64, "arch-a", NOW.isoformat()),
+            "manifest_source_digest, uploader_id, received_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "bpp-orphan",
+                1,
+                "tenant-a",
+                MARKDOWN,
+                "f" * 64,
+                "e" * 64,
+                "d" * 64,
+                "arch-a",
+                NOW.isoformat(),
+            ),
         )
 
 

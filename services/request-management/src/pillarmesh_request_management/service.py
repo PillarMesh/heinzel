@@ -11,6 +11,7 @@ from .models import (
     DecisionKind,
     InboxRequest,
     RequestState,
+    SchemaSemanticChangeRequest,
     StakeholderQuestion,
     TransitionEvent,
 )
@@ -96,6 +97,90 @@ class RequestManagementService:
         self._repository.save(request)
         return request
 
+    def submit_schema_semantic_change(
+        self,
+        *,
+        tenant_id: str,
+        requester_id: str,
+        purpose: str,
+        review_bundle_id: str,
+        review_bundle_digest: str,
+        required_authority_refs: tuple[str, ...],
+        before_observation_digest: str | None = None,
+        after_observation_digest: str | None = None,
+        affected_semantic_ref: str | None = None,
+        affected_contract_ref: str | None = None,
+    ) -> InboxRequest:
+        request = self.prepare_schema_semantic_change(
+            tenant_id=tenant_id,
+            requester_id=requester_id,
+            purpose=purpose,
+            review_bundle_id=review_bundle_id,
+            review_bundle_digest=review_bundle_digest,
+            required_authority_refs=required_authority_refs,
+            before_observation_digest=before_observation_digest,
+            after_observation_digest=after_observation_digest,
+            affected_semantic_ref=affected_semantic_ref,
+            affected_contract_ref=affected_contract_ref,
+        )
+        self._repository.save_prepared(request)
+        return request
+
+    def prepare_schema_semantic_change(
+        self,
+        *,
+        tenant_id: str,
+        requester_id: str,
+        purpose: str,
+        review_bundle_id: str,
+        review_bundle_digest: str,
+        required_authority_refs: tuple[str, ...],
+        before_observation_digest: str | None = None,
+        after_observation_digest: str | None = None,
+        affected_semantic_ref: str | None = None,
+        affected_contract_ref: str | None = None,
+    ) -> InboxRequest:
+        now = self._now()
+        sequence = self._repository.peek_next_sequence(tenant_id)
+        return InboxRequest(
+            request_id=self._request_id_for_sequence(tenant_id, sequence),
+            tenant_id=tenant_id,
+            requester_id=requester_id,
+            payload=SchemaSemanticChangeRequest(
+                purpose=purpose,
+                review_bundle_id=review_bundle_id,
+                review_bundle_digest=review_bundle_digest,
+                required_authority_refs=required_authority_refs,
+                before_observation_digest=before_observation_digest,
+                after_observation_digest=after_observation_digest,
+                affected_semantic_ref=affected_semantic_ref,
+                affected_contract_ref=affected_contract_ref,
+            ),
+            state=RequestState.SUBMITTED,
+            revision=1,
+            submitted_at=now,
+            updated_at=now,
+        )
+
+    def record_review_decision(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        request_revision: int,
+        actor_id: str,
+        decision: str,
+    ) -> InboxRequest:
+        if decision != "unresolved":
+            raise ValueError("review decision is not actionable at request level")
+        return self.transition(
+            tenant_id,
+            request_id,
+            RequestState.INVESTIGATING,
+            actor_id=actor_id,
+            expected_revision=request_revision,
+        )
+
     def transition(
         self,
         tenant_id: str,
@@ -179,6 +264,9 @@ class RequestManagementService:
             raise KeyError(f"request {request_id} belongs to another tenant")
         return request
 
+    def get_optional(self, tenant_id: str, request_id: str) -> InboxRequest | None:
+        return self._repository.load(tenant_id, request_id)
+
     def list_inbox(self, tenant_id: str) -> tuple[InboxRequest, ...]:
         return self._repository.list_inbox(tenant_id)
 
@@ -187,8 +275,25 @@ class RequestManagementService:
     ) -> tuple[TransitionEvent, ...]:
         return self._repository.list_transition_history(tenant_id, request_id)
 
+    def list_decisions(self, tenant_id: str, request_id: str) -> tuple[DecisionBinding, ...]:
+        return self._repository.list_decisions(tenant_id, request_id)
+
+    def discard_unapproved_semantic_request(
+        self, *, tenant_id: str, request_id: str, review_bundle_digest: str
+    ) -> None:
+        self._repository.discard_unapproved_semantic_request(
+            tenant_id, request_id, review_bundle_digest
+        )
+
+    def compensate_transition(self, *, prior: InboxRequest, attempted_state: RequestState) -> None:
+        self._repository.compensate_transition(prior, attempted_state)
+
     def _request_id(self, tenant_id: str) -> str:
         sequence = self._repository.next_sequence(tenant_id)
+        return self._request_id_for_sequence(tenant_id, sequence)
+
+    @staticmethod
+    def _request_id_for_sequence(tenant_id: str, sequence: int) -> str:
         identity_digest = digest(
             {
                 "domain": "pillarmesh-request-v1",

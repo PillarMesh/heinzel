@@ -26,6 +26,12 @@ Implement domain services with injected repositories, using standard-library SQL
 
 Keep catalog adapters and Superset replaceable. PillarMesh's durable process, contract, dashboard, approval, and evidence models remain authoritative for PillarMesh behavior; external catalog authority remains explicit, and catalog and BI object identifiers are compiled physical artifacts.
 
+Separate catalog operations from semantic authority: `services/catalog-control` owns catalog
+binding lifecycle, capability validation, and private resource-ledger cleanup, while
+`services/semantic-registry` owns immutable candidate, authority, review, and approved
+semantic records. This keeps OpenMetadata replaceable without letting a provider change
+approved meaning or contract legality.
+
 Preserve future `customer_cloud` and `customer_on_prem` placement modes in which the customer supplies infrastructure but PillarMesh retains operation of the data plane. Do not interpret these modes as bring-your-own-warehouse support.
 
 ## Consequences
@@ -36,8 +42,14 @@ Preserve future `customer_cloud` and `customer_on_prem` placement modes in which
 - Destination portability is demonstrated across supported managed engines, not arbitrary customer destinations.
 - Dedicated warehouse, OpenMetadata, and Superset deployments simplify tenant isolation and retirement but increase cost.
 - The platform must publish a clear shared-responsibility model, restore evidence, and open-format exit path.
-- The repository requires explicit ownership for request management, warehouse control, and trigger materialization while reusing the existing compiler, contract, provider, runtime, evidence, knowledge-graph, dbt, and context-exposure boundaries.
+- The repository requires explicit ownership for request management, warehouse control, catalog control, semantic registry, and trigger materialization while reusing the existing compiler, contract, provider, runtime, evidence, knowledge-graph, dbt, and context-exposure boundaries.
 - Historical Snowflake M0 records remain valid as historical evidence but no longer define the post-M0 product destination.
+
+## Provider inventory
+
+| Path | Role |
+| --- | --- |
+| `providers/openmetadata` | OpenMetadata-specific capability declaration, adapter, and conformance fixtures; durable catalog, semantic, contract, and evidence models remain outside the provider boundary. |
 
 ## Alternatives Considered
 

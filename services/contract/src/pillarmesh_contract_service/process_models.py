@@ -26,6 +26,7 @@ class ProcessPackageReceipt(ArtifactModel):
     media_type: Literal["text/markdown; charset=utf-8"]
     original_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    manifest_source_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     uploader_id: str
     received_at: datetime
 
