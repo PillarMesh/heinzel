@@ -1,3 +1,4 @@
+import hashlib
 import sqlite3
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
@@ -286,3 +287,96 @@ def test_failed_store_publishes_nothing_and_burns_no_version(tmp_path: Path) -> 
     committed = sqlite3.connect(database_path)
     assert committed.execute("SELECT COUNT(*) FROM process_package_originals").fetchone()[0] == 1
     assert committed.execute("SELECT COUNT(*) FROM process_packages").fetchone()[0] == 1
+
+
+def _write_pre_plan2_database(path: str, manifest_bytes: bytes) -> str:
+    """Recreate the schema and a row exactly as the previous release wrote them."""
+    manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
+    connection = sqlite3.connect(path)
+    connection.execute(
+        "CREATE TABLE process_package_versions ("
+        "tenant_id TEXT NOT NULL, package_id TEXT NOT NULL, next_version INTEGER NOT NULL, "
+        "PRIMARY KEY (tenant_id, package_id))"
+    )
+    connection.execute(
+        "CREATE TABLE process_package_originals ("
+        "tenant_id TEXT NOT NULL, original_digest TEXT NOT NULL, original BLOB NOT NULL, "
+        "PRIMARY KEY (tenant_id, original_digest))"
+    )
+    connection.execute(
+        "CREATE TABLE process_package_manifests ("
+        "tenant_id TEXT NOT NULL, manifest_digest TEXT NOT NULL, manifest BLOB NOT NULL, "
+        "PRIMARY KEY (tenant_id, manifest_digest))"
+    )
+    connection.execute(
+        "CREATE TABLE process_packages ("
+        "package_id TEXT NOT NULL, version INTEGER NOT NULL, tenant_id TEXT NOT NULL, "
+        "media_type TEXT NOT NULL, original_digest TEXT NOT NULL, manifest_digest TEXT NOT NULL, "
+        "uploader_id TEXT NOT NULL, received_at TEXT NOT NULL, "
+        "PRIMARY KEY (package_id, version))"
+    )
+    original = b"# Revenue to cash\n"
+    original_digest = hashlib.sha256(original).hexdigest()
+    connection.execute(
+        "INSERT INTO process_package_versions VALUES (?, ?, ?)", ("tenant-a", "bpp-legacy", 2)
+    )
+    connection.execute(
+        "INSERT INTO process_package_originals VALUES (?, ?, ?)",
+        ("tenant-a", original_digest, original),
+    )
+    connection.execute(
+        "INSERT INTO process_package_manifests VALUES (?, ?, ?)",
+        ("tenant-a", manifest_digest, manifest_bytes),
+    )
+    connection.execute(
+        "INSERT INTO process_packages VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "bpp-legacy",
+            1,
+            "tenant-a",
+            MARKDOWN,
+            original_digest,
+            manifest_digest,
+            "architect-a",
+            NOW.isoformat(),
+        ),
+    )
+    connection.commit()
+    connection.close()
+    return manifest_digest
+
+
+def test_opening_a_pre_plan2_database_migrates_instead_of_failing(tmp_path: Path) -> None:
+    database_path = str(tmp_path / "process.db")
+    manifest_bytes = canonical_bytes(manifest())
+    legacy_digest = _write_pre_plan2_database(database_path, manifest_bytes)
+
+    repository = SQLiteProcessPackageRepository(database_path)
+    packages = ProcessPackageService(repository, clock=lambda: NOW)
+
+    # Without the migration this upload raised
+    # "table process_package_manifests has no column named manifest_source_digest".
+    receipt = packages.upload("tenant-a", b"# New\n", MARKDOWN, manifest(), "architect-a")
+    assert receipt.version >= 1
+
+    # The pre-existing row survives and is reachable, backfilled with the exact digest.
+    stored = repository._connection.execute(
+        "SELECT manifest_source_digest FROM process_packages WHERE package_id = ?",
+        ("bpp-legacy",),
+    ).fetchone()
+    assert stored[0] == legacy_digest
+    assert repository.load_manifest("tenant-a", "bpp-legacy", 1) == manifest_bytes
+
+
+def test_migration_is_idempotent_across_reopens(tmp_path: Path) -> None:
+    database_path = str(tmp_path / "process.db")
+    _write_pre_plan2_database(database_path, canonical_bytes(manifest()))
+
+    SQLiteProcessPackageRepository(database_path).close()
+    reopened = SQLiteProcessPackageRepository(database_path)
+
+    columns = {
+        str(row[1])
+        for row in reopened._connection.execute("PRAGMA table_info(process_package_manifests)")
+    }
+    assert "manifest_source_digest" in columns and "manifest_digest" not in columns

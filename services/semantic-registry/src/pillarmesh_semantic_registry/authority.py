@@ -10,6 +10,7 @@ from .models import (
     AuthorityResolution,
     AuthorityResolutionStatus,
     AuthoritySourceKind,
+    CandidateKind,
     ResolutionReasonCode,
     SemanticCandidate,
 )
@@ -55,7 +56,45 @@ _PRECEDENCE: dict[InformationKind, tuple[AuthoritySourceKind, ...]] = {
     ),
 }
 
+# Kinds that make competing claims about the same aspect of a subject, and can
+# therefore contradict one another. Kinds in different groups describe different
+# aspects: an imported glossary definition ("money returned to a customer") does not
+# disagree with a structural claim ("an entity with its own lifecycle"), so requiring
+# them to state the same string would make every candidate in a tenant that already has
+# a glossary escalate to its owner.
+_CONTRADICTION_GROUPS: tuple[frozenset[InformationKind], ...] = (
+    frozenset(
+        {
+            InformationKind.BUSINESS_MEANING,
+            InformationKind.PROCESS_SEMANTICS,
+            InformationKind.IMPORTED_CLASSIFICATION,
+        }
+    ),
+    frozenset({InformationKind.IMPORTED_GLOSSARY}),
+    frozenset({InformationKind.IDENTITY}),
+    frozenset({InformationKind.RELATIONSHIP}),
+    frozenset({InformationKind.METRIC}),
+    frozenset({InformationKind.INTEGRITY_CONSTRAINT}),
+)
+
+# The information kind a candidate is itself a claim about. Used only to choose which
+# admitted winner is bound as the authority when several aspects are observed.
+_CANDIDATE_GOVERNING_KIND: dict[CandidateKind, InformationKind] = {
+    CandidateKind.ENTITY: InformationKind.BUSINESS_MEANING,
+    CandidateKind.EVENT: InformationKind.BUSINESS_MEANING,
+    CandidateKind.STATE: InformationKind.PROCESS_SEMANTICS,
+    CandidateKind.RELATIONSHIP: InformationKind.RELATIONSHIP,
+    CandidateKind.IDENTITY_RULE: InformationKind.IDENTITY,
+    CandidateKind.INTEGRITY_CONSTRAINT: InformationKind.INTEGRITY_CONSTRAINT,
+    CandidateKind.METRIC: InformationKind.METRIC,
+    CandidateKind.CLASSIFICATION: InformationKind.IMPORTED_CLASSIFICATION,
+}
+
 _BUSINESS_OWNER = "role:business_owner"
+
+
+def _contradiction_group(information_kind: InformationKind) -> frozenset[InformationKind]:
+    return next(group for group in _CONTRADICTION_GROUPS if information_kind in group)
 
 
 class AuthorityResolver:
@@ -140,17 +179,24 @@ class AuthorityResolver:
                 )
             winners.append(min(highest, key=digest))
 
-        if len({item.assertion for item in winners}) != 1:
-            return self._resolution(
-                candidate=candidate,
-                status=AuthorityResolutionStatus.UNRESOLVED,
-                selected_digest=None,
-                considered_digests=considered_digests,
-                required_authority_ref=_BUSINESS_OWNER,
-                reason_code=ResolutionReasonCode.CROSS_KIND_CONFLICT,
-            )
+        for group in _CONTRADICTION_GROUPS:
+            competing = tuple(item for item in winners if item.information_kind in group)
+            if len({item.assertion for item in competing}) > 1:
+                return self._resolution(
+                    candidate=candidate,
+                    status=AuthorityResolutionStatus.UNRESOLVED,
+                    selected_digest=None,
+                    considered_digests=considered_digests,
+                    required_authority_ref=_BUSINESS_OWNER,
+                    reason_code=ResolutionReasonCode.CROSS_KIND_CONFLICT,
+                )
 
-        selected = min(winners, key=digest)
+        # Bind the winner from the aspect the candidate itself asserts, so a glossary
+        # definition is never recorded as the authority for a structural claim. Fall
+        # back to a deterministic choice when that aspect was not observed.
+        governing = _contradiction_group(_CANDIDATE_GOVERNING_KIND[candidate.kind])
+        preferred = tuple(item for item in winners if item.information_kind in governing)
+        selected = min(preferred or winners, key=digest)
         return self._resolution(
             candidate=candidate,
             status=AuthorityResolutionStatus.RESOLVED,

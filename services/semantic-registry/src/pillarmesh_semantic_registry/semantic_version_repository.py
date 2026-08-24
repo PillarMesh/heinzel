@@ -10,6 +10,9 @@ from pillarmesh_contract_model import ApprovedSemanticVersion, canonical_bytes, 
 class SQLiteSemanticVersionRepository:
     def __init__(self, database_path: str) -> None:
         self._connection = sqlite3.connect(database_path)
+        # SQLite ignores every declared foreign key unless this is set per connection,
+        # which would leave the approval-binding reference below decorative.
+        self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS semantic_version_sequences ("
             "tenant_id TEXT PRIMARY KEY, next_sequence INTEGER NOT NULL)"

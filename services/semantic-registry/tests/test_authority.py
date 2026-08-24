@@ -844,3 +844,73 @@ def test_observation_payload_round_trips_as_canonical_bytes() -> None:
 
     assert row is not None
     assert bytes(row[0]) == canonical_bytes(stored)
+
+
+def test_glossary_definition_does_not_contradict_a_structural_claim() -> None:
+    # The common case for a tenant that already runs OpenMetadata: the package states
+    # what Refund *is*, the glossary states what the word means. Neither disagrees, so
+    # requiring one identical string would escalate every such candidate to its owner.
+    meaning = observation(
+        information_kind=InformationKind.BUSINESS_MEANING,
+        source_kind=AuthoritySourceKind.PROCESS_PACKAGE,
+        subject_ref="Refund",
+        assertion="an entity with its own lifecycle",
+    )
+    glossary = observation(
+        information_kind=InformationKind.IMPORTED_GLOSSARY,
+        source_kind=AuthoritySourceKind.DECLARED_CATALOG_AUTHORITY,
+        subject_ref="Refund",
+        assertion="money returned to a customer",
+    )
+
+    resolution = resolver.resolve(
+        candidate=entity_candidate("Refund", "candidate proposal"),
+        observations=(glossary, meaning),
+    )
+
+    assert resolution.status is AuthorityResolutionStatus.RESOLVED
+    assert resolution.reason_code is ResolutionReasonCode.RESOLVED_BY_PRECEDENCE
+    # The structural claim governs an entity candidate, never the glossary prose.
+    assert resolution.selected_observation_digest == digest(meaning)
+    assert set(resolution.considered_observation_digests) == {digest(meaning), digest(glossary)}
+
+
+def test_classification_still_contradicts_business_meaning() -> None:
+    # The narrowing above must not weaken the conflict it was carved out of.
+    meaning = observation(
+        information_kind=InformationKind.BUSINESS_MEANING,
+        source_kind=AuthoritySourceKind.PROCESS_PACKAGE,
+        subject_ref="Refund",
+        assertion="an entity with its own lifecycle",
+    )
+    classification = observation(
+        information_kind=InformationKind.IMPORTED_CLASSIFICATION,
+        source_kind=AuthoritySourceKind.DECLARED_CATALOG_AUTHORITY,
+        subject_ref="Refund",
+        assertion="attribute of Invoice",
+    )
+
+    resolution = resolver.resolve(
+        candidate=entity_candidate("Refund", "candidate proposal"),
+        observations=(meaning, classification),
+    )
+
+    assert resolution.status is AuthorityResolutionStatus.UNRESOLVED
+    assert resolution.reason_code is ResolutionReasonCode.CROSS_KIND_CONFLICT
+
+
+def test_contradiction_groups_partition_every_information_kind_exactly_once() -> None:
+    from pillarmesh_semantic_registry.authority import _CONTRADICTION_GROUPS
+
+    covered = [kind for group in _CONTRADICTION_GROUPS for kind in group]
+
+    assert sorted(covered, key=lambda kind: kind.value) == sorted(
+        InformationKind, key=lambda kind: kind.value
+    )
+    assert len(covered) == len(set(covered))
+
+
+def test_every_candidate_kind_declares_a_governing_information_kind() -> None:
+    from pillarmesh_semantic_registry.authority import _CANDIDATE_GOVERNING_KIND
+
+    assert set(_CANDIDATE_GOVERNING_KIND) == set(CandidateKind)

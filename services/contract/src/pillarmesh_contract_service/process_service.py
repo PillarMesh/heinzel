@@ -91,7 +91,47 @@ class SQLiteProcessPackageRepository:
             "REFERENCES process_package_manifests(tenant_id, manifest_source_digest)"
             ")"
         )
+        self._migrate_manifest_source_digest()
         self._connection.commit()
+
+    def _migrate_manifest_source_digest(self) -> None:
+        """Upgrade a database written before manifests were keyed by source bytes.
+
+        `CREATE TABLE IF NOT EXISTS` is a no-op against an existing database, so without
+        this an older state path keeps its `manifest_digest` columns and the first
+        upload fails with "no column named manifest_source_digest".
+
+        The backfill is exact rather than approximate: the previous writer stored
+        `canonical_bytes(manifest)` in the blob and keyed it by `digest(manifest)`, and
+        `digest(x)` is `sha256(canonical_bytes(x))`, so for every existing row the new
+        source digest is the value already held in `manifest_digest`. Only new uploads,
+        which persist the raw submitted bytes, can make the two differ.
+        """
+        columns = {
+            str(row[1])
+            for row in self._connection.execute("PRAGMA table_info(process_package_manifests)")
+        }
+        if not columns or "manifest_source_digest" in columns:
+            return
+        self._connection.execute("PRAGMA foreign_keys = OFF")
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(
+                "ALTER TABLE process_package_manifests "
+                "RENAME COLUMN manifest_digest TO manifest_source_digest"
+            )
+            self._connection.execute(
+                "ALTER TABLE process_packages ADD COLUMN manifest_source_digest TEXT"
+            )
+            self._connection.execute(
+                "UPDATE process_packages SET manifest_source_digest = manifest_digest"
+            )
+            self._connection.execute("COMMIT")
+        except BaseException:
+            self._connection.rollback()
+            raise
+        finally:
+            self._connection.execute("PRAGMA foreign_keys = ON")
 
     def close(self) -> None:
         with self._lock:

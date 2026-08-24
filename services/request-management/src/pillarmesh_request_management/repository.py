@@ -1,4 +1,6 @@
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from typing import Protocol
 
@@ -420,7 +422,7 @@ class SQLiteRequestRepository:
     ) -> None:
         from .models import SchemaSemanticChangeRequest
 
-        with self._connection:
+        with _transaction(self._connection):
             request = self._load_owned_request(tenant_id, request_id)
             if (
                 not isinstance(request.payload, SchemaSemanticChangeRequest)
@@ -495,7 +497,7 @@ class SQLiteRequestRepository:
                     )
 
     def compensate_transition(self, prior: InboxRequest, attempted_state: RequestState) -> None:
-        with self._connection:
+        with _transaction(self._connection):
             current = self._load_owned_request(prior.tenant_id, prior.request_id)
             if canonical_bytes(current) == canonical_bytes(prior):
                 return
@@ -607,3 +609,22 @@ class SQLiteRequestRepository:
         )
         if result.rowcount != 1:
             raise StaleRevisionError("request revision was not advanced")
+
+
+@contextmanager
+def _transaction(connection: sqlite3.Connection) -> Iterator[None]:
+    """Hold the write lock across the guard reads as well as the writes.
+
+    `with connection:` only commits or rolls back at exit; the transaction would not
+    begin until the first write, leaving the compensation guards -- no decisions
+    recorded, revision states match, sequence is still the latest -- readable while
+    another connection changed the very rows they had just checked.
+    """
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except BaseException:
+        connection.rollback()
+        raise
+    else:
+        connection.commit()
