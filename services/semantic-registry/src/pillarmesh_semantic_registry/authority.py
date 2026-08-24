@@ -191,12 +191,20 @@ class AuthorityResolver:
                     reason_code=ResolutionReasonCode.CROSS_KIND_CONFLICT,
                 )
 
-        # Bind the winner from the aspect the candidate itself asserts, so a glossary
-        # definition is never recorded as the authority for a structural claim. Fall
-        # back to a deterministic choice when that aspect was not observed.
-        governing = _contradiction_group(_CANDIDATE_GOVERNING_KIND[candidate.kind])
-        preferred = tuple(item for item in winners if item.information_kind in governing)
-        selected = min(preferred or winners, key=digest)
+        # Bind the winner from the aspect the candidate itself asserts. Selecting merely
+        # from its contradiction group is not enough: imported_classification shares a
+        # group with business_meaning, so an entity candidate could record the catalog's
+        # classification as the authority for a claim section 9.2 assigns to the approved
+        # business owner. The assertions agree by this point, so only the attribution
+        # would be wrong -- which is the part this subsystem exists to get right.
+        governing_kind = _CANDIDATE_GOVERNING_KIND[candidate.kind]
+        governing_group = _contradiction_group(governing_kind)
+        preferred = (
+            tuple(item for item in winners if item.information_kind is governing_kind)
+            or tuple(item for item in winners if item.information_kind in governing_group)
+            or winners
+        )
+        selected = min(preferred, key=digest)
         return self._resolution(
             candidate=candidate,
             status=AuthorityResolutionStatus.RESOLVED,

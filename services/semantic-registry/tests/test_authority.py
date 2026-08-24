@@ -400,7 +400,10 @@ def test_cross_kind_agreement_resolves_without_creating_global_precedence() -> N
     )
 
     assert resolution.status is AuthorityResolutionStatus.RESOLVED
-    assert resolution.selected_observation_digest == min(digest(meaning), digest(classification))
+    # Both agree, so only attribution is at stake: an entity candidate is a
+    # business-meaning claim, and section 9.2 assigns that to the approved business
+    # owner, never to the declared catalog authority.
+    assert resolution.selected_observation_digest == digest(meaning)
     assert set(resolution.considered_observation_digests) == {
         digest(meaning),
         digest(classification),
@@ -914,3 +917,41 @@ def test_every_candidate_kind_declares_a_governing_information_kind() -> None:
     from pillarmesh_semantic_registry.authority import _CANDIDATE_GOVERNING_KIND
 
     assert set(_CANDIDATE_GOVERNING_KIND) == set(CandidateKind)
+
+
+def test_classification_candidate_binds_the_catalog_observation_as_authority() -> None:
+    # The mirror of the entity case: a classification candidate IS an
+    # imported_classification claim, so the catalog observation is the right authority
+    # even though it shares a contradiction group with business meaning.
+    meaning = observation(
+        information_kind=InformationKind.BUSINESS_MEANING,
+        source_kind=AuthoritySourceKind.PROCESS_PACKAGE,
+        subject_ref="Refund",
+        assertion="governed repayment",
+    )
+    classification = observation(
+        information_kind=InformationKind.IMPORTED_CLASSIFICATION,
+        source_kind=AuthoritySourceKind.DECLARED_CATALOG_AUTHORITY,
+        subject_ref="Refund",
+        assertion="governed repayment",
+    )
+    candidate = SemanticCandidate(
+        candidate_id="semcand:tenant-a:refund",
+        kind=CandidateKind.CLASSIFICATION,
+        name="Refund",
+        proposed_definition="candidate proposal",
+        related_refs=(),
+        provenance=CandidateProvenance(
+            source_kind="narrative_marker",
+            source_digest="a" * 64,
+            source_path="narrative.md",
+            narrative_line_start=1,
+            narrative_line_end=1,
+        ),
+        confidence=Decimal("1"),
+    )
+
+    resolution = resolver.resolve(candidate=candidate, observations=(meaning, classification))
+
+    assert resolution.status is AuthorityResolutionStatus.RESOLVED
+    assert resolution.selected_observation_digest == digest(classification)

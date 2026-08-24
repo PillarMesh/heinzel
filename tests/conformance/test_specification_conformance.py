@@ -14,7 +14,11 @@ from pathlib import Path
 
 from pillarmesh_catalog_control import CatalogBinding
 from pillarmesh_catalog_control.service import _TRANSITIONS as CATALOG_TRANSITIONS
-from pillarmesh_contract_model import ApprovedSemanticVersion, ManagedIntegrationContract
+from pillarmesh_contract_model import (
+    ApprovedSemanticVersion,
+    InformationKind,
+    ManagedIntegrationContract,
+)
 from pillarmesh_request_management import DecisionKind
 from pillarmesh_request_management.service import _TRANSITIONS as REQUEST_TRANSITIONS
 from pillarmesh_semantic_registry import (
@@ -57,6 +61,19 @@ def _fenced_fields(heading: str) -> list[str]:
 
 def _normalized_section(heading: str) -> str:
     return " ".join(_section(heading).split())
+
+
+def _markdown_table_rows(heading: str) -> list[tuple[str, str]]:
+    """Read a two-column markdown table from a section, skipping header and rule."""
+    rows: list[tuple[str, str]] = []
+    for line in _section(heading).splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) != 2 or cells[0] in {"Candidate kind"} or set(cells[0]) <= {"-", " "}:
+            continue
+        rows.append((cells[0], cells[1]))
+    return rows
 
 
 def _documented_transitions(heading: str) -> dict[str, set[str]]:
@@ -215,3 +232,44 @@ def test_catalog_and_semantic_lookup_denies_cross_tenant_access_before_deseriali
 
     assert "tenant identity in its initial query" in envelope
     assert "before reading or deserializing the artifact payload" in envelope
+
+
+def test_contradiction_groups_match_section_9_2_1() -> None:
+    from pillarmesh_semantic_registry.authority import _CONTRADICTION_GROUPS
+
+    documented = {
+        frozenset(member.strip() for member in line.split(","))
+        for line in _fenced_block("### 9.2.1").strip().splitlines()
+        if line.strip()
+    }
+    implemented = {frozenset(kind.value for kind in group) for group in _CONTRADICTION_GROUPS}
+
+    assert documented == implemented
+
+
+def test_section_9_2_1_partitions_every_information_kind_exactly_once() -> None:
+    documented = [
+        member.strip()
+        for line in _fenced_block("### 9.2.1").strip().splitlines()
+        if line.strip()
+        for member in line.split(",")
+    ]
+
+    # A kind missing from the groups would raise at resolution time; a kind named twice
+    # would make the "contradicts" relation ambiguous.
+    assert sorted(documented) == sorted(kind.value for kind in InformationKind)
+    assert len(documented) == len(set(documented))
+
+
+def test_governing_information_kind_matches_section_9_2_2() -> None:
+    from pillarmesh_semantic_registry.authority import _CANDIDATE_GOVERNING_KIND
+
+    documented = {
+        candidate: information for candidate, information in _markdown_table_rows("### 9.2.2")
+    }
+    implemented = {
+        candidate.value: information.value
+        for candidate, information in _CANDIDATE_GOVERNING_KIND.items()
+    }
+
+    assert documented == implemented

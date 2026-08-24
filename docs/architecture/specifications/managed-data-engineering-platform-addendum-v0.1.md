@@ -413,11 +413,12 @@ kind:
 | Metric | Owner decision; approved semantic version; process package |
 | Integrity constraint | Owner decision; approved semantic version; process package |
 
-An inadmissible source is invalid. A same-kind same-rank disagreement or a cross-kind
-disagreement is unresolved and requires the business owner; an exact higher-precedence
-same-kind observation resolves while retaining the lower observations as evidence. Expired
-observations are rejected. Candidate extraction is proposal evidence, never an authority
-source.
+An inadmissible source is invalid. A same-kind same-rank disagreement is unresolved and
+requires the business owner; an exact higher-precedence same-kind observation resolves while
+retaining the lower observations as evidence. A disagreement between two information kinds
+is unresolved only when those kinds contradict one another as defined in section 9.2.1.
+Expired observations are rejected. Candidate extraction is proposal evidence, never an
+authority source.
 
 ```text
 AuthorityObservation
@@ -433,6 +434,54 @@ AuthorityObservation
   observed_at
   valid_until
 ```
+
+### 9.2.1 Contradiction groups
+
+Two information kinds contradict one another only when they make competing claims about the
+same aspect of a subject. Kinds in different groups describe different aspects and cannot
+disagree: an imported glossary definition such as "money returned to a customer" does not
+contradict a structural claim such as "an entity with its own lifecycle". Treating any
+difference in wording between kinds as a conflict would escalate every candidate in a tenant
+that already operates a catalog, and no ontology review bundle could be approved.
+
+These groups partition the information kinds exactly; every kind appears in exactly one.
+
+```text
+business_meaning, process_semantics, imported_classification
+imported_glossary
+identity
+relationship
+metric
+integrity_constraint
+```
+
+Within a group the admitted winners must agree; a disagreement is unresolved and requires the
+business owner. Across groups no comparison is made, and every observation remains bound to
+the resolution as considered evidence regardless of its group.
+
+### 9.2.2 Governing information kind
+
+A resolution binds exactly one observation as the authority. It is taken from the information
+kind the candidate is itself a claim about, so an entity never records the declared catalog
+authority as the source of its business meaning, and a classification never records the
+process package as the source of its imported classification. Where that kind was not
+observed the selection falls back to its contradiction group, and failing that to a
+deterministic choice among the admitted winners.
+
+Attribution is decided separately from agreement. By the time an observation is selected the
+admitted winners already agree, so a wrong selection changes only which authority the
+approval records -- which is the property this resolution exists to establish.
+
+| Candidate kind | Governing information kind |
+| --- | --- |
+| entity | business_meaning |
+| event | business_meaning |
+| state | process_semantics |
+| relationship | relationship |
+| identity_rule | identity |
+| integrity_constraint | integrity_constraint |
+| metric | metric |
+| classification | imported_classification |
 
 ### 9.3 Publication and proposals
 
