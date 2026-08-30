@@ -3,6 +3,8 @@ name = "pillarmesh-warehouse-control"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
+  # Fernet provides authenticated encryption for bounded operation-secret bundles.
+  "cryptography>=45,<47",
   "pillarmesh-contract-model",
   "pydantic>=2.11,<3",
 ]

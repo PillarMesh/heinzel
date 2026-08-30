@@ -1,0 +1,81 @@
+x-clickhouse-service: &clickhouse-service
+  image: clickhouse/clickhouse-server:25.8.32.4@sha256:7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0
+  entrypoint:
+    - /bin/bash
+    - -ceu
+    - |
+      install -d -m 0700 -o clickhouse -g clickhouse /var/lib/clickhouse/pillarmesh-tls
+      install -m 0600 -o clickhouse -g clickhouse /pillarmesh-private/server.key /var/lib/clickhouse/pillarmesh-tls/server.key
+      install -m 0644 -o clickhouse -g clickhouse /pillarmesh-private/server.crt /var/lib/clickhouse/pillarmesh-tls/server.crt
+      install -m 0644 -o clickhouse -g clickhouse /pillarmesh-private/ca.crt /var/lib/clickhouse/pillarmesh-tls/ca.crt
+      install -d -m 0700 -o clickhouse -g clickhouse /var/lib/clickhouse/backups
+      install -m 0644 -o clickhouse -g clickhouse /pillarmesh-private/${PILLARMESH_CLICKHOUSE_USERS_FILE:?required} /etc/clickhouse-server/users.d/pillarmesh-bootstrap.xml
+      if [ -s /pillarmesh-private/clickhouse-restore.zip ]; then
+        install -m 0600 -o clickhouse -g clickhouse /pillarmesh-private/clickhouse-restore.zip /var/lib/clickhouse/backups/restore.zip
+      fi
+      chown clickhouse:clickhouse /var/lib/clickhouse
+      exec runuser --user clickhouse -- clickhouse-server --config-file=/etc/clickhouse-server/config.xml
+  healthcheck:
+    disable: true
+  volumes:
+    - ./config.xml:/etc/clickhouse-server/config.d/pillarmesh.xml:ro
+    - ${PILLARMESH_CLICKHOUSE_PRIVATE_DIRECTORY:?required}:/pillarmesh-private:ro
+
+services:
+  clickhouse:
+    <<: *clickhouse-service
+    container_name: ${PILLARMESH_CLICKHOUSE_CONTAINER_NAME:?required}
+    ports:
+      - "127.0.0.1:${PILLARMESH_CLICKHOUSE_HOST_PORT:?required}:8443"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./config.xml:/etc/clickhouse-server/config.d/pillarmesh.xml:ro
+      - ${PILLARMESH_CLICKHOUSE_PRIVATE_DIRECTORY:?required}:/pillarmesh-private:ro
+    networks:
+      - clickhouse_internal
+      - host_loopback
+
+  clickhouse_restore:
+    <<: *clickhouse-service
+    profiles: ["restore"]
+    container_name: ${PILLARMESH_CLICKHOUSE_RESTORE_CONTAINER_NAME:-clickhouse-restore-inactive}
+    volumes:
+      - clickhouse_restore_data:/var/lib/clickhouse
+      - ./config.xml:/etc/clickhouse-server/config.d/pillarmesh.xml:ro
+      - ${PILLARMESH_CLICKHOUSE_PRIVATE_DIRECTORY:?required}:/pillarmesh-private:ro
+    networks:
+      - clickhouse_restore_internal
+      - restore_host_loopback
+
+  clickhouse_isolation_probe:
+    image: clickhouse/clickhouse-server:25.8.32.4@sha256:7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0
+    profiles: ["restore"]
+    container_name: ${PILLARMESH_CLICKHOUSE_RESTORE_ISOLATION_PROBE_CONTAINER_NAME:-clickhouse-restore-isolation-probe-inactive}
+    entrypoint:
+      - /bin/bash
+      - -ceu
+      - sleep infinity
+    networks:
+      - isolation_probe_network
+
+volumes:
+  clickhouse_data:
+    name: ${PILLARMESH_CLICKHOUSE_DATA_VOLUME_NAME:?required}
+  clickhouse_restore_data:
+    name: ${PILLARMESH_CLICKHOUSE_RESTORE_DATA_VOLUME_NAME:-clickhouse-restore-data-inactive}
+
+networks:
+  clickhouse_internal:
+    name: ${PILLARMESH_CLICKHOUSE_PRIVATE_NETWORK_NAME:?required}
+    internal: true
+  host_loopback:
+    name: ${PILLARMESH_CLICKHOUSE_LOOPBACK_NETWORK_NAME:?required}
+  clickhouse_restore_internal:
+    name: ${PILLARMESH_CLICKHOUSE_RESTORE_PRIVATE_NETWORK_NAME:-clickhouse-restore-private-inactive}
+    internal: true
+  restore_host_loopback:
+    name: ${PILLARMESH_CLICKHOUSE_RESTORE_LOOPBACK_NETWORK_NAME:-clickhouse-restore-loopback-inactive}
+    internal: true
+  isolation_probe_network:
+    name: ${PILLARMESH_CLICKHOUSE_ISOLATION_PROBE_NETWORK_NAME:-clickhouse-isolation-probe-network-inactive}
+    external: true

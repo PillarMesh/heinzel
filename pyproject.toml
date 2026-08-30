@@ -10,6 +10,10 @@ dev = [
   "mutmut>=3.3,<4",
   "pytest>=8.4,<9",
   "pytest-cov>=6.2,<7",
+  # The workflow contract tests assert the CI gate's structure. Parsing the
+  # workflow is the only way to check it; there is no stdlib YAML reader, and a
+  # regex over the file would pass on a gate whose job graph had changed.
+  "pyyaml>=6.0,<7",
   "ruff>=0.12,<1",
 ]
 
@@ -20,6 +24,7 @@ members = [
   "packages/iir",
   "packages/provider-sdk",
   "providers/openmetadata",
+  "providers/clickhouse",
   "providers/postgresql",
   "providers/snowflake",
   "services/authoring-mcp",
@@ -57,6 +62,7 @@ packages = [
   "pillarmesh_iir",
   "pillarmesh_provider_sdk",
   "pillarmesh_provider_openmetadata",
+  "pillarmesh_provider_clickhouse",
   "pillarmesh_provider_postgresql",
   "pillarmesh_provider_snowflake",
   "pillarmesh_authoring_mcp",
@@ -69,4 +75,5 @@ packages = [
   "pillarmesh_semantic_registry",
   "pillarmesh_warehouse_control",
   "tests.acceptance.run_m0",
+  "tests.ci.run_plan3a_witness",
 ]

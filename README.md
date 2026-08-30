@@ -27,6 +27,17 @@ Contract formation, OpenMetadata publication, drift intake, backup/restore, and 
 - [Evidence package](docs/plan2/evidence-package.md)
 - [Exact teardown](docs/plan2/teardown.md)
 
+## Plan 3A: Managed Warehouse Lifecycle
+
+Plan 3A proves that the managed warehouse control plane preserves one provider-neutral lifecycle
+across PostgreSQL and ClickHouse: provision, validate, back up and restore, suspend and resume,
+retire under retention, and perform exact authorized cleanup with sanitized evidence.
+
+- [Setup](docs/plan3a/setup.md)
+- [Witnessed acceptance](docs/plan3a/acceptance-run.md)
+- [Evidence package](docs/plan3a/evidence-package.md)
+- [Exact teardown](docs/plan3a/teardown.md)
+
 ## Historical M0
 
 M0 was the PostgreSQL-to-Snowflake thin-thread experiment: one curated PostgreSQL snapshot contract verified, compiled into a signed graph, executed into Snowflake, and reconstructed from append-only evidence. It proved compiler, runtime, and evidence behaviour against an externally managed destination.

@@ -22,6 +22,38 @@ class WarehouseBindingState(StrEnum):
     RETIRED = "retired"
 
 
+class WarehousePrincipalClass(StrEnum):
+    ADMINISTRATION = "administration"
+    INGESTION_RUNTIME = "ingestion_runtime"
+    TRANSFORMATION_RUNTIME = "transformation_runtime"
+    BACKUP_RESTORE = "backup_restore"
+    CUSTOMER_SQL = "customer_sql"
+    CATALOG = "catalog"
+    BI = "bi"
+
+
+class WarehouseValidationProfile(StrEnum):
+    LOCAL_ACCEPTANCE = "local_acceptance"
+    PRODUCTION = "production"
+
+
+class EncryptionAtRestDisposition(StrEnum):
+    PROVEN = "proven"
+    DEFERRED_LOCAL_ACCEPTANCE = "deferred_local_acceptance"
+
+
+class WarehouseFailureClassification(StrEnum):
+    TRANSIENT_TRANSPORT = "transient_transport"
+    TRANSIENT_UNAVAILABLE = "transient_unavailable"
+    THROTTLED = "throttled"
+    AMBIGUOUS_OUTCOME = "ambiguous_outcome"
+    AUTHORIZATION_DENIED = "authorization_denied"
+    STATEMENT_REJECTED = "statement_rejected"
+    INVALID_PROVIDER_RESPONSE = "invalid_provider_response"
+    INTEGRITY_FAILURE = "integrity_failure"
+    PERMANENT_CONFIGURATION = "permanent_configuration"
+
+
 class WarehouseBinding(ArtifactModel):
     schema_version: Literal["1"] = "1"
     binding_id: str

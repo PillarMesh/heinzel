@@ -1,3 +1,22 @@
+from .backup_stream import (
+    BackupStreamIntegrityError,
+    BackupStreamObservation,
+    BinaryReader,
+    BinaryWriter,
+    decrypt_backup_stream,
+    encrypt_backup_stream,
+)
+from .compose import (
+    MAX_COMPOSE_OUTPUT_BYTES,
+    CommandRunner,
+    ComposeCommandError,
+    ComposeErrorClassification,
+    ComposeProcess,
+    ComposeResource,
+    ComposeResourceKind,
+    DockerComposeProcess,
+    ProcessStarter,
+)
 from .errors import ProviderError
 from .models import (
     ColumnObservation,
@@ -12,15 +31,30 @@ from .models import (
 from .protocols import DestinationProvider, SourceProvider
 
 __all__ = [
+    "MAX_COMPOSE_OUTPUT_BYTES",
+    "BackupStreamIntegrityError",
+    "BackupStreamObservation",
+    "BinaryReader",
+    "BinaryWriter",
     "ColumnObservation",
+    "CommandRunner",
     "CommitReceipt",
+    "ComposeCommandError",
+    "ComposeErrorClassification",
+    "ComposeProcess",
+    "ComposeResource",
+    "ComposeResourceKind",
     "DestinationProvider",
+    "DockerComposeProcess",
     "DriftProbe",
     "OrderRow",
+    "ProcessStarter",
     "ProviderError",
     "ProviderObservation",
     "SegmentManifest",
     "SourceBoundary",
     "SourceProvider",
     "VisibilityProof",
+    "decrypt_backup_stream",
+    "encrypt_backup_stream",
 ]

@@ -4,6 +4,7 @@ import json
 import os
 import stat
 import subprocess
+import tempfile
 import traceback
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from threading import Barrier, Event, Thread
 from types import SimpleNamespace
+from typing import IO
 
 import pillarmesh_provider_openmetadata.provisioner as provisioner_module
 import pytest
@@ -41,6 +43,33 @@ _FAKE_LINEAGE_IDENTIFIER = (
     '"type":"glossaryTerm"},"description":"validation"}'
 )
 _SENSITIVE_PROVISIONER_VALUE = "test-only-sensitive-provisioner-value"
+
+
+class _FinishedDockerProcess:
+    def __init__(self, *, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0) -> None:
+        self.stdin: IO[bytes] | None = None
+        # The test-double process owns these pipes until its test exits.
+        self.stdout = tempfile.TemporaryFile()  # noqa: SIM115
+        self.stderr = tempfile.TemporaryFile()  # noqa: SIM115
+        self.stdout.write(stdout)
+        self.stderr.write(stderr)
+        self.stdout.seek(0)
+        self.stderr.seek(0)
+        self.returncode = returncode
+        self.terminated = False
+        self.killed = False
+
+    def poll(self) -> int | None:
+        return self.returncode
+
+    def wait(self, timeout: float | None = None) -> int:
+        return self.returncode
+
+    def terminate(self) -> None:
+        self.terminated = True
+
+    def kill(self) -> None:
+        self.killed = True
 
 
 class SecretProvisionerDriverError(RuntimeError):
@@ -1024,14 +1053,12 @@ def test_backup_uses_the_root_password_inside_the_mysql_container(
 ) -> None:
     commands: list[list[str]] = []
 
-    def record_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def record_popen(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
         commands.append(command)
-        destination = kwargs["stdout"]
-        assert hasattr(destination, "write")
-        destination.write(b"backup")
-        return subprocess.CompletedProcess(command, 0)
+        assert kwargs["stdin"] is None
+        return _FinishedDockerProcess(stdout=b"backup")
 
-    monkeypatch.setattr(subprocess, "run", record_run)
+    monkeypatch.setattr(subprocess, "Popen", record_popen)
 
     controller(tmp_path).backup(
         project_name="project-a",
@@ -1053,11 +1080,13 @@ def test_restore_uses_the_root_password_inside_the_mysql_container(
     backup_path = tmp_path / "backup.sql"
     backup_path.write_bytes(b"backup")
 
-    def record_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def record_popen(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
         commands.append(command)
-        return subprocess.CompletedProcess(command, 0)
+        source = kwargs["stdin"]
+        assert hasattr(source, "read")
+        return _FinishedDockerProcess()
 
-    monkeypatch.setattr(subprocess, "run", record_run)
+    monkeypatch.setattr(subprocess, "Popen", record_popen)
     monkeypatch.setattr(compose, "down", lambda **_: None)
     monkeypatch.setattr(compose, "_compose", lambda *args, **kwargs: None)
     monkeypatch.setattr(compose, "_wait_for_mysql", lambda *args, **kwargs: None)
@@ -1083,11 +1112,11 @@ def test_restore_readiness_waits_for_an_authenticated_mysql_query(
 ) -> None:
     commands: list[list[str]] = []
 
-    def record_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+    def record_popen(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
         commands.append(command)
-        return subprocess.CompletedProcess(command, 0)
+        return _FinishedDockerProcess()
 
-    monkeypatch.setattr(subprocess, "run", record_run)
+    monkeypatch.setattr(subprocess, "Popen", record_popen)
 
     controller(tmp_path)._wait_for_mysql("project-a", environment=compose_environment())
 
@@ -1102,13 +1131,13 @@ def test_search_rebuild_runs_the_pinned_openmetadata_cli_to_terminal_completion(
 ) -> None:
     commands: list[list[str]] = []
 
-    def record_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def record_popen(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
         commands.append(command)
-        assert kwargs["capture_output"] is True
-        assert kwargs["check"] is False
-        return subprocess.CompletedProcess(command, 0, stdout="complete", stderr="")
+        assert kwargs["stdout"] == subprocess.PIPE
+        assert kwargs["stderr"] == subprocess.PIPE
+        return _FinishedDockerProcess(stdout=b"complete")
 
-    monkeypatch.setattr(subprocess, "run", record_run)
+    monkeypatch.setattr(subprocess, "Popen", record_popen)
 
     controller(tmp_path).rebuild_search_index(
         project_name="project-a",
@@ -1160,18 +1189,17 @@ def test_search_rebuild_retries_one_transient_cli_failure(
 ) -> None:
     attempts = 0
 
-    def flaky_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def flaky_popen(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
         nonlocal attempts
         if "reindex" in command:
             attempts += 1
-        return subprocess.CompletedProcess(
-            command,
-            1 if "reindex" in command and attempts == 1 else 0,
-            stdout="",
-            stderr="transient search startup",
+        return _FinishedDockerProcess(
+            returncode=1 if "reindex" in command and attempts == 1 else 0,
+            stdout=b"",
+            stderr=b"transient search startup",
         )
 
-    monkeypatch.setattr(subprocess, "run", flaky_run)
+    monkeypatch.setattr(subprocess, "Popen", flaky_popen)
 
     controller(tmp_path).rebuild_search_index(
         project_name="project-a",
@@ -1188,15 +1216,15 @@ def test_search_rebuild_fails_closed_after_bounded_retries(
     attempts = 0
     commands: list[list[str]] = []
 
-    def rejected_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def rejected_popen(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
         nonlocal attempts
         commands.append(command)
         if "reindex" in command:
             attempts += 1
-            return subprocess.CompletedProcess(command, 1, stdout="", stderr="private detail")
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+            return _FinishedDockerProcess(returncode=1, stderr=b"private detail")
+        return _FinishedDockerProcess()
 
-    monkeypatch.setattr(subprocess, "run", rejected_run)
+    monkeypatch.setattr(subprocess, "Popen", rejected_popen)
 
     with pytest.raises(RuntimeError, match="OpenMetadata search index rebuild failed"):
         controller(tmp_path).rebuild_search_index(
@@ -1214,29 +1242,27 @@ def test_compose_controller_plans_and_discovers_only_exact_project_resources(
 ) -> None:
     commands: list[list[str]] = []
 
-    def record_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def record_popen(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
         commands.append(command)
         if "config" in command:
-            return subprocess.CompletedProcess(
-                command,
-                0,
+            return _FinishedDockerProcess(
                 stdout=json.dumps(
                     {
                         "services": {"server": {}, "mysql": {}},
                         "volumes": {"database": {}},
                         "networks": {"default": {}},
                     }
-                ),
-                stderr="",
+                ).encode(),
+                stderr=b"",
             )
         outputs = {
-            "container": "container-b\ncontainer-a\n",
-            "volume": "volume-a\n",
-            "network": "network-a\n",
+            "container": b"container-b\ncontainer-a\n",
+            "volume": b"volume-a\n",
+            "network": b"network-a\n",
         }
-        return subprocess.CompletedProcess(command, 0, stdout=outputs[command[1]], stderr="")
+        return _FinishedDockerProcess(stdout=outputs[command[1]])
 
-    monkeypatch.setattr(subprocess, "run", record_run)
+    monkeypatch.setattr(subprocess, "Popen", record_popen)
     compose = controller(tmp_path)
 
     planned = compose.planned_resources(
@@ -1279,12 +1305,10 @@ def test_compose_controller_observes_the_exact_pinned_image_set(
     )
     by_container = {f"container-{index}": image for index, image in enumerate(images)}
 
-    def inspect_image(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(
-            command, 0, stdout=json.dumps(by_container[command[-1]]), stderr=""
-        )
+    def inspect_image(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
+        return _FinishedDockerProcess(stdout=json.dumps(by_container[command[-1]]).encode())
 
-    monkeypatch.setattr(subprocess, "run", inspect_image)
+    monkeypatch.setattr(subprocess, "Popen", inspect_image)
 
     observed_digest = compose.verify_pinned_images(
         project_name="project-a", environment=compose_environment()
@@ -1353,18 +1377,17 @@ def test_compose_controller_removes_and_verifies_only_the_exact_identifier(
 ) -> None:
     commands: list[list[str]] = []
 
-    def record_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def record_popen(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
         commands.append(command)
         if "inspect" in command:
-            return subprocess.CompletedProcess(
-                command,
-                1,
-                stdout="",
-                stderr="Error: No such volume: exact-volume-id",
+            return _FinishedDockerProcess(
+                stdout=b"",
+                stderr=b"Error: No such volume: exact-volume-id",
+                returncode=1,
             )
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+        return _FinishedDockerProcess()
 
-    monkeypatch.setattr(subprocess, "run", record_run)
+    monkeypatch.setattr(subprocess, "Popen", record_popen)
     compose = controller(tmp_path)
 
     compose.remove_resource(
@@ -1383,6 +1406,116 @@ def test_compose_controller_removes_and_verifies_only_the_exact_identifier(
         ["docker", "volume", "rm", "--", "exact-volume-id"],
         ["docker", "volume", "inspect", "--", "exact-volume-id"],
     ]
+
+
+def test_compose_controller_preserves_compose_command_order_for_up(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    commands: list[list[str]] = []
+    compose = controller(tmp_path)
+    monkeypatch.setattr(compose, "_run_readiness", lambda: None)
+
+    def record_popen(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
+        commands.append(command)
+        return _FinishedDockerProcess()
+
+    monkeypatch.setattr(subprocess, "Popen", record_popen)
+
+    compose.up(project_name="project-a", environment=compose_environment())
+
+    assert commands == [
+        [
+            "docker",
+            "compose",
+            "--project-name",
+            "project-a",
+            "--file",
+            str(tmp_path / "compose.yaml"),
+            "up",
+            "--detach",
+        ]
+    ]
+
+
+def test_compose_controller_treats_an_already_absent_resource_as_cleaned(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def absent_resource(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
+        return _FinishedDockerProcess(
+            stdout=b"private stdout",
+            stderr=b"Error: No such volume: exact-volume-id",
+            returncode=1,
+        )
+
+    monkeypatch.setattr(subprocess, "Popen", absent_resource)
+
+    controller(tmp_path).remove_resource(
+        resource_kind="volume",
+        identifier="exact-volume-id",
+        environment=compose_environment(),
+    )
+
+
+def test_compose_controller_reports_an_unknown_resource_inspection_as_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def unknown_inspection(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
+        return _FinishedDockerProcess(
+            stdout=b"private stdout",
+            stderr=b"Docker daemon refused inspection",
+            returncode=1,
+        )
+
+    monkeypatch.setattr(subprocess, "Popen", unknown_inspection)
+
+    absent = controller(tmp_path).resource_is_absent(
+        resource_kind="network",
+        identifier="exact-network-id",
+        environment=compose_environment(),
+    )
+
+    assert absent is None
+
+
+def test_compose_controller_propagates_interrupts_from_docker(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def interrupt(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(subprocess, "Popen", interrupt)
+
+    with pytest.raises(KeyboardInterrupt):
+        controller(tmp_path).stop(project_name="project-a", environment=compose_environment())
+
+
+def test_compose_controller_failure_is_stable_and_does_not_expose_process_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    private_stdout = "stdout-with-password"
+    private_stderr = "stderr-with-password"
+
+    def rejected(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
+        return _FinishedDockerProcess(
+            stdout=private_stdout.encode(),
+            stderr=private_stderr.encode(),
+            returncode=1,
+        )
+
+    monkeypatch.setattr(subprocess, "Popen", rejected)
+
+    with pytest.raises(RuntimeError) as captured:
+        controller(tmp_path).stop(project_name="project-a", environment=compose_environment())
+
+    assert str(captured.value) == "OpenMetadata Compose operation failed"
+    assert private_stdout not in str(captured.value)
+    assert private_stderr not in str(captured.value)
+    assert str(tmp_path) not in str(captured.value)
 
 
 def test_replayed_provisioning_returns_the_same_private_resource_handle() -> None:

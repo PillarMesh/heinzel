@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import fcntl
-import json
 import os
 import secrets
+import shutil
 import stat
 import subprocess
 import sys
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Lock
-from typing import Literal, Protocol
+from typing import IO, Literal, Protocol
 
 from cryptography.fernet import Fernet
 from pillarmesh_catalog_control import CatalogBindingState, CatalogValidationEvidence
@@ -28,6 +28,12 @@ from pillarmesh_catalog_control.repository import (
     PrivateCatalogResource,
 )
 from pillarmesh_contract_model import digest
+from pillarmesh_provider_sdk import (
+    ComposeCommandError,
+    ComposeResource,
+    ComposeResourceKind,
+    DockerComposeProcess,
+)
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from .client import (
@@ -50,6 +56,8 @@ from .models import (
 
 _MYSQL_DUMP_DIRECTORY = "/tmp/pillarmesh-openmetadata-dump"
 _MYSQL_SOCKET = "/var/lib/mysql/mysql.sock"
+_OPENMETADATA_COMPOSE_TIMEOUT_SECONDS = 300.0
+_OPENMETADATA_TERMINATION_GRACE_SECONDS = 5.0
 _LOCAL_PROVISIONING_LOCKS_GUARD = Lock()
 _LOCAL_PROVISIONING_LOCKS: dict[tuple[str, str], Lock] = {}
 _DOCKER_CALLER_ENVIRONMENT_KEYS = (
@@ -70,7 +78,6 @@ _OPENMETADATA_ACCOUNT_PASSWORD_MAXIMUM_LENGTH = 56
 _RESTORED_SEARCH_ENTITIES = "glossary,glossaryTerm,classification,tag,user"
 _SEARCH_REBUILD_ATTEMPTS = 2
 
-type ComposeResourceKind = Literal["container", "volume", "network"]
 type RestoreStep = Literal[
     "target reset",
     "database startup",
@@ -92,12 +99,6 @@ def _run_restore_step(label: RestoreStep, operation: Callable[[], None]) -> None
             f"OpenMetadata isolated restore {label} failed",
             classification="transient",
         )
-
-
-@dataclass(frozen=True, slots=True)
-class ComposeResource:
-    resource_kind: ComposeResourceKind
-    identifier: str
 
 
 class ComposeController(Protocol):
@@ -342,6 +343,12 @@ class EncryptedDirectoryOpenMetadataSecretStore:
 class DockerComposeController:
     def __init__(self, *, compose_file: Path, readiness_script: Path, base_url: str) -> None:
         self._compose_file = compose_file
+        self._process = DockerComposeProcess(
+            compose_file=compose_file,
+            run=_start_docker_process,
+            timeout_seconds=_OPENMETADATA_COMPOSE_TIMEOUT_SECONDS,
+            termination_grace_seconds=_OPENMETADATA_TERMINATION_GRACE_SECONDS,
+        )
         self._readiness_script = readiness_script
         self._base_url = base_url
 
@@ -368,10 +375,11 @@ class DockerComposeController:
     def backup(
         self, *, project_name: str, backup_path: Path, environment: Mapping[str, str]
     ) -> None:
-        with backup_path.open("wb") as destination:
-            result = subprocess.run(
-                self._compose_command(
-                    project_name,
+        with (
+            backup_path.open("wb") as destination,
+            self._process.exec_stream(
+                project_name=project_name,
+                arguments=(
                     "exec",
                     "-T",
                     "mysql",
@@ -379,12 +387,11 @@ class DockerComposeController:
                     "-c",
                     _mysql_shell_dump_command(),
                 ),
-                env=self._database_environment(environment),
-                stdout=destination,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-        if result.returncode != 0 or backup_path.stat().st_size == 0:
+                environment=self._database_environment(environment),
+            ) as source,
+        ):
+            shutil.copyfileobj(source, destination, length=64 * 1024)
+        if backup_path.stat().st_size == 0:
             raise RuntimeError("OpenMetadata backup failed")
 
     def restore(
@@ -411,10 +418,11 @@ class DockerComposeController:
         )
 
         def import_backup() -> None:
-            with backup_path.open("rb") as source:
-                result = subprocess.run(
-                    self._compose_command(
-                        project_name,
+            with (
+                backup_path.open("rb") as source,
+                self._process.exec_stream(
+                    project_name=project_name,
+                    arguments=(
                         "exec",
                         "-T",
                         "mysql",
@@ -422,13 +430,12 @@ class DockerComposeController:
                         "-c",
                         _mysql_shell_restore_command(),
                     ),
-                    env=self._database_environment(environment),
+                    environment=self._database_environment(environment),
                     stdin=source,
-                    stderr=subprocess.PIPE,
-                    check=False,
-                )
-            if result.returncode != 0:
-                raise RuntimeError("OpenMetadata restore failed")
+                ) as output,
+            ):
+                while output.read(64 * 1024):
+                    pass
 
         _run_restore_step("database import", import_backup)
         _run_restore_step(
@@ -444,23 +451,23 @@ class DockerComposeController:
         rebuild_failure: BaseException | None = None
         try:
             for _ in range(_SEARCH_REBUILD_ATTEMPTS):
-                result = subprocess.run(
-                    self._compose_command(
-                        project_name,
-                        "exec",
-                        "-T",
-                        "openmetadata-server",
-                        "./bootstrap/openmetadata-ops.sh",
-                        "reindex",
-                        "--force",
-                        "--entities=" + _RESTORED_SEARCH_ENTITIES,
-                    ),
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    env=_docker_environment(environment),
-                )
-                if result.returncode == 0:
+                try:
+                    self._process.exec(
+                        project_name=project_name,
+                        arguments=(
+                            "exec",
+                            "-T",
+                            "openmetadata-server",
+                            "./bootstrap/openmetadata-ops.sh",
+                            "reindex",
+                            "--force",
+                            "--entities=" + _RESTORED_SEARCH_ENTITIES,
+                        ),
+                        environment=self._compose_environment(environment),
+                    )
+                except ComposeCommandError:
+                    continue
+                else:
                     break
             else:
                 raise RuntimeError("OpenMetadata search index rebuild failed")
@@ -484,27 +491,11 @@ class DockerComposeController:
         )
         observed_images: set[str] = set()
         for container in containers:
-            result = subprocess.run(
-                [
-                    "docker",
-                    "inspect",
-                    "--type",
-                    "container",
-                    "--format",
-                    "{{json .Config.Image}}",
-                    "--",
-                    container.identifier,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-                env=_docker_environment(environment),
+            image = self._process.inspect_container_image(
+                identifier=container.identifier,
+                environment=self._compose_environment(environment),
             )
-            try:
-                image = json.loads(result.stdout)
-            except ValueError:
-                image = None
-            if result.returncode != 0 or not isinstance(image, str) or not image:
+            if image is None:
                 raise RuntimeError("OpenMetadata container image observation failed")
             observed_images.add(image)
         if observed_images != set(UPSTREAM_IMAGES):
@@ -514,77 +505,24 @@ class DockerComposeController:
     def planned_resources(
         self, *, project_name: str, environment: Mapping[str, str]
     ) -> tuple[ComposeResource, ...]:
-        result = subprocess.run(
-            self._compose_command(project_name, "config", "--format", "json"),
-            capture_output=True,
-            text=True,
-            check=False,
-            env=_docker_environment(environment),
-        )
-        if result.returncode != 0:
-            raise RuntimeError("OpenMetadata Compose resource planning failed")
         try:
-            config = json.loads(result.stdout)
-        except (TypeError, ValueError):
-            raise RuntimeError("OpenMetadata Compose resource planning failed") from None
-        if not isinstance(config, dict):
-            raise RuntimeError("OpenMetadata Compose resource planning failed")
-        resources: list[ComposeResource] = []
-        resource_specs: tuple[tuple[str, ComposeResourceKind], ...] = (
-            ("services", "container"),
-            ("volumes", "volume"),
-            ("networks", "network"),
-        )
-        for config_key, resource_kind in resource_specs:
-            configured = config.get(config_key, {})
-            if not isinstance(configured, dict):
-                raise RuntimeError("OpenMetadata Compose resource planning failed")
-            resources.extend(
-                ComposeResource(
-                    resource_kind=resource_kind,
-                    identifier=f"planned:{resource_kind}:{name}",
-                )
-                for name in sorted(configured)
-                if isinstance(name, str) and name
+            return self._process.planned_resources(
+                project_name=project_name,
+                environment=self._compose_environment(environment),
             )
-        if not resources:
-            raise RuntimeError("OpenMetadata Compose resource planning failed")
-        return tuple(resources)
+        except ComposeCommandError:
+            raise RuntimeError("OpenMetadata Compose resource planning failed") from None
 
     def discover_resources(
         self, *, project_name: str, environment: Mapping[str, str]
     ) -> tuple[ComposeResource, ...]:
-        resources: list[ComposeResource] = []
-        discovery_specs: tuple[tuple[ComposeResourceKind, str, str], ...] = (
-            ("container", "container", "{{.ID}}"),
-            ("volume", "volume", "{{.Name}}"),
-            ("network", "network", "{{.ID}}"),
-        )
-        for resource_kind, object_type, output_format in discovery_specs:
-            result = subprocess.run(
-                [
-                    "docker",
-                    object_type,
-                    "ls",
-                    "--all" if object_type == "container" else "--filter",
-                    *(["--filter"] if object_type == "container" else []),
-                    f"label=com.docker.compose.project={project_name}",
-                    "--format",
-                    output_format,
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-                env=_docker_environment(environment),
+        try:
+            return self._process.discover_resources(
+                project_name=project_name,
+                environment=self._compose_environment(environment),
             )
-            if result.returncode != 0:
-                raise RuntimeError("OpenMetadata Compose resource discovery failed")
-            resources.extend(
-                ComposeResource(resource_kind=resource_kind, identifier=identifier)
-                for raw_identifier in result.stdout.splitlines()
-                if (identifier := raw_identifier.strip())
-            )
-        return tuple(resources)
+        except ComposeCommandError:
+            raise RuntimeError("OpenMetadata Compose resource discovery failed") from None
 
     def remove_resource(
         self,
@@ -593,19 +531,14 @@ class DockerComposeController:
         identifier: str,
         environment: Mapping[str, str],
     ) -> None:
-        object_type = _docker_object_type(resource_kind)
-        arguments = ["docker", object_type, "rm"]
-        if resource_kind == "container":
-            arguments.append("--force")
-        result = subprocess.run(
-            [*arguments, "--", identifier],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=_docker_environment(environment),
-        )
-        if result.returncode != 0 and not _docker_reports_absent(resource_kind, result.stderr):
-            raise RuntimeError("OpenMetadata exact Compose resource cleanup failed")
+        try:
+            self._process.remove_resource(
+                resource_kind=resource_kind,
+                identifier=identifier,
+                environment=self._compose_environment(environment),
+            )
+        except ComposeCommandError:
+            raise RuntimeError("OpenMetadata exact Compose resource cleanup failed") from None
 
     def resource_is_absent(
         self,
@@ -614,69 +547,61 @@ class DockerComposeController:
         identifier: str,
         environment: Mapping[str, str],
     ) -> bool | None:
-        result = subprocess.run(
-            ["docker", _docker_object_type(resource_kind), "inspect", "--", identifier],
-            capture_output=True,
-            text=True,
-            check=False,
-            env=_docker_environment(environment),
-        )
-        if result.returncode == 0:
-            return False
-        if _docker_reports_absent(resource_kind, result.stderr):
-            return True
-        return None
+        try:
+            return self._process.resource_is_absent(
+                resource_kind=resource_kind,
+                identifier=identifier,
+                environment=self._compose_environment(environment),
+            )
+        except ComposeCommandError:
+            return None
 
     def _compose(self, project_name: str, *arguments: str, environment: Mapping[str, str]) -> None:
-        result = subprocess.run(
-            self._compose_command(project_name, *arguments),
-            capture_output=True,
-            text=True,
-            check=False,
-            env=_docker_environment(environment),
-        )
-        if result.returncode != 0:
-            raise RuntimeError("OpenMetadata Compose operation failed")
-
-    def _compose_command(self, project_name: str, *arguments: str) -> list[str]:
-        return [
-            "docker",
-            "compose",
-            "--project-name",
-            project_name,
-            "--file",
-            str(self._compose_file),
-            *arguments,
-        ]
+        try:
+            self._process.exec(
+                project_name=project_name,
+                arguments=arguments,
+                environment=self._compose_environment(environment),
+            )
+        except ComposeCommandError:
+            raise RuntimeError("OpenMetadata Compose operation failed") from None
 
     @staticmethod
-    def _database_environment(environment: Mapping[str, str]) -> dict[str, str]:
+    def _compose_environment(environment: Mapping[str, str]) -> dict[str, str]:
+        return {
+            key: environment[key]
+            for key in _COMPOSE_CREDENTIAL_ENVIRONMENT_KEYS
+            if key in environment
+        }
+
+    @classmethod
+    def _database_environment(cls, environment: Mapping[str, str]) -> dict[str, str]:
         password = environment.get("PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD")
         if password is None:
             raise RuntimeError("OpenMetadata database password is unavailable")
-        return _docker_environment(environment) | {"MYSQL_PWD": password}
+        return cls._compose_environment(environment) | {"MYSQL_PWD": password}
 
     def _wait_for_mysql(self, project_name: str, *, environment: Mapping[str, str]) -> None:
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
-            result = subprocess.run(
-                self._compose_command(
-                    project_name,
-                    "exec",
-                    "-T",
-                    "mysql",
-                    "sh",
-                    "-c",
-                    'exec mysql --user=root --password="$MYSQL_ROOT_PASSWORD" '
-                    '--silent --execute "SELECT 1"',
-                ),
-                env=self._database_environment(environment),
-                capture_output=True,
-                check=False,
-            )
-            if result.returncode == 0:
+            try:
+                self._process.exec(
+                    project_name=project_name,
+                    arguments=(
+                        "exec",
+                        "-T",
+                        "mysql",
+                        "sh",
+                        "-c",
+                        'exec mysql --user=root --password="$MYSQL_ROOT_PASSWORD" '
+                        '--silent --execute "SELECT 1"',
+                    ),
+                    environment=self._database_environment(environment),
+                )
+            except ComposeCommandError:
+                time.sleep(1)
+            else:
                 return
-            time.sleep(1)
         raise RuntimeError("OpenMetadata database did not become ready for restore")
 
     def _run_readiness(self) -> None:
@@ -2447,14 +2372,15 @@ def _openmetadata_account_password() -> SecretStr:
     )
 
 
-def _docker_environment(environment: Mapping[str, str]) -> dict[str, str]:
-    compose_credentials = {
-        key: environment[key] for key in _COMPOSE_CREDENTIAL_ENVIRONMENT_KEYS if key in environment
-    }
-    caller_environment = {
-        key: os.environ[key] for key in _DOCKER_CALLER_ENVIRONMENT_KEYS if key in os.environ
-    }
-    return compose_credentials | caller_environment
+def _start_docker_process(
+    command: list[str],
+    *,
+    env: Mapping[str, str],
+    stdin: int | IO[bytes] | None,
+    stdout: int,
+    stderr: int,
+) -> subprocess.Popen[bytes]:
+    return subprocess.Popen(command, env=env, stdin=stdin, stdout=stdout, stderr=stderr)
 
 
 def _binding_from_operation(operation: PrivateCatalogOperation) -> _PrivateBinding:
@@ -2537,14 +2463,6 @@ def _cleanup_order(resource: PrivateCatalogResource) -> tuple[int, str]:
     }
     priority = priorities.get(resource.resource_kind, 12)
     return priority, resource.resource_id
-
-
-def _docker_object_type(resource_kind: ComposeResourceKind) -> str:
-    return resource_kind
-
-
-def _docker_reports_absent(resource_kind: ComposeResourceKind, standard_error: str) -> bool:
-    return f"no such {resource_kind}" in standard_error.lower()
 
 
 def _service_identity_name(tenant_id: str, identity: str) -> str:

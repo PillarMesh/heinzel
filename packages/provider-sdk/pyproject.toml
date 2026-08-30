@@ -2,7 +2,7 @@
 name = "pillarmesh-provider-sdk"
 version = "0.1.0"
 requires-python = "==3.13.*"
-dependencies = ["pydantic>=2.11,<3"]
+dependencies = ["cryptography>=45,<47", "pydantic>=2.11,<3"]
 
 [build-system]
 requires = ["hatchling"]

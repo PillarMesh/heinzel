@@ -202,6 +202,119 @@ expected revision and fails closed when the stored revision has moved.
 
 Contracts reference `binding_id`. Endpoints, credentials, administrator identities, infrastructure identifiers, encryption keys, and backup locations are private operational state and never enter semantic artifacts or customer-visible evidence.
 
+The private warehouse operation and resource ledgers contain operational handles, resource identities,
+and secrets. The following frozen, strict, tenant-scoped evidence artifacts contain only attributable,
+privacy-safe digests, counts, and timestamps. They are canonically serializable and digest-addressable.
+
+#### WarehouseValidationEvidence
+
+```text
+WarehouseValidationEvidence
+  schema_version                    1
+  evidence_id
+  tenant_id
+  binding_id
+  binding_revision
+  validation_profile                local_acceptance | production
+  engine_kind                       postgresql | clickhouse
+  engine_version                    ^[0-9]+(?:\.[0-9]+){0,3}(?:[-+][0-9A-Za-z]{1,32})?$ max_length=64
+  engine_build_digest
+  engine_image_digest
+  principal_profile_digest
+  namespace_grant_matrix_digest
+  tls_probe_digest
+  network_isolation_probe_digest
+  encryption_at_rest_evidence_digest
+  encryption_at_rest_disposition    proven | deferred_local_acceptance
+  positive_probe_digest
+  denial_probe_digest
+  ledger_probe_digest
+  monitoring_probe_digest
+  capacity_alert_probe_digest
+  backup_artifact_digest
+  restore_verification_digest
+  restore_cleanup_digest
+  observed_at
+```
+
+#### WarehouseResumeValidationEvidence
+
+```text
+WarehouseResumeValidationEvidence
+  schema_version                  1
+  evidence_id
+  tenant_id
+  binding_id
+  binding_revision
+  engine_kind                     postgresql | clickhouse
+  engine_version                  ^[0-9]+(?:\.[0-9]+){0,3}(?:[-+][0-9A-Za-z]{1,32})?$ max_length=64
+  engine_build_digest
+  engine_image_digest
+  tls_probe_digest
+  network_isolation_probe_digest
+  monitoring_probe_digest
+  positive_probe_digest
+  denial_probe_digest
+  storage_integrity_probe_digest
+  observed_at
+```
+
+#### WarehouseRestoreVerification
+
+```text
+WarehouseRestoreVerification
+  schema_version                  1
+  verification_id
+  tenant_id
+  binding_id
+  binding_revision
+  engine_kind                     postgresql | clickhouse
+  source_backup_artifact_digest
+  representative_data_digest
+  schema_metadata_digest
+  principal_profile_digest
+  integrity_marker_digest
+  query_behavior_digest
+  verified_at
+```
+
+#### WarehouseRetirementEvidence
+
+```text
+WarehouseRetirementEvidence
+  schema_version                  1
+  evidence_id
+  tenant_id
+  binding_id
+  binding_revision
+  resource_inventory_digest
+  cleanup_disposition_digest
+  retention_policy_digest
+  completed_resource_count
+  retained_resource_count
+  cleanup_failed_resource_count
+  observed_at
+```
+
+#### WarehouseFailureClassification
+
+```text
+transient_transport
+transient_unavailable
+throttled
+ambiguous_outcome
+authorization_denied
+statement_rejected
+invalid_provider_response
+integrity_failure
+permanent_configuration
+```
+
+The validation profile and storage-encryption disposition form a closed pair: production evidence
+uses `production` with `proven`; local acceptance evidence uses `local_acceptance` with
+`deferred_local_acceptance`. Evidence never contains raw rows, query results, credentials,
+endpoints, backup paths, or resource identities.
+
 ### 6.3 Immutability
 
 Before provisioning begins, the customer may change engine or region. Once lifecycle state becomes `provisioning`, tenant, engine, deployment mode, and region are immutable. A later change is a separately authorized migration with a new binding, shadow verification, cutover, rollback window, and retirement.
@@ -216,7 +329,41 @@ ready → suspended → ready
 ready → retiring → retired
 ```
 
-Only `ready` bindings accept new activations. Provisioning validates engine identity, version, encryption, network isolation, runtime and administration roles, target and ledger capabilities, backups, monitoring, and positive and denial probes.
+Only `ready` bindings accept new activations. Provisioning validates engine identity, version,
+storage encryption, network isolation, runtime and administration roles, target and ledger
+capabilities, backups, monitoring, fixed-capacity alerts, and positive and denial probes.
+
+`validating → ready` is evidence-gated: `record_validation` applies the readiness policy and
+admits initial `WarehouseValidationEvidence`. `suspended → ready` is evidence-gated:
+`record_resume_validation` admits fresh `WarehouseResumeValidationEvidence`. `retiring → retired`
+and `failed → retired` are evidence-gated: `record_retirement` admits
+`WarehouseRetirementEvidence`. Plain `transition` cannot enter `ready` or `retired` through
+those paths.
+
+Resume repeats fresh TLS, network-isolation, monitoring, positive, denial, engine-version, and
+storage-integrity probes. It also repeats isolated backup, restore, verification, and cleanup when
+the suspension reason or observed drift concerns storage, corruption, backup, restore, or engine
+version.
+
+`retired` means no activation or warehouse work can resume, active services are stopped or fenced,
+and each exact ledger resource is complete, retained to its contractual deadline, or has an
+attributable cleanup failure. It does not mean data is physically deleted before its retention
+deadline.
+
+#### Provider operations
+
+```text
+provision
+reconcile
+validate
+suspend
+resume
+retire
+```
+
+Backup, isolated restore, restore verification, and restore cleanup are mandatory phases of
+`validate`, not independent lifecycle commands. Resource inspection and cleanup are internal parts
+of `reconcile` and `retire`.
 
 ### 6.4.1 MVP transition table
 
@@ -252,6 +399,12 @@ The dedicated tenant data plane initially contains:
 - backup and recovery integration.
 
 The deployment topology remains technology-neutral until a deployment ADR selects a cloud and orchestration technology.
+
+Local Compose acceptance proves lifecycle conformance but cannot prove cloud-volume storage
+encryption. Its validation evidence must use `local_acceptance` with
+`deferred_local_acceptance`. Production readiness requires a substrate-native storage-encryption
+probe and validation evidence using `production` with `proven`; no environment-name branch or
+caller-supplied Boolean can weaken that admission rule.
 
 ## 7. Future placement modes
 
@@ -848,7 +1001,6 @@ Infrastructure health cannot declare semantic success. Existing rows, prior repo
 ## 18. Security, privacy, and access
 
 - Tenant data planes are dedicated in the initial model.
-- Runtime, administration, customer SQL, catalog, and BI identities are separate and least-privilege.
 - Secrets are resolved through private handles and never enter contracts, graphs, evidence, tickets, prompts, or logs.
 - Source and provider metadata are untrusted input.
 - Raw data is excluded from the control plane except through explicitly approved bounded diagnostic paths.
@@ -856,6 +1008,28 @@ Infrastructure health cannot declare semantic success. Existing rows, prior repo
 - Certified assets inherit contract access policy.
 - Destructive actions resolve exact targets and require explicit authority.
 - Evidence artifacts are privacy-designed and exported through a fail-closed allowlist.
+
+### 18.1 Warehouse principal classes
+
+```text
+administration
+ingestion_runtime
+transformation_runtime
+backup_restore
+customer_sql
+catalog
+bi
+```
+
+| Principal class | Enforceable grant and command boundary |
+| --- | --- |
+| Administration | Provisions namespaces, roles, and engine configuration; it is never used by ingestion, transformation, catalog, BI, or customer queries. |
+| Ingestion runtime | Writes only source-aligned `raw` generations and its bounded ledger records; it cannot administer roles, write `conformed`, `product`, `consumption`, or read customer and BI paths. |
+| Transformation runtime | Reads `raw`; writes `conformed`, `product`, and `quarantine`; publishes approved `consumption` objects; it cannot administer, back up, or mutate the control ledger outside its allowlist. |
+| Backup and restore | Reads only what engine-native backup requires and drives approved backup and restore through the private backup command boundary; it cannot write, author schemas, administer roles, access customers, or resolve its credential outside that boundary. |
+| Customer SQL | Reads only explicitly granted `consumption` objects through a non-shared identity; it cannot access `raw`, `conformed`, `product`, quarantine, ledger, role, or backup surfaces. |
+| Catalog | Inspects approved schemas, object metadata, and lineage-supporting metadata; it cannot read rows, write the warehouse, administer roles, or access backups. |
+| BI | Reads approved `consumption` objects required by certified datasets; it cannot access `raw`, `conformed`, `product`, quarantine, ledger, role, or backup surfaces. |
 
 ## 19. Backup, recovery, and exit
 
@@ -970,7 +1144,8 @@ The guided template may propose defaults, but activation fails with `No Valid Pl
 - Governed stakeholder-answer preparation grounded in authorization, catalog assets, metric versions, freshness, quality, and lineage.
 - Least-privilege, time-bounded access proposals, approval binding, grant validation, expiry, and revocation.
 - Backup plus witnessed isolated restore.
-- Tenant provisioning, network isolation, credential rotation, version-pinned upgrades, capacity alerts, and retirement for the fixed MVP profile.
+- Tenant provisioning, network isolation, credential rotation, version-pinned upgrades, retirement,
+  monitoring evidence, and fixed-profile capacity-alert evidence.
 
 The MVP does not include automatic capacity changes, multi-region failover, arbitrary cron expressions, user-authored DAGs, unrestricted SQL or code execution, or autonomous semantic repair.
 
@@ -1021,6 +1196,12 @@ The MVP passes only when:
 - authorized stakeholder questions receive grounded, reproducible answers and unauthorized or unanswerable questions fail closed;
 - access requests are purpose-bound, least-privilege, approved, positively and negatively verified, time-bounded, and revocable;
 - the isolated restore proves usable data and metadata rather than archive presence;
+- PostgreSQL and ClickHouse pass the common Plan 3A outcome subset: isolated bindings,
+  governed namespaces, principal grants and denials, idempotent recovery, isolated restore, and
+  retention-aware exact-ledger retirement;
+- ClickHouse does not claim multi-statement transactional guarantees, transactional DDL rollback,
+  deferred foreign-key enforcement, or row-by-row update/delete semantics; contracts requiring
+  those guarantees return `No Valid Plan` unless another mechanism is separately proven;
 - privacy scans find no secret or raw sensitive value in control-plane artifacts or evidence;
 - the one-person architect journey can be completed without manual operation of the warehouse, OpenMetadata, Superset, scheduler, or connector runtime; and
 - all required decisions, limitations, and failures remain visible in the request and evidence history.
@@ -1065,7 +1246,9 @@ Implementation planning should preserve these dependency stages:
 
 1. Durable process-upload, ontology, authority, stakeholder-question, access-request, approval, warehouse-binding, dashboard, and trigger models.
 2. Managed local acceptance environment for PostgreSQL, ClickHouse, OpenMetadata, and Superset.
-3. Warehouse provisioning lifecycle and private operational state.
+3. Plan 3A warehouse contracts, provisioning lifecycle, private operational state, and two-engine
+   conformance precede source acquisition, destination data movement, transformations, scheduling,
+   Superset, and full operations.
 4. Catalog publication and authority adapter.
 5. Architect inbox, conversation, dependency, stakeholder-answer, access-preview, and approval binding.
 6. PostgreSQL and Stripe source providers.
