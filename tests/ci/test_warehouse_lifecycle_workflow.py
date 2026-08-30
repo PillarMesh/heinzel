@@ -701,10 +701,11 @@ def test_successful_witness_strictly_validates_and_uploads_only_public_evidence(
     assert cost_upload["uses"] == (
         "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
     )
+    assert str(evidence_upload["if"]).strip() == "always()"
     assert evidence_upload["with"] == {
         "name": "warehouse-lifecycle-evidence",
         "path": "${{ env.PILLARMESH_PLAN3A_EVIDENCE_DIRECTORY }}/plan3a-evidence.json",
-        "if-no-files-found": "error",
+        "if-no-files-found": "warn",
     }
     assert str(cost_upload["if"]).strip() == "always()"
     assert cost_upload["with"] == {
@@ -718,6 +719,64 @@ def test_successful_witness_strictly_validates_and_uploads_only_public_evidence(
         and "reservation" not in str(step.get("with", {}).get("path", ""))
         for step in lifecycle_steps
     )
+
+
+def test_failed_evidence_validation_still_uploads_the_evidence(workflow: dict[str, Any]) -> None:
+    """The validation failure modes are the ones that need the artifact.
+
+    A canary in the evidence, a non-terminal engine result, or a residual
+    resource all fail `validate-evidence`. Without `always()` the upload step is
+    skipped and the file dies with the runner, leaving a one-line error and
+    nothing to inspect.
+    """
+    steps = workflow["jobs"]["lifecycle"]["steps"]
+    validation = _job_step(workflow, "lifecycle", "Validate sanitized Plan 3A evidence")
+    evidence_upload = _job_step(workflow, "lifecycle", "Upload sanitized Plan 3A evidence")
+
+    assert steps.index(validation) < steps.index(evidence_upload)
+    assert str(evidence_upload["if"]).strip() == "always()"
+    assert evidence_upload["with"]["if-no-files-found"] == "warn"
+
+
+def test_every_checkout_records_a_resolvable_source_commit(workflow: dict[str, Any]) -> None:
+    """run_plan3a records the checked-out commit as the evidence provenance.
+
+    On a pull_request event `actions/checkout` defaults to the ephemeral
+    refs/pull/N/merge commit, which is unreachable from any branch and is
+    replaced on the next push, so evidence naming it cannot be reproduced.
+    """
+    checkouts = [
+        step
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", ())
+        if str(step.get("uses", "")).startswith("actions/checkout@")
+    ]
+
+    assert checkouts, "the workflow checks out no repository"
+    for step in checkouts:
+        assert step["with"]["ref"] == ("${{ github.event.pull_request.head.sha || github.sha }}")
+
+
+def test_push_trigger_does_not_duplicate_the_pull_request_lifecycle(
+    workflow: dict[str, Any],
+) -> None:
+    """A pull request branch push fires both `push` and `pull_request`.
+
+    Unfiltered, that starts two full two-engine Docker lifecycles for one push,
+    and a first push to a new branch forces one as well because the detector
+    cannot resolve a previous commit.
+    """
+    push = _triggers(workflow)["push"]
+
+    assert isinstance(push, dict)
+    assert push["branches"] == ["main"]
+
+
+def test_superseded_pull_request_runs_are_cancelled(workflow: dict[str, Any]) -> None:
+    concurrency = workflow["concurrency"]
+
+    assert concurrency["group"] == "${{ github.workflow }}-${{ github.ref }}"
+    assert concurrency["cancel-in-progress"] == ("${{ github.event_name == 'pull_request' }}")
 
 
 def test_live_job_uses_the_repository_pinned_toolchain_actions(workflow: dict[str, Any]) -> None:

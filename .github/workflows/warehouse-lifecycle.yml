@@ -5,11 +5,22 @@ name: Warehouse lifecycle
 # that does not match it.
 on:
   pull_request:
+  # Pushes to a pull request branch already run through `pull_request`. Without
+  # this filter every such push started a second, identical two-engine Docker
+  # lifecycle, and creating any branch forced one as well, because a push with
+  # no known previous commit cannot prove the change is unrelated.
   push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Supersede an outdated pull request run, but let a main-branch run finish so
+  # its evidence is not discarded.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   changes:
@@ -20,6 +31,10 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          # The pull request head commit, not the ephemeral merge commit: the
+          # witnessed evidence records the checked-out commit, and a merge-ref
+          # SHA is unreachable from any branch and gone on the next push.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
       - name: Detect warehouse lifecycle changes
         id: detect
@@ -91,6 +106,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Install uv and Python
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:
@@ -141,11 +158,16 @@ jobs:
       - name: Validate sanitized Plan 3A evidence
         run: uv run python -m tests.acceptance.run_plan3a validate-evidence
       - name: Upload sanitized Plan 3A evidence
+        # Always: a failed validate-evidence step is exactly when the evidence
+        # is needed, and skipping the upload discards it with the runner.
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: warehouse-lifecycle-evidence
           path: ${{ env.PILLARMESH_PLAN3A_EVIDENCE_DIRECTORY }}/plan3a-evidence.json
-          if-no-files-found: error
+          # Warn, not error: an earlier failure can leave no evidence at all, and
+          # that must not replace the real failure with a missing-artifact error.
+          if-no-files-found: warn
       - name: Upload the sanitized cost artifact
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
