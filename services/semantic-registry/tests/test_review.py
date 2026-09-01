@@ -56,7 +56,7 @@ def review_service(
     return SemanticReviewService(
         semantic_repository=repository,
         request_service=request_service
-        or RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW),
+        or RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW),
         clock=lambda: NOW,
     ), repository
 
@@ -101,7 +101,7 @@ def test_submission_failure_after_each_repository_effect_restores_exact_state_an
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for failure_point in ("bundle", "request", "investigating", "proposed", "awaiting"):
-        request_repository = SQLiteRequestRepository(":memory:")
+        request_repository = SQLiteRequestRepository.open(":memory:")
         request_service = RequestManagementService(request_repository, clock=lambda: NOW)
         service, semantic_repository = review_service(request_service=request_service)
         bundle = create_bundle(service, semantic_repository)
@@ -262,7 +262,7 @@ def test_request_transition_failure_after_bundle_finalization_restores_exact_sta
     item_decision: ReviewItemDecision,
     target_state: RequestState,
 ) -> None:
-    request_repository = SQLiteRequestRepository(":memory:")
+    request_repository = SQLiteRequestRepository.open(":memory:")
     request_service = RequestManagementService(request_repository, clock=lambda: NOW)
     service, semantic_repository = review_service(request_service=request_service)
     bundle = create_bundle(service, semantic_repository)
@@ -332,7 +332,7 @@ def test_request_transition_failure_after_bundle_finalization_restores_exact_sta
 def test_bundle_failure_after_unresolved_request_transition_restores_exact_state_and_replays(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    request_repository = SQLiteRequestRepository(":memory:")
+    request_repository = SQLiteRequestRepository.open(":memory:")
     request_service = RequestManagementService(request_repository, clock=lambda: NOW)
     service, semantic_repository = review_service(request_service=request_service)
     bundle = create_bundle(service, semantic_repository)

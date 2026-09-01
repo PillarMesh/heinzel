@@ -1550,7 +1550,7 @@ def _run(config: Plan2Config) -> int:
         persisted_semantic = live_semantic_versions.store(successful.semantic_version)
         if persisted_semantic != successful.semantic_version:
             raise Plan2HarnessError("live semantic persistence changed approved identity")
-        live_request_repository = SQLiteRequestRepository(
+        live_request_repository = SQLiteRequestRepository.open(
             str(config.state_path.with_name(config.state_path.stem + "-live-requests.sqlite"))
         )
         open_resources.append(live_request_repository)

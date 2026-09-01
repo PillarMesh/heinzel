@@ -7,6 +7,7 @@ from pillarmesh_contract_model import digest
 from .models import (
     ConversationEntry,
     DataAccessRequest,
+    DataProductChangeRequest,
     DecisionBinding,
     DecisionKind,
     InboxRequest,
@@ -162,6 +163,36 @@ class RequestManagementService:
             updated_at=now,
         )
 
+    def prepare_data_product_change(
+        self,
+        *,
+        tenant_id: str,
+        requester_id: str,
+        purpose: str,
+        requested_outcome: str,
+        missing_capability_refs: tuple[str, ...],
+        source_request_id: str,
+        source_request_revision: int,
+    ) -> InboxRequest:
+        now = self._now()
+        sequence = self._repository.peek_next_sequence(tenant_id)
+        return InboxRequest(
+            request_id=self._request_id_for_sequence(tenant_id, sequence),
+            tenant_id=tenant_id,
+            requester_id=requester_id,
+            payload=DataProductChangeRequest(
+                purpose=purpose,
+                requested_outcome=requested_outcome,
+                missing_capability_refs=missing_capability_refs,
+                source_request_id=source_request_id,
+                source_request_revision=source_request_revision,
+            ),
+            state=RequestState.SUBMITTED,
+            revision=1,
+            submitted_at=now,
+            updated_at=now,
+        )
+
     def record_review_decision(
         self,
         *,
@@ -245,6 +276,8 @@ class RequestManagementService:
     ) -> DecisionBinding:
         request = self.get(tenant_id, request_id)
         self._assert_current_revision(request, request_revision)
+        if self._repository.has_fulfillment_proposal(tenant_id, request_id):
+            raise ValueError("Plan 2 decision cannot bind a fulfillment proposal revision")
         try:
             return self._repository.record_decision(
                 tenant_id,

@@ -161,7 +161,7 @@ def test_openmetadata_publication_round_trip_is_executable_when_emulator_is_expl
         str(tmp_path / "semantic-version.sqlite")
     )
     request_service = RequestManagementService(
-        SQLiteRequestRepository(str(tmp_path / "requests.sqlite")), clock=lambda: _NOW
+        SQLiteRequestRepository.open(str(tmp_path / "requests.sqlite")), clock=lambda: _NOW
     )
     service = SemanticPublicationService(
         repository=publication_repository,

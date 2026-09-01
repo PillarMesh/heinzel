@@ -17,8 +17,27 @@ from pydantic import ValidationError
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 
 
+def test_request_repository_does_not_close_a_caller_owned_connection() -> None:
+    connection = sqlite3.connect(":memory:")
+    repository = SQLiteRequestRepository(connection)
+
+    repository.close()
+
+    assert connection.execute("SELECT 1").fetchone() == (1,)
+    connection.close()
+
+
+def test_opened_request_repository_closes_its_owned_connection(tmp_path: Path) -> None:
+    repository = SQLiteRequestRepository.open(str(tmp_path / "requests.sqlite"))
+
+    repository.close()
+
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        repository.list_inbox("tenant-a")
+
+
 def test_question_and_access_request_share_ordered_inbox() -> None:
-    service = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    service = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
     question = service.submit_question(
         tenant_id="tenant-a",
         requester_id="finance-user",
@@ -90,7 +109,7 @@ def insert_durable_request_payload(
 
 
 def test_request_cannot_skip_approval_state() -> None:
-    service = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    service = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
     request = access_request(service)
 
     with pytest.raises(ValueError, match="submitted -> executing"):
@@ -104,7 +123,7 @@ def test_request_cannot_skip_approval_state() -> None:
 
 
 def test_one_tenant_cannot_see_or_move_another_tenants_request() -> None:
-    service = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    service = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
     request = access_request(service)
 
     assert service.list_inbox("tenant-b") == ()
@@ -121,7 +140,7 @@ def test_one_tenant_cannot_see_or_move_another_tenants_request() -> None:
 
 
 def test_access_expiry_must_be_aware_and_after_submission() -> None:
-    service = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    service = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
 
     with pytest.raises(ValueError, match="expires_at"):
         service.submit_access_request(
@@ -136,7 +155,7 @@ def test_access_expiry_must_be_aware_and_after_submission() -> None:
 
 
 def test_stale_caller_loses_after_another_transition_advances_revision() -> None:
-    service = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    service = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
     request = access_request(service)
 
     advanced = service.transition(
@@ -160,7 +179,7 @@ def test_stale_caller_loses_after_another_transition_advances_revision() -> None
 
 def test_transition_retains_prior_append_only_revision(tmp_path: Path) -> None:
     database_path = tmp_path / "requests.db"
-    repository = SQLiteRequestRepository(str(database_path))
+    repository = SQLiteRequestRepository.open(str(database_path))
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = access_request(service)
 
@@ -186,7 +205,7 @@ def test_transition_retains_prior_append_only_revision(tmp_path: Path) -> None:
 
 
 def test_transition_history_attributes_each_immutable_revision() -> None:
-    service = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    service = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
     request = access_request(service)
 
     clarifying = service.transition(
@@ -218,7 +237,7 @@ def test_transition_history_attributes_each_immutable_revision() -> None:
 
 
 def test_transition_history_refuses_another_tenant() -> None:
-    service = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    service = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
     request = access_request(service)
     service.transition(
         "tenant-a",
@@ -233,7 +252,7 @@ def test_transition_history_refuses_another_tenant() -> None:
 
 
 def test_transition_event_failure_rolls_back_request_revision_and_sequence() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = access_request(service)
     repository._connection.execute(
@@ -264,7 +283,7 @@ def test_transition_event_failure_rolls_back_request_revision_and_sequence() -> 
 
 
 def test_durable_deserialization_rejects_unknown_payload_field() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     insert_durable_request_payload(
         repository,
         {
@@ -280,7 +299,7 @@ def test_durable_deserialization_rejects_unknown_payload_field() -> None:
 
 
 def test_durable_deserialization_rejects_unknown_request_discriminator() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     insert_durable_request_payload(
         repository,
         {
@@ -295,9 +314,11 @@ def test_durable_deserialization_rejects_unknown_request_discriminator() -> None
 
 
 def test_same_tenant_submissions_have_distinct_deterministic_ids_under_frozen_clock() -> None:
-    first_service = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    first_service = RequestManagementService(
+        SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW
+    )
     second_service = RequestManagementService(
-        SQLiteRequestRepository(":memory:"), clock=lambda: NOW
+        SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW
     )
 
     first_ids = (question(first_service).request_id, question(first_service).request_id)
@@ -308,7 +329,7 @@ def test_same_tenant_submissions_have_distinct_deterministic_ids_under_frozen_cl
 
 
 def test_stored_request_payload_is_the_canonical_form_the_platform_digests() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = service.submit_question(
         tenant_id="tenant-a",

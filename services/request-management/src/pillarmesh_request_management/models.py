@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal
@@ -63,12 +65,24 @@ class SchemaSemanticChangeRequest(ArtifactModel):
     affected_contract_ref: str | None = Field(default=None, min_length=1)
 
 
+class DataProductChangeRequest(ArtifactModel):
+    request_type: Literal["data_product_change"] = "data_product_change"
+    purpose: str = Field(min_length=1, max_length=512)
+    requested_outcome: str = Field(min_length=1, max_length=4000)
+    missing_capability_refs: tuple[str, ...] = Field(min_length=1)
+    source_request_id: str = Field(min_length=1)
+    source_request_revision: int = Field(ge=1)
+
+
 class InboxRequest(ArtifactModel):
     request_id: str
     tenant_id: str
     requester_id: str
     payload: Annotated[
-        StakeholderQuestion | DataAccessRequest | SchemaSemanticChangeRequest,
+        StakeholderQuestion
+        | DataAccessRequest
+        | SchemaSemanticChangeRequest
+        | DataProductChangeRequest,
         Field(discriminator="request_type"),
     ]
     state: RequestState

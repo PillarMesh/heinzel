@@ -49,7 +49,7 @@ MARKDOWN = "text/markdown; charset=utf-8"
 
 @pytest.fixture
 def request_service() -> RequestManagementService:
-    return RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    return RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
 
 
 def create_ready_clickhouse_binding(

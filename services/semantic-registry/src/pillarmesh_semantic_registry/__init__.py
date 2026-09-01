@@ -3,6 +3,11 @@ from __future__ import annotations
 from .approval import ApprovalCompilationInput, ApprovedSemanticCompiler
 from .authority import AuthorityResolver
 from .extractor import DeterministicManifestExtractor
+from .fulfillment_adapter import (
+    FulfillmentAuthorityObservation,
+    FulfillmentAuthorityResolver,
+    SemanticFulfillmentSnapshotAdapter,
+)
 from .models import (
     AuthorityObservation,
     AuthorityResolution,
@@ -48,6 +53,8 @@ __all__ = [
     "CatalogPublicationReceipt",
     "CatalogPublicationRepository",
     "DeterministicManifestExtractor",
+    "FulfillmentAuthorityObservation",
+    "FulfillmentAuthorityResolver",
     "OntologyReviewBundle",
     "OntologyReviewItem",
     "ResolutionReasonCode",
@@ -58,6 +65,7 @@ __all__ = [
     "SemanticCandidate",
     "SemanticCandidateExtractor",
     "SemanticCandidateSet",
+    "SemanticFulfillmentSnapshotAdapter",
     "SemanticPersistenceError",
     "SemanticPublicationService",
     "SemanticRepository",

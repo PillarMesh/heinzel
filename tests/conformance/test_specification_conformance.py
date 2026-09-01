@@ -21,7 +21,24 @@ from pillarmesh_contract_model import (
     InformationKind,
     ManagedIntegrationContract,
 )
-from pillarmesh_request_management import DecisionKind
+from pillarmesh_request_management import (
+    AccessScopePreview,
+    ApprovalRequirement,
+    ClarifiedOutcomeStatement,
+    DataProductChangeRequest,
+    DecisionKind,
+    DenialDispositionReceipt,
+    DisclosureDenial,
+    FulfillmentAdmissionReceipt,
+    FulfillmentApprovalBinding,
+    FulfillmentEvidenceReceipt,
+    FulfillmentGroundingSnapshot,
+    FulfillmentPolicySnapshot,
+    FulfillmentProposal,
+    RequestDependency,
+    RequestNoValidPlan,
+    StakeholderAnswerDraft,
+)
 from pillarmesh_request_management.service import _TRANSITIONS as REQUEST_TRANSITIONS
 from pillarmesh_semantic_registry import (
     AuthorityObservation,
@@ -105,6 +122,18 @@ def _markdown_table_rows(heading: str) -> list[tuple[str, str]]:
     return rows
 
 
+def _markdown_rows(heading: str, column_count: int) -> list[tuple[str, ...]]:
+    rows: list[tuple[str, ...]] = []
+    for line in _section(heading).splitlines():
+        if not line.startswith("|"):
+            continue
+        cells = tuple(cell.strip() for cell in line.strip("|").split("|"))
+        if len(cells) != column_count or all(set(cell) <= {"-", " "} for cell in cells):
+            continue
+        rows.append(cells)
+    return rows[1:]
+
+
 def _documented_transitions(heading: str) -> dict[str, set[str]]:
     rows: dict[str, set[str]] = {}
     for line in _fenced_block(heading).strip().splitlines():
@@ -145,6 +174,134 @@ def test_request_terminal_states_match_section_13_3_1_prose() -> None:
     implemented = {state.value for state, targets in REQUEST_TRANSITIONS.items() if not targets}
 
     assert documented == implemented
+
+
+@pytest.mark.parametrize(
+    ("artifact", "heading"),
+    (
+        (FulfillmentGroundingSnapshot, "#### FulfillmentGroundingSnapshot"),
+        (FulfillmentPolicySnapshot, "#### FulfillmentPolicySnapshot"),
+        (ClarifiedOutcomeStatement, "#### ClarifiedOutcomeStatement"),
+        (StakeholderAnswerDraft, "#### StakeholderAnswerDraft"),
+        (AccessScopePreview, "#### AccessScopePreview"),
+        (DisclosureDenial, "#### DisclosureDenial"),
+        (ApprovalRequirement, "#### ApprovalRequirement"),
+        (FulfillmentProposal, "#### FulfillmentProposal"),
+        (FulfillmentApprovalBinding, "#### FulfillmentApprovalBinding"),
+        (FulfillmentAdmissionReceipt, "#### FulfillmentAdmissionReceipt"),
+        (DenialDispositionReceipt, "#### DenialDispositionReceipt"),
+        (RequestDependency, "#### RequestDependency"),
+        (DataProductChangeRequest, "#### DataProductChangeRequest"),
+        (RequestNoValidPlan, "#### RequestNoValidPlan"),
+        (FulfillmentEvidenceReceipt, "#### FulfillmentEvidenceReceipt"),
+    ),
+)
+def test_plan3b_artifact_fields_match_section_13_7(artifact: type[BaseModel], heading: str) -> None:
+    assert _fenced_fields(heading) == [artifact.__name__, *artifact.model_fields]
+
+
+def test_plan3b_approval_matrix_matches_section_13_7() -> None:
+    assert _markdown_rows("#### Plan 3B approval matrix", 3) == [
+        (
+            "Stakeholder answer",
+            "Requester clarified-outcome acceptance; `role:data_engineering_architect`",
+            "`role:policy_authority` for classified disclosure",
+        ),
+        (
+            "Access scope",
+            "Requester clarified-outcome acceptance; exact data-product owner",
+            "`role:policy_authority` for classified, finance, residency, retention, masking, "
+            "or widened-access implications",
+        ),
+        (
+            "Disclosure denial",
+            "Requester clarified-outcome acceptance; `role:data_engineering_architect`",
+            "Applicable `role:policy_authority`",
+        ),
+    ]
+
+
+def test_plan3b_authority_records_remain_disjoint() -> None:
+    assert _markdown_rows("#### Plan 3B authority record boundary", 3) == [
+        (
+            "`DecisionBinding`",
+            "Plan 2 semantic review",
+            "Never satisfies a Plan 3B requirement",
+        ),
+        (
+            "`FulfillmentApprovalBinding`",
+            "Plan 3B fulfillment proposal",
+            "Never satisfies a Plan 2 semantic review",
+        ),
+    ]
+
+
+def test_plan3b_admission_predicate_is_pinned_term_by_term() -> None:
+    assert _normalized_fenced_lines("#### Plan 3B admission predicate") == [
+        "request_state awaiting_approval",
+        "proposal_revision latest",
+        "tenant_match request | proposal | grounding | policy | every_binding",
+        "snapshot_digests exact",
+        "policy_valid_until future_or_reresolve",
+        "approval_match authority_ref | subject_digest | proposal_digest | proposal_revision | "
+        "approve",
+        "negative_decisions none",
+        "current_actor_role required",
+        "cancelled false",
+    ]
+
+
+def test_plan3b_control_plane_non_claims_are_exact() -> None:
+    assert _fenced_fields("#### Plan 3B execution non-claims") == [
+        "query_execution",
+        "grant_application",
+        "requester_delivery",
+        "verification",
+        "expiry",
+        "revocation",
+    ]
+
+
+def test_plan3b_outcome_matrix_is_pinned() -> None:
+    assert _markdown_rows("#### Plan 3B outcome matrix", 3) == [
+        ("Unsettled restatement", "Clarification pending", "`clarifying`"),
+        ("Approved assets and scope", "Answer or access proposal", "`proposed`"),
+        ("Missing semantic meaning", "Semantic-change dependency", "`investigating`"),
+        ("Missing governed data capability", "Data-product-change dependency", "`investigating`"),
+        ("Insufficient disclosure authorization", "Denial proposal", "`proposed`"),
+        ("Conflicting or unverifiable authority", "`No Valid Plan`", "`no_valid_plan`"),
+        ("Material candidate edit", "Superseding proposal revision", "`investigating`"),
+        ("Complete answer or access approvals", "Execution-ready admission", "`executing`"),
+        ("Complete denial approvals", "Denial disposition", "`rejected`"),
+        ("Exact requirement rejected", "Rejection", "`rejected`"),
+        ("Approver requests changes", "New investigation", "`investigating`"),
+        ("Expired equivalent policy", "Admission after re-resolution", "`executing`"),
+        ("Expired changed policy", "Superseding proposal revision", "`investigating`"),
+        ("Cancellation with open proposal", "Cancellation evidence only", "`cancelled`"),
+    ]
+
+
+def test_plan3b_visibility_matrix_is_pinned() -> None:
+    assert _markdown_rows("#### Plan 3B visibility matrix", 6) == [
+        (
+            "Requester",
+            "Own request",
+            "Yes",
+            "Never before verified delivery",
+            "Own labelled Plan 2 and Plan 3B decisions",
+            "Status only",
+        ),
+        ("Data engineering architect", "Yes", "Yes", "Yes", "Yes", "Yes"),
+        (
+            "Required approver",
+            "Relevant conversation",
+            "Yes",
+            "Exact subject requiring the role",
+            "Relevant role",
+            "Status",
+        ),
+        ("Unrelated tenant actor", "No", "No", "No", "No", "No"),
+    ]
 
 
 def test_warehouse_binding_fields_match_section_6_2() -> None:

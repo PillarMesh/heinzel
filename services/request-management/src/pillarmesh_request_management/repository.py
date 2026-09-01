@@ -2,7 +2,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Protocol
+from typing import Protocol, Self
 
 from pillarmesh_contract_model import canonical_bytes, digest
 
@@ -66,6 +66,8 @@ class RequestRepository(Protocol):
 
     def list_decisions(self, tenant_id: str, request_id: str) -> tuple[DecisionBinding, ...]: ...
 
+    def has_fulfillment_proposal(self, tenant_id: str, request_id: str) -> bool: ...
+
     def discard_unapproved_semantic_request(
         self, tenant_id: str, request_id: str, review_bundle_digest: str
     ) -> None: ...
@@ -78,8 +80,14 @@ class StaleRevisionError(Exception):
 
 
 class SQLiteRequestRepository:
-    def __init__(self, database_path: str) -> None:
-        self._connection = sqlite3.connect(database_path)
+    def __init__(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        _owns_connection: bool = False,
+    ) -> None:
+        self._connection = connection
+        self._owns_connection = _owns_connection
         self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS request_revisions ("
@@ -137,8 +145,31 @@ class SQLiteRequestRepository:
         )
         self._connection.commit()
 
+    @classmethod
+    def open(cls, database_path: str) -> Self:
+        return cls(sqlite3.connect(database_path), _owns_connection=True)
+
     def close(self) -> None:
-        self._connection.close()
+        if self._owns_connection:
+            self._connection.close()
+
+    def has_fulfillment_proposal(self, tenant_id: str, request_id: str) -> bool:
+        """Report whether any fulfillment proposal was written for this request.
+
+        Deliberately not scoped to one revision. A proposal is written at the
+        `proposed` revision and the request then advances to `awaiting_approval`,
+        so a revision-scoped check is inert for the whole approval window.
+        """
+        table = self._connection.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'fulfillment_proposals'"
+        ).fetchone()
+        if table is None:
+            return False
+        row = self._connection.execute(
+            "SELECT 1 FROM fulfillment_proposals WHERE tenant_id = ? AND request_id = ? LIMIT 1",
+            (tenant_id, request_id),
+        ).fetchone()
+        return row is not None
 
     def next_sequence(self, tenant_id: str) -> int:
         row = self._connection.execute(
@@ -199,51 +230,19 @@ class SQLiteRequestRepository:
         created_at: datetime,
     ) -> InboxRequest:
         try:
-            self._connection.execute("BEGIN IMMEDIATE")
-            request = self._load_owned_request(tenant_id, request_id)
-            if request.revision != expected_revision:
-                raise StaleRevisionError("request revision was not advanced")
-            transitioned = request.model_copy(
-                update={
-                    "state": to_state,
-                    "revision": request.revision + 1,
-                    "updated_at": created_at,
-                }
-            )
-            sequence = self._allocate_artifact_sequence(tenant_id, "transition")
-            event = TransitionEvent(
-                event_id=self._artifact_id("transition", tenant_id, sequence),
-                request_id=request.request_id,
-                request_revision=transitioned.revision,
-                actor_id=actor_id,
-                from_state=request.state,
-                to_state=to_state,
-                created_at=created_at,
-            )
-            self._save_request_revision(transitioned)
-            self._connection.execute(
-                "INSERT INTO transition_events "
-                "(event_id, request_id, request_revision, tenant_id, created_at, payload) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (
-                    event.event_id,
-                    event.request_id,
-                    event.request_revision,
-                    tenant_id,
-                    event.created_at.isoformat(),
-                    canonical_bytes(event),
-                ),
-            )
+            with _transaction(self._connection):
+                transitioned = self._transition_within_transaction(
+                    tenant_id=tenant_id,
+                    request_id=request_id,
+                    expected_revision=expected_revision,
+                    actor_id=actor_id,
+                    to_state=to_state,
+                    created_at=created_at,
+                )
         except StaleRevisionError:
-            self._connection.rollback()
             raise
         except sqlite3.IntegrityError as error:
-            self._connection.rollback()
             raise StaleRevisionError("request revision was not advanced") from error
-        except Exception:
-            self._connection.rollback()
-            raise
-        self._connection.commit()
         return transitioned
 
     def append_conversation(
@@ -541,11 +540,113 @@ class SQLiteRequestRepository:
                     (transition_sequence, prior.tenant_id),
                 )
 
+    # ------------------------------------------------------------------
+    # In-transaction surface.
+    #
+    # A composing repository that shares this connection must use these, not the
+    # ordinary public methods: each of those opens its own `BEGIN IMMEDIATE`, and
+    # SQLite raises "cannot start a transaction within a transaction". These do
+    # not open, commit, or roll back anything. The writes additionally refuse to
+    # run outside an open transaction, so the contract fails loudly rather than
+    # autocommitting a half-written outcome.
+    # ------------------------------------------------------------------
+
+    @property
+    def connection(self) -> sqlite3.Connection:
+        """The shared connection, for a composing repository's transaction scope."""
+        return self._connection
+
+    def _require_open_transaction(self, operation: str) -> None:
+        if not self._connection.in_transaction:
+            raise RuntimeError(f"{operation} must run inside an open transaction")
+
+    def load_owned_request(self, tenant_id: str, request_id: str) -> InboxRequest:
+        """Load a request the tenant owns, raising KeyError otherwise.
+
+        A read, so it carries no transaction requirement; the write helpers below
+        do.
+        """
+        return self._load_owned_request(tenant_id, request_id)
+
+    def allocate_artifact_sequence_in_transaction(self, tenant_id: str, artifact_kind: str) -> int:
+        self._require_open_transaction("allocating an artifact sequence")
+        return self._allocate_artifact_sequence(tenant_id, artifact_kind)
+
+    def save_request_revision_in_transaction(self, request: InboxRequest) -> None:
+        self._require_open_transaction("saving a request revision")
+        self._save_request_revision(request)
+
+    def transition_in_transaction(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        expected_revision: int,
+        actor_id: str,
+        to_state: RequestState,
+        created_at: datetime,
+    ) -> InboxRequest:
+        self._require_open_transaction("transitioning a request")
+        return self._transition_within_transaction(
+            tenant_id=tenant_id,
+            request_id=request_id,
+            expected_revision=expected_revision,
+            actor_id=actor_id,
+            to_state=to_state,
+            created_at=created_at,
+        )
+
     def _load_owned_request(self, tenant_id: str, request_id: str) -> InboxRequest:
         request = self.load(tenant_id, request_id)
         if request is None:
             raise KeyError(f"request {request_id} belongs to another tenant")
         return request
+
+    def _transition_within_transaction(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        expected_revision: int,
+        actor_id: str,
+        to_state: RequestState,
+        created_at: datetime,
+    ) -> InboxRequest:
+        request = self._load_owned_request(tenant_id, request_id)
+        if request.revision != expected_revision:
+            raise StaleRevisionError("request revision was not advanced")
+        transitioned = request.model_copy(
+            update={
+                "state": to_state,
+                "revision": request.revision + 1,
+                "updated_at": created_at,
+            }
+        )
+        sequence = self._allocate_artifact_sequence(tenant_id, "transition")
+        event = TransitionEvent(
+            event_id=self._artifact_id("transition", tenant_id, sequence),
+            request_id=request.request_id,
+            request_revision=transitioned.revision,
+            actor_id=actor_id,
+            from_state=request.state,
+            to_state=to_state,
+            created_at=created_at,
+        )
+        self._save_request_revision(transitioned)
+        self._connection.execute(
+            "INSERT INTO transition_events "
+            "(event_id, request_id, request_revision, tenant_id, created_at, payload) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                event.event_id,
+                event.request_id,
+                event.request_revision,
+                tenant_id,
+                event.created_at.isoformat(),
+                canonical_bytes(event),
+            ),
+        )
+        return transitioned
 
     def _allocate_artifact_sequence(self, tenant_id: str, artifact_kind: str) -> int:
         row = self._connection.execute(

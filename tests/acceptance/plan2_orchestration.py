@@ -432,7 +432,7 @@ class OfflinePlan2Harness:
         self._semantic_version_repository = SQLiteSemanticVersionRepository(
             str(_sibling_database(database_path, "semantic-versions"))
         )
-        self._request_repository = SQLiteRequestRepository(
+        self._request_repository = SQLiteRequestRepository.open(
             str(_sibling_database(database_path, "requests"))
         )
         self._request_service = RequestManagementService(

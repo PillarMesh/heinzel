@@ -21,7 +21,7 @@ NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 
 @pytest.fixture
 def service() -> RequestManagementService:
-    return RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    return RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
 
 
 def question(service: RequestManagementService, tenant_id: str = "tenant-a") -> InboxRequest:
@@ -78,8 +78,8 @@ def test_append_conversation_binds_entry_to_advanced_revision(
 
 
 def test_conversation_entry_id_is_deterministic_under_a_frozen_clock() -> None:
-    first = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
-    second = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    first = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
+    second = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
 
     first_entry = first.append_conversation(
         "tenant-a",
@@ -144,8 +144,8 @@ def test_record_decision_binds_exact_revision_without_transitioning_request(
 
 
 def test_decision_id_is_deterministic_under_a_frozen_clock() -> None:
-    first = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
-    second = RequestManagementService(SQLiteRequestRepository(":memory:"), clock=lambda: NOW)
+    first = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
+    second = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
     first_request = question(first)
     second_request = question(second)
 
@@ -216,7 +216,7 @@ def test_stale_conversation_cannot_append_an_orphaned_entry(
 
 def test_repository_rolls_back_conversation_when_revision_race_loses(tmp_path) -> None:
     database_path = tmp_path / "requests.db"
-    repository = SQLiteRequestRepository(str(database_path))
+    repository = SQLiteRequestRepository.open(str(database_path))
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = question(service)
     first_entry = service.append_conversation(
@@ -249,7 +249,7 @@ def test_two_connection_conversation_race_rolls_back_loser_artifact_sequence(
 ) -> None:
     database_path = tmp_path / "requests.db"
     initializer = RequestManagementService(
-        SQLiteRequestRepository(str(database_path)), clock=lambda: NOW
+        SQLiteRequestRepository.open(str(database_path)), clock=lambda: NOW
     )
     request = question(initializer)
     barrier = Barrier(2)
@@ -261,7 +261,7 @@ def test_two_connection_conversation_race_rolls_back_loser_artifact_sequence(
 
     def append(actor_id: str) -> None:
         thread_service = RequestManagementService(
-            SQLiteRequestRepository(str(database_path)), clock=synchronized_clock
+            SQLiteRequestRepository.open(str(database_path)), clock=synchronized_clock
         )
         try:
             outcomes.put(
@@ -308,7 +308,7 @@ def test_two_connection_conversation_race_rolls_back_loser_artifact_sequence(
 def test_decision_lost_race_leaves_no_artifact_or_sequence(tmp_path: Path) -> None:
     database_path = tmp_path / "requests.db"
     initializer = RequestManagementService(
-        SQLiteRequestRepository(str(database_path)), clock=lambda: NOW
+        SQLiteRequestRepository.open(str(database_path)), clock=lambda: NOW
     )
     request = question(initializer)
     reads_complete = Barrier(2)
@@ -328,7 +328,7 @@ def test_decision_lost_race_leaves_no_artifact_or_sequence(tmp_path: Path) -> No
 
     def append_conversation() -> None:
         thread_service = RequestManagementService(
-            SQLiteRequestRepository(str(database_path)), clock=conversation_clock
+            SQLiteRequestRepository.open(str(database_path)), clock=conversation_clock
         )
         try:
             conversation_outcome.put(
@@ -347,7 +347,7 @@ def test_decision_lost_race_leaves_no_artifact_or_sequence(tmp_path: Path) -> No
 
     def record_decision() -> None:
         thread_service = RequestManagementService(
-            SQLiteRequestRepository(str(database_path)), clock=decision_clock
+            SQLiteRequestRepository.open(str(database_path)), clock=decision_clock
         )
         try:
             decision_outcome.put(
@@ -417,7 +417,7 @@ def test_conversation_and_decision_models_reject_naive_timestamps_and_unknown_fi
 
 
 def test_invalid_artifact_inputs_leave_sequences_unallocated() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = question(service)
 
@@ -446,7 +446,7 @@ def test_invalid_artifact_inputs_leave_sequences_unallocated() -> None:
 
 
 def test_repository_refuses_another_tenant_before_invalid_artifact_inputs() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = question(service)
 
@@ -477,7 +477,7 @@ def test_repository_refuses_another_tenant_before_invalid_artifact_inputs() -> N
 
 
 def test_service_refuses_another_tenant_before_invalid_artifact_inputs() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = question(service)
 
@@ -501,7 +501,7 @@ def test_service_refuses_another_tenant_before_invalid_artifact_inputs() -> None
 
 
 def test_stale_repository_conversation_attempt_leaves_sequence_unchanged() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = question(service)
     service.append_conversation(
@@ -528,7 +528,7 @@ def test_stale_repository_conversation_attempt_leaves_sequence_unchanged() -> No
 
 
 def test_stale_repository_decision_attempt_leaves_sequence_unchanged() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = question(service)
     service.append_conversation(
@@ -556,7 +556,7 @@ def test_stale_repository_decision_attempt_leaves_sequence_unchanged() -> None:
 
 
 def test_failed_conversation_persistence_rolls_back_its_sequence() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = question(service)
     entry_id = repository._artifact_id("conversation", "tenant-a", 1)
@@ -584,7 +584,7 @@ def test_failed_conversation_persistence_rolls_back_its_sequence() -> None:
 
 
 def test_failed_decision_persistence_rolls_back_its_sequence() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = question(service)
     decision_id = repository._artifact_id("decision", "tenant-a", 1)

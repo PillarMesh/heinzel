@@ -1,3 +1,4 @@
+from .fulfillment import FulfillmentEvidencePackage, package_fulfillment_receipts
 from .models import EvidenceEvent, RunRecord, RunState
 from .package import PackageError, export_package, verify_package
 from .package_models import (
@@ -23,6 +24,7 @@ __all__ = [
     "ArtifactEdge",
     "ArtifactEntry",
     "EvidenceEvent",
+    "FulfillmentEvidencePackage",
     "InvalidStateTransition",
     "MigrationError",
     "PackageError",
@@ -36,6 +38,7 @@ __all__ = [
     "ScanFinding",
     "ScanInput",
     "export_package",
+    "package_fulfillment_receipts",
     "scan_bytes",
     "verify_package",
 ]

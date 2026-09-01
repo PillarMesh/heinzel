@@ -46,7 +46,7 @@ def test_semantic_review_payload_remains_a_strict_discriminated_member() -> None
 
 
 def test_unresolved_review_returns_to_investigating_before_no_valid_plan() -> None:
-    repository = SQLiteRequestRepository(":memory:")
+    repository = SQLiteRequestRepository.open(":memory:")
     service = RequestManagementService(repository, clock=lambda: NOW)
     request = InboxRequest.model_validate(semantic_request_payload())
     repository.save(request)

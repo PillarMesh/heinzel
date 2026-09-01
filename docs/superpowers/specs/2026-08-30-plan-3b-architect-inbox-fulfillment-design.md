@@ -1,6 +1,6 @@
 # Plan 3B Architect Inbox Fulfillment Design
 
-**Status:** proposed for review
+**Status:** approved
 
 **Date:** 2026-08-30
 
@@ -956,18 +956,21 @@ Plan 3B is complete only when:
 - every material edit invalidates prior approvals, and a changed clarified outcome requires fresh
   requester acceptance;
 - every required role has an exact current decision binding matched on authority, subject digest,
-  and proposal revision; - admission refuses an expired policy snapshot and supersedes the proposal
-  when re-resolution changes the disposition or effective scope; - no proposal is created from
-  `clarifying`, and a cancelled request admits nothing; - `DecisionBinding` and
-  `FulfillmentApprovalBinding` never satisfy each other's requirements; - proposal admission and
-  request transition are atomic and replay-safe; - cross-tenant, stale, malformed, and contradictory
-  inputs fail closed; - access previews can narrow but never widen requested scope; - evidence
-  contains no answer text, request purpose, raw data, private provider identifier, credential,
-  endpoint, or grant statement; - no Plan 3B path executes SQL, applies a grant, sends a result, or
-  claims delivery; - the committed acceptance journey passes without direct OpenMetadata or
-  warehouse operation; - focused mutation tests leave no surviving critical authorization mutation;
-  - all offline and structure gates pass; and - independent review has no unresolved blocking
-  finding.
+  and proposal revision;
+- admission refuses an expired policy snapshot and supersedes the proposal when re-resolution
+  changes the disposition or effective scope;
+- no proposal is created from `clarifying`, and a cancelled request admits nothing;
+- `DecisionBinding` and `FulfillmentApprovalBinding` never satisfy each other's requirements;
+- proposal admission and request transition are atomic and replay-safe;
+- cross-tenant, stale, malformed, and contradictory inputs fail closed;
+- access previews can narrow but never widen requested scope;
+- evidence contains no answer text, request purpose, raw data, private provider identifier,
+  credential, endpoint, or grant statement;
+- no Plan 3B path executes SQL, applies a grant, sends a result, or claims delivery;
+- the committed acceptance journey passes without direct OpenMetadata or warehouse operation;
+- focused mutation tests leave no surviving critical authorization mutation;
+- all offline and structure gates pass; and
+- independent review has no unresolved blocking finding.
 
 Plan 3B then provides the stable authority handoff required by later source acquisition, query
 execution, access application, Superset delivery, and full witnessed acceptance.

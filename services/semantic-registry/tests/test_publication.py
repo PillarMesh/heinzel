@@ -579,7 +579,7 @@ def _service(
     )
 
     request_service = RequestManagementService(
-        SQLiteRequestRepository(":memory:"), clock=lambda: NOW
+        SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW
     )
     return SemanticPublicationService(
         repository=repository or SQLiteCatalogPublicationRepository(":memory:"),

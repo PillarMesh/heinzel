@@ -893,6 +893,412 @@ A stakeholder data question is operational work, not an unrestricted natural-lan
 
 An access request binds requester, purpose, data product, fields, classification, access mode, duration, and approving authority. PillarMesh proposes the least-privilege grant, previews its effective scope, obtains required approval, applies it through a managed role, validates intended and denied access, records evidence, and expires or revokes it according to policy. Neither an inbox conversation nor an AI recommendation grants access by itself.
 
+### 13.7 Plan 3B governed fulfillment contract
+
+Plan 3B is a control-plane preparation and authorization boundary. It binds a stakeholder request to
+immutable approved semantic, catalog-publication, contract, process, policy, entitlement, freshness,
+quality, lineage, and data observations. It produces one governed proposal, dependency, denial, or
+`No Valid Plan`; it does not execute a query, apply a grant, or deliver a result.
+
+All artifacts below are frozen, reject unknown fields, use timezone-aware UTC timestamps, and carry
+tenant-qualified identities. Durable IDs use repository sequences. Digests are lowercase SHA-256
+over canonical serialization.
+
+#### FulfillmentGroundingSnapshot
+
+```text
+FulfillmentGroundingSnapshot
+  schema_version
+  snapshot_id
+  tenant_id
+  catalog_publication_id
+  catalog_publication_intent_digest
+  catalog_round_trip_observation_digest
+  semantic_version_ref
+  integration_contract_ref
+  process_package_ref
+  governed_dataset_refs
+  metric_refs
+  classification_refs
+  lineage_refs
+  freshness_observation_ref
+  quality_observation_refs
+  authorization_policy_ref
+  data_observation_refs
+  as_of
+  created_at
+```
+
+Every reference must be reachable from the exact persisted publication intent and receipt. The
+snapshot is immutable; provider IDs and live OpenMetadata payloads remain private to the adapter.
+
+#### FulfillmentPolicySnapshot
+
+```text
+FulfillmentPolicySnapshot
+  schema_version
+  snapshot_id
+  tenant_id
+  requester_id
+  requester_principal_ref
+  purpose_digest
+  approved_policy_refs
+  entitlement_observation_refs
+  classification_rule_refs
+  permitted_data_product_refs
+  permitted_access_modes
+  maximum_expiry
+  policy_authority_classifications
+  observed_at
+  valid_until
+```
+
+The snapshot comes only from approved tenant policy and current entitlement observations. Missing,
+expired, conflicting, or cross-tenant inputs fail closed; an empty allowlist is not a caller-
+overridable default.
+
+#### ClarifiedOutcomeStatement
+
+```text
+ClarifiedOutcomeStatement
+  schema_version
+  statement_id
+  tenant_id
+  request_id
+  request_revision
+  restated_request
+  purpose_digest
+  in_scope_summary
+  out_of_scope_summary
+  created_at
+```
+
+The requester accepts this exact statement digest without seeing the candidate. A candidate edit
+does not invalidate that acceptance. A change to the restated request, purpose, or scope creates a
+new statement and requires fresh acceptance. No proposal may be created from `clarifying`.
+
+#### StakeholderAnswerDraft
+
+```text
+StakeholderAnswerDraft
+  subject_kind
+  answer_text
+  governed_dataset_refs
+  metric_refs
+  as_of
+  freshness_disposition
+  material_quality_limitations
+  lineage_refs
+  disclosure_classifications
+```
+
+All citations must appear in the grounding snapshot. `current` and `stale` are derived from a
+freshness observation against the declared objective and require a data observation. A null
+freshness observation permits only `unknown`; `unknown` cannot support a factual answer. A semantic-
+definition answer may use `not_applicable`.
+
+#### AccessScopePreview
+
+```text
+AccessScopePreview
+  subject_kind
+  requester_principal_ref
+  data_product_ref
+  access_mode
+  requested_fields
+  effective_object_refs
+  effective_fields
+  excluded_scopes
+  classifications
+  expires_at
+```
+
+The preview may narrow but never widen the requested fields, objects, mode, product, or expiry. It
+contains no warehouse role, credential, endpoint, provider identifier, or grant statement.
+
+#### DisclosureDenial
+
+```text
+DisclosureDenial
+  subject_kind
+  reason_code
+  requester_safe_explanation
+  denied_scope_digest
+```
+
+The denial remains private until approved. Only its requester-safe explanation becomes visible.
+
+#### ApprovalRequirement
+
+```text
+ApprovalRequirement
+  authority_ref
+  reason_code
+  subject_digest
+```
+
+The requester's requirement binds the clarified-outcome statement digest. Every other requirement
+binds the discriminated candidate subject digest. Requirements are sorted and unique by authority.
+
+#### FulfillmentProposal
+
+```text
+FulfillmentProposal
+  schema_version
+  proposal_id
+  tenant_id
+  request_id
+  request_revision
+  revision
+  prior_proposal_digest
+  clarified_outcome_digest
+  grounding_snapshot_digest
+  policy_snapshot_digest
+  subject
+  required_approvals
+  created_at
+```
+
+The first revision has no prior digest. Every material edit creates a new immutable revision whose
+`prior_proposal_digest` names the exact preceding proposal; old approvals remain history but cannot
+authorize it.
+
+#### FulfillmentApprovalBinding
+
+```text
+FulfillmentApprovalBinding
+  approval_id
+  tenant_id
+  request_id
+  request_revision
+  proposal_id
+  proposal_revision
+  proposal_digest
+  subject_digest
+  actor_id
+  authority_ref
+  decision
+  created_at
+```
+
+One binding satisfies one role-scoped requirement. An actor holding two roles records two
+attributable decisions, and role membership is checked both at decision and admission time.
+
+#### FulfillmentAdmissionReceipt
+
+```text
+FulfillmentAdmissionReceipt
+  admission_id
+  tenant_id
+  request_id
+  source_request_revision
+  resulting_request_revision
+  proposal_id
+  proposal_revision
+  proposal_digest
+  grounding_snapshot_digest
+  policy_snapshot_digest
+  approval_ids
+  admitted_at
+  execution_status
+```
+
+`execution_status` is only `ready_for_execution`. The receipt proves authorization, not a data-plane
+effect.
+
+#### DenialDispositionReceipt
+
+```text
+DenialDispositionReceipt
+  disposition_id
+  tenant_id
+  request_id
+  source_request_revision
+  resulting_request_revision
+  proposal_id
+  proposal_revision
+  proposal_digest
+  policy_snapshot_digest
+  approval_ids
+  requester_safe_explanation
+  recorded_at
+```
+
+Approving a denial creates this disposition and transitions to `rejected`; it never creates an
+execution admission.
+
+#### RequestDependency
+
+```text
+RequestDependency
+  dependency_id
+  tenant_id
+  parent_request_id
+  parent_request_revision
+  child_request_id
+  child_request_revision
+  kind
+  reason_code
+  blocking
+  created_at
+```
+
+Only `semantic_change` and `data_product_change` are permitted. The parent remains
+`investigating`; completion does not run or transition it automatically.
+
+#### DataProductChangeRequest
+
+```text
+DataProductChangeRequest
+  request_type
+  purpose
+  requested_outcome
+  missing_capability_refs
+  source_request_id
+  source_request_revision
+```
+
+This payload represents missing governed dataset, metric, observation, or product capability. The
+existing `SchemaSemanticChangeRequest` remains the semantic dependency payload.
+
+#### RequestNoValidPlan
+
+```text
+RequestNoValidPlan
+  record_id
+  tenant_id
+  request_id
+  source_request_revision
+  resulting_request_revision
+  reason_codes
+  constraint_refs
+  smallest_changes
+  grounding_snapshot_digest
+  policy_snapshot_digest
+  created_at
+```
+
+Conflicting, stale mandatory, unverifiable, malformed, cross-tenant, or unadmitted authority is a
+durable fail-closed outcome with sanitized attributable constraints.
+
+#### FulfillmentEvidenceReceipt
+
+```text
+FulfillmentEvidenceReceipt
+  schema_version
+  evidence_id
+  tenant_id
+  request_id
+  request_revision
+  outcome
+  proposal_id
+  proposal_revision
+  dependency_id
+  authority_refs
+  approval_ids
+  reason_codes
+  resulting_state
+  created_at
+```
+
+This public allowlist contains no answer text, purpose, field list, object scope, classification
+detail, private digest, policy observation, provider ID, credential, endpoint, or grant statement.
+
+#### Plan 3B outcome matrix
+
+| Condition | Governed outcome | Parent state |
+| --- | --- | --- |
+| Unsettled restatement | Clarification pending | `clarifying` |
+| Approved assets and scope | Answer or access proposal | `proposed` |
+| Missing semantic meaning | Semantic-change dependency | `investigating` |
+| Missing governed data capability | Data-product-change dependency | `investigating` |
+| Insufficient disclosure authorization | Denial proposal | `proposed` |
+| Conflicting or unverifiable authority | `No Valid Plan` | `no_valid_plan` |
+| Material candidate edit | Superseding proposal revision | `investigating` |
+| Complete answer or access approvals | Execution-ready admission | `executing` |
+| Complete denial approvals | Denial disposition | `rejected` |
+| Exact requirement rejected | Rejection | `rejected` |
+| Approver requests changes | New investigation | `investigating` |
+| Expired equivalent policy | Admission after re-resolution | `executing` |
+| Expired changed policy | Superseding proposal revision | `investigating` |
+| Cancellation with open proposal | Cancellation evidence only | `cancelled` |
+
+The compiler returns exactly one closed outcome. Missing capability is not a denial, insufficient
+authorization is not a provider failure, and unresolved legality is never converted to an empty or
+weakened proposal.
+
+#### Plan 3B visibility matrix
+
+| Actor | Clarifications | Clarified outcome | Candidate subject | Approval metadata | Admission |
+| --- | --- | --- | --- | --- | --- |
+| Requester | Own request | Yes | Never before verified delivery | Own labelled Plan 2 and Plan 3B decisions | Status only |
+| Data engineering architect | Yes | Yes | Yes | Yes | Yes |
+| Required approver | Relevant conversation | Yes | Exact subject requiring the role | Relevant role | Status |
+| Unrelated tenant actor | No | No | No | No | No |
+
+Visibility is implemented through role-specific allowlist models, never private-model serialization
+followed by redaction. An admission does not make answer text requester-visible. An approved denial
+reveals only its requester-safe explanation.
+
+#### Plan 3B approval matrix
+
+| Subject | Always required | Conditional authority |
+| --- | --- | --- |
+| Stakeholder answer | Requester clarified-outcome acceptance; `role:data_engineering_architect` | `role:policy_authority` for classified disclosure |
+| Access scope | Requester clarified-outcome acceptance; exact data-product owner | `role:policy_authority` for classified, finance, residency, retention, masking, or widened-access implications |
+| Disclosure denial | Requester clarified-outcome acceptance; `role:data_engineering_architect` | Applicable `role:policy_authority` |
+
+An answer deliberately does not require the data-product owner because it changes no approved
+product meaning. Access always requires the exact product owner because it creates standing
+capability against that product. Material recurring-cost approval is deferred because Plan 3B
+neither prices nor executes an effect.
+
+#### Plan 3B authority record boundary
+
+| Record | Lifecycle | Cross-lifecycle effect |
+| --- | --- | --- |
+| `DecisionBinding` | Plan 2 semantic review | Never satisfies a Plan 3B requirement |
+| `FulfillmentApprovalBinding` | Plan 3B fulfillment proposal | Never satisfies a Plan 2 semantic review |
+
+`RequestManagementService.record_decision` refuses a current request revision carrying a Plan 3B
+proposal. Plan 3B admission reads only fulfillment approval bindings.
+
+#### Plan 3B admission predicate
+
+```text
+request_state awaiting_approval
+proposal_revision latest
+tenant_match request | proposal | grounding | policy | every_binding
+snapshot_digests exact
+policy_valid_until future_or_reresolve
+approval_match authority_ref | subject_digest | proposal_digest | proposal_revision | approve
+negative_decisions none
+current_actor_role required
+cancelled false
+```
+
+Every predicate term is required as one admission decision. Matching authority alone is illegal.
+If the policy snapshot expires, PillarMesh re-resolves it. A canonically equivalent authorization
+apart from the observation window may admit against the fresh snapshot. Any changed disposition,
+effective scope, or required authority supersedes the proposal and recollects approvals. Resolution
+failure records `No Valid Plan`.
+
+Cancellation is terminal and defeats an open proposal. The abandoned proposal and bindings remain
+history, but no admission or denial disposition is recorded; public evidence records `cancelled`.
+
+#### Plan 3B execution non-claims
+
+```text
+query_execution
+grant_application
+requester_delivery
+verification
+expiry
+revocation
+```
+
+These remain later lifecycle stages and require their own effect and verification evidence.
+
 ## 14. Risk-tiered approval
 
 Every approval binds the exact request, process version, ontology changes, contract, policy observations, estimate, plan, and change digest. A material edit invalidates affected approvals.

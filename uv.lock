@@ -741,6 +741,7 @@ dependencies = [
     { name = "pillarmesh-execution-graph" },
     { name = "pillarmesh-iir" },
     { name = "pillarmesh-provider-sdk" },
+    { name = "pillarmesh-request-management" },
     { name = "pydantic" },
 ]
 
@@ -751,6 +752,7 @@ requires-dist = [
     { name = "pillarmesh-execution-graph", editable = "packages/execution-graph" },
     { name = "pillarmesh-iir", editable = "packages/iir" },
     { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pillarmesh-request-management", editable = "services/request-management" },
     { name = "pydantic", specifier = ">=2.11,<3" },
 ]
 
