@@ -7,6 +7,7 @@ members = [
     "pillarmesh-authoring-mcp",
     "pillarmesh-catalog-control",
     "pillarmesh-compiler",
+    "pillarmesh-connection-broker",
     "pillarmesh-contract-model",
     "pillarmesh-contract-service",
     "pillarmesh-evidence",
@@ -18,9 +19,11 @@ members = [
     "pillarmesh-provider-postgresql",
     "pillarmesh-provider-sdk",
     "pillarmesh-provider-snowflake",
+    "pillarmesh-provider-stripe",
     "pillarmesh-request-management",
     "pillarmesh-runtime",
     "pillarmesh-semantic-registry",
+    "pillarmesh-state",
     "pillarmesh-warehouse-control",
 ]
 
@@ -698,6 +701,23 @@ requires-dist = [
 ]
 
 [[package]]
+name = "pillarmesh-connection-broker"
+version = "0.1.0"
+source = { editable = "services/connection-broker" }
+dependencies = [
+    { name = "pillarmesh-contract-model" },
+    { name = "pillarmesh-provider-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
+    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
 name = "pillarmesh-contract-model"
 version = "0.1.0"
 source = { editable = "packages/contract-model" }
@@ -911,6 +931,25 @@ requires-dist = [
 ]
 
 [[package]]
+name = "pillarmesh-provider-stripe"
+version = "0.1.0"
+source = { editable = "providers/stripe" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pillarmesh-contract-model" },
+    { name = "pillarmesh-provider-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
+    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
 name = "pillarmesh-request-management"
 version = "0.1.0"
 source = { editable = "services/request-management" }
@@ -930,19 +969,23 @@ name = "pillarmesh-runtime"
 version = "0.1.0"
 source = { editable = "services/runtime" }
 dependencies = [
+    { name = "pillarmesh-connection-broker" },
     { name = "pillarmesh-contract-model" },
     { name = "pillarmesh-evidence" },
     { name = "pillarmesh-execution-graph" },
     { name = "pillarmesh-provider-sdk" },
+    { name = "pillarmesh-state" },
     { name = "pydantic" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "pillarmesh-connection-broker", editable = "services/connection-broker" },
     { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
     { name = "pillarmesh-evidence", editable = "services/evidence" },
     { name = "pillarmesh-execution-graph", editable = "packages/execution-graph" },
     { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pillarmesh-state", editable = "services/state" },
     { name = "pydantic", specifier = ">=2.11,<3" },
 ]
 
@@ -966,6 +1009,23 @@ requires-dist = [
     { name = "pillarmesh-contract-service", editable = "services/contract" },
     { name = "pillarmesh-provider-openmetadata", editable = "providers/openmetadata" },
     { name = "pillarmesh-request-management", editable = "services/request-management" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "pillarmesh-state"
+version = "0.1.0"
+source = { editable = "services/state" }
+dependencies = [
+    { name = "pillarmesh-contract-model" },
+    { name = "pillarmesh-provider-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
+    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
     { name = "pydantic", specifier = ">=2.11,<3" },
 ]
 

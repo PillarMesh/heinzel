@@ -25,7 +25,8 @@ from pillarmesh_provider_sdk import (
     SourceBoundary,
     VisibilityProof,
 )
-from pillarmesh_runtime import FaultHook, Runtime, noop_fault_hook
+from pillarmesh_provider_sdk.errors import ProviderErrorClassification
+from pillarmesh_runtime import FaultHook, Runtime, noop_fault_hook, retry_bounded
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
@@ -454,6 +455,31 @@ def test_retryable_stage_uses_one_and_five_second_delays(tmp_path: Path) -> None
     result = runtime.execute("run-1", signed, 7)
 
     assert result.state == "succeeded"
+    assert attempts == 3
+    assert delays == [1.0, 5.0]
+
+
+@pytest.mark.parametrize("classification", ["transient_transport", "transient_unavailable"])
+def test_precise_transient_provider_failures_are_retried(
+    classification: ProviderErrorClassification,
+) -> None:
+    attempts = 0
+    delays: list[float] = []
+
+    def operation() -> str:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            raise ProviderError("temporary acquisition failure", classification)
+        return "complete"
+
+    result = retry_bounded(
+        operation,
+        sleeper=delays.append,
+        monotonic=lambda: 0,
+    )
+
+    assert result == "complete"
     assert attempts == 3
     assert delays == [1.0, 5.0]
 

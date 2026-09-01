@@ -1,3 +1,9 @@
+from .acquisition_lifecycle import (
+    AcquisitionContractLifecycleNotFoundError,
+    AcquisitionContractLifecycleRepository,
+    SQLiteAcquisitionContractLifecycleRepository,
+    StaleAcquisitionContractLifecycleError,
+)
 from .formation import (
     FormationAuthorityObservation,
     FormationDecisionBinding,
@@ -6,19 +12,30 @@ from .formation import (
     FormationReviewItem,
     IntegrationContractFormationService,
 )
-from .models import ActivationSummary
+from .models import AcquisitionContractLifecycleState, ActivationSummary
 from .process_models import BusinessProcessManifest, ProcessPackageReceipt
 from .process_service import (
     ProcessPackageRepository,
     ProcessPackageService,
     SQLiteProcessPackageRepository,
 )
-from .service import ContractService, ObservableProvider, observation_fingerprint
+from .service import (
+    AcquisitionContractAuthorityInvalidator,
+    ContractAuthorityBoundaryError,
+    ContractService,
+    ObservableProvider,
+    observation_fingerprint,
+)
 from .source_observation import SourceObservation, SQLiteSourceObservationRepository
 
 __all__ = [
+    "AcquisitionContractAuthorityInvalidator",
+    "AcquisitionContractLifecycleNotFoundError",
+    "AcquisitionContractLifecycleRepository",
+    "AcquisitionContractLifecycleState",
     "ActivationSummary",
     "BusinessProcessManifest",
+    "ContractAuthorityBoundaryError",
     "ContractService",
     "FormationAuthorityObservation",
     "FormationDecisionBinding",
@@ -30,8 +47,10 @@ __all__ = [
     "ProcessPackageReceipt",
     "ProcessPackageRepository",
     "ProcessPackageService",
+    "SQLiteAcquisitionContractLifecycleRepository",
     "SQLiteProcessPackageRepository",
     "SQLiteSourceObservationRepository",
     "SourceObservation",
+    "StaleAcquisitionContractLifecycleError",
     "observation_fingerprint",
 ]

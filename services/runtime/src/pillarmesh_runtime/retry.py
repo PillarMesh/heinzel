@@ -5,6 +5,10 @@ from collections.abc import Callable
 
 from pillarmesh_provider_sdk import ProviderError
 
+_RETRYABLE_CLASSIFICATIONS = frozenset(
+    ("retryable", "throttled", "transient_transport", "transient_unavailable")
+)
+
 
 def retry_bounded[T](
     operation: Callable[[], T],
@@ -18,7 +22,7 @@ def retry_bounded[T](
         try:
             return operation()
         except ProviderError as error:
-            if error.classification not in {"retryable", "throttled"} or attempt == 2:
+            if error.classification not in _RETRYABLE_CLASSIFICATIONS or attempt == 2:
                 raise
             if monotonic() - started + delays[attempt] > 120:
                 raise ProviderError(

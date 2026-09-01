@@ -14,11 +14,28 @@ from pillarmesh_evidence import EvidenceEvent, RunRecord, SQLiteStore
 from pillarmesh_execution_graph import GraphSigner
 from pillarmesh_provider_sdk import ProviderObservation
 
-from .models import ActivationSummary
+from .acquisition_lifecycle import (
+    AcquisitionContractLifecycleNotFoundError,
+    AcquisitionContractLifecycleRepository,
+    StaleAcquisitionContractLifecycleError,
+)
+from .models import AcquisitionContractLifecycleState, ActivationSummary
 
 
 class ObservableProvider(Protocol):
     def observe(self) -> ProviderObservation: ...
+
+
+class AcquisitionContractAuthorityInvalidator(Protocol):
+    def activate_contract_authority(self, tenant_id: str, contract_digest: str) -> int: ...
+
+    def invalidate_contract_authority(self, tenant_id: str, contract_digest: str) -> None: ...
+
+
+class ContractAuthorityBoundaryError(RuntimeError):
+    def __init__(self, *, operation: str) -> None:
+        self.operation = operation
+        super().__init__(f"contract authority boundary failed during {operation}")
 
 
 def observation_fingerprint(observation: ProviderObservation) -> str:
@@ -56,12 +73,16 @@ class ContractService:
         source_resolver: Callable[[str], ObservableProvider],
         destination_resolver: Callable[[str], ObservableProvider],
         clock: Callable[[], datetime] | None = None,
+        acquisition_authority_invalidator: AcquisitionContractAuthorityInvalidator | None = None,
+        acquisition_lifecycle_repository: AcquisitionContractLifecycleRepository | None = None,
     ) -> None:
         self._store = store
         self._signer = signer
         self._source_resolver = source_resolver
         self._destination_resolver = destination_resolver
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._acquisition_authority_invalidator = acquisition_authority_invalidator
+        self._acquisition_lifecycle_repository = acquisition_lifecycle_repository
 
     @staticmethod
     def _draft_ref(contract_id: str, version: int) -> str:
@@ -271,3 +292,57 @@ class ContractService:
 
     def get_trace(self, run_id: str) -> tuple[EvidenceEvent, ...]:
         return self._store.trace(run_id)
+
+    def activate_acquisition_contract(
+        self,
+        tenant_id: str,
+        contract_digest: str,
+    ) -> AcquisitionContractLifecycleState:
+        invalidator = self._acquisition_authority_invalidator
+        lifecycle_repository = self._acquisition_lifecycle_repository
+        if invalidator is None or lifecycle_repository is None:
+            raise ContractAuthorityBoundaryError(operation="activate acquisition contract")
+        try:
+            invalidator.activate_contract_authority(tenant_id, contract_digest)
+            state = lifecycle_repository.activate(
+                tenant_id=tenant_id,
+                contract_digest=contract_digest,
+                activated_at=self._clock(),
+            )
+            return state
+        except Exception:
+            raise ContractAuthorityBoundaryError(
+                operation="activate acquisition contract"
+            ) from None
+
+    def retire_acquisition_contract(
+        self,
+        tenant_id: str,
+        contract_digest: str,
+        *,
+        expected_revision: int,
+    ) -> AcquisitionContractLifecycleState:
+        invalidator = self._acquisition_authority_invalidator
+        lifecycle_repository = self._acquisition_lifecycle_repository
+        if invalidator is None or lifecycle_repository is None:
+            raise ContractAuthorityBoundaryError(operation="retire acquisition contract")
+        try:
+            current = lifecycle_repository.get(tenant_id, contract_digest)
+            if current.lifecycle_state != "activated" or current.revision != expected_revision:
+                raise StaleAcquisitionContractLifecycleError(
+                    "acquisition contract lifecycle revision is stale"
+                )
+            invalidator.invalidate_contract_authority(tenant_id, contract_digest)
+            return lifecycle_repository.retire(
+                tenant_id=tenant_id,
+                contract_digest=contract_digest,
+                expected_revision=expected_revision,
+                retired_at=self._clock(),
+            )
+        except (
+            AcquisitionContractLifecycleNotFoundError,
+            StaleAcquisitionContractLifecycleError,
+        ):
+            raise
+        except Exception:
+            raise ContractAuthorityBoundaryError(operation="retire acquisition contract") from None

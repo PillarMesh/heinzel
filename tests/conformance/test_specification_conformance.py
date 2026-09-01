@@ -16,10 +16,32 @@ from pathlib import Path
 import pytest
 from pillarmesh_catalog_control import CatalogBinding
 from pillarmesh_catalog_control.service import _TRANSITIONS as CATALOG_TRANSITIONS
+from pillarmesh_connection_broker import (
+    SourceBindingValidationEvidence,
+    SourceConnectionBinding,
+)
+from pillarmesh_connection_broker.service import _TRANSITIONS as SOURCE_BINDING_TRANSITIONS
 from pillarmesh_contract_model import (
     ApprovedSemanticVersion,
     InformationKind,
     ManagedIntegrationContract,
+)
+from pillarmesh_provider_sdk import (
+    AcquisitionAcknowledgement,
+    AcquisitionBatchManifest,
+    AcquisitionBoundary,
+    AcquisitionCheckpointReceipt,
+    AcquisitionField,
+    AcquisitionFieldValue,
+    AcquisitionIntent,
+    AcquisitionNoValidPlan,
+    AcquisitionObjectObservation,
+    AcquisitionObjectSchema,
+    AcquisitionPreparedReceipt,
+    AcquisitionRecord,
+    AcquisitionSegmentManifest,
+    AcquisitionSourceObservation,
+    ResynchronizationRequired,
 )
 from pillarmesh_request_management import (
     AccessScopePreview,
@@ -159,6 +181,13 @@ def test_warehouse_transition_table_matches_section_6_4_1() -> None:
     assert documented == implemented
 
 
+def test_source_binding_transition_table_matches_section_11_4() -> None:
+    documented = _documented_transitions("#### Source connection binding transitions")
+    implemented = _implemented_transitions(SOURCE_BINDING_TRANSITIONS)
+
+    assert documented == implemented
+
+
 def test_request_transition_table_matches_section_13_3_1() -> None:
     documented = _documented_transitions("### 13.3.1")
     implemented = _implemented_transitions(REQUEST_TRANSITIONS)
@@ -197,6 +226,34 @@ def test_request_terminal_states_match_section_13_3_1_prose() -> None:
     ),
 )
 def test_plan3b_artifact_fields_match_section_13_7(artifact: type[BaseModel], heading: str) -> None:
+    assert _fenced_fields(heading) == [artifact.__name__, *artifact.model_fields]
+
+
+@pytest.mark.parametrize(
+    ("artifact", "heading"),
+    (
+        (SourceConnectionBinding, "#### SourceConnectionBinding"),
+        (SourceBindingValidationEvidence, "#### SourceBindingValidationEvidence"),
+        (AcquisitionSourceObservation, "#### AcquisitionSourceObservation"),
+        (AcquisitionObjectObservation, "#### AcquisitionObjectObservation"),
+        (AcquisitionIntent, "#### AcquisitionIntent"),
+        (AcquisitionField, "#### AcquisitionField"),
+        (AcquisitionObjectSchema, "#### AcquisitionObjectSchema"),
+        (AcquisitionFieldValue, "#### AcquisitionFieldValue"),
+        (AcquisitionRecord, "#### AcquisitionRecord"),
+        (AcquisitionBoundary, "#### AcquisitionBoundary"),
+        (AcquisitionSegmentManifest, "#### AcquisitionSegmentManifest"),
+        (AcquisitionBatchManifest, "#### AcquisitionBatchManifest"),
+        (AcquisitionPreparedReceipt, "#### AcquisitionPreparedReceipt"),
+        (AcquisitionAcknowledgement, "#### AcquisitionAcknowledgement"),
+        (AcquisitionCheckpointReceipt, "#### AcquisitionCheckpointReceipt"),
+        (AcquisitionNoValidPlan, "#### AcquisitionNoValidPlan"),
+        (ResynchronizationRequired, "#### ResynchronizationRequired"),
+    ),
+)
+def test_plan4a_acquisition_fields_match_section_11_4(
+    artifact: type[BaseModel], heading: str
+) -> None:
     assert _fenced_fields(heading) == [artifact.__name__, *artifact.model_fields]
 
 

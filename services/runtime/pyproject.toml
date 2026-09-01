@@ -3,19 +3,36 @@ name = "pillarmesh-runtime"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
+  "pillarmesh-connection-broker",
   "pillarmesh-contract-model",
   "pillarmesh-evidence",
   "pillarmesh-execution-graph",
   "pillarmesh-provider-sdk",
+  "pillarmesh-state",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
+pillarmesh-connection-broker = { workspace = true }
 pillarmesh-contract-model = { workspace = true }
 pillarmesh-evidence = { workspace = true }
 pillarmesh-execution-graph = { workspace = true }
 pillarmesh-provider-sdk = { workspace = true }
+pillarmesh-state = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.mutmut]
+source_paths = ["src/pillarmesh_runtime"]
+only_mutate = [
+  "src/pillarmesh_runtime/acquisition.py",
+  "src/pillarmesh_runtime/acquisition_errors.py",
+]
+also_copy = ["tests"]
+pytest_add_cli_args = ["--import-mode=prepend"]
+pytest_add_cli_args_test_selection = [
+  "tests/test_acquisition.py",
+  "tests/test_acquisition_acknowledgement.py",
+]

@@ -257,7 +257,29 @@ versioned.
 Timestamps are timezone-aware UTC. Digests use canonical model bytes. Private cursor payloads are
 never embedded in public artifacts.
 
-### 7.0 Source connection binding
+### 7.0 Acquisition source observation
+
+```text
+AcquisitionSourceObservation
+  schema_version = "1"
+  tenant_id
+  source_binding_ref
+  provider_kind = postgresql | stripe
+  object_observations
+
+AcquisitionObjectObservation
+  schema_version = "1"
+  logical_object_ref
+  provider_observation
+```
+
+`object_observations` contains exactly one entry for each requested logical object, ordered by
+`logical_object_ref`. Each nested `ProviderObservation` must name the same provider, the activated
+schema digest, the opaque connection handle, the admitted capability set, and a UTC observation time
+no later than the intent's `admitted_at`. The digest of this complete envelope is the
+`source_observation_digest` authority carried by the acquisition intent.
+
+### 7.1 Source connection binding
 
 ```text
 SourceConnectionBinding
@@ -296,7 +318,14 @@ rotation increments `credential_revision` behind the same handle and requires fr
 before the binding returns to `ready`. An activated source observation names `binding_id` as its
 `source_ref`; acquisition requires exact agreement between the observation, binding, and tenant.
 
-### 7.1 Acquisition intent
+The activated acquisition projection pins `source_binding_revision`, `credential_revision`,
+`capability_profile_digest`, `source_observation_ref`, and `source_observation_digest` alongside the
+binding reference. It also pins the exact `acknowledgement_consumer_ref`; callers cannot supply or
+override acknowledgement authority. A rotation or revalidation that changes any pinned authority
+requires contract reactivation and produces `No Valid Plan` before provider resolution; an old
+activated contract can never run with newly rotated credentials.
+
+### 7.2 Acquisition intent
 
 ```text
 AcquisitionIntent
@@ -350,7 +379,7 @@ is unknown until pagination ends - the runtime accumulates and refuses mid-strea
 cleanup. Both paths reach the same outcome; only the cost differs. Conformance covers a batch that
 crosses each ceiling on a later page and asserts no artifact, receipt, or checkpoint survives.
 
-### 7.2 Ordered field schema
+### 7.3 Ordered field schema
 
 ```text
 AcquisitionField
@@ -372,7 +401,7 @@ expansions are not admitted. Stripe objects are flattened into the approved shap
 response containing an unknown or mismatched field is invalid input, not an invitation to widen the
 schema.
 
-### 7.3 Provider-neutral record
+### 7.4 Provider-neutral record
 
 ```text
 AcquisitionRecord
@@ -400,7 +429,7 @@ Records in a segment are canonically ordered by the provider's declared stable k
 - Stripe: `(created, object_id)` for initial snapshots and `(event_created, event_id, object_kind,
   object_id)` for event acquisition before the resulting object records are grouped and sorted.
 
-### 7.4 Provider boundary
+### 7.5 Provider boundary
 
 ```text
 AcquisitionBoundary
@@ -441,7 +470,7 @@ and no stated relationship is the outcome to avoid.
 `ProviderObservation.provider` in `packages/provider-sdk` is currently
 `Literal["postgresql", "snowflake"]` and must widen to admit `stripe` in the same change.
 
-### 7.5 Segment manifest
+### 7.6 Segment manifest
 
 ```text
 AcquisitionSegmentManifest
@@ -464,7 +493,7 @@ whitespace. Decimal and timestamp forms follow the repository canonical serializ
 `content_digest` covers exact encoded bytes. `record_set_digest` covers the ordered canonical record
 models. Both must match before the segment is admitted.
 
-### 7.6 Batch manifest
+### 7.7 Batch manifest
 
 ```text
 AcquisitionBatchManifest
@@ -490,7 +519,7 @@ Segments are ordered by logical object reference. Totals must equal the exact su
 manifests. `batch_id` is derived from a domain tag, intent key, prior checkpoint revision, candidate
 checkpoint digest, and segment-manifest digests. `prepared_at` does not contribute to the batch ID.
 
-### 7.7 Prepared receipt
+### 7.8 Prepared receipt
 
 ```text
 AcquisitionPreparedReceipt
@@ -502,13 +531,14 @@ AcquisitionPreparedReceipt
   batch_manifest_digest
   prior_checkpoint_revision
   candidate_checkpoint_digest
+  cursor_version
   prepared_at
 ```
 
 The receipt is created only after every segment and the manifest are durable and digest-verified.
 It does not mean the destination accepted, persisted, reconciled, or exposed the batch.
 
-### 7.8 Downstream acknowledgement
+### 7.9 Downstream acknowledgement
 
 ```text
 AcquisitionAcknowledgement
@@ -529,7 +559,7 @@ AcquisitionAcknowledgement
 The consumer receipt remains opaque to Plan 4A. A later destination plan defines and validates its
 warehouse effect. Plan 4A validates only exact identity and digest linkage.
 
-### 7.9 Committed checkpoint receipt
+### 7.10 Committed checkpoint receipt
 
 ```text
 AcquisitionCheckpointReceipt
@@ -582,11 +612,18 @@ PreparedAcquisitionState
   intent_key
   contract_digest
   source_binding_ref
+  source_binding_revision
+  credential_revision
+  binding_authority_epoch
+  contract_authority_epoch
+  acknowledgement_consumer_ref
+  provider_kind
   prior_checkpoint_revision
   batch_id
   batch_manifest_digest
   candidate_cursor_ciphertext
   candidate_checkpoint_digest
+  cursor_version
   state = prepared | acknowledged
   acknowledgement_digest | null
   created_at
@@ -595,7 +632,20 @@ PreparedAcquisitionState
 
 The unique authority key is `(tenant_id, contract_digest, source_binding_ref,
 prior_checkpoint_revision)`. A second preparation under that key must be canonically identical.
-Concurrent different output is an integrity failure.
+Concurrent different output or a different authority snapshot is an integrity failure. Binding
+cancellation, suspension, retirement, credential rotation, or contract retirement increments its
+state-owned authority epoch before the lifecycle change becomes externally effective. A pending
+preparation or acknowledgement holding an earlier epoch then loses its compare-and-set. Exact
+acknowledgement replay may return the already committed receipt after later retirement because it
+reconstructs no new effect and revalidates the complete committed fact set. Source-binding
+invalidation is an exact revision compare-and-set: retrying the same invalidation is idempotent,
+while a delayed request cannot revoke an already admitted newer revision. The contract service owns
+contract retirement through the same fail-closed authority boundary. Retirement loads a
+tenant-qualified activated lifecycle record, checks its exact expected revision, invalidates state
+authority, and only then persists the retired revision. Unknown, cross-tenant, inactive, and stale
+requests have no authority effect; an unknown state authority cannot be invalidated into existence.
+Contract lifecycle activation is the only operation that may create contract state authority;
+runtime admission rejects an unknown contract rather than implicitly activating it.
 
 ### 8.3 Artifact durability
 
@@ -961,6 +1011,11 @@ Provider entry points raise `ProviderError` with a precise classification. Postg
 Stripe client/HTTP types, response bodies, request IDs, account IDs, cursors, SQL, credentials, and
 source values cannot cross that boundary.
 
+Stripe cursor expiry and overlap discontinuity use the closed
+`resynchronization_required` provider classification with the allowlisted
+`stripe_event_cursor_expired` and `stripe_event_overlap_gap` reasons. Unclassified provider
+exceptions are integrity failures, not retryable transport failures.
+
 ### 12.1 Durable governed outcomes
 
 Expected governed conditions are artifacts, not exceptions:
@@ -1047,6 +1102,10 @@ response, or private artifact path.
 Preparation and acknowledgement are separate receipts. Only acknowledgement may name a resulting
 checkpoint revision. Neither receipt claims destination persistence, source-to-destination
 reconciliation, warehouse visibility, transformation success, freshness, or consumer delivery.
+
+`reason_codes` is a closed public vocabulary. Runtime-only diagnostics and dependency text are
+mapped to stable public categories before receipt construction; arbitrary provider or exception text
+is rejected by the receipt model.
 
 ## 15. Concurrency, transaction, and recovery rules
 

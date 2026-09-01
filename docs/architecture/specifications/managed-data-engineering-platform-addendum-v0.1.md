@@ -794,6 +794,443 @@ PostgreSQL and ClickHouse must reuse the same canonical Integration Contract, se
 
 PostgreSQL is the transactional reference. ClickHouse uses native ingestion and deduplication semantics. A ClickHouse limitation produces `No Valid Plan` for an incompatible contract; PillarMesh does not imitate a transactional guarantee it cannot prove.
 
+### 11.4 Plan 4A source acquisition contract
+
+Plan 4A ends at immutable source-aligned canonical JSON Lines segments, a batch manifest, a private
+candidate checkpoint, and source-acquisition evidence. It does not write PostgreSQL or ClickHouse,
+run a transformation, evaluate a schedule, prove freshness, reconcile a destination, expose a
+warehouse object, or deliver a consumer result. A strict acceptance consumer may acknowledge an
+exact manifest, but that acknowledgement proves only source-checkpoint admission.
+
+All models below are frozen, reject unknown fields, and use timezone-aware UTC timestamps. Digests
+are lowercase SHA-256 values over canonical model bytes.
+
+#### SourceConnectionBinding
+
+```text
+SourceConnectionBinding
+schema_version
+binding_id
+tenant_id
+provider_kind
+connection_handle
+account_mode
+lifecycle_state
+approved_object_refs
+capability_profile_digest
+source_observation_ref
+credential_revision
+revision
+created_at
+updated_at
+```
+
+Tenant, provider kind, connection handle, account mode, approved object references, and creation time
+are immutable. Credentials, endpoints, account identifiers, and private resource names remain
+behind the opaque handle. Credential rotation increments `credential_revision`, clears prior
+validation authority, and returns the binding to `validating`.
+
+Private persistence contains only fixed-shape `endpoint-ref:<sha256>` and
+`credential-ref:<sha256>` secret-store handles. Raw endpoints, DSNs, API keys, account identifiers,
+and provider resource names are invalid at this boundary. The broker resolves the capability and
+selects the capability probe from its construction-time provider registry; a validation caller
+cannot substitute a probe. Resolver and probe failures expose only a stable boundary operation.
+
+#### SourceBindingValidationEvidence
+
+```text
+SourceBindingValidationEvidence
+schema_version
+evidence_id
+tenant_id
+binding_id
+binding_revision
+credential_revision
+provider_kind
+positive_probe_succeeded
+positive_probe_digest
+denial_probe_succeeded
+denial_probe_digest
+source_observation_ref
+capability_profile_digest
+observed_at
+```
+
+A binding reaches `ready` only through evidence for its exact tenant, public revision, credential
+revision, and provider kind. Both the intended-access and denied-access probes must succeed. The
+ready binding and evidence commit atomically; stale or cross-tenant requests disclose no binding.
+
+#### Source connection binding transitions
+
+```text
+draft → validating, retired
+validating → ready, failed, retired
+ready → validating, suspended, retired
+suspended → validating, retired
+failed → validating, retired
+retired →
+```
+
+Only validation evidence may produce `ready`; a generic lifecycle transition cannot. A retired
+binding is terminal. Every transition away from `ready`, including credential rotation, first
+invalidates the binding's state-owned acquisition authority epoch. If invalidation fails, the
+lifecycle transition fails closed. Invalidation compares the exact ready revision, is idempotent
+for a retry of that revision, and cannot revoke authority already admitted for a newer revision.
+
+#### AcquisitionSourceObservation
+
+```text
+AcquisitionSourceObservation
+schema_version
+tenant_id
+source_binding_ref
+provider_kind
+object_observations
+```
+
+The source observation binds the tenant, source binding, provider kind, and the canonically ordered
+observation for every requested logical object. Its canonical digest is the exact
+`source_observation_digest` admitted by `AcquisitionIntent`. Each nested observation must use UTC,
+must not be dated after intent admission, and must agree with the activated schema, opaque
+connection handle, provider kind, and capability allowlist.
+
+#### AcquisitionObjectObservation
+
+```text
+AcquisitionObjectObservation
+schema_version
+logical_object_ref
+provider_observation
+```
+
+There is exactly one object observation for each requested logical object, ordered by
+`logical_object_ref`. The provider observation remains the shared provider-neutral metadata model;
+private endpoint, credential, account, and cursor material is never copied into this envelope.
+
+#### AcquisitionIntent
+
+```text
+AcquisitionIntent
+schema_version
+intent_key
+tenant_id
+run_intent_ref
+contract_ref
+contract_digest
+source_binding_ref
+source_observation_digest
+acquisition_mode
+object_refs
+prior_checkpoint_revision
+prior_checkpoint_digest
+record_ceiling
+encoded_byte_ceiling
+admitted_at
+```
+
+The intent key binds a domain tag, tenant, run-intent identity, contract digest, source binding,
+mode, canonically ordered object references, and prior checkpoint revision. Admission time is not
+identity. Revision zero has no prior checkpoint digest; every later revision requires one. The
+intent can narrow an activated contract but cannot widen objects, fields, modes, or limits.
+
+#### AcquisitionField
+
+```text
+AcquisitionField
+name
+value_type
+nullable
+```
+
+#### AcquisitionObjectSchema
+
+```text
+AcquisitionObjectSchema
+logical_object_ref
+schema_digest
+fields
+record_key_fields
+source_updated_at_field
+operation_semantics
+```
+
+#### AcquisitionFieldValue
+
+```text
+AcquisitionFieldValue
+name
+value
+```
+
+#### AcquisitionRecord
+
+```text
+AcquisitionRecord
+schema_version
+logical_object_ref
+record_key
+source_created_at
+source_updated_at
+operation
+fields
+```
+
+Fields are an ordered tuple of exact scalar name/value entries. The admitted scalar vocabulary is
+null, boolean, integer, decimal, string, and timestamp. Arrays, maps, binary values, floating-point
+values, unknown fields, and provider expansions are refused. Record keys and source fields are
+private and never appear in public evidence.
+
+#### AcquisitionBoundary
+
+```text
+AcquisitionBoundary
+schema_version
+logical_object_ref
+acquisition_mode
+schema_digest
+lower_cursor_digest
+upper_cursor_digest
+query_shape_digest
+snapshot_identity_digest
+key_range_digest
+private_boundary_ref
+record_count
+opened_at
+closed_at
+```
+
+This model supersedes `SourceBoundary` for acquisition while leaving the M0 signed-graph call sites
+on `SourceBoundary`. Raw cursor values, snapshot identity, key bounds, applied lag details, and
+provider pagination state remain behind `private_boundary_ref`; only their digests cross the
+provider boundary.
+
+#### AcquisitionSegmentManifest
+
+```text
+AcquisitionSegmentManifest
+schema_version
+segment_name
+logical_object_ref
+record_schema_digest
+boundary_digest
+encoding
+content_digest
+record_set_digest
+record_count
+encoded_bytes
+```
+
+#### AcquisitionBatchManifest
+
+```text
+AcquisitionBatchManifest
+schema_version
+batch_id
+intent_key
+tenant_id
+contract_ref
+contract_digest
+source_binding_ref
+source_observation_digest
+acquisition_mode
+prior_checkpoint_revision
+prior_checkpoint_digest
+candidate_checkpoint_digest
+segment_manifests
+total_record_count
+total_encoded_bytes
+prepared_at
+```
+
+Segment names derive from a fixed ordinal and logical-object digest. Segment order is the canonical
+logical-object order. `content_digest` covers exact UTF-8 JSON Lines bytes including the final
+newline; `record_set_digest` covers the ordered record models. Batch totals equal the exact segment
+sums, and batch identity excludes preparation time.
+
+#### AcquisitionPreparedReceipt
+
+```text
+AcquisitionPreparedReceipt
+schema_version
+prepared_receipt_id
+tenant_id
+intent_key
+batch_id
+batch_manifest_digest
+prior_checkpoint_revision
+candidate_checkpoint_digest
+cursor_version
+prepared_at
+```
+
+#### AcquisitionAcknowledgement
+
+```text
+AcquisitionAcknowledgement
+schema_version
+acknowledgement_id
+tenant_id
+consumer_ref
+contract_digest
+source_binding_ref
+batch_id
+batch_manifest_digest
+prior_checkpoint_revision
+candidate_checkpoint_digest
+consumer_receipt_digest
+acknowledged_at
+```
+
+#### AcquisitionCheckpointReceipt
+
+```text
+AcquisitionCheckpointReceipt
+schema_version
+checkpoint_receipt_id
+tenant_id
+contract_digest
+source_binding_ref
+previous_revision
+committed_revision
+cursor_digest
+batch_id
+acknowledgement_id
+committed_at
+```
+
+Preparation publishes durable artifacts and prepared state but moves no checkpoint. Exact
+acknowledgement, prepared-state transition, checkpoint revision increment, checkpoint receipt, and
+acknowledgement evidence commit in one state transaction. A duplicate acknowledgement returns the
+same receipt only after canonical equality. Stale, cross-tenant, wrong-consumer, wrong-contract, or
+digest-mismatched acknowledgement has no durable effect. Empty batches may advance exactly one
+revision after acknowledgement so every run intent has an unambiguous predecessor.
+
+The durable prepared state also binds the source-binding and credential revisions, binding and
+contract authority epochs, provider kind, cursor version, and the activated contract's exact
+acknowledgement consumer. These values are state-owned authority, not caller assertions. Binding or
+contract invalidation advances its epoch before retirement or cancellation becomes externally
+effective, so a pending acknowledgement holding the earlier epoch loses atomically. Exact replay of
+an acknowledgement that already committed may still return its existing receipt after later
+retirement; it creates no new checkpoint effect and must revalidate the complete committed fact set.
+The contract service owns the retirement call through an injected state-authority boundary and
+fails retirement closed when that boundary is absent or unavailable. It first resolves a
+tenant-qualified activated lifecycle record at an exact expected revision; unknown, cross-tenant,
+inactive, or stale requests never reach state authority. Activation registers that lifecycle and
+its state authority, and a retired contract digest cannot reactivate. Runtime admission may only
+observe an already active contract authority; it cannot create one implicitly.
+
+#### AcquisitionNoValidPlan
+
+```text
+AcquisitionNoValidPlan
+schema_version
+reason_codes
+failed_constraints
+```
+
+#### ResynchronizationRequired
+
+```text
+ResynchronizationRequired
+schema_version
+reason_code
+source_binding_ref
+affected_object_refs
+last_proven_checkpoint_digest
+required_scope
+created_at
+```
+
+Both governed outcomes are tenant-private. Public evidence may expose allowlisted reason codes but
+not failed constraints, last-proven checkpoint digests, required scope, raw cursors, or provider
+identity. `No Valid Plan` means the activated semantics cannot be proven. Resynchronization means a
+previously admitted source interval can no longer be proven. Authorization, throttling, transient
+availability, drift, and integrity failures remain distinct and move no checkpoint.
+
+### 11.5 Refusal ceilings and replay
+
+`record_ceiling` and `encoded_byte_ceiling` are refusal limits, not pagination limits. PostgreSQL
+uses its repeatable-read count to refuse before row streaming. Stripe refuses while consuming the
+unknown page total. Either path aborts provider iteration and leaves no published segment,
+manifest, receipt, or checkpoint. Truncation followed by checkpoint advancement is forbidden.
+
+Only one canonical prepared batch can exist for a tenant, contract, source binding, and prior
+checkpoint revision. Same-intent replay returns the exact prepared receipt or safely republishes
+digest-identical orphan artifacts. Different candidate cursor, segment, count, or manifest is an
+integrity failure.
+
+### 11.6 PostgreSQL acquisition semantics
+
+An admitted PostgreSQL source is an approved base table with an exact projection, one non-null
+primary or unique B-tree key, a timezone-aware `updated_at`, a contract assertion that the timestamp
+never decreases, and a dedicated principal with intended SELECT plus denied mutation,
+administration, trigger, reference, and unrelated-schema capabilities.
+
+Initial acquisition opens `REPEATABLE READ READ ONLY`, validates authority and schema, captures the
+snapshot identity, key bounds, and count, then streams primary-key order. Incremental acquisition
+uses native row-value semantics:
+
+```text
+lower_cursor < (updated_at, primary_key) <= lagged_upper_cursor
+ORDER BY updated_at, primary_key
+```
+
+The upper cursor is the greatest visible pair whose timestamp is at or below
+`snapshot_time - max_write_transaction_duration`. The activated contract must declare a positive
+maximum duration; zero or absence is `No Valid Plan`. When permitted, the oldest concurrent
+transaction start may tighten the private bound. This bounded delay prevents a transaction that
+assigned an earlier timestamp but committed after the snapshot from being skipped permanently.
+
+Backward timestamp movement violates the contract and is detected only through reconciliation.
+Physical deletes are not observable in Plan 4A. A contract requiring physical-delete capture is
+`No Valid Plan`; PillarMesh does not claim delete correctness from an upsert-only cursor.
+
+Order, Subscription, and Account Segment facts come from approved PostgreSQL tables. Subscription
+includes lifecycle status so a later plan can compute churn. A tenant whose subscription facts live
+only in Stripe is outside Plan 4A.
+
+### 11.7 Stripe acquisition semantics
+
+Stripe admits exactly Customer, Invoice, Charge, and Refund. It excludes names, email, postal and
+phone data, card and bank details, descriptions, receipts, unrestricted metadata, nested expansions,
+PaymentIntent, Subscription, Dispute, BalanceTransaction, and secrets. One metadata key may be
+admitted only by a separately approved cross-source identity rule. `customer.deleted` may normalize
+to a minimal private tombstone; no other hard-delete guarantee is claimed.
+
+Requests pin API version `2026-02-25.clover`. Initial snapshots capture one upper creation time,
+paginate official v1 list endpoints with private object cursors, constrain every approved resource
+by `created <= upper`, normalize only tested versions and allowlisted fields, and sort by
+`(created, object_id)` independently of reverse-chronological page order.
+
+The private event cursor is `(last_event_created, last_event_id, api_version_set_digest)`.
+Incremental acquisition requires a positive contract-declared overlap, reads inclusively from
+`last_event_created - event_overlap_window`, and captures an upper event time. The exact prior event
+must appear in the overlap before continuity is accepted. A missing prior event, an event older than
+the overlap start, an unsupported creation-time API version that cannot be reconstructed, or a
+cursor outside Stripe's documented 30-day Events window creates `ResynchronizationRequired`.
+
+Events deduplicate by ID before already-committed events are discarded. Different content under the
+same event ID is integrity failure. Canonical order is `(event_created, event_id, object_kind,
+object_id)`. Reconciliation repeats complete bounded snapshots for all four resources and proves
+only source completeness and internal digest consistency, never warehouse equality.
+
+### 11.8 Source-provider conformance and evidence boundary
+
+Every source provider proves fresh observation, intended and denied access, exact object and field
+allowlists, stable bounds, deterministic ordering, complete pagination, refusal ceilings, empty
+acquisition, exact replay, abandoned-iterator cleanup, drift before and during acquisition,
+malformed-payload rejection, precise error classification, cross-tenant denial, private cursor
+containment, prepared-versus-acknowledged behavior, reconciliation or explicit unsupported
+semantics, and sanitized public evidence.
+
+Public acquisition evidence contains tenant, run-intent reference, contract reference, source
+binding reference, mode, logical object references, opaque prepared/checkpoint receipt references,
+prior/resulting revisions, allowlisted reason codes, outcome, and creation time. It contains no
+batch or manifest digest, row or byte count, segment content, record key, source field, cursor or
+cursor digest, provider account or request ID, endpoint, credential, SQL, response body, or private
+artifact path. Neither preparation nor acknowledgement claims destination persistence,
+reconciliation, visibility, transformation, freshness, or consumer delivery.
+
 ## 12. Managed transformations and warehouse integrity
 
 ### 12.1 Transformation authority

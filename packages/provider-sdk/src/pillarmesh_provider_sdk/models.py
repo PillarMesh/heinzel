@@ -19,7 +19,7 @@ class ColumnObservation(ProviderModel):
 
 class ProviderObservation(ProviderModel):
     schema_version: Literal["1"] = "1"
-    provider: Literal["postgresql", "snowflake"]
+    provider: Literal["postgresql", "snowflake", "stripe"]
     connection_handle: str
     object_identity: str
     object_kind: Literal["base_table", "view", "unknown"]

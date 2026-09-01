@@ -56,3 +56,21 @@ class ActivationSummary(ArtifactModel):
         if self.signed_graph_artifact_digest != digest(self.signed_graph):
             raise ValueError("signed graph artifact digest does not match signed envelope")
         return self
+
+
+class AcquisitionContractLifecycleState(ArtifactModel):
+    schema_version: Literal["1"] = "1"
+    tenant_id: str = Field(min_length=1)
+    contract_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    revision: int = Field(ge=1)
+    lifecycle_state: Literal["activated", "retired"]
+    activated_at: datetime
+    retired_at: datetime | None
+
+    @model_validator(mode="after")
+    def retirement_time_matches_lifecycle(self) -> Self:
+        if (self.lifecycle_state == "retired") != (self.retired_at is not None):
+            raise ValueError("retired lifecycle requires retired_at")
+        if self.retired_at is not None and self.retired_at < self.activated_at:
+            raise ValueError("retired_at cannot predate activation")
+        return self

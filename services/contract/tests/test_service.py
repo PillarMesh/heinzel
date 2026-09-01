@@ -9,7 +9,14 @@ from pillarmesh_contract_model import (
     canonical_bytes,
     digest,
 )
-from pillarmesh_contract_service import ActivationSummary, ContractService
+from pillarmesh_contract_service import (
+    AcquisitionContractLifecycleNotFoundError,
+    ActivationSummary,
+    ContractAuthorityBoundaryError,
+    ContractService,
+    SQLiteAcquisitionContractLifecycleRepository,
+    StaleAcquisitionContractLifecycleError,
+)
 from pillarmesh_evidence import SQLiteStore
 from pillarmesh_execution_graph import GraphSigner
 from pillarmesh_iir import lower_contract
@@ -138,7 +145,29 @@ class Provider:
         return self.observation.model_copy(update={"observed_at": NOW})
 
 
-def service(tmp_path: Path) -> tuple[ContractService, Provider, Provider, SQLiteStore]:
+class AuthorityInvalidator:
+    def __init__(self) -> None:
+        self.fail_at: str | None = None
+        self.activation_calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str]] = []
+
+    def activate_contract_authority(self, tenant_id: str, contract_digest: str) -> int:
+        if self.fail_at == "activate":
+            raise RuntimeError("private-authority-detail")
+        self.activation_calls.append((tenant_id, contract_digest))
+        return 0
+
+    def invalidate_contract_authority(self, tenant_id: str, contract_digest: str) -> None:
+        if self.fail_at == "retire":
+            raise RuntimeError("private-authority-detail")
+        self.calls.append((tenant_id, contract_digest))
+
+
+def service(
+    tmp_path: Path,
+    *,
+    authority_invalidator: AuthorityInvalidator | None = None,
+) -> tuple[ContractService, Provider, Provider, SQLiteStore]:
     source_observation, destination_observation = observations()
     source = Provider(source_observation)
     destination = Provider(destination_observation)
@@ -149,8 +178,108 @@ def service(tmp_path: Path) -> tuple[ContractService, Provider, Provider, SQLite
         source_resolver=lambda _handle: source,
         destination_resolver=lambda _handle: destination,
         clock=lambda: NOW,
+        acquisition_authority_invalidator=authority_invalidator,
     )
     return contract_service, source, destination, store
+
+
+def test_contract_activation_and_retirement_are_tenant_qualified_and_revisioned() -> None:
+    source_observation, destination_observation = observations()
+    invalidator = AuthorityInvalidator()
+    lifecycle = SQLiteAcquisitionContractLifecycleRepository(":memory:")
+    contract_service = ContractService(
+        store=SQLiteStore.open(":memory:"),
+        signer=GraphSigner.generate("m0-key"),
+        source_resolver=lambda _handle: Provider(source_observation),
+        destination_resolver=lambda _handle: Provider(destination_observation),
+        clock=lambda: NOW,
+        acquisition_authority_invalidator=invalidator,
+        acquisition_lifecycle_repository=lifecycle,
+    )
+
+    activated = contract_service.activate_acquisition_contract("tenant-a", "4" * 64)
+    retired = contract_service.retire_acquisition_contract(
+        "tenant-a",
+        "4" * 64,
+        expected_revision=activated.revision,
+    )
+
+    assert activated.lifecycle_state == "activated"
+    assert retired.lifecycle_state == "retired"
+    assert retired.revision == activated.revision + 1
+    assert invalidator.activation_calls == [("tenant-a", "4" * 64)]
+    assert invalidator.calls == [("tenant-a", "4" * 64)]
+
+
+def test_contract_retirement_fails_closed_when_authority_cannot_be_invalidated() -> None:
+    source_observation, destination_observation = observations()
+    invalidator = AuthorityInvalidator()
+    lifecycle = SQLiteAcquisitionContractLifecycleRepository(":memory:")
+    contract_service = ContractService(
+        store=SQLiteStore.open(":memory:"),
+        signer=GraphSigner.generate("m0-key"),
+        source_resolver=lambda _handle: Provider(source_observation),
+        destination_resolver=lambda _handle: Provider(destination_observation),
+        clock=lambda: NOW,
+        acquisition_authority_invalidator=invalidator,
+        acquisition_lifecycle_repository=lifecycle,
+    )
+    activated = contract_service.activate_acquisition_contract("tenant-a", "4" * 64)
+    invalidator.fail_at = "retire"
+
+    with pytest.raises(
+        ContractAuthorityBoundaryError, match="retire acquisition contract"
+    ) as error:
+        contract_service.retire_acquisition_contract(
+            "tenant-a",
+            "4" * 64,
+            expected_revision=activated.revision,
+        )
+
+    assert "private-authority-detail" not in str(error.value)
+    assert lifecycle.get("tenant-a", "4" * 64) == activated
+
+
+def test_unknown_cross_tenant_inactive_and_stale_retirement_have_no_authority_effect() -> None:
+    source_observation, destination_observation = observations()
+    invalidator = AuthorityInvalidator()
+    lifecycle = SQLiteAcquisitionContractLifecycleRepository(":memory:")
+    contract_service = ContractService(
+        store=SQLiteStore.open(":memory:"),
+        signer=GraphSigner.generate("m0-key"),
+        source_resolver=lambda _handle: Provider(source_observation),
+        destination_resolver=lambda _handle: Provider(destination_observation),
+        clock=lambda: NOW,
+        acquisition_authority_invalidator=invalidator,
+        acquisition_lifecycle_repository=lifecycle,
+    )
+    activated = contract_service.activate_acquisition_contract("tenant-a", "4" * 64)
+
+    with pytest.raises(AcquisitionContractLifecycleNotFoundError):
+        contract_service.retire_acquisition_contract(
+            "tenant-b",
+            "4" * 64,
+            expected_revision=activated.revision,
+        )
+    with pytest.raises(StaleAcquisitionContractLifecycleError):
+        contract_service.retire_acquisition_contract(
+            "tenant-a",
+            "4" * 64,
+            expected_revision=activated.revision + 1,
+        )
+    retired = contract_service.retire_acquisition_contract(
+        "tenant-a",
+        "4" * 64,
+        expected_revision=activated.revision,
+    )
+    with pytest.raises(StaleAcquisitionContractLifecycleError):
+        contract_service.retire_acquisition_contract(
+            "tenant-a",
+            "4" * 64,
+            expected_revision=retired.revision,
+        )
+
+    assert invalidator.calls == [("tenant-a", "4" * 64)]
 
 
 def test_draft_versions_are_immutable_and_latest_supersedes_activation(tmp_path: Path) -> None:

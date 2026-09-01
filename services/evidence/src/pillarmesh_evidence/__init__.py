@@ -1,3 +1,8 @@
+from .acquisition import (
+    AcquisitionEvidenceOutcome,
+    AcquisitionEvidenceReceipt,
+    AcquisitionPublicReasonCode,
+)
 from .fulfillment import FulfillmentEvidencePackage, package_fulfillment_receipts
 from .models import EvidenceEvent, RunRecord, RunState
 from .package import PackageError, export_package, verify_package
@@ -20,6 +25,9 @@ from .store import (
 )
 
 __all__ = [
+    "AcquisitionEvidenceOutcome",
+    "AcquisitionEvidenceReceipt",
+    "AcquisitionPublicReasonCode",
     "ActiveRunError",
     "ArtifactEdge",
     "ArtifactEntry",
