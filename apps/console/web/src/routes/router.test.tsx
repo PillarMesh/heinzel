@@ -175,6 +175,48 @@ function renderRoutes(path: string, state: WorkspaceView["state"] = "active") {
 }
 
 describe("ConsoleRoutes", () => {
+  test("fails closed rather than redirecting /setup to itself", async () => {
+    // `selectLandingRoute` maps the `setup` state back to `/setup`, so redirecting
+    // an absent envelope to the landing route made this route navigate to itself.
+    // Rendering that combination used to hang the suite instead of failing it.
+    render(
+      <MemoryRouter initialEntries={["/setup"]}>
+        <ConsoleRoutes
+          sessionEnvelope={sessionEnvelope}
+          setupClient={setupClient}
+          setupEnvelope={undefined}
+          workspaceEnvelope={workspaceEnvelope("setup")}
+        />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", {name: "Workspace projections do not match"})).toBeVisible(),
+    )
+  })
+
+  test("sends a finished setup back to the workspace instead of a recovery boundary", async () => {
+    // Once the warehouse binding is ready the workspace turns `active`, and the
+    // app deliberately stops fetching the setup projection. Reaching `/setup`
+    // after that -- a bookmark, a back button, a reload -- is an ordinary thing to
+    // do, and it used to render "Workspace projections do not match", which is
+    // both alarming and untrue: nothing mismatched, the stage is simply over.
+    render(
+      <MemoryRouter initialEntries={["/setup"]}>
+        <ConsoleRoutes
+          sessionEnvelope={sessionEnvelope}
+          setupClient={setupClient}
+          setupEnvelope={undefined}
+          workspaceEnvelope={workspaceEnvelope("active")}
+        />
+      </MemoryRouter>,
+    )
+
+    await waitFor(() => expect(screen.getByRole("region", {name: "Decision queue"})).toBeVisible())
+    expect(screen.queryByText("Workspace projections do not match")).toBeNull()
+  })
+
+
   test.each([
     ["setup", "Activation approval"],
     ["pending_activation", "Activation approval"],

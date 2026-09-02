@@ -106,7 +106,20 @@ export function ConsoleRoutes({
         <Route
           element={
             setupEnvelope === undefined ? (
-              <RecoveryPage kind="projection" />
+              // The app stops fetching the setup projection once the workspace
+              // leaves `setup`, so an absent envelope here means the stage is over,
+              // not that two projections disagree. Reaching `/setup` afterwards is
+              // ordinary -- a bookmark, a back button, a reload -- and the recovery
+              // boundary would state a mismatch that did not happen.
+              //
+              // Unless the landing route is this route. `selectLandingRoute` maps the
+              // `setup` state back to `/setup`, and redirecting a route to itself does
+              // not terminate, so that combination fails closed instead.
+              landingRoute === "/setup" ? (
+                <RecoveryPage kind="projection" />
+              ) : (
+                <Navigate replace to={landingRoute} />
+              )
             ) : (
               <SetupWorkbench
                 client={setupClient}

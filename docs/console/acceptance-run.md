@@ -60,6 +60,61 @@ The browser gates (`npm ci`, `npm run lint`, `typecheck`, `check:contracts`, Vit
 `apps/console`. They are not part of this procedure and their result is not evidence
 for anything recorded above.
 
+## Driving it by hand
+
+The same wiring runs interactively, so a person can walk the journey instead of
+asserting it:
+
+```sh
+cd apps/console && npm run build && cd ../..
+uv run python -m tests.acceptance.run_console_governed
+```
+
+It serves `http://127.0.0.1:8000`, seeds one stakeholder question through the owning
+services, and carries it to `awaiting_approval` so the inbox has a real decision. The
+architect is the default actor; the `x-pillarmesh-actor: requester-a` header selects
+the requester surface, which is how one browser walks both sides.
+
+### Against a real PostgreSQL engine
+
+`--engine postgresql` replaces the local-acceptance provider with
+`PostgreSQLWarehouseProvider`, so confirming the binding in the browser starts a real
+container:
+
+```sh
+uv run python -m tests.acceptance.run_console_governed --engine postgresql
+```
+
+Recorded run, 2026-09-02: the console command returned `state: succeeded`, `phase:
+ready` in 48 seconds. `docker ps` showed `postgres:18.6-bookworm` healthy; the engine
+held all seven principal classes of addendum section 18 as real roles
+(`pm_<binding>_administration` through `pm_<binding>_bi`), `show ssl` reported `on`,
+and the validation evidence recorded `engine_version: 18.6` with an
+`engine_image_digest` equal to the pinned image digest. The resource ledger held 24
+resources, every one recorded before creation, including the isolated restore
+instance whose cleanup status is `complete` while the primary's resources remain
+governed by their retention deadline.
+
+It still validates under `WarehouseValidationProfile.LOCAL_ACCEPTANCE`:
+`encryption_at_rest_disposition` is `deferred_local_acceptance`, so the run proves the
+lifecycle, not a production posture.
+
+Two limits are worth knowing before running it. One run provisions one binding,
+because the operation secrets are bound to the single operation identifier the
+orchestrator mints first; a second binding is refused rather than given another
+operation's credentials. And the workspace binding directory is in-memory, so
+restarting the server loses the association even though warehouse-control still holds
+the binding on disk — delete the state directory and the containers together, or the
+console will offer to provision a warehouse that already exists.
+
+Two properties of that harness are deliberate and must not be copied into anything
+deployed. It has **no authentication** — the actor is a request header — so it refuses
+to bind to any host but loopback. And its warehouse provider is the local-acceptance
+harness, not a real engine: a binding reaches `ready` on local-acceptance grade
+evidence with no container in existence. Every other transaction is the owning
+service's own, and its state is in real SQLite files under the system temporary
+directory, which is where a reader should check any claim the screen makes.
+
 ## Recorded run — 2026-09-02
 
 | Command | Result |
