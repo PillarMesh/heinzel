@@ -4,11 +4,46 @@ Instructions for the agent revising the Plan 3A design before it is converted in
 task-level implementation plan. Self-contained: every claim below cites a file, a
 specification section, or a line you can read.
 
-**Verdict:** the shape is right and matches the pattern Plan 2 already established for
-`CatalogBinding`. Do not restart it. It is not yet implementable: it contradicts the
-specification in three places, leaves the durable artefacts unnamed, and does not say how
-any of its headline capability gets proven. Revise as set out here, resolve
-"Blocked on the user", then write the implementation plan.
+**Citation basis.** Every citation below was first written against `main` at commit `f0b82ff`
+and has been re-resolved against `main` at `7ebc366`, the merge of the Plan 3A implementation
+(pull request #12), which is the tree a reader has today. Line numbers below are that tree's.
+Relative to `f0b82ff`, `warehouse-control` gained `orchestration.py`, `readiness.py`,
+`retirement.py`, `private_state.py`, `evidence.py`, `protocols.py`, `errors.py`, and
+`secrets.py` alongside the existing `service.py`, and `provisioner.py` line 342 moved to 343
+and line 1063 moved to 988. Re-resolve any citation again if the file has moved since.
+
+**Current disposition, verified against `main` at `7ebc366`.** This review's original verdict
+applied to `main` at `f0b82ff`. The implementation has since closed every blocking correction
+and most required design corrections. Do not re-apply a closed item merely because its original
+finding remains below.
+
+| Correction | Current disposition |
+| --- | --- |
+| 1 | Closed: lifecycle freezes the binding before the revision-bound operation claim. |
+| 2 | Closed: section 18.1 and `WarehousePrincipalClass` use the approved seven-class vocabulary. |
+| 3 | Closed: readiness records a profile-specific encryption-at-rest disposition. |
+| 4 | Closed: retirement records retention-governed residual resources instead of claiming immediate deletion. |
+| 5 | Closed: only atomic validation admission can stamp `provisioned_at` and enter `ready`. |
+| 6 | Closed: named public evidence and private operation, claim, and resource artefacts are durable. |
+| 7 | Closed: restore resources are recorded before creation and the isolated target fails closed. |
+| 8 | Closed: six provider operations are mapped to lifecycle states and replay behavior. |
+| 9 | Closed: resume requires fresh positive and denial probes and durable resume evidence. |
+| 10 | Closed: caller-supplied operation identities have durable, revision-bound exclusive claims. |
+| 11 | Design closed: version, build, and image evidence plus fresh resume checks exist; section 6.4 now defines the future production revalidation and fail-closed suspension response without claiming it as Plan 3A proof. |
+| 12 | Closed: `WarehouseFailureClassification` is a closed vocabulary that preserves transient and terminal distinctions. |
+| 13 | Design closed, proof in progress: offline/live ownership is explicit and PostgreSQL has fresh live lifecycle evidence; ClickHouse live proof remains required. |
+| 14 | Partially closed: the Compose boundary is promoted and used by OpenMetadata and PostgreSQL; the combined PostgreSQL-plus-ClickHouse hosted-runner cost remains to be measured. |
+| 15 | Design closed, proof in progress: common outcomes and ClickHouse exclusions are explicit; ClickHouse conformance remains required. |
+| 16 | Closed: PostgreSQL-first milestones, portability consequence, amendments, and non-goals are explicit. |
+| 17 | Closed by the milestone estimate below; measured CI cycle time remains an acceptance input, not an estimate. |
+
+**Current verdict:** Plan 3A is implementable and implementation is underway. No blocking design
+correction remains. PostgreSQL alone does not prove destination portability. Completion still
+requires ClickHouse conformance and live
+evidence, two-engine recovery and retention proof, hosted-runner cycle measurement, the required
+path-filtered gate, and witnessed acceptance. The continuously-ready production revalidation loop
+is explicitly outside Plan 3A and remains a production-admission requirement. Documentation and
+prior local test output are not substitutes for those remaining proofs.
 
 ## What already exists
 
@@ -45,7 +80,12 @@ and a new `providers/clickhouse`, need no ADR and no validator change.
 
 ## Required corrections
 
-### 1. Step order 1 to 2 breaks the immutability freeze
+Each correction is tagged. **Blocking** means it contradicts the specification or makes a
+headline capability unprovable; the implementation plan cannot be written until it is
+resolved. **Required** means it must appear in the implementation plan but does not block
+writing it. Corrections 1, 2, 4, and 13 are Blocking.
+
+### 1. Blocking — Step order 1 to 2 breaks the immutability freeze
 
 **Problem.** The sequence claims the operation first and transitions `draft` to
 `provisioning` second.
@@ -65,7 +105,7 @@ and the resumed operation provisions PostgreSQL against a binding that now says 
 claim cannot apply, the way `CatalogValidationEvidence.binding_revision` already does in
 `services/catalog-control/src/pillarmesh_catalog_control/models.py`.
 
-### 2. The five principals contradict section 18
+### 2. Blocking — The five principals contradict section 18
 
 **Problem.** The design names administrator, ingestion, transformation, consumption, and
 backup principals.
@@ -75,11 +115,11 @@ administration, customer SQL, catalog, and BI. Both lists have five entries and 
 subset of the other. The grant matrix, the denial probes, and the access-request work in
 section 20.6 all depend on which list is canonical.
 
-**Do.** Pick one list, reconcile it against section 18, and ratify the result as an addendum
-amendment in the same change. Do not let the code assert a principal set the specification
-does not name.
+**Do.** The canonical list is the user's decision, not yours. That decision is now recorded under
+"Ratified user decisions" below. Ratify it as an addendum amendment in the same change that
+implements it, so the code never asserts a principal set the specification does not name.
 
-### 3. Two readiness conditions the specification requires are missing
+### 3. Required — Two readiness conditions the specification requires are missing
 
 **Problem.** The readiness list covers TLS connectivity but not encryption at rest, and does
 not mention monitoring at all.
@@ -93,21 +133,21 @@ commits to capacity alerts for the fixed MVP profile.
 evidence fields, or state explicitly that they are deferred, with the reason and the gate
 that admits them later.
 
-### 4. "Zero residual managed resources" collides with retention
+### 4. Blocking — "Zero residual managed resources" collides with retention
 
 **Problem.** Readiness requires "exact cleanup with zero residual managed resources" at
 retirement.
 
 **Why it is wrong.** Addendum section 19 requires verified deletion only after the
 contractual period, and the Plan 2 ledger already carries a `retention_deadline` on every
-private resource (`services/catalog-control/src/pillarmesh_catalog_control/repository.py:78`).
+private resource (`services/catalog-control/src/pillarmesh_catalog_control/repository.py:85`).
 For a warehouse holding customer data, retirement cannot mean immediate zero residual.
 
 **Do.** State what `retired` asserts: cleanup initiated and recorded against exactly the
 recorded identifiers, with residual resources still governed by their retention deadline and
 a recorded cleanup failure classification when cleanup does not complete.
 
-### 5. `provisioned_at` is currently unreachable and `validating` to `ready` is ungated
+### 5. Required — `provisioned_at` is currently unreachable and `validating` to `ready` is ungated
 
 **Problem.** Step 12 says "transition validating to ready and set `provisioned_at`", as if
 the existing transition path could do that.
@@ -123,7 +163,7 @@ writes the evidence and the `ready` revision in one call, stamping `provisioned_
 `CatalogControlService.record_validation`. State this in the plan, because otherwise step 12
 is a new path nothing forces callers through.
 
-### 6. Name the durable artefacts instead of describing them
+### 6. Required — Name the durable artefacts instead of describing them
 
 **Problem.** "Private operational state contains endpoints, credentials, infrastructure
 identifiers..." and "customer-visible artifacts contain only stable identities, digests,
@@ -135,16 +175,16 @@ validation dispositions..." are prose where Plan 2 has types.
 `positive_probe_digest`, `denial_probe_digest`, `stable_identity_probe_digest`,
 `backup_probe_digest`). Plan 3A's headline capability is isolated restore verification and
 there is no field for its result to land in. None of this exists on the warehouse side:
-`services/warehouse-control/src/pillarmesh_warehouse_control/repository.py` has two tables,
-no resource ledger, no operation claims, no evidence table, and no `PRAGMA foreign_keys = ON`,
-which becomes load-bearing the moment child tables appear.
+`services/warehouse-control/src/pillarmesh_warehouse_control/repository.py` has two tables and
+no resource ledger, no operation claims, and no evidence table. It does already set
+`PRAGMA foreign_keys = ON`, so child tables can rely on it.
 
 **Do.** Enumerate the warehouse equivalents with field shapes, including the restore
 verification result, and mirror the catalog naming so the two services stay legible together.
 Addendum section 9.1.1 documents the catalog's private resource ledger in one sentence;
 section 6.2 needs the same sentence for the warehouse.
 
-### 7. The restore instance's resources need ledger records before creation
+### 7. Required — The restore instance needs ledger records and a stated isolation boundary
 
 **Problem.** Exact identifiers are recorded at step 3, then an entire second instance is
 created at step 9 with no stated recording.
@@ -155,7 +195,16 @@ can name, which is exactly what "remove the restore instance exactly" exists to 
 **Do.** Apply record-before-create to the restore instance too, with its own resource kinds,
 creation state, and cleanup status in the same ledger.
 
-### 8. Map provider operations onto lifecycle states
+**Also define what "isolated" asserts.** The word currently carries the entire data-safety
+argument for restoring customer data into a second live engine, and nothing states its content.
+State at minimum: the restore instance is network-isolated from the primary and reachable only
+by the verifying principal; it uses distinct credentials that grant nothing on the primary; no
+restore-verification step may write to the primary or to the binding's ledger beyond its own
+resource records; and the verification result names the restore instance, never the primary.
+Encode a test that a restore-verification run against a deliberately misconfigured restore
+instance fails closed rather than falling back to the primary.
+
+### 8. Required — Map provider operations onto lifecycle states
 
 **Problem.** The interface lists nine operations (provision, inspect, validate, backup,
 restore-and-verify, suspend, resume, retire, cleanup) against the catalog's five, with no
@@ -169,7 +218,7 @@ for the portability gate.
 **Do.** Give a state-to-operation table. Justify `inspect` and `cleanup` as distinct from
 reconciliation and retirement, or fold them in.
 
-### 9. Say whether resume re-probes
+### 9. Required — Say whether resume re-probes
 
 **Problem.** The design is silent on what `suspended` to `ready` proves.
 
@@ -181,7 +230,7 @@ health cannot declare semantic success."
 suspension is defined not to invalidate them and why. Also state that suspend must not
 destroy volumes.
 
-### 10. State where `operation_id` comes from
+### 10. Required — State where `operation_id` comes from
 
 **Problem.** "Claim one operation for the binding" does not say who mints the identifier.
 
@@ -193,10 +242,10 @@ survives a crash (`repository.py`, `private_catalog_operation_claims`).
 **Do.** State the same, and state the rejection rule: a second, different operation for a
 binding that already holds a live claim fails rather than proceeding. Reference
 `OpenMetadataProvisioner.retire_unrecorded_operation_claim`
-(`providers/openmetadata/src/pillarmesh_provider_openmetadata/provisioner.py:1063`) as the
+(`providers/openmetadata/src/pillarmesh_provider_openmetadata/provisioner.py:988`) as the
 reconciliation precedent instead of inventing a new one.
 
-### 11. Say where the engine version lives
+### 11. Required — Say where the engine version lives
 
 **Problem.** "Pinned engine identity and version" appears in readiness, and "capability
 claims" appears in the customer-visible artefact, with no field named.
@@ -210,7 +259,14 @@ validation must assert the observed values match the pin, or a floating tag drif
 **Do.** Say this explicitly, and say whether version-pinned upgrade (section 20.6) is in Plan
 3A's scope at all. The lifecycle in section 6.4.1 has no upgrade path.
 
-### 12. Failure classification must be a closed enum
+**Then say what happens when the pin and the engine diverge after `ready`.** Validation-time
+assertion covers provisioning; the common case is an engine patched underneath a live binding.
+Section 17 applies here too: infrastructure health cannot declare semantic success, so a
+binding whose observed version no longer matches its pin is not silently still `ready`. State
+whether that condition is detected by reconciliation, what it records, and whether it demands
+revalidation or only an operator notification.
+
+### 12. Required — Failure classification must be a closed enum
 
 **Problem.** "Sanitized failure classifications" is unspecified.
 
@@ -223,7 +279,7 @@ for classifications that support it.
 **Do.** Define the classification as a `StrEnum` at the provider boundary, and state that
 `failed` may not be recorded for a transient classification.
 
-### 13. Four of the twelve steps are worthless against a test double
+### 13. Blocking — Four of the twelve steps are worthless against a test double
 
 **Problem.** The design says nothing about how any readiness condition is proven.
 
@@ -239,14 +295,14 @@ ran and nothing else.
 Then, for each readiness condition, name which suite proves it. Say plainly that a condition
 provable only in the live suite is unproven until that suite has run.
 
-### 14. Decide the compose substrate deliberately and measure its cost
+### 14. Required — Decide the compose substrate deliberately and measure its cost
 
 **Problem.** "One dedicated local warehouse instance" silently commits to a substrate.
 Addendum section 6.5 says deployment topology stays technology-neutral until a deployment ADR
 selects one, and ADR-0003 does not.
 
 **Why it matters.** The de facto precedent is `DockerComposeController` in
-`providers/openmetadata/src/pillarmesh_provider_openmetadata/provisioner.py:342`, roughly 350
+`providers/openmetadata/src/pillarmesh_provider_openmetadata/provisioner.py:343`, roughly 350
 lines of subprocess handling, with `COMPOSE_PROJECT`, `COMPOSE_CONTAINER`, `COMPOSE_VOLUME`,
 and `COMPOSE_NETWORK` already in `CatalogResourceKind`. Two more copies of that code is the
 bad outcome. `AGENTS.md` permits promotion into `packages/` once two real consumers
@@ -257,7 +313,7 @@ justify not doing so. Either way, count the cost before committing: state how lo
 PostgreSQL-plus-ClickHouse provision, validate, backup, restore, teardown cycle takes, and
 whether that belongs in per-pull-request CI or in an opt-in gate.
 
-### 15. "Same conformance suite" must assert outcomes, not mechanisms
+### 15. Required — "Same conformance suite" must assert outcomes, not mechanisms
 
 **Problem.** "PostgreSQL and ClickHouse can use different physical mechanisms but must
 produce the same observable receipts and pass the same conformance suite" is asserted without
@@ -272,7 +328,7 @@ down.
 engine, and state which ClickHouse behaviours are excluded from the supported subset. Do not
 leave the exclusions to be discovered during implementation.
 
-### 16. The design has no decomposition, no non-goals, and no engine ordering
+### 16. Required — The design has no decomposition, no non-goals, and no engine ordering
 
 **Problem.** It is a design with no milestones, no stated exclusions, and no sequencing.
 
@@ -283,19 +339,58 @@ portability gate can first run, which is the entire reason two engines are being
 list the non-goals explicitly, and list up front every addendum amendment and conformance test
 the plan will produce so they are part of the decomposition rather than trailing it.
 
-## Blocked on the user
+State the ordering's consequence too, rather than treating ordering as scheduling detail: until
+both engines pass, the MVP's destination-portability claim — that a customer can choose a
+warehouse without binding PillarMesh's semantics to one engine — is asserted and not proven.
 
-Do not decide these alone; each changes what the specification says.
+### 17. Required — Cost the plan
 
-1. **Principal list (correction 2).** Which five separated identities are canonical: the
-   design's administrator/ingestion/transformation/consumption/backup, section 18's
-   runtime/administration/customer SQL/catalog/BI, or a reconciled set.
-2. **Resume semantics (correction 9).** Whether `suspended` to `ready` re-runs positive and
-   denial probes.
-3. **Live gate (correction 13).** Whether the live provisioning suite runs per pull request
-   or as an opt-in gate, given the cycle time from correction 14.
-4. **Compose substrate (correction 14).** Whether the shared compose controller is promoted
-   into `packages/provider-sdk` now.
+**Problem.** The design states no team size, duration, or sequencing cost.
+
+**Why it matters.** Plan 3A builds two provisioners, a second engine, a live harness, and
+possibly a `packages/provider-sdk` promotion. The M0 design carries a team size and a costed
+implementation sequence; a plan of this size without one is inconsistent with the estate's own
+discipline, and correction 14's cycle-time measurement is only useful next to a total.
+
+**Do.** Attach an approximate effort and duration to each milestone from correction 16,
+and state what the estimate excludes.
+
+## Milestone estimate
+
+The estimate is for the original Plan 3A scope, not the work remaining at `7ebc366`. It assumes
+one experienced engineer, prompt architecture review, an available Docker-capable CI runner, and
+no provider-release incompatibility beyond the explicit PostgreSQL and ClickHouse differences.
+
+| Milestone | Approximate engineering effort |
+| --- | --- |
+| Specification and conformance contracts | 2–3 engineer-days |
+| Shared Compose boundary | 3–5 engineer-days |
+| Warehouse-control durability and evidence admission | 5–8 engineer-days |
+| PostgreSQL reference lifecycle | 6–10 engineer-days |
+| ClickHouse portability lifecycle | 7–12 engineer-days |
+| Two-engine fault, replay, recovery, and retention proof | 4–7 engineer-days |
+| Required CI gate and witnessed acceptance | 4–6 engineer-days |
+
+The total is approximately 31–51 engineer-days: seven to eleven calendar weeks for one engineer
+including review and stabilization, or four to seven calendar weeks for two engineers after the
+shared contracts and Compose boundary are settled. The estimate excludes production-cloud
+provisioning, continuously-ready drift reconciliation, in-place upgrades, BYOC, source acquisition,
+data movement, transformations, scheduling, OpenMetadata and Superset operations, security audit,
+and general-availability hardening. Hosted lifecycle duration is measured evidence and may force a
+design review; it is not replaced by this estimate.
+
+## Ratified user decisions
+
+The four decisions that originally blocked revision are settled:
+
+1. **Principal list (correction 2).** Use the reconciled seven-class vocabulary in section 18.1.
+2. **Resume semantics (correction 9).** Re-run fresh positive and denial probes before
+   `suspended → ready`; repeat isolated restore when the suspension reason or drift concerns
+   storage, corruption, backup, restore, or engine version.
+3. **Live gate (correction 13).** Require the provisioning lifecycle gate for affected paths,
+   subject to the measured ten-minute hosted-runner budget; do not silently make it optional.
+4. **Compose substrate (correction 14).** Promote the characterized process boundary into
+   `packages/provider-sdk` and keep provider-specific lifecycle semantics in each provider.
 
 ## Definition of done for the implementation plan
 
@@ -307,5 +402,8 @@ Do not decide these alone; each changes what the specification says.
   replay, or cross-tenant case, per `AGENTS.md`.
 - Each readiness condition names the suite that proves it, and conditions proven only live
   are marked as such.
+- Every ratified user decision is recorded as an addendum amendment or an ADR, dated,
+  in the same change that implements it.
+- No Blocking correction remains open.
 - Spec and code cannot disagree silently: the addendum, the implementation, and the
   conformance suite change together.

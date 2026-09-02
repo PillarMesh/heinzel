@@ -8,6 +8,18 @@
 
 **Decision record:** `docs/architecture/decisions/ADR-0003-managed-data-engineering-platform.md`
 
+**Amendments:**
+
+- 2026-08-28 — Section 6.4 now defines the fail-closed response to version drift after a
+  warehouse becomes `ready` and distinguishes Plan 3A local lifecycle proof from the future
+  continuously-ready production revalidation loop. Closes correction 11 of the Plan 3A design
+  review without expanding Plan 3A into production-cloud operations.
+- 2026-08-27 — Section 18 now names seven warehouse principal classes in place of five
+  identities. The prior list could not express the separation warehouse provisioning requires:
+  `runtime` conflated ingestion with transformation, and backup and restore held no identity of
+  its own. The seven classes reconcile the two former five-item lists into the vocabulary approved
+  for Plan 3A. Closes correction 2 of the Plan 3A design review.
+
 ## 1. Purpose
 
 This addendum changes PillarMesh from a compiler and managed execution plane that assumes an external customer warehouse into a fully managed data engineering platform. PillarMesh manages source integrations, a dedicated analytical warehouse, transformations, catalog, business-process semantics, BI, scheduling, integrity, evidence, maintenance, and recovery. The primary user is a one-person or very small data engineering team that must deliver trustworthy data products without operating a collection of separate infrastructure products.
@@ -364,6 +376,16 @@ retire
 Backup, isolated restore, restore verification, and restore cleanup are mandatory phases of
 `validate`, not independent lifecycle commands. Resource inspection and cleanup are internal parts
 of `reconcile` and `retire`.
+
+Exact observed engine version, build, and image identity belong in validation evidence and must
+match the provider's immutable pins. Plan 3A proves that check during initial validation and again
+through fresh resume validation; it does not claim continuous production drift detection. Before a
+production adapter is admitted, a contract-scoped revalidation loop owned by the state plane must
+repeat that comparison while a binding is `ready`. A mismatch fences new activations and run
+intents, records sanitized attributable evidence, transitions the binding to `suspended`, and
+requires fresh resume validation before work can continue. Version drift is one of the conditions
+that requires isolated restore verification during that resume. This is a revalidation control
+loop, not a general scheduler.
 
 ### 6.4.1 MVP transition table
 
@@ -1869,10 +1891,16 @@ bi
 | Administration | Provisions namespaces, roles, and engine configuration; it is never used by ingestion, transformation, catalog, BI, or customer queries. |
 | Ingestion runtime | Writes only source-aligned `raw` generations and its bounded ledger records; it cannot administer roles, write `conformed`, `product`, `consumption`, or read customer and BI paths. |
 | Transformation runtime | Reads `raw`; writes `conformed`, `product`, and `quarantine`; publishes approved `consumption` objects; it cannot administer, back up, or mutate the control ledger outside its allowlist. |
-| Backup and restore | Reads only what engine-native backup requires and drives approved backup and restore through the private backup command boundary; it cannot write, author schemas, administer roles, access customers, or resolve its credential outside that boundary. |
+| Backup and restore | Reads only what engine-native backup requires and drives approved backup and restore through the private backup command boundary; it cannot write, author schemas, administer roles, access customers, or resolve its credential outside that boundary. Restore execution uses a throwaway bootstrap administrator confined to the isolated target; the `backup_restore` principal never receives write or administration authority on the primary. |
 | Customer SQL | Reads only explicitly granted `consumption` objects through a non-shared identity; it cannot access `raw`, `conformed`, `product`, quarantine, ledger, role, or backup surfaces. |
 | Catalog | Inspects approved schemas, object metadata, and lineage-supporting metadata; it cannot read rows, write the warehouse, administer roles, or access backups. |
 | BI | Reads approved `consumption` objects required by certified datasets; it cannot access `raw`, `conformed`, `product`, quarantine, ledger, role, or backup surfaces. |
+
+Non-administration principals do not inherit another capability class. Administration remains
+the private control path for provisioning and role management and is never substituted for an
+ingestion, transformation, backup, catalog, BI, or customer identity. Each class carries positive
+and denial probes in the destination conformance suite, and a provisioned warehouse is not `ready`
+until both pass for every class.
 
 ## 19. Backup, recovery, and exit
 
