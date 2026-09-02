@@ -1,0 +1,477 @@
+"""Narrow read adapters over the owning services' public interfaces.
+
+Each protocol here is the console's own minimal view of one owning component. The
+console never opens another component's database; it resolves bindings, operations,
+review bundles, requests, and fulfillment projections through the interfaces those
+components publish, and it classifies their typed failures rather than reinterpreting
+them.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal, Protocol
+
+from pillarmesh_catalog_control import (
+    CatalogBinding,
+    CatalogControlService,
+    CatalogPersistenceError,
+)
+from pillarmesh_request_management import (
+    ArchitectRequestView,
+    ConversationEntry,
+    FulfillmentApprovalBinding,
+    FulfillmentAuthorityError,
+    FulfillmentGroundingError,
+    FulfillmentIntegrityError,
+    FulfillmentNotVisible,
+    FulfillmentOwnershipError,
+    FulfillmentPolicyError,
+    FulfillmentStaleRevision,
+    InboxRequest,
+    RequesterRequestView,
+    TransitionEvent,
+)
+from pillarmesh_semantic_registry import OntologyReviewBundle, SemanticPersistenceError
+from pillarmesh_semantic_registry.review import ReviewItemDecision
+from pillarmesh_warehouse_control import (
+    EngineKind,
+    PrivateWarehouseOperation,
+    WarehouseBinding,
+    WarehouseBindingState,
+    WarehouseControlService,
+    WarehouseFailureClassification,
+    WarehouseLifecycleOrchestrator,
+    WarehousePersistenceError,
+    WarehouseProviderError,
+)
+from pillarmesh_warehouse_control.repository import WarehouseRepository
+from pydantic import ValidationError
+
+from .contracts import ActorRole
+from .errors import ConsoleConflict, ConsoleError, ConsoleNotFound, ConsoleUnavailable
+
+_WAREHOUSE_IDENTITY_SEPARATOR = "/"
+
+type DownstreamClassification = Literal["unavailable", "not_visible", "conflict", "integrity"]
+
+
+@dataclass(frozen=True, slots=True)
+class GovernedWorkspaceIdentity:
+    """Display identity for the governed workspace.
+
+    Tenant and actor authority still come from the trusted request context; these are
+    presentation values only.
+    """
+
+    tenant_ref: str
+    tenant_display_name: str
+    workspace_ref: str
+    workspace_display_name: str
+
+
+@dataclass(frozen=True, slots=True)
+class WarehouseOperationIdentity:
+    """The private identity of one warehouse operation.
+
+    A handle record stores a single opaque string, so the two identifiers a warehouse
+    operation needs are encoded together here and decoded only inside the adapter that
+    owns the warehouse repository.
+    """
+
+    binding_id: str
+    operation_id: str
+
+    def encode(self) -> str:
+        if (
+            _WAREHOUSE_IDENTITY_SEPARATOR in self.binding_id
+            or _WAREHOUSE_IDENTITY_SEPARATOR in self.operation_id
+        ):
+            raise ValueError("warehouse operation identifiers must not contain the separator")
+        return f"{self.binding_id}{_WAREHOUSE_IDENTITY_SEPARATOR}{self.operation_id}"
+
+    @classmethod
+    def decode(cls, private_identity: str) -> WarehouseOperationIdentity | None:
+        binding_id, separator, operation_id = private_identity.partition(
+            _WAREHOUSE_IDENTITY_SEPARATOR
+        )
+        if not separator or not binding_id or not operation_id:
+            return None
+        return cls(binding_id=binding_id, operation_id=operation_id)
+
+
+class WorkspaceBindingDirectory(Protocol):
+    """Maps a tenant to the managed-service bindings its workspace established.
+
+    The owning services address a binding by identity and deliberately refuse to
+    enumerate; the console keeps its own record of which binding a workspace uses.
+    """
+
+    def warehouse_binding_id(self, tenant_id: str) -> str | None: ...
+
+    def catalog_binding_id(self, tenant_id: str) -> str | None: ...
+
+
+class InMemoryWorkspaceBindingDirectory:
+    def __init__(self) -> None:
+        self._warehouse: dict[str, str] = {}
+        self._catalog: dict[str, str] = {}
+
+    def bind_warehouse(self, *, tenant_id: str, binding_id: str) -> None:
+        self._warehouse[tenant_id] = binding_id
+
+    def bind_catalog(self, *, tenant_id: str, binding_id: str) -> None:
+        self._catalog[tenant_id] = binding_id
+
+    def warehouse_binding_id(self, tenant_id: str) -> str | None:
+        return self._warehouse.get(tenant_id)
+
+    def catalog_binding_id(self, tenant_id: str) -> str | None:
+        return self._catalog.get(tenant_id)
+
+
+class WarehouseBindingReader(Protocol):
+    def current_binding(self, tenant_id: str) -> WarehouseBinding | None: ...
+
+
+class WarehouseOperationReader(Protocol):
+    def load_operation(
+        self, *, tenant_id: str, private_identity: str
+    ) -> PrivateWarehouseOperation | None: ...
+
+
+class CatalogBindingReader(Protocol):
+    def current_binding(self, tenant_id: str) -> CatalogBinding | None: ...
+
+
+class SemanticReviewReader(Protocol):
+    def load_review_bundle(self, tenant_id: str, bundle_id: str) -> OntologyReviewBundle: ...
+
+
+class RequestInboxReader(Protocol):
+    def list_inbox(self, tenant_id: str) -> tuple[InboxRequest, ...]: ...
+
+    def get(self, tenant_id: str, request_id: str) -> InboxRequest: ...
+
+
+class FulfillmentViewReader(Protocol):
+    def requester_view(
+        self, *, tenant_id: str, request_id: str, actor_id: str
+    ) -> RequesterRequestView: ...
+
+    def architect_view(
+        self, *, tenant_id: str, request_id: str, actor_id: str
+    ) -> ArchitectRequestView: ...
+
+
+class WarehouseControlBindingReader:
+    def __init__(
+        self, *, service: WarehouseControlService, directory: WorkspaceBindingDirectory
+    ) -> None:
+        self._service = service
+        self._directory = directory
+
+    def current_binding(self, tenant_id: str) -> WarehouseBinding | None:
+        binding_id = self._directory.warehouse_binding_id(tenant_id)
+        if binding_id is None:
+            return None
+        try:
+            return self._service.get(tenant_id, binding_id)
+        except KeyError:
+            return None
+
+
+class CatalogControlBindingReader:
+    def __init__(
+        self, *, service: CatalogControlService, directory: WorkspaceBindingDirectory
+    ) -> None:
+        self._service = service
+        self._directory = directory
+
+    def current_binding(self, tenant_id: str) -> CatalogBinding | None:
+        binding_id = self._directory.catalog_binding_id(tenant_id)
+        if binding_id is None:
+            return None
+        try:
+            return self._service.get(tenant_id, binding_id)
+        except KeyError:
+            return None
+
+
+class WarehouseRepositoryOperationReader:
+    """Reads one private warehouse operation through the repository's load interface.
+
+    The private record never leaves this boundary intact; the backend projects only a
+    lifecycle phase, a typed state, and a classified failure from it.
+    """
+
+    def __init__(self, repository: WarehouseRepository) -> None:
+        self._repository = repository
+
+    def load_operation(
+        self, *, tenant_id: str, private_identity: str
+    ) -> PrivateWarehouseOperation | None:
+        identity = WarehouseOperationIdentity.decode(private_identity)
+        if identity is None:
+            return None
+        try:
+            return self._repository.load_operation(
+                tenant_id, identity.binding_id, identity.operation_id
+            )
+        except KeyError:
+            return None
+
+
+class WorkspacePrincipalDirectory(Protocol):
+    """Maps a trusted actor and role to the authority reference the owning service names.
+
+    The owning services validate authority themselves; they never publish the reverse
+    lookup, because enumerating a tenant's principals would itself be a disclosure. The
+    console therefore keeps its own deployment-configured record and passes the named
+    reference back for the owning service to check.
+    """
+
+    def principal_ref(self, *, tenant_id: str, actor_id: str, role: ActorRole) -> str | None: ...
+
+
+class InMemoryWorkspacePrincipalDirectory:
+    def __init__(self) -> None:
+        self._principals: dict[tuple[str, str, ActorRole], str] = {}
+
+    def bind_principal(
+        self, *, tenant_id: str, actor_id: str, role: ActorRole, principal_ref: str
+    ) -> None:
+        self._principals[(tenant_id, actor_id, role)] = principal_ref
+
+    def principal_ref(self, *, tenant_id: str, actor_id: str, role: ActorRole) -> str | None:
+        return self._principals.get((tenant_id, actor_id, role))
+
+
+@dataclass(frozen=True, slots=True)
+class WarehouseConfirmation:
+    """What the warehouse lifecycle left behind after one confirmation attempt.
+
+    `operation_identity` is present only while the owning operation is still live. A
+    completed lifecycle keeps no live operation, so the console falls back to the
+    binding itself as the thing its handle refers to.
+    """
+
+    binding_id: str
+    binding_revision: int
+    lifecycle_state: WarehouseBindingState
+    operation_identity: WarehouseOperationIdentity | None
+    failure_classification: WarehouseFailureClassification | None
+
+
+class WarehouseLifecycleCommands(Protocol):
+    def confirm_binding(
+        self, *, tenant_id: str, engine: str, region: str, capacity: str
+    ) -> WarehouseConfirmation: ...
+
+
+class RequestIntakeCommands(Protocol):
+    def submit_question(
+        self, *, tenant_id: str, requester_id: str, purpose: str, question: str
+    ) -> InboxRequest: ...
+
+    def submit_access_request(
+        self,
+        *,
+        tenant_id: str,
+        requester_id: str,
+        purpose: str,
+        data_product_id: str,
+        requested_fields: tuple[str, ...],
+        access_mode: Literal["query", "dashboard", "export"],
+        expires_at: datetime,
+    ) -> InboxRequest: ...
+
+    def append_conversation(
+        self,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        body: str,
+        *,
+        expected_revision: int,
+    ) -> ConversationEntry: ...
+
+    def list_conversation(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[ConversationEntry, ...]: ...
+
+    def list_transition_history(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[TransitionEvent, ...]: ...
+
+    def get(self, tenant_id: str, request_id: str) -> InboxRequest: ...
+
+
+class FulfillmentDecisionCommands(Protocol):
+    def record_approval(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        authority_ref: str,
+        subject_digest: str,
+        decision: Literal["approve", "reject", "request_changes"],
+        expected_revision: int,
+    ) -> FulfillmentApprovalBinding: ...
+
+
+class SemanticReviewCommands(Protocol):
+    def decide_item(
+        self,
+        *,
+        tenant_id: str,
+        bundle_id: str,
+        item_id: str,
+        decision: ReviewItemDecision,
+        actor_id: str,
+        expected_revision: int,
+    ) -> OntologyReviewBundle: ...
+
+
+class WarehouseControlLifecycleCommands:
+    """Drives one managed-warehouse confirmation through its two owning transactions.
+
+    `create_draft` and `provision` both belong to warehouse-control; the console only
+    orders them and records which binding this workspace uses. The private operation
+    identity is read back through the repository's live-operation interface so a still
+    running or failed lifecycle can be projected without the console ever inventing an
+    identity of its own.
+    """
+
+    def __init__(
+        self,
+        *,
+        service: WarehouseControlService,
+        orchestrator: WarehouseLifecycleOrchestrator,
+        repository: WarehouseRepository,
+        directory: InMemoryWorkspaceBindingDirectory,
+    ) -> None:
+        self._service = service
+        self._orchestrator = orchestrator
+        self._repository = repository
+        self._directory = directory
+
+    def confirm_binding(
+        self, *, tenant_id: str, engine: str, region: str, capacity: str
+    ) -> WarehouseConfirmation:
+        if capacity != "mvp-fixed":
+            raise ValueError("the managed warehouse capacity profile is fixed")
+        binding = self._service.create_draft(
+            tenant_id=tenant_id,
+            engine_kind=EngineKind(engine),
+            region=region,
+            capacity_profile="mvp-fixed",
+        )
+        self._directory.bind_warehouse(tenant_id=tenant_id, binding_id=binding.binding_id)
+        classification: WarehouseFailureClassification | None = None
+        try:
+            self._orchestrator.provision(
+                tenant_id, binding.binding_id, expected_revision=binding.revision
+            )
+        except WarehouseProviderError as failure:
+            # The provider's own classification is the only thing that may decide
+            # whether this is retryable; flattening it here would disable every
+            # retry policy built on top of it.
+            classification = failure.classification
+        current = self._service.get(tenant_id, binding.binding_id)
+        live = self._repository.load_live_operation(tenant_id, binding.binding_id)
+        return WarehouseConfirmation(
+            binding_id=current.binding_id,
+            binding_revision=current.revision,
+            lifecycle_state=current.lifecycle_state,
+            operation_identity=(
+                None
+                if live is None
+                else WarehouseOperationIdentity(
+                    binding_id=live.binding_id, operation_id=live.operation_id
+                )
+            ),
+            failure_classification=classification,
+        )
+
+
+def classify_downstream_failure(error: Exception) -> DownstreamClassification:
+    """Classify an owning component's failure without flattening it.
+
+    A transient persistence or transport failure must never be recorded as a terminal
+    verdict about the request, and an ownership failure must never announce that the
+    object exists.
+    """
+    if isinstance(error, FulfillmentStaleRevision):
+        return "conflict"
+    if isinstance(
+        error,
+        (
+            FulfillmentNotVisible,
+            FulfillmentOwnershipError,
+            FulfillmentAuthorityError,
+            PermissionError,
+        ),
+    ):
+        # An authority failure answers exactly as an unknown object does, so a probe
+        # cannot learn that the object exists.
+        return "not_visible"
+    if isinstance(
+        error,
+        (
+            WarehousePersistenceError,
+            CatalogPersistenceError,
+            SemanticPersistenceError,
+            sqlite3.Error,
+            OSError,
+        ),
+    ):
+        return "unavailable"
+    if isinstance(error, ValidationError):
+        # A persisted artifact did not match its own model. Reloading cannot help,
+        # and calling it a conflict tells the operator to retry forever. Pydantic's
+        # ValidationError subclasses ValueError, so this arm must precede it.
+        return "integrity"
+    if isinstance(
+        error,
+        (
+            FulfillmentIntegrityError,
+            FulfillmentGroundingError,
+            FulfillmentPolicyError,
+        ),
+    ):
+        # The owning service rejected the submitted domain state. That is a conflict
+        # about a revision the caller must reload, never a transient failure and never
+        # a verdict the console may record about the counterparty.
+        return "conflict"
+    if isinstance(error, ValueError):
+        # A bare ValueError is a refusal the console cannot attribute to a revision:
+        # a composition mistake reaches here the same way a domain rejection would.
+        return "integrity"
+    raise error
+
+
+def console_error_for(error: Exception) -> ConsoleError:
+    classification = classify_downstream_failure(error)
+    if classification == "not_visible":
+        return ConsoleNotFound()
+    if classification == "integrity":
+        return ConsoleUnavailable(
+            code="downstream_integrity",
+            safe_message="The governing service returned state the console cannot trust.",
+            recovery_action="contact_support",
+        )
+    if classification == "conflict":
+        return ConsoleConflict(
+            code="stale_revision",
+            safe_message="The resource changed. Reload it and review the new revision.",
+            recovery_action="reload",
+        )
+    return ConsoleUnavailable(
+        code="downstream_unavailable",
+        safe_message="The governing service is temporarily unavailable.",
+        recovery_action="retry",
+    )

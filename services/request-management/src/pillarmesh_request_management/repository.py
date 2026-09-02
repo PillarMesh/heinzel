@@ -64,6 +64,10 @@ class RequestRepository(Protocol):
         self, tenant_id: str, request_id: str
     ) -> tuple[TransitionEvent, ...]: ...
 
+    def list_conversation(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[ConversationEntry, ...]: ...
+
     def list_decisions(self, tenant_id: str, request_id: str) -> tuple[DecisionBinding, ...]: ...
 
     def has_fulfillment_proposal(self, tenant_id: str, request_id: str) -> bool: ...
@@ -406,6 +410,21 @@ class SQLiteRequestRepository:
             (tenant_id, request_id),
         ).fetchall()
         return tuple(TransitionEvent.model_validate_json(row[0]) for row in rows)
+
+    def list_conversation(self, tenant_id: str, request_id: str) -> tuple[ConversationEntry, ...]:
+        """Read the thread in append order.
+
+        The tenant-qualified load runs first so a leaked request identifier cannot
+        be probed for existence: a foreign request and an absent one raise the
+        same KeyError.
+        """
+        self._load_owned_request(tenant_id, request_id)
+        rows = self._connection.execute(
+            "SELECT payload FROM conversation_entries WHERE tenant_id = ? AND request_id = ? "
+            "ORDER BY created_at, entry_id",
+            (tenant_id, request_id),
+        ).fetchall()
+        return tuple(ConversationEntry.model_validate_json(row[0]) for row in rows)
 
     def list_decisions(self, tenant_id: str, request_id: str) -> tuple[DecisionBinding, ...]:
         self._load_owned_request(tenant_id, request_id)

@@ -448,13 +448,33 @@ class StaleRevisionError(Exception):
 
 
 class SQLiteWarehouseRepository:
-    def __init__(self, database_path: str) -> None:
-        try:
-            connection: _Connection = sqlite3.connect(database_path)
-        except sqlite3.Error as error:
-            raise WarehousePersistenceError(
-                "warehouse persistence failed to initialize warehouse repository"
-            ) from error
+    def __init__(
+        self,
+        database_path: str | None = None,
+        *,
+        connection: _Connection | None = None,
+    ) -> None:
+        """Open a database, or borrow a connection the composer already owns.
+
+        Supplying a connection lets the caller decide its lifecycle, which the
+        repository cannot decide for it. An application serving requests on a
+        threadpool needs a connection that tolerates being used from a worker
+        thread; one that opens its own here would be bound to whichever thread
+        happened to construct it and would fail on the next request.
+
+        A borrowed connection is never closed by `close()`: the owner closes it.
+        """
+        if (database_path is None) == (connection is None):
+            raise ValueError("supply exactly one of database_path or connection")
+        self._owns_connection = connection is None
+        if connection is None:
+            try:
+                assert database_path is not None
+                connection = sqlite3.connect(database_path)
+            except sqlite3.Error as error:
+                raise WarehousePersistenceError(
+                    "warehouse persistence failed to initialize warehouse repository"
+                ) from error
         self._connection = connection
         try:
             connection.execute("PRAGMA foreign_keys = ON")
@@ -495,6 +515,9 @@ class SQLiteWarehouseRepository:
             raise
 
     def close(self) -> None:
+        if not self._owns_connection:
+            # A borrowed connection belongs to whoever supplied it.
+            return
         try:
             self._connection.close()
         except sqlite3.Error as error:

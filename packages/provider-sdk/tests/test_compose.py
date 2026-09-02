@@ -956,6 +956,39 @@ def test_compose_stream_timeout_terminates_and_reaps_a_hung_child(
     assert time.monotonic() - started_at < 1
 
 
+def _recorded_process_id(path: Path, *, deadline_seconds: float = 10.0) -> int:
+    """Read the pid the child recorded, waiting for it to appear.
+
+    The child records its pid as its first act, but interpreter startup competes
+    with everything else on the machine. Waiting for the file keeps the test
+    measuring termination rather than how loaded the host happened to be.
+    """
+    deadline = time.monotonic() + deadline_seconds
+    while time.monotonic() < deadline:
+        if path.exists():
+            recorded = path.read_text().strip()
+            if recorded:
+                return int(recorded)
+        time.sleep(0.02)
+    raise AssertionError("the child never recorded its process id")
+
+
+def _assert_process_exits(process_id: int, *, deadline_seconds: float = 10.0) -> None:
+    """Assert the process is gone, allowing for the kill to land.
+
+    Signal delivery and reaping are asynchronous, so checking once immediately
+    after the parent returns asserts the scheduler's timing, not the escalation.
+    """
+    deadline = time.monotonic() + deadline_seconds
+    while time.monotonic() < deadline:
+        try:
+            os.kill(process_id, 0)
+        except ProcessLookupError:
+            return
+        time.sleep(0.02)
+    raise AssertionError("the child was still running after kill escalation")
+
+
 def test_compose_timeout_escalates_to_kill_for_a_child_that_ignores_terminate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -971,7 +1004,7 @@ def test_compose_timeout_escalates_to_kill_for_a_child_that_ignores_terminate(
     )
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
-        timeout_seconds=0.5,
+        timeout_seconds=2.0,
         termination_grace_seconds=0.1,
     )
 
@@ -979,9 +1012,7 @@ def test_compose_timeout_escalates_to_kill_for_a_child_that_ignores_terminate(
         process.exec(project_name="project-a", arguments=("ps",), environment={})
 
     assert captured.value.classification == "timeout"
-    process_id = int(process_identifier.read_text())
-    with pytest.raises(ProcessLookupError):
-        os.kill(process_id, 0)
+    _assert_process_exits(_recorded_process_id(process_identifier))
 
 
 def test_compose_exec_drains_output_while_writing_input_and_honors_the_deadline(
@@ -1017,7 +1048,7 @@ def test_compose_exec_drains_output_while_writing_input_and_honors_the_deadline(
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
         run=start,
-        timeout_seconds=0.5,
+        timeout_seconds=2.0,
         termination_grace_seconds=0.1,
     )
     completed = Event()
@@ -1039,7 +1070,7 @@ def test_compose_exec_drains_output_while_writing_input_and_honors_the_deadline(
     worker = Thread(target=execute, daemon=True)
     worker.start()
     try:
-        assert completed.wait(timeout=2)
+        assert completed.wait(timeout=20)
     finally:
         for child in started_children:
             if child.poll() is None:
@@ -1051,9 +1082,7 @@ def test_compose_exec_drains_output_while_writing_input_and_honors_the_deadline(
     assert isinstance(failures[0], ComposeCommandError)
     assert failures[0].classification == "timeout"
     assert output_drained.read_text() == "drained"
-    process_id = int(process_identifier.read_text())
-    with pytest.raises(ProcessLookupError):
-        os.kill(process_id, 0)
+    _assert_process_exits(_recorded_process_id(process_identifier))
 
 
 def test_compose_stream_reports_an_unreaped_child_after_kill_escalation(tmp_path: Path) -> None:

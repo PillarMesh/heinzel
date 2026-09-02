@@ -308,6 +308,9 @@ class RequestManagementService:
     ) -> tuple[TransitionEvent, ...]:
         return self._repository.list_transition_history(tenant_id, request_id)
 
+    def list_conversation(self, tenant_id: str, request_id: str) -> tuple[ConversationEntry, ...]:
+        return self._repository.list_conversation(tenant_id, request_id)
+
     def list_decisions(self, tenant_id: str, request_id: str) -> tuple[DecisionBinding, ...]:
         return self._repository.list_decisions(tenant_id, request_id)
 

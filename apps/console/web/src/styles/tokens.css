@@ -1,0 +1,21 @@
+:root {
+  color-scheme: light;
+  --color-navy: #10213c;
+  --color-primary: #2563eb;
+  --color-surface: #f8fafc;
+  --color-ink: #172033;
+  --color-ready: #166534;
+  --color-ready-surface: #dcfce7;
+  --color-attention: #854d0e;
+  --color-attention-surface: #fef9c3;
+  --color-danger: #991b1b;
+  --color-danger-surface: #fee2e2;
+  --color-neutral: #475569;
+  --color-neutral-surface: #e2e8f0;
+  --color-line: #cbd5e1;
+  --color-white: #ffffff;
+  --font-display: "Avenir Next Condensed", "Arial Narrow", "Segoe UI", sans-serif;
+  --font-body: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --font-utility: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --shadow-focus: 0 0 0 3px #ffffff, 0 0 0 6px #2563eb;
+}

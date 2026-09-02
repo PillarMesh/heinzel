@@ -19,6 +19,7 @@ dev = [
 
 [tool.uv.workspace]
 members = [
+  "apps/console/server",
   "packages/contract-model",
   "packages/execution-graph",
   "packages/iir",
@@ -60,6 +61,7 @@ select = ["E", "F", "I", "B", "UP", "RUF", "SIM"]
 python_version = "3.13"
 strict = true
 packages = [
+  "pillarmesh_console",
   "pillarmesh_contract_model",
   "pillarmesh_execution_graph",
   "pillarmesh_iir",

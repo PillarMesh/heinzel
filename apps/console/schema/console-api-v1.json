@@ -1,0 +1,3416 @@
+{
+  "$defs": {
+    "AccessMode": {
+      "enum": [
+        "query",
+        "dashboard",
+        "export"
+      ],
+      "type": "string"
+    },
+    "AccessPreviewProposalView": {
+      "additionalProperties": false,
+      "properties": {
+        "access_mode": {
+          "$ref": "#/$defs/AccessMode"
+        },
+        "authority_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "data_product_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "denied_checks": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "effective_scope": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "exclusions": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "expires_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "intended_checks": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "kind": {
+          "const": "access_preview",
+          "title": "Kind",
+          "type": "string"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "requested_fields": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_NonEmptyText_"
+        },
+        "required_authorities": {
+          "$ref": "#/$defs/JsonTuple_AuthorityStatusView_",
+          "default": []
+        }
+      },
+      "required": [
+        "kind",
+        "purpose",
+        "data_product_ref",
+        "access_mode",
+        "requested_fields",
+        "expires_at",
+        "authority_summary"
+      ],
+      "title": "AccessPreviewProposalView",
+      "type": "object"
+    },
+    "ActorDisplayView": {
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "display_name"
+      ],
+      "title": "ActorDisplayView",
+      "type": "object"
+    },
+    "ActorRole": {
+      "enum": [
+        "requester",
+        "data_architect",
+        "data_owner",
+        "policy_approver",
+        "budget_approver"
+      ],
+      "type": "string"
+    },
+    "ApiError": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "field": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "recovery_action": {
+          "$ref": "#/$defs/RecoveryAction"
+        },
+        "safe_message": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "code",
+        "safe_message",
+        "recovery_action"
+      ],
+      "title": "ApiError",
+      "type": "object"
+    },
+    "ApiMeta": {
+      "additionalProperties": false,
+      "properties": {
+        "correlation_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "data_provenance": {
+          "$ref": "#/$defs/DataProvenance"
+        }
+      },
+      "required": [
+        "data_provenance",
+        "correlation_id"
+      ],
+      "title": "ApiMeta",
+      "type": "object"
+    },
+    "AuthorityRequirementView": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "satisfied": {
+          "title": "Satisfied",
+          "type": "boolean"
+        },
+        "subject_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "role",
+        "reason",
+        "subject_digest",
+        "satisfied"
+      ],
+      "title": "AuthorityRequirementView",
+      "type": "object"
+    },
+    "AuthorityStatusView": {
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "satisfied": {
+          "title": "Satisfied",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "role",
+        "reason",
+        "satisfied"
+      ],
+      "title": "AuthorityStatusView",
+      "type": "object"
+    },
+    "CapabilityState": {
+      "enum": [
+        "ready",
+        "blocked",
+        "degraded",
+        "not_delivered"
+      ],
+      "type": "string"
+    },
+    "CapabilityView": {
+      "additionalProperties": false,
+      "properties": {
+        "capability_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "dependency": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "detail": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        }
+      },
+      "required": [
+        "capability_id",
+        "label",
+        "state",
+        "detail"
+      ],
+      "title": "CapabilityView",
+      "type": "object"
+    },
+    "CatalogAssetView": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "classifications": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "definition": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "display_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "lineage_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "link_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublicId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "owner": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "asset_ref",
+        "display_name",
+        "definition",
+        "owner",
+        "lineage_summary"
+      ],
+      "title": "CatalogAssetView",
+      "type": "object"
+    },
+    "ClarifiedOutcomeAcceptanceCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "const": "requester",
+          "title": "Active Role",
+          "type": "string"
+        },
+        "clarified_outcome_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "decision": {
+          "enum": [
+            "approve",
+            "request_changes"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "clarified_outcome_digest",
+        "active_role",
+        "decision"
+      ],
+      "title": "ClarifiedOutcomeAcceptanceCommand",
+      "type": "object"
+    },
+    "ClarifiedOutcomeView": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted": {
+          "title": "Accepted",
+          "type": "boolean"
+        },
+        "in_scope_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "out_of_scope_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "request_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "restated_request": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "statement_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "request_id",
+        "revision",
+        "statement_digest",
+        "restated_request",
+        "purpose",
+        "in_scope_summary",
+        "out_of_scope_summary",
+        "accepted"
+      ],
+      "title": "ClarifiedOutcomeView",
+      "type": "object"
+    },
+    "ConsoleEnvelope_CatalogAssetView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/CatalogAssetView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[CatalogAssetView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_ClarifiedOutcomeView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ClarifiedOutcomeView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[ClarifiedOutcomeView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_ConversationView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ConversationView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[ConversationView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_DashboardView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/DashboardView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[DashboardView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_DataProductView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/DataProductView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[DataProductView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_EvidenceView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/EvidenceView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[EvidenceView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_InboxView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/InboxView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[InboxView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_JsonTuple_RequesterRequestView__": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/JsonTuple_RequesterRequestView_"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[JsonTuple[pillarmesh_console.contracts.RequesterRequestView]]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_OperationView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/OperationView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[OperationView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_RequestDetailView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/RequestDetailView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[RequestDetailView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_RequesterRequestView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/RequesterRequestView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[RequesterRequestView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_ReviewView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ReviewView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[ReviewView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_RunsView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/RunsView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[RunsView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_SessionView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/SessionView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[SessionView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_SetupView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/SetupView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[SetupView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_WorkspaceView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/WorkspaceView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[WorkspaceView]",
+      "type": "object"
+    },
+    "ConsoleErrorEnvelope": {
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "$ref": "#/$defs/ApiError"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "error"
+      ],
+      "title": "ConsoleErrorEnvelope",
+      "type": "object"
+    },
+    "ConstraintView": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "permitted_next_action": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "responsible_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "code",
+        "summary",
+        "responsible_role",
+        "permitted_next_action"
+      ],
+      "title": "ConstraintView",
+      "type": "object"
+    },
+    "ConversationMessageCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "body": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "conversation_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "conversation_digest",
+        "active_role",
+        "body"
+      ],
+      "title": "ConversationMessageCommand",
+      "type": "object"
+    },
+    "ConversationMessageView": {
+      "additionalProperties": false,
+      "properties": {
+        "author_label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "author_role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ActorRole"
+            },
+            {
+              "const": "pillarmesh",
+              "type": "string"
+            }
+          ],
+          "title": "Author Role"
+        },
+        "body": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "created_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "message_id": {
+          "$ref": "#/$defs/PublicId"
+        }
+      },
+      "required": [
+        "message_id",
+        "author_label",
+        "author_role",
+        "body",
+        "created_at"
+      ],
+      "title": "ConversationMessageView",
+      "type": "object"
+    },
+    "ConversationView": {
+      "additionalProperties": false,
+      "properties": {
+        "awaiting_role": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ActorRole"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "conversation_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "messages": {
+          "$ref": "#/$defs/JsonTuple_ConversationMessageView_",
+          "default": []
+        },
+        "request_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "request_id",
+        "revision",
+        "conversation_digest"
+      ],
+      "title": "ConversationView",
+      "type": "object"
+    },
+    "CreateRequestCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "const": "requester",
+          "title": "Active Role",
+          "type": "string"
+        },
+        "expected_revision": {
+          "const": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "request": {
+          "$ref": "#/$defs/RequestInput"
+        },
+        "request_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "title": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "request_digest",
+        "active_role",
+        "title",
+        "request"
+      ],
+      "title": "CreateRequestCommand",
+      "type": "object"
+    },
+    "DashboardView": {
+      "additionalProperties": false,
+      "properties": {
+        "dashboard_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "display_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "link_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublicId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "preview_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublicId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        },
+        "summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "dashboard_ref",
+        "display_name",
+        "state",
+        "summary"
+      ],
+      "title": "DashboardView",
+      "type": "object"
+    },
+    "DataAccessRequestInput": {
+      "additionalProperties": false,
+      "properties": {
+        "access_mode": {
+          "$ref": "#/$defs/AccessMode"
+        },
+        "data_product_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "kind": {
+          "const": "data_access",
+          "title": "Kind",
+          "type": "string"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "requested_fields": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_NonEmptyText_"
+        }
+      },
+      "required": [
+        "kind",
+        "purpose",
+        "data_product_ref",
+        "requested_fields",
+        "access_mode",
+        "expires_at"
+      ],
+      "title": "DataAccessRequestInput",
+      "type": "object"
+    },
+    "DataProductView": {
+      "additionalProperties": false,
+      "properties": {
+        "data_product_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "display_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        },
+        "summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "data_product_id",
+        "display_name",
+        "state",
+        "summary",
+        "version"
+      ],
+      "title": "DataProductView",
+      "type": "object"
+    },
+    "DataProvenance": {
+      "enum": [
+        "demo_fixture",
+        "governed_local"
+      ],
+      "type": "string"
+    },
+    "DatasetEvidenceView": {
+      "additionalProperties": false,
+      "properties": {
+        "dataset_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "display_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "dataset_ref",
+        "display_name"
+      ],
+      "title": "DatasetEvidenceView",
+      "type": "object"
+    },
+    "Decision": {
+      "enum": [
+        "approve",
+        "reject",
+        "request_changes"
+      ],
+      "type": "string"
+    },
+    "DecisionCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "decision": {
+          "enum": [
+            "approve",
+            "reject",
+            "request_changes"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "reviewed_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Reviewed Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "reviewed_digest",
+        "active_role",
+        "decision"
+      ],
+      "title": "DecisionCommand",
+      "type": "object"
+    },
+    "Digest": {
+      "pattern": "^[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "DisplayReferenceView": {
+      "additionalProperties": false,
+      "properties": {
+        "display_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "ref": {
+          "$ref": "#/$defs/PublicId"
+        }
+      },
+      "required": [
+        "ref",
+        "display_name"
+      ],
+      "title": "DisplayReferenceView",
+      "type": "object"
+    },
+    "EvidenceContextView": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcDatetime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "authorization_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "datasets": {
+          "$ref": "#/$defs/JsonTuple_DatasetEvidenceView_",
+          "default": []
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/JsonTuple_PublicId_",
+          "default": []
+        },
+        "freshness": {
+          "$ref": "#/$defs/FreshnessState"
+        },
+        "lineage_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "metric_versions": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "quality_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "freshness",
+        "quality_summary",
+        "lineage_summary",
+        "authorization_summary"
+      ],
+      "title": "EvidenceContextView",
+      "type": "object"
+    },
+    "EvidenceView": {
+      "additionalProperties": false,
+      "properties": {
+        "correlation_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "evidence_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "evidence_ref",
+        "summary",
+        "occurred_at",
+        "correlation_id"
+      ],
+      "title": "EvidenceView",
+      "type": "object"
+    },
+    "FreshnessState": {
+      "enum": [
+        "current",
+        "stale",
+        "unknown",
+        "not_applicable"
+      ],
+      "type": "string"
+    },
+    "InboxItemView": {
+      "additionalProperties": false,
+      "properties": {
+        "blocked_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "deadline": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcDatetime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "$ref": "#/$defs/RequestKind"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "request_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "risk": {
+          "$ref": "#/$defs/RiskLevel"
+        },
+        "state": {
+          "$ref": "#/$defs/RequestState"
+        },
+        "title": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "request_id",
+        "kind",
+        "state",
+        "title",
+        "purpose",
+        "risk"
+      ],
+      "title": "InboxItemView",
+      "type": "object"
+    },
+    "InboxView": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "$ref": "#/$defs/JsonTuple_InboxItemView_",
+          "default": []
+        },
+        "selected_request_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublicId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "InboxView",
+      "type": "object"
+    },
+    "JsonTuple_AuthorityRequirementView_": {
+      "items": {
+        "$ref": "#/$defs/AuthorityRequirementView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_AuthorityStatusView_": {
+      "items": {
+        "$ref": "#/$defs/AuthorityStatusView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_CapabilityView_": {
+      "items": {
+        "$ref": "#/$defs/CapabilityView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ConstraintView_": {
+      "items": {
+        "$ref": "#/$defs/ConstraintView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ConversationMessageView_": {
+      "items": {
+        "$ref": "#/$defs/ConversationMessageView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_DatasetEvidenceView_": {
+      "items": {
+        "$ref": "#/$defs/DatasetEvidenceView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_Decision_": {
+      "items": {
+        "$ref": "#/$defs/Decision"
+      },
+      "type": "array"
+    },
+    "JsonTuple_InboxItemView_": {
+      "items": {
+        "$ref": "#/$defs/InboxItemView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_LifecycleEventView_": {
+      "items": {
+        "$ref": "#/$defs/LifecycleEventView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ManagedServiceView_": {
+      "items": {
+        "$ref": "#/$defs/ManagedServiceView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_NonEmptyText_": {
+      "items": {
+        "$ref": "#/$defs/NonEmptyText"
+      },
+      "type": "array"
+    },
+    "JsonTuple_OwnDecisionView_": {
+      "items": {
+        "$ref": "#/$defs/OwnDecisionView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_PublicId_": {
+      "items": {
+        "$ref": "#/$defs/PublicId"
+      },
+      "type": "array"
+    },
+    "JsonTuple_RecordedDecisionView_": {
+      "items": {
+        "$ref": "#/$defs/RecordedDecisionView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_RecoveryAction_": {
+      "items": {
+        "$ref": "#/$defs/RecoveryAction"
+      },
+      "type": "array"
+    },
+    "JsonTuple_RequesterRequestView_": {
+      "items": {
+        "$ref": "#/$defs/RequesterRequestView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ReviewItemView_": {
+      "items": {
+        "$ref": "#/$defs/ReviewItemView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_RunView_": {
+      "items": {
+        "$ref": "#/$defs/RunView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_SourceConnectionView_": {
+      "items": {
+        "$ref": "#/$defs/SourceConnectionView"
+      },
+      "type": "array"
+    },
+    "LifecycleEventView": {
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "occurred_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "state": {
+          "$ref": "#/$defs/RequestState"
+        },
+        "summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "event_id",
+        "state",
+        "summary",
+        "occurred_at"
+      ],
+      "title": "LifecycleEventView",
+      "type": "object"
+    },
+    "ManagedServiceView": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "service": {
+          "enum": [
+            "warehouse",
+            "openmetadata",
+            "superset"
+          ],
+          "title": "Service",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        },
+        "validation_summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "service",
+        "label",
+        "state",
+        "detail"
+      ],
+      "title": "ManagedServiceView",
+      "type": "object"
+    },
+    "NoAuthoritativeEvidence": {
+      "anyOf": [
+        {
+          "items": {
+            "$ref": "#/$defs/NoAuthoritativeEvidence"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/NoAuthoritativeEvidence"
+          },
+          "properties": {
+            "evidence_ref": {
+              "enum": [
+                null,
+                ""
+              ]
+            },
+            "evidence_refs": {
+              "maxItems": 0,
+              "type": "array"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "not": {
+            "anyOf": [
+              {
+                "type": "array"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "NonEmptyJsonTuple_ActorRole_": {
+      "items": {
+        "$ref": "#/$defs/ActorRole"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "NonEmptyJsonTuple_NonEmptyText_": {
+      "items": {
+        "$ref": "#/$defs/NonEmptyText"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "NonEmptyJsonTuple_ReviewSectionView_": {
+      "items": {
+        "$ref": "#/$defs/ReviewSectionView"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "NonEmptyJsonTuple_SetupStageView_": {
+      "items": {
+        "$ref": "#/$defs/SetupStageView"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "NonEmptyJsonTuple_WarehouseOptionView_": {
+      "items": {
+        "$ref": "#/$defs/WarehouseOptionView"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "NonEmptyText": {
+      "maxLength": 16000,
+      "minLength": 1,
+      "type": "string"
+    },
+    "OpaqueToken": {
+      "maxLength": 256,
+      "minLength": 32,
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "type": "string"
+    },
+    "OperationFailureView": {
+      "additionalProperties": false,
+      "properties": {
+        "classification": {
+          "enum": [
+            "transient",
+            "permanent",
+            "unknown"
+          ],
+          "title": "Classification",
+          "type": "string"
+        },
+        "code": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "safe_message": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "code",
+        "classification",
+        "safe_message"
+      ],
+      "title": "OperationFailureView",
+      "type": "object"
+    },
+    "OperationState": {
+      "enum": [
+        "accepted",
+        "running",
+        "succeeded",
+        "failed",
+        "outcome_unknown"
+      ],
+      "type": "string"
+    },
+    "OperationView": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "else": {
+            "properties": {
+              "operation_digest": {
+                "type": "null"
+              },
+              "recovery_actions": {
+                "not": {
+                  "contains": {
+                    "const": "retry"
+                  }
+                },
+                "type": "array"
+              },
+              "retry_token": {
+                "type": "null"
+              }
+            }
+          },
+          "if": {
+            "properties": {
+              "operation_digest": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation_digest"
+            ]
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "properties": {
+                  "classification": {
+                    "const": "transient"
+                  }
+                },
+                "required": [
+                  "classification"
+                ],
+                "type": "object"
+              },
+              "operation_digest": {
+                "type": "string"
+              },
+              "recovery_actions": {
+                "contains": {
+                  "const": "retry"
+                },
+                "type": "array"
+              },
+              "retry_token": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation_digest",
+              "retry_token",
+              "failure",
+              "recovery_actions"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "recovery_actions": {
+                "contains": {
+                  "const": "retry"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "recovery_actions"
+            ]
+          },
+          "then": {
+            "properties": {
+              "failure": {
+                "properties": {
+                  "classification": {
+                    "const": "transient"
+                  }
+                },
+                "required": [
+                  "classification"
+                ],
+                "type": "object"
+              },
+              "operation_digest": {
+                "type": "string"
+              },
+              "recovery_actions": {
+                "contains": {
+                  "const": "retry"
+                },
+                "type": "array"
+              },
+              "retry_token": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "operation_digest",
+              "retry_token",
+              "failure",
+              "recovery_actions"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "evidence_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PublicId"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OperationFailureView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "operation_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "operation_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "phase": {
+          "$ref": "#/$defs/NonEmptyText",
+          "default": "operation"
+        },
+        "recovery_actions": {
+          "$ref": "#/$defs/JsonTuple_RecoveryAction_",
+          "default": []
+        },
+        "retry_token": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OpaqueToken"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/OperationState"
+        },
+        "summary": {
+          "$ref": "#/$defs/NonEmptyText",
+          "default": "Operation status available"
+        }
+      },
+      "required": [
+        "operation_id",
+        "revision",
+        "state"
+      ],
+      "title": "OperationView",
+      "type": "object"
+    },
+    "OwnDecisionView": {
+      "additionalProperties": false,
+      "properties": {
+        "created_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "subject_label": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "decision",
+        "subject_label",
+        "created_at"
+      ],
+      "title": "OwnDecisionView",
+      "type": "object"
+    },
+    "ProcessPackageCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "file_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "media_type": {
+          "enum": [
+            "application/pdf",
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          ],
+          "title": "Media Type",
+          "type": "string"
+        },
+        "package_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "package_digest",
+        "active_role",
+        "file_name",
+        "media_type"
+      ],
+      "title": "ProcessPackageCommand",
+      "type": "object"
+    },
+    "ProcessPackageView": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "content_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "package_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "package_ref",
+        "version",
+        "content_digest",
+        "state",
+        "candidate_summary"
+      ],
+      "title": "ProcessPackageView",
+      "type": "object"
+    },
+    "PublicId": {
+      "pattern": "^[a-z][a-z0-9_-]{2,127}$",
+      "type": "string"
+    },
+    "RecordedDecisionView": {
+      "additionalProperties": false,
+      "properties": {
+        "decided_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        },
+        "role": {
+          "$ref": "#/$defs/ActorRole"
+        }
+      },
+      "required": [
+        "role",
+        "decision",
+        "decided_at"
+      ],
+      "title": "RecordedDecisionView",
+      "type": "object"
+    },
+    "RecoveryAction": {
+      "enum": [
+        "correct_input",
+        "reauthenticate",
+        "reload",
+        "retry",
+        "contact_support",
+        "none"
+      ],
+      "type": "string"
+    },
+    "RequestDetailView": {
+      "additionalProperties": false,
+      "properties": {
+        "available_actions": {
+          "$ref": "#/$defs/JsonTuple_Decision_",
+          "default": []
+        },
+        "conversation": {
+          "$ref": "#/$defs/ConversationView"
+        },
+        "evidence": {
+          "$ref": "#/$defs/EvidenceContextView"
+        },
+        "kind": {
+          "$ref": "#/$defs/RequestKind"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/JsonTuple_LifecycleEventView_",
+          "default": []
+        },
+        "proposal": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RequestProposalView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "proposal_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "purpose": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "request_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/RequestState"
+        },
+        "title": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "request_id",
+        "kind",
+        "state",
+        "title",
+        "purpose",
+        "revision",
+        "conversation",
+        "evidence"
+      ],
+      "title": "RequestDetailView",
+      "type": "object"
+    },
+    "RequestInput": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/StakeholderQuestionInput"
+        },
+        {
+          "$ref": "#/$defs/DataAccessRequestInput"
+        }
+      ]
+    },
+    "RequestKind": {
+      "enum": [
+        "stakeholder_question",
+        "data_access"
+      ],
+      "type": "string"
+    },
+    "RequestProposalView": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/StakeholderAnswerProposalView"
+        },
+        {
+          "$ref": "#/$defs/AccessPreviewProposalView"
+        }
+      ]
+    },
+    "RequestState": {
+      "enum": [
+        "submitted",
+        "clarifying",
+        "investigating",
+        "proposed",
+        "awaiting_approval",
+        "execution_ready",
+        "denied",
+        "closed"
+      ],
+      "type": "string"
+    },
+    "RequesterRequestView": {
+      "additionalProperties": false,
+      "properties": {
+        "clarified_outcome": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClarifiedOutcomeView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "denial_explanation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "kind": {
+          "$ref": "#/$defs/RequestKind"
+        },
+        "own_decisions": {
+          "$ref": "#/$defs/JsonTuple_OwnDecisionView_",
+          "default": []
+        },
+        "request_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "requested_outcome": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "state": {
+          "$ref": "#/$defs/RequestState"
+        },
+        "title": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        }
+      },
+      "required": [
+        "request_id",
+        "kind",
+        "state",
+        "title",
+        "requested_outcome",
+        "revision",
+        "updated_at"
+      ],
+      "title": "RequesterRequestView",
+      "type": "object"
+    },
+    "ResetCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "const": "data_architect",
+          "title": "Active Role",
+          "type": "string"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "reset_token": {
+          "$ref": "#/$defs/OpaqueToken"
+        },
+        "setup_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "setup_digest",
+        "reset_token",
+        "active_role"
+      ],
+      "title": "ResetCommand",
+      "type": "object"
+    },
+    "RetryOperationCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "operation_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "retry_token": {
+          "$ref": "#/$defs/OpaqueToken"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "operation_digest",
+        "retry_token",
+        "active_role"
+      ],
+      "title": "RetryOperationCommand",
+      "type": "object"
+    },
+    "ReviewItemView": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "material_change": {
+          "default": false,
+          "title": "Material Change",
+          "type": "boolean"
+        },
+        "value": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "label",
+        "value"
+      ],
+      "title": "ReviewItemView",
+      "type": "object"
+    },
+    "ReviewKind": {
+      "enum": [
+        "meaning",
+        "data_product",
+        "activation"
+      ],
+      "type": "string"
+    },
+    "ReviewSectionView": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "$ref": "#/$defs/JsonTuple_ReviewItemView_",
+          "default": []
+        },
+        "section_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "section_id",
+        "title"
+      ],
+      "title": "ReviewSectionView",
+      "type": "object"
+    },
+    "ReviewView": {
+      "additionalProperties": false,
+      "properties": {
+        "can_decide": {
+          "title": "Can Decide",
+          "type": "boolean"
+        },
+        "constraints": {
+          "$ref": "#/$defs/JsonTuple_ConstraintView_",
+          "default": []
+        },
+        "decisions": {
+          "$ref": "#/$defs/JsonTuple_RecordedDecisionView_",
+          "default": []
+        },
+        "evidence_refs": {
+          "$ref": "#/$defs/JsonTuple_PublicId_",
+          "default": []
+        },
+        "kind": {
+          "$ref": "#/$defs/ReviewKind"
+        },
+        "required_authorities": {
+          "$ref": "#/$defs/JsonTuple_AuthorityRequirementView_",
+          "default": []
+        },
+        "review_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "reviewed_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "sections": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_ReviewSectionView_"
+        },
+        "summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "title": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "review_id",
+        "kind",
+        "title",
+        "summary",
+        "revision",
+        "reviewed_digest",
+        "sections",
+        "can_decide"
+      ],
+      "title": "ReviewView",
+      "type": "object"
+    },
+    "RiskLevel": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "critical"
+      ],
+      "type": "string"
+    },
+    "RunView": {
+      "additionalProperties": false,
+      "properties": {
+        "completed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcDatetime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "data_product_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "run_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "started_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcDatetime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "$ref": "#/$defs/OperationState"
+        },
+        "summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "run_id",
+        "data_product_ref",
+        "state",
+        "summary"
+      ],
+      "title": "RunView",
+      "type": "object"
+    },
+    "RunsView": {
+      "additionalProperties": false,
+      "properties": {
+        "runs": {
+          "$ref": "#/$defs/JsonTuple_RunView_",
+          "default": []
+        }
+      },
+      "title": "RunsView",
+      "type": "object"
+    },
+    "SessionView": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "active_role": {
+                "const": "requester"
+              }
+            },
+            "required": [
+              "active_role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "roles": {
+                "contains": {
+                  "const": "requester"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "roles"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "active_role": {
+                "const": "data_architect"
+              }
+            },
+            "required": [
+              "active_role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "roles": {
+                "contains": {
+                  "const": "data_architect"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "roles"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "active_role": {
+                "const": "data_owner"
+              }
+            },
+            "required": [
+              "active_role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "roles": {
+                "contains": {
+                  "const": "data_owner"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "roles"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "active_role": {
+                "const": "policy_approver"
+              }
+            },
+            "required": [
+              "active_role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "roles": {
+                "contains": {
+                  "const": "policy_approver"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "roles"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "active_role": {
+                "const": "budget_approver"
+              }
+            },
+            "required": [
+              "active_role"
+            ]
+          },
+          "then": {
+            "properties": {
+              "roles": {
+                "contains": {
+                  "const": "budget_approver"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "roles"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "active_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "actor": {
+          "$ref": "#/$defs/ActorDisplayView"
+        },
+        "csrf_token": {
+          "maxLength": 256,
+          "minLength": 32,
+          "title": "Csrf Token",
+          "type": "string"
+        },
+        "roles": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_ActorRole_"
+        },
+        "tenant": {
+          "$ref": "#/$defs/DisplayReferenceView"
+        },
+        "workspace": {
+          "$ref": "#/$defs/DisplayReferenceView"
+        }
+      },
+      "required": [
+        "actor",
+        "roles",
+        "active_role",
+        "tenant",
+        "workspace",
+        "csrf_token"
+      ],
+      "title": "SessionView",
+      "type": "object"
+    },
+    "SetupStage": {
+      "enum": [
+        "foundation",
+        "managed_services",
+        "sources",
+        "business_process",
+        "meaning",
+        "data_product",
+        "activation"
+      ],
+      "type": "string"
+    },
+    "SetupStageState": {
+      "enum": [
+        "not_started",
+        "current",
+        "blocked",
+        "complete"
+      ],
+      "type": "string"
+    },
+    "SetupStageView": {
+      "additionalProperties": false,
+      "properties": {
+        "detail": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "stage": {
+          "$ref": "#/$defs/SetupStage"
+        },
+        "state": {
+          "$ref": "#/$defs/SetupStageState"
+        }
+      },
+      "required": [
+        "stage",
+        "label",
+        "state"
+      ],
+      "title": "SetupStageView",
+      "type": "object"
+    },
+    "SetupView": {
+      "additionalProperties": false,
+      "properties": {
+        "active_stage": {
+          "$ref": "#/$defs/SetupStage"
+        },
+        "managed_services": {
+          "$ref": "#/$defs/JsonTuple_ManagedServiceView_",
+          "default": []
+        },
+        "pending_review_refs": {
+          "$ref": "#/$defs/JsonTuple_PublicId_",
+          "default": []
+        },
+        "process_package": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProcessPackageView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "reset_token": {
+          "$ref": "#/$defs/OpaqueToken"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "setup_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "sources": {
+          "$ref": "#/$defs/JsonTuple_SourceConnectionView_",
+          "default": []
+        },
+        "stages": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_SetupStageView_"
+        },
+        "warehouse_binding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/WarehouseBindingView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "warehouse_options": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_WarehouseOptionView_"
+        },
+        "workspace_ref": {
+          "$ref": "#/$defs/PublicId"
+        }
+      },
+      "required": [
+        "workspace_ref",
+        "revision",
+        "setup_digest",
+        "reset_token",
+        "active_stage",
+        "stages",
+        "warehouse_options"
+      ],
+      "title": "SetupView",
+      "type": "object"
+    },
+    "SourceConnectionView": {
+      "additionalProperties": false,
+      "properties": {
+        "denied_checks": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "display_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "intended_checks": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "source_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "source_type": {
+          "enum": [
+            "postgresql",
+            "stripe"
+          ],
+          "title": "Source Type",
+          "type": "string"
+        },
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        }
+      },
+      "required": [
+        "source_ref",
+        "source_type",
+        "display_name",
+        "state"
+      ],
+      "title": "SourceConnectionView",
+      "type": "object"
+    },
+    "StakeholderAnswerProposalView": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "authorization_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "candidate": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "datasets": {
+          "$ref": "#/$defs/JsonTuple_DatasetEvidenceView_",
+          "default": []
+        },
+        "freshness": {
+          "$ref": "#/$defs/FreshnessState"
+        },
+        "kind": {
+          "const": "stakeholder_answer",
+          "title": "Kind",
+          "type": "string"
+        },
+        "lineage_summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "metric_version": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "quality_limitations": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "required_authorities": {
+          "$ref": "#/$defs/JsonTuple_AuthorityStatusView_",
+          "default": []
+        }
+      },
+      "required": [
+        "kind",
+        "purpose",
+        "candidate",
+        "metric_version",
+        "as_of",
+        "freshness",
+        "lineage_summary",
+        "authorization_summary"
+      ],
+      "title": "StakeholderAnswerProposalView",
+      "type": "object"
+    },
+    "StakeholderQuestionInput": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "const": "stakeholder_question",
+          "title": "Kind",
+          "type": "string"
+        },
+        "purpose": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "question": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "kind",
+        "purpose",
+        "question"
+      ],
+      "title": "StakeholderQuestionInput",
+      "type": "object"
+    },
+    "UtcDatetime": {
+      "format": "date-time",
+      "type": "string"
+    },
+    "WarehouseBindingCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "capacity": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "engine": {
+          "$ref": "#/$defs/WarehouseEngine"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "region": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "reviewed_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "reviewed_digest",
+        "active_role",
+        "engine",
+        "region",
+        "capacity"
+      ],
+      "title": "WarehouseBindingCommand",
+      "type": "object"
+    },
+    "WarehouseBindingView": {
+      "additionalProperties": false,
+      "properties": {
+        "binding_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "capacity": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "engine": {
+          "$ref": "#/$defs/WarehouseEngine"
+        },
+        "immutable": {
+          "const": true,
+          "default": true,
+          "title": "Immutable",
+          "type": "boolean"
+        },
+        "region": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "state": {
+          "$ref": "#/$defs/CapabilityState"
+        }
+      },
+      "required": [
+        "binding_ref",
+        "engine",
+        "region",
+        "capacity",
+        "state"
+      ],
+      "title": "WarehouseBindingView",
+      "type": "object"
+    },
+    "WarehouseEngine": {
+      "enum": [
+        "postgresql",
+        "clickhouse"
+      ],
+      "type": "string"
+    },
+    "WarehouseOptionView": {
+      "additionalProperties": false,
+      "properties": {
+        "engine": {
+          "$ref": "#/$defs/WarehouseEngine"
+        },
+        "fixed_capacity": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "supported_region": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "engine",
+        "label",
+        "supported_region",
+        "fixed_capacity"
+      ],
+      "title": "WarehouseOptionView",
+      "type": "object"
+    },
+    "WorkspaceState": {
+      "enum": [
+        "setup",
+        "pending_activation",
+        "active",
+        "unavailable"
+      ],
+      "type": "string"
+    },
+    "WorkspaceView": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "$ref": "#/$defs/JsonTuple_CapabilityView_",
+          "default": []
+        },
+        "recovery_message": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "state": {
+          "$ref": "#/$defs/WorkspaceState"
+        },
+        "workspace": {
+          "$ref": "#/$defs/DisplayReferenceView"
+        }
+      },
+      "required": [
+        "workspace",
+        "state"
+      ],
+      "title": "WorkspaceView",
+      "type": "object"
+    }
+  },
+  "$id": "https://pillarmesh.com/schemas/console-api-v1.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "catalog_asset_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_CatalogAssetView_"
+    },
+    "clarified_outcome_acceptance_command": {
+      "$ref": "#/$defs/ClarifiedOutcomeAcceptanceCommand"
+    },
+    "clarified_outcome_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_ClarifiedOutcomeView_"
+    },
+    "conversation_message_command": {
+      "$ref": "#/$defs/ConversationMessageCommand"
+    },
+    "conversation_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_ConversationView_"
+    },
+    "create_request_command": {
+      "$ref": "#/$defs/CreateRequestCommand"
+    },
+    "dashboard_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_DashboardView_"
+    },
+    "data_product_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_DataProductView_"
+    },
+    "decision_command": {
+      "$ref": "#/$defs/DecisionCommand"
+    },
+    "error_response": {
+      "$ref": "#/$defs/ConsoleErrorEnvelope"
+    },
+    "evidence_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_EvidenceView_"
+    },
+    "inbox_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_InboxView_"
+    },
+    "operation_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_OperationView_"
+    },
+    "process_package_command": {
+      "$ref": "#/$defs/ProcessPackageCommand"
+    },
+    "request_detail_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_RequestDetailView_"
+    },
+    "requester_request_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_RequesterRequestView_"
+    },
+    "requester_requests_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_JsonTuple_RequesterRequestView__"
+    },
+    "reset_command": {
+      "$ref": "#/$defs/ResetCommand"
+    },
+    "retry_operation_command": {
+      "$ref": "#/$defs/RetryOperationCommand"
+    },
+    "review_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_ReviewView_"
+    },
+    "runs_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_RunsView_"
+    },
+    "session_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_SessionView_"
+    },
+    "setup_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_SetupView_"
+    },
+    "warehouse_binding_command": {
+      "$ref": "#/$defs/WarehouseBindingCommand"
+    },
+    "workspace_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_WorkspaceView_"
+    }
+  },
+  "required": [
+    "session_response",
+    "workspace_response",
+    "setup_response",
+    "review_response",
+    "inbox_response",
+    "request_detail_response",
+    "requester_requests_response",
+    "requester_request_response",
+    "conversation_response",
+    "clarified_outcome_response",
+    "data_product_response",
+    "runs_response",
+    "catalog_asset_response",
+    "dashboard_response",
+    "evidence_response",
+    "operation_response",
+    "error_response",
+    "warehouse_binding_command",
+    "process_package_command",
+    "decision_command",
+    "create_request_command",
+    "conversation_message_command",
+    "clarified_outcome_acceptance_command",
+    "retry_operation_command",
+    "reset_command"
+  ],
+  "title": "ConsoleApiSchema",
+  "type": "object"
+}

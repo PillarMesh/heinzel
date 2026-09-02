@@ -8,6 +8,7 @@ members = [
     "pillarmesh-catalog-control",
     "pillarmesh-compiler",
     "pillarmesh-connection-broker",
+    "pillarmesh-console",
     "pillarmesh-contract-model",
     "pillarmesh-contract-service",
     "pillarmesh-evidence",
@@ -715,6 +716,33 @@ requires-dist = [
     { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
     { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
     { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "pillarmesh-console"
+version = "0.1.0"
+source = { editable = "apps/console/server" }
+dependencies = [
+    { name = "pillarmesh-catalog-control" },
+    { name = "pillarmesh-contract-model" },
+    { name = "pillarmesh-request-management" },
+    { name = "pillarmesh-semantic-registry" },
+    { name = "pillarmesh-warehouse-control" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pillarmesh-catalog-control", editable = "services/catalog-control" },
+    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
+    { name = "pillarmesh-request-management", editable = "services/request-management" },
+    { name = "pillarmesh-semantic-registry", editable = "services/semantic-registry" },
+    { name = "pillarmesh-warehouse-control", editable = "services/warehouse-control" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+    { name = "starlette", specifier = ">=1.6,<2" },
+    { name = "uvicorn", specifier = ">=0.52,<1" },
 ]
 
 [[package]]

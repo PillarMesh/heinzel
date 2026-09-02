@@ -11,6 +11,10 @@
 .ruff_cache/
 __pycache__/
 *.py[cod]
+node_modules/
+apps/console/dist/
+apps/console/test-results/
+apps/console/playwright-report/
 .worktrees/
 worktrees/
 output/
