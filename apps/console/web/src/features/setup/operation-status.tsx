@@ -20,6 +20,7 @@ const browserPollTimer: PollTimer = {
 interface OperationStatusProps {
   readonly client: Pick<SetupClient, "getOperation">
   readonly label: string
+  readonly onSettled?: ((operation: OperationView) => void) | undefined
   readonly operation: OperationView
   readonly pollTimer?: PollTimer | undefined
 }
@@ -51,10 +52,21 @@ function operationTitle(operation: OperationView): string {
 export function OperationStatus({
   client,
   label,
+  onSettled,
   operation,
   pollTimer = browserPollTimer,
 }: OperationStatusProps) {
   const [currentOperation, setCurrentOperation] = useState(operation)
+
+  // The surfaces this operation changed - the stage list, the governance spine, the
+  // workspace state - belong to the shell, not to this component. Announcing the
+  // settlement lets the shell re-read them; without it the page kept offering the
+  // command it had just completed.
+  useEffect(() => {
+    if (!isPending(currentOperation)) {
+      onSettled?.(currentOperation)
+    }
+  }, [currentOperation, onSettled])
 
   useEffect(() => {
     if (!isPending(operation)) {

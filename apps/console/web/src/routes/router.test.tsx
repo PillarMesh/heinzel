@@ -532,3 +532,60 @@ test.each([
     }
   },
 )
+
+test("App re-reads its projections after the warehouse command settles", async () => {
+  // The command changes the workspace state, the governance spine and the stage
+  // list, none of which this page owns. Without a re-read the shell kept the
+  // pre-command projection: "Managed warehouse: Blocked" beside the stage's own
+  // "Provisioning succeeded", with the engine choice still offered. An architect
+  // reads that as a failure and confirms again, which the server then refuses.
+  const user = userEvent.setup()
+  const getWorkspace = vi.fn(async () => workspaceEnvelope("setup"))
+  // The shared fixture sits at the activation stage; the warehouse choice is the
+  // foundation stage's.
+  const foundationEnvelope = {
+    ...setupEnvelope,
+    data: {...setupEnvelope.data, active_stage: "foundation" as const},
+  }
+  const getSetup = vi.fn(async () => foundationEnvelope)
+  const client: ConsoleBootstrapClient = {
+    ...setupClient,
+    getSession: vi.fn(async () => sessionEnvelope),
+    getWorkspace,
+    ...featureClientStubs(),
+    getSetup,
+    confirmWarehouseBinding: vi.fn(async () => ({
+      envelope: {
+        meta: setupEnvelope.meta,
+        data: {
+          operation_id: "operation-warehouse-ready",
+          revision: 1,
+          state: "succeeded" as const,
+          phase: "ready",
+          summary: "The managed warehouse binding is ready.",
+          recovery_actions: [],
+          evidence_ref: null,
+          failure: null,
+          operation_digest: null,
+          retry_token: null,
+        },
+      },
+      kind: "terminal" as const,
+      state: "succeeded" as const,
+      status: 200 as const,
+    })),
+  }
+
+  render(<App client={client} />)
+  await screen.findByRole("radio", {name: /PostgreSQL/})
+  const readsBefore = getWorkspace.mock.calls.length
+
+  await user.click(
+    screen.getByRole("checkbox", {
+      name: "I understand that this warehouse binding is immutable after confirmation.",
+    }),
+  )
+  await user.click(screen.getByRole("button", {name: "Confirm warehouse binding"}))
+
+  await waitFor(() => expect(getWorkspace.mock.calls.length).toBeGreaterThan(readsBefore))
+})

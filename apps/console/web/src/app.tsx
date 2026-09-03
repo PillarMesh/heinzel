@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState} from "react"
+import {useCallback, useEffect, useMemo, useState} from "react"
 import {BrowserRouter} from "react-router-dom"
 
 import {ConsoleApiClient, ConsoleApiError, MalformedConsoleResponse} from "./api/client"
@@ -50,6 +50,11 @@ export function App({client}: AppProps) {
   const selectedClient = useMemo(() => client ?? new ConsoleApiClient(), [client])
   const [attempt, setAttempt] = useState(0)
   const [state, setState] = useState<BootstrapState>({kind: "loading"})
+  // A command settles against the owning services, and the surfaces it changed - the
+  // workspace state, the governance spine, the stage list - are all read here. Re-run
+  // the bootstrap rather than patching them, so the console never shows a projection
+  // it did not receive from the server. The rendered page stays up meanwhile.
+  const reReadProjections = useCallback(() => setAttempt((current) => current + 1), [])
 
   useEffect(() => {
     let active = true
@@ -104,7 +109,11 @@ export function App({client}: AppProps) {
 
   return (
     <BrowserRouter>
-      <ConsoleRoutes {...state.value} setupClient={selectedClient} />
+      <ConsoleRoutes
+        {...state.value}
+        onProjectionsChanged={reReadProjections}
+        setupClient={selectedClient}
+      />
     </BrowserRouter>
   )
 }

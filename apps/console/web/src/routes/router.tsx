@@ -17,6 +17,8 @@ import {selectLandingRoute} from "./landing-route"
 import {RecoveryPage} from "./recovery-page"
 
 interface ConsoleRoutesProps {
+  /** Re-read session, workspace and setup after a command changes them. */
+  readonly onProjectionsChanged?: () => void
   readonly sessionEnvelope: ConsoleEnvelopeSessionView
   // One memoized client instance satisfies every feature protocol structurally,
   // so the feature read effects do not re-fire on each render.
@@ -72,6 +74,7 @@ function ReviewWorkbenchRoute({
 }
 
 export function ConsoleRoutes({
+  onProjectionsChanged,
   sessionEnvelope,
   setupClient,
   setupEnvelope,
@@ -123,6 +126,7 @@ export function ConsoleRoutes({
             ) : (
               <SetupWorkbench
                 client={setupClient}
+                onProjectionsChanged={onProjectionsChanged}
                 session={sessionEnvelope.data}
                 setupEnvelope={setupEnvelope}
               />

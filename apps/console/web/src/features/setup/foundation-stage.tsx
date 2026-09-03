@@ -17,6 +17,8 @@ import type {IdempotencyKeyFactory, SetupClient} from "./setup-workbench"
 interface FoundationStageProps {
   readonly client: SetupClient
   readonly idempotencyKeyFactory: IdempotencyKeyFactory
+  /** Called once the warehouse operation settles, so the shell can re-read. */
+  readonly onProjectionsChanged?: (() => void) | undefined
   readonly pollTimer?: PollTimer | undefined
   readonly session: SessionView
   readonly setup: SetupView
@@ -30,6 +32,7 @@ interface WarehouseAttempt {
 export function FoundationStage({
   client,
   idempotencyKeyFactory,
+  onProjectionsChanged,
   pollTimer,
   session,
   setup,
@@ -167,6 +170,7 @@ export function FoundationStage({
         <OperationStatus
           client={client}
           label="Warehouse operation"
+          onSettled={onProjectionsChanged}
           operation={operation}
           pollTimer={pollTimer}
         />

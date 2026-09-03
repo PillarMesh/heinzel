@@ -627,3 +627,46 @@ test("reconciles an ambiguous process submission with the original command and k
   expect(idempotencyKeyFactory).toHaveBeenCalledTimes(1)
   expect(await screen.findByText("operation-process-reconciled")).toBeVisible()
 })
+
+test("asks the shell to re-read its projections once provisioning settles", async () => {
+  // The command changes the workspace, the governance spine and the stage list, and
+  // none of them are this component's state. Without this the page kept offering the
+  // engine choice and kept showing "Managed warehouse: Blocked" beside its own
+  // "Provisioning succeeded", which reads as a failure rather than a stale view.
+  const user = userEvent.setup()
+  const onProjectionsChanged = vi.fn()
+  setupClient.confirmWarehouseBinding.mockResolvedValueOnce({
+    envelope: {
+      meta: setupEnvelope.meta,
+      data: {
+        ...terminalOperation,
+        operation_id: "operation-warehouse-settled",
+        state: "succeeded",
+        phase: "ready",
+        summary: "The managed warehouse binding is ready.",
+      },
+    },
+    kind: "terminal",
+    state: "succeeded",
+    status: 200,
+  })
+
+  render(
+    <SetupWorkbench
+      client={setupClient}
+      idempotencyKeyFactory={() => "idempotency-warehouse-0002"}
+      onProjectionsChanged={onProjectionsChanged}
+      session={sessionEnvelope.data}
+      setupEnvelope={setupEnvelope}
+    />,
+  )
+
+  await user.click(
+    screen.getByRole("checkbox", {
+      name: "I understand that this warehouse binding is immutable after confirmation.",
+    }),
+  )
+  await user.click(screen.getByRole("button", {name: "Confirm warehouse binding"}))
+
+  await waitFor(() => expect(onProjectionsChanged).toHaveBeenCalled())
+})

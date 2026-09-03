@@ -43,6 +43,8 @@ interface SetupWorkbenchProps {
   readonly client: SetupClient
   readonly digestFile?: DigestFile
   readonly idempotencyKeyFactory?: IdempotencyKeyFactory
+  /** Re-read the shell's own projections after a command changes them. */
+  readonly onProjectionsChanged?: (() => void) | undefined
   readonly pollTimer?: PollTimer
   readonly requestedReviewRef?: string
   readonly session: SessionView
@@ -61,6 +63,7 @@ export function SetupWorkbench({
   client,
   digestFile,
   idempotencyKeyFactory = defaultIdempotencyKey,
+  onProjectionsChanged,
   pollTimer,
   requestedReviewRef,
   session,
@@ -96,6 +99,7 @@ export function SetupWorkbench({
           <FoundationStage
             client={client}
             idempotencyKeyFactory={idempotencyKeyFactory}
+            onProjectionsChanged={onProjectionsChanged}
             pollTimer={pollTimer}
             session={session}
             setup={setup}
