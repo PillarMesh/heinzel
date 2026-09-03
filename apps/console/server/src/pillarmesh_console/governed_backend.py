@@ -269,6 +269,25 @@ _UNDELIVERED_CAPABILITIES: tuple[_Capability, ...] = (
 )
 
 
+def _engine_label(engine: EngineKind) -> str:
+    """The engine's name as an architect writes it.
+
+    `EngineKind` values are identifiers; rendering one as the choice's label put
+    `postgresql` in front of the person making an immutable decision. Naming an
+    engine claims no authority over it.
+
+    A `match` rather than a mapping so that adding a member to `EngineKind` is a type
+    error here. A dictionary subscript would instead raise `KeyError` out of
+    `get_setup`, outside `_guarded`, and take the whole setup read down with an
+    internal error rather than losing one option.
+    """
+    match engine:
+        case EngineKind.POSTGRESQL:
+            return "PostgreSQL"
+        case EngineKind.CLICKHOUSE:
+            return "ClickHouse"
+
+
 class GovernedConsoleBackend:
     def __init__(
         self,
@@ -447,8 +466,8 @@ class GovernedConsoleBackend:
             "warehouse_options": tuple(
                 WarehouseOptionView(
                     engine=engine.value,
-                    label=engine.value,
-                    supported_region="The region is fixed when the binding is confirmed.",
+                    label=_engine_label(engine),
+                    supported_region="Fixed at confirmation",
                     fixed_capacity="mvp-fixed",
                 )
                 for engine in EngineKind

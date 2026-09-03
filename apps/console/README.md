@@ -73,7 +73,11 @@ The direct dependency versions and release ranges were reviewed against npm and 
 2026-09-01. None was marked deprecated, and each project had a current maintained release. The
 licenses below are permissive or Apache-compatible. `@axe-core/playwright` is MPL-2.0; Mozilla's
 license FAQ explicitly permits combining MPL-2.0 and Apache-licensed code. It is used unmodified as
-test tooling, and its file-level terms remain attached to the installed package.
+test tooling, and its file-level terms remain attached to the installed package. The two IBM Plex
+packages are SIL Open Font License 1.1; only their latin `woff2` files are referenced, so the build
+copies three font files and no stylesheet from either package. They are bundled rather than fetched
+because the server sends `default-src 'self'`, and because the previous stack named `Avenir Next`,
+which exists only on macOS.
 
 | Dependency | License | Purpose |
 | --- | --- | --- |
@@ -81,6 +85,8 @@ test tooling, and its file-level terms remain attached to the installed package.
 | `starlette` | BSD-3-Clause | ASGI routes and responses |
 | `uvicorn` | BSD-3-Clause | Loopback development ASGI server |
 | `ajv` | MIT | Runtime validation of server responses |
+| `@fontsource-variable/ibm-plex-sans` | OFL-1.1 | Self-hosted interface typeface |
+| `@fontsource/ibm-plex-mono` | OFL-1.1 | Self-hosted typeface for identifiers and digests |
 | `react` | MIT | Browser component model |
 | `react-dom` | MIT | Browser DOM renderer |
 | `react-router-dom` | MIT | Explicit product route handling |

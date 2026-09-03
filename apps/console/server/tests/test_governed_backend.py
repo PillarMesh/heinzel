@@ -538,3 +538,22 @@ def fixture_reset_command() -> object:
         reset_token="r" * 40,
         active_role="data_architect",
     )
+
+
+def test_the_warehouse_options_present_an_engine_name_rather_than_its_enum_value() -> None:
+    """`label` is what the architect reads; the enum value is not a name.
+
+    The governed adapter set `label` to `engine.value`, so the choice rendered as
+    `postgresql` and `clickhouse`, and it put a whole sentence into
+    `supported_region`, a field the browser prints beside a capacity token as a
+    caption. Presenting an engine's name is presentation, not authority.
+    """
+    backend = _backend(warehouse_bindings=_StaticWarehouseBindingReader(None))
+
+    setup = backend.get_setup(_architect_context())
+
+    labels = {option.engine: option.label for option in setup.warehouse_options}
+    assert labels == {"postgresql": "PostgreSQL", "clickhouse": "ClickHouse"}
+    for option in setup.warehouse_options:
+        assert len(option.supported_region.split()) <= 4
+        assert not option.supported_region.endswith(".")

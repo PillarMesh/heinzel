@@ -35,6 +35,10 @@ async function captureRoute(page: Page, name: string, fullPage = true): Promise<
   for (const pattern of FORBIDDEN_PATTERNS) {
     expect(visibleText, `${name} must not publish ${String(pattern)}`).not.toMatch(pattern)
   }
+  // The bundled faces declare `font-display: swap`, so a capture taken before the
+  // woff2 is applied would record the fallback stack's metrics and produce an image
+  // that differs from every later run. Nothing else in the suite waits for this.
+  await page.evaluate(() => document.fonts.ready)
   // Captured full page at the documented viewport width so the persistent fixture
   // banner and the decision controls appear in the same image.
   await page.evaluate(() => globalThis.scrollTo(0, 0))

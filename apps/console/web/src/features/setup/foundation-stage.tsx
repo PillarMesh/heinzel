@@ -114,7 +114,7 @@ export function FoundationStage({
               <span>
                 <strong>{option.label}</strong>
                 <small>
-                  {option.supported_region} · {option.fixed_capacity}
+                  {option.supported_region} · <code>{option.fixed_capacity}</code>
                 </small>
               </span>
             </label>

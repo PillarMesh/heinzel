@@ -11,6 +11,12 @@
 
 .decision-queue,
 .decision-detail,
+.decision-queue,
+.decision-detail,
+.evidence-region {
+  container: decision-pane / inline-size;
+}
+
 .evidence-region {
   background: var(--color-white);
   border: 1px solid var(--color-line);
@@ -36,8 +42,8 @@
 .decision-queue__filters label {
   display: grid;
   gap: 0.3rem;
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
 }
 
 .decision-queue__filters select {
@@ -80,15 +86,15 @@
 .decision-queue__purpose,
 .decision-queue__deadline {
   color: var(--color-neutral);
-  font-size: 0.82rem;
+  font-size: var(--text-xs);
 }
 
 .decision-queue__blocked,
 .decision-detail__blocked {
   background: var(--color-attention-surface);
   color: var(--color-attention);
-  font-size: 0.82rem;
-  font-weight: 700;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
   padding: 0.35rem 0.5rem;
 }
 
@@ -100,22 +106,42 @@
   margin: 0 0 1.25rem;
 }
 
+/*
+ * Stacked by default, two columns only where the pane is wide enough to hold them.
+ *
+ * A fixed `minmax(9rem, 0.5fr)` label column reserved nine rems inside the evidence
+ * pane, which is about thirteen wide, so every value wrapped to roughly one word per
+ * line: "0 material quality limitation(s) were cited." became a vertical column of
+ * fragments. The pane is a container, so the row asks the pane, not the viewport.
+ */
 .decision-detail__facts div,
 .proposal-review__facts div,
 .evidence-content__facts div,
 .catalog-evidence dl div {
   display: grid;
-  gap: 0.15rem;
-  grid-template-columns: minmax(9rem, 0.5fr) minmax(0, 1fr);
+  gap: 0.1rem;
+}
+
+@container decision-pane (min-width: 26rem) {
+  .decision-detail__facts div,
+  .proposal-review__facts div,
+  .evidence-content__facts div,
+  .catalog-evidence dl div {
+    align-items: baseline;
+    column-gap: var(--space-4);
+    grid-template-columns: minmax(7rem, 0.4fr) minmax(0, 1fr);
+  }
 }
 
 .decision-detail__facts dt,
 .proposal-review__facts dt,
 .evidence-content__facts dt,
 .catalog-evidence dt {
-  color: var(--color-neutral);
-  font-size: 0.8rem;
-  font-weight: 700;
+  color: var(--color-ink-muted);
+  font-family: var(--font-utility);
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
 }
 
@@ -188,12 +214,12 @@
 
 .authority-list__state--false {
   color: var(--color-attention);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .authority-list__state--true {
   color: var(--color-ready);
-  font-weight: 700;
+  font-weight: var(--weight-semibold);
 }
 
 .conversation-message--pillarmesh {
@@ -209,8 +235,8 @@
 }
 
 .conversation-message__kind {
-  font-size: 0.75rem;
-  font-weight: 800;
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -241,7 +267,7 @@
 .inbox-empty,
 .inbox-loading {
   color: var(--color-neutral);
-  font-size: 0.88rem;
+  font-size: var(--text-sm);
 }
 
 .evidence-drawer {
@@ -263,7 +289,7 @@
 
 .decision-workspace code {
   font-family: var(--font-utility);
-  font-size: 0.8rem;
+  font-size: var(--text-xs);
   overflow-wrap: anywhere;
 }
 
