@@ -20,6 +20,7 @@ thing a deployment must never do. It refuses to bind anywhere but loopback.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sqlite3
 import sys
@@ -28,9 +29,11 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from pillarmesh_catalog_control import CatalogControlService, SQLiteCatalogRepository
 from pillarmesh_console.app import create_app
 from pillarmesh_console.auth import TrustedActorContext
 from pillarmesh_console.governed_adapters import (
+    CatalogControlBindingReader,
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceBindingDirectory,
     InMemoryWorkspacePrincipalDirectory,
@@ -51,6 +54,8 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
 )
 from pillarmesh_semantic_registry import SemanticFulfillmentSnapshotAdapter
+from pillarmesh_semantic_registry.repository import SQLiteSemanticRepository
+from pillarmesh_semantic_registry.review import SemanticReviewService
 from pillarmesh_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
@@ -263,6 +268,44 @@ class SeededDecision:
     """The digest of the proposal subject an approving authority must sign."""
 
 
+class _PersistedWorkspaceBindingDirectory(InMemoryWorkspaceBindingDirectory):
+    """The workspace's binding directory, kept across restarts.
+
+    Which binding a workspace uses is deployment configuration, not something an
+    owning service publishes - neither warehouse-control nor catalog-control
+    enumerates bindings, because enumerating them would itself be a disclosure. Held
+    only in memory it was lost on restart: the warehouse binding became unreachable
+    though warehouse-control still held it, and the catalog binding was worse,
+    because the harness minted a fresh draft each time and left the previous one
+    orphaned.
+    """
+
+    def __init__(self, path: Path) -> None:
+        super().__init__()
+        self._path = path
+        self._recorded: dict[str, dict[str, str]] = {"warehouse": {}, "catalog": {}}
+        if path.exists():
+            self._recorded = json.loads(path.read_text(encoding="utf-8"))
+            for tenant_id, binding_id in self._recorded["warehouse"].items():
+                super().bind_warehouse(tenant_id=tenant_id, binding_id=binding_id)
+            for tenant_id, binding_id in self._recorded["catalog"].items():
+                super().bind_catalog(tenant_id=tenant_id, binding_id=binding_id)
+
+    def bind_warehouse(self, *, tenant_id: str, binding_id: str) -> None:
+        super().bind_warehouse(tenant_id=tenant_id, binding_id=binding_id)
+        self._record("warehouse", tenant_id, binding_id)
+
+    def bind_catalog(self, *, tenant_id: str, binding_id: str) -> None:
+        super().bind_catalog(tenant_id=tenant_id, binding_id=binding_id)
+        self._record("catalog", tenant_id, binding_id)
+
+    def _record(self, kind: str, tenant_id: str, binding_id: str) -> None:
+        self._recorded[kind][tenant_id] = binding_id
+        self._path.write_text(
+            json.dumps(self._recorded, indent=2, sort_keys=True), encoding="utf-8"
+        )
+
+
 class GovernedConsoleDeployment:
     """The owning services, their databases, and the console that projects them."""
 
@@ -273,6 +316,15 @@ class GovernedConsoleDeployment:
         self.request_path = str(directory / "requests.sqlite3")
         self._warehouse_connection = _worker_thread_connection(self.warehouse_path)
         self.warehouse_repository = SQLiteWarehouseRepository(connection=self._warehouse_connection)
+        # `CatalogControlBindingReader` has been built since Plan 2 and was never
+        # composed, so the console reported the capability as unwired rather than
+        # undelivered. The catalog binding is created here rather than by a console
+        # command, because the console contract carries no catalog command.
+        self.catalog_path = str(directory / "catalog.sqlite3")
+        self.catalog_repository = SQLiteCatalogRepository(
+            connection=_worker_thread_connection(self.catalog_path)
+        )
+        self.catalog = CatalogControlService(self.catalog_repository, clock=_clock)
         self.request_repository = SQLiteRequestRepository(
             _worker_thread_connection(self.request_path), _owns_connection=True
         )
@@ -289,6 +341,20 @@ class GovernedConsoleDeployment:
             clock=_clock,
         )
         self.requests = RequestManagementService(self.request_repository, clock=_clock)
+        # Both semantic-review seams existed on the governed backend and neither was
+        # wired, so the console reported the capability as unwired for a service that
+        # has been implemented since Plan 2. The reader is the repository, because
+        # `load_review_bundle` is a repository read; the command is the service, which
+        # is what checks the deciding actor's authority.
+        self.semantic_path = str(directory / "semantic.sqlite3")
+        self.semantic_repository = SQLiteSemanticRepository(
+            connection=_worker_thread_connection(self.semantic_path)
+        )
+        self.semantic_reviews = SemanticReviewService(
+            semantic_repository=self.semantic_repository,
+            request_service=self.requests,
+            clock=_clock,
+        )
         publication_repository, receipt, integration_contract = published_repository()
         self.fulfillment = FulfillmentService(
             request_service=self.requests,
@@ -310,7 +376,15 @@ class GovernedConsoleDeployment:
             repository=self.fulfillment_repository,
             authority_role_resolver=_DeploymentRoleResolver(),
         )
-        self.bindings = InMemoryWorkspaceBindingDirectory()
+        self.bindings = _PersistedWorkspaceBindingDirectory(directory / "bindings.json")
+        if self.bindings.catalog_binding_id(TENANT) is None:
+            # Only when the workspace has none: catalog-control publishes no way to
+            # ask whether a tenant already has a binding, so minting one per
+            # construction stacked orphans the directory then abandoned.
+            self.bindings.bind_catalog(
+                tenant_id=TENANT,
+                binding_id=self.catalog.create_draft(tenant_id=TENANT).binding_id,
+            )
         principals = InMemoryWorkspacePrincipalDirectory()
         principals.bind_principal(
             tenant_id=TENANT,
@@ -335,6 +409,9 @@ class GovernedConsoleDeployment:
             warehouse_bindings=WarehouseControlBindingReader(
                 service=self.control, directory=self.bindings
             ),
+            catalog_bindings=CatalogControlBindingReader(
+                service=self.catalog, directory=self.bindings
+            ),
             warehouse_operations=WarehouseRepositoryOperationReader(self.warehouse_repository),
             requests=self.requests,
             fulfillment=self.reads,
@@ -347,7 +424,8 @@ class GovernedConsoleDeployment:
             ),
             request_commands=self.requests,
             fulfillment_commands=self.fulfillment,
-            semantic_review_commands=None,
+            semantic_reviews=self.semantic_repository,
+            semantic_review_commands=self.semantic_reviews,
         )
 
     def _provider(self, engine: str):
@@ -470,7 +548,13 @@ class GovernedConsoleDeployment:
         try:
             self.warehouse_repository.close()
         finally:
-            self.request_repository.close()
+            try:
+                self.request_repository.close()
+            finally:
+                try:
+                    self.catalog_repository.close()
+                finally:
+                    self.semantic_repository.close()
 
     def _actor_for(self, request: Request) -> TrustedActorContext:
         requested = request.headers.get(ACTOR_HEADER, ARCHITECT)

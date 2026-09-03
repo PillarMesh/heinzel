@@ -99,13 +99,18 @@ It still validates under `WarehouseValidationProfile.LOCAL_ACCEPTANCE`:
 `encryption_at_rest_disposition` is `deferred_local_acceptance`, so the run proves the
 lifecycle, not a production posture.
 
-Two limits are worth knowing before running it. One run provisions one binding,
-because the operation secrets are bound to the single operation identifier the
-orchestrator mints first; a second binding is refused rather than given another
-operation's credentials. And the workspace binding directory is in-memory, so
-restarting the server loses the association even though warehouse-control still holds
-the binding on disk — delete the state directory and the containers together, or the
-console will offer to provision a warehouse that already exists.
+One limit is worth knowing before running it: one run provisions one binding, because
+the operation secrets are bound to the single operation identifier the orchestrator
+mints first, and a second binding is refused rather than given another operation's
+credentials. Delete the state directory and the containers together when starting the
+scenario again.
+
+The workspace binding directory persists in `bindings.json` beside the databases.
+Which binding a workspace uses is deployment configuration rather than something an
+owning service publishes — neither warehouse-control nor catalog-control enumerates
+bindings, because enumerating them would itself be a disclosure — so the harness has
+to record it. Holding it only in memory lost the warehouse association on restart and
+made the catalog mint a fresh draft each time, leaving the previous one orphaned.
 
 Two properties of that harness are deliberate and must not be copied into anything
 deployed. It has **no authentication** — the actor is a request header — so it refuses

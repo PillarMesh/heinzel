@@ -86,6 +86,70 @@ def test_the_actor_header_selects_the_requester_surface(
     assert unknown.json()["data"]["active_role"] == "data_architect"
 
 
+def test_the_catalog_capability_is_delivered_rather_than_reported_as_unwired(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """`CatalogControlBindingReader` was built and never composed.
+
+    The console reported `catalog-binding: not_delivered - catalog-control read
+    wiring` because the harness passed no reader, not because anything was missing.
+    Composing catalog-control turns the capability live and is the cheapest real
+    progress the console has left: the owning service already exists.
+    """
+    with TestClient(deployment.build_app()) as client:
+        workspace = client.get("/api/v1/workspace").json()["data"]
+
+    catalog = next(
+        capability
+        for capability in workspace["capabilities"]
+        if capability["capability_id"] == "catalog-binding"
+    )
+    assert catalog["state"] != "not_delivered"
+
+
+def test_the_meaning_review_capability_is_delivered_rather_than_reported_as_unwired(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """The console reads review bundles from the semantic registry itself.
+
+    Both seams existed on the governed backend and the harness wired neither, so the
+    console reported `semantic-review: not_delivered - semantic-registry review
+    wiring` for a service that has been implemented since Plan 2.
+    """
+    with TestClient(deployment.build_app()) as client:
+        workspace = client.get("/api/v1/workspace").json()["data"]
+
+    review = next(
+        capability
+        for capability in workspace["capabilities"]
+        if capability["capability_id"] == "semantic-review"
+    )
+    assert review["state"] == "ready"
+    assert review["dependency"] is None
+
+
+def test_restarting_reuses_the_bindings_the_previous_run_created(tmp_path: Path) -> None:
+    """The workspace binding directory is deployment configuration, so it persists.
+
+    Holding it only in memory meant a restart forgot which binding this workspace
+    used. The warehouse binding became unreachable even though warehouse-control
+    still held it, and the catalog binding was worse: the harness minted a fresh
+    draft on every construction, so restarting stacked orphaned bindings the
+    directory then abandoned.
+    """
+    first = GovernedConsoleDeployment(tmp_path)
+    catalog_binding = first.bindings.catalog_binding_id(TENANT)
+    first.bindings.bind_warehouse(tenant_id=TENANT, binding_id="whb-recorded-by-a-command")
+    first.close()
+
+    second = GovernedConsoleDeployment(tmp_path)
+    try:
+        assert second.bindings.catalog_binding_id(TENANT) == catalog_binding
+        assert second.bindings.warehouse_binding_id(TENANT) == "whb-recorded-by-a-command"
+    finally:
+        second.close()
+
+
 def test_seeding_twice_does_not_leave_two_indistinguishable_decisions(
     deployment: GovernedConsoleDeployment,
 ) -> None:

@@ -115,9 +115,28 @@ class SemanticArtifactConflictError(RuntimeError):
 
 
 class SQLiteSemanticRepository:
-    def __init__(self, database_path: str) -> None:
+    def __init__(
+        self,
+        database_path: str | None = None,
+        *,
+        connection: sqlite3.Connection | None = None,
+    ) -> None:
+        """Open a database, or borrow a connection the composer already owns.
+
+        The console reads review bundles from a threadpool, and a connection carries
+        SQLite's thread affinity, so a repository that opens its own here is bound to
+        whichever thread constructed it and fails on the first read from a worker.
+
+        A borrowed connection is never closed by `close()`: the owner closes it.
+        """
+        if (database_path is None) == (connection is None):
+            raise ValueError("supply exactly one of database_path or connection")
+        self._owns_connection = connection is None
         try:
-            self._connection = sqlite3.connect(database_path)
+            if connection is None:
+                assert database_path is not None
+                connection = sqlite3.connect(database_path)
+            self._connection = connection
             self._connection.execute("PRAGMA foreign_keys = ON")
             self._connection.execute(
                 "CREATE TABLE IF NOT EXISTS semantic_candidate_set_sequences ("
@@ -189,6 +208,8 @@ class SQLiteSemanticRepository:
             raise SemanticPersistenceError(operation="initialize semantic repository") from error
 
     def close(self) -> None:
+        if not self._owns_connection:
+            return
         self._connection.close()
 
     def _materialize(

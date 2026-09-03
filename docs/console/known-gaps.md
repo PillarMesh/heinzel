@@ -136,7 +136,15 @@ way that never invents authority, and each needs a contract change to close.
 
 ## Composition defects found while wiring
 
-1. **A workspace principal directory is console-held configuration.** The owning
+1. **Two capabilities were reported as unwired rather than undelivered.** The console
+   read `catalog-binding` and `semantic-review` as `not_delivered` because the
+   governed harness composed neither service, not because either was missing.
+   `CatalogControlBindingReader` had existed since Plan 2, and both semantic-review
+   seams existed on the governed backend. Both are composed now and both report what
+   their owning service says. A capability that is merely unwired must not be
+   presented as one the platform does not have.
+
+2. **A workspace principal directory is console-held configuration.** The owning
    services validate authority but publish no reverse lookup from an actor to the
    authority reference it holds, because enumerating principals would itself be a
    disclosure. `InMemoryWorkspacePrincipalDirectory` therefore holds the deployment's
