@@ -20,6 +20,7 @@ import type {
   ConsoleEnvelopeWorkspaceView,
   ConversationMessageCommand,
   CreateRequestCommand,
+  AdmissionCommand,
   DecisionCommand,
   ProcessPackageCommand,
   RecoveryAction,
@@ -460,6 +461,21 @@ export class ConsoleApiClient {
     return (
       await this.#mutation(
         `/api/v1/inbox/${encodePathSegment(requestId)}/decisions`,
+        "request_detail_response",
+        command,
+        context,
+      )
+    ).envelope
+  }
+
+  async admitRequest(
+    requestId: string,
+    command: AdmissionCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeRequestDetailView> {
+    return (
+      await this.#mutation(
+        `/api/v1/inbox/${encodePathSegment(requestId)}/admission`,
         "request_detail_response",
         command,
         context,

@@ -12,6 +12,7 @@ from starlette.routing import Route
 
 from ..auth import TrustedActorContext
 from ..contracts import (
+    AdmissionCommand,
     ClarifiedOutcomeAcceptanceCommand,
     ClarifiedOutcomeView,
     ConsoleEnvelope,
@@ -188,6 +189,19 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
         )
         return envelope_response(request, dependencies, result, _REQUEST_DETAIL_RESPONSE)
 
+    async def request_admission(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        request_id = path_parameter(request, "request_id")
+        command = await _parse_command(request, AdmissionCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.admit_request(context, request_id, command),
+        )
+        return envelope_response(request, dependencies, result, _REQUEST_DETAIL_RESPONSE)
+
     async def create_request(request: Request) -> Response:
         context = trusted_context(request, dependencies)
         key = _validate_command_request(request, dependencies, context)
@@ -262,6 +276,7 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
         Route("/api/v1/setup/process-packages", process_package, methods=["POST"]),
         Route("/api/v1/reviews/{review_id}/decisions", review_decision, methods=["POST"]),
         Route("/api/v1/inbox/{request_id}/decisions", request_decision, methods=["POST"]),
+        Route("/api/v1/inbox/{request_id}/admission", request_admission, methods=["POST"]),
         Route("/api/v1/requests", create_request, methods=["POST"]),
         Route("/api/v1/requests/{request_id}/conversation", append_message, methods=["POST"]),
         Route(

@@ -322,6 +322,15 @@ class FulfillmentDecisionCommands(Protocol):
         expected_revision: int,
     ) -> FulfillmentApprovalBinding: ...
 
+    def admit(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> object: ...
+
 
 class SemanticReviewCommands(Protocol):
     def decide_item(

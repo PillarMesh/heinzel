@@ -1,3 +1,7 @@
+export type ActorRole =
+  "requester" | "data_architect" | "data_owner" | "policy_approver" | "budget_approver"
+export type ExpectedRevision = number
+export type ReviewedDigest = string
 export type ConsoleEnvelopeCatalogAssetView = ConsoleEnvelope_CatalogAssetView_
 export type PublicId = string
 export type NonEmptyText = string
@@ -6,20 +10,18 @@ export type DataProvenance = "demo_fixture" | "governed_local"
 export type ActiveRole = "requester"
 export type Digest = string
 export type Decision = "approve" | "request_changes"
-export type ExpectedRevision = number
+export type ExpectedRevision1 = number
 export type ConsoleEnvelopeClarifiedOutcomeView = ConsoleEnvelope_ClarifiedOutcomeView_
 export type Accepted = boolean
 export type Revision = number
-export type ActorRole =
-  "requester" | "data_architect" | "data_owner" | "policy_approver" | "budget_approver"
-export type ExpectedRevision1 = number
+export type ExpectedRevision2 = number
 export type ConsoleEnvelopeConversationView = ConsoleEnvelope_ConversationView_
 export type AuthorRole = ActorRole | "pillarmesh"
 export type UtcDatetime = string
 export type JsonTuple_ConversationMessageView_ = ConversationMessageView[]
 export type Revision1 = number
 export type ActiveRole1 = "requester"
-export type ExpectedRevision2 = 1
+export type ExpectedRevision3 = 1
 export type RequestInput = StakeholderQuestionInput | DataAccessRequestInput
 export type Kind = "stakeholder_question"
 export type AccessMode = "query" | "dashboard" | "export"
@@ -33,8 +35,8 @@ export type CapabilityState = "ready" | "blocked" | "degraded" | "not_delivered"
 export type ConsoleEnvelopeDataProductView = ConsoleEnvelope_DataProductView_
 export type Version = number
 export type Decision1 = "approve" | "reject" | "request_changes"
-export type ExpectedRevision3 = number
-export type ReviewedDigest = string
+export type ExpectedRevision4 = number
+export type ReviewedDigest1 = string
 export type RecoveryAction =
   "correct_input" | "reauthenticate" | "reload" | "retry" | "contact_support" | "none"
 export type ConsoleEnvelopeEvidenceView = ConsoleEnvelope_EvidenceView_
@@ -58,10 +60,11 @@ export type JsonTuple_RecoveryAction_ = RecoveryAction[]
 export type OpaqueToken = string
 export type Revision2 = number
 export type OperationState = "accepted" | "running" | "succeeded" | "failed" | "outcome_unknown"
-export type ExpectedRevision4 = number
+export type ExpectedRevision5 = number
 export type MediaType =
   "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 export type ConsoleEnvelopeRequestDetailView = ConsoleEnvelope_RequestDetailView_
+export type Available = boolean
 export type Decision2 = "approve" | "reject" | "request_changes"
 export type JsonTuple_Decision_ = Decision2[]
 export type JsonTuple_DatasetEvidenceView_ = DatasetEvidenceView[]
@@ -89,8 +92,8 @@ export type ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestVi
   ConsoleEnvelope_JsonTuple_RequesterRequestView__
 export type JsonTuple_RequesterRequestView_ = RequesterRequestView[]
 export type ActiveRole2 = "data_architect"
-export type ExpectedRevision5 = number
 export type ExpectedRevision6 = number
+export type ExpectedRevision7 = number
 export type ConsoleEnvelopeReviewView = ConsoleEnvelope_ReviewView_
 export type CanDecide = boolean
 export type JsonTuple_ConstraintView_ = ConstraintView[]
@@ -144,12 +147,13 @@ export type Immutable = true
  * @minItems 1
  */
 export type NonEmptyJsonTuple_WarehouseOptionView_ = [WarehouseOptionView, ...WarehouseOptionView[]]
-export type ExpectedRevision7 = number
+export type ExpectedRevision8 = number
 export type ConsoleEnvelopeWorkspaceView = ConsoleEnvelope_WorkspaceView_
 export type JsonTuple_CapabilityView_ = CapabilityView[]
 export type WorkspaceState = "setup" | "pending_activation" | "active" | "unavailable"
 
 export interface ConsoleApiSchema {
+  admission_command: AdmissionCommand
   catalog_asset_response: ConsoleEnvelopeCatalogAssetView
   clarified_outcome_acceptance_command: ClarifiedOutcomeAcceptanceCommand
   clarified_outcome_response: ConsoleEnvelopeClarifiedOutcomeView
@@ -176,6 +180,17 @@ export interface ConsoleApiSchema {
   warehouse_binding_command: WarehouseBindingCommand
   workspace_response: ConsoleEnvelopeWorkspaceView
 }
+/**
+ * Admit the exact proposal the architect reviewed.
+ *
+ * `reviewed_digest` is the proposal digest the browser displayed, so an admission
+ * cannot be applied to a proposal that changed after it was read.
+ */
+export interface AdmissionCommand {
+  active_role: ActorRole
+  expected_revision: ExpectedRevision
+  reviewed_digest: ReviewedDigest
+}
 export interface ConsoleEnvelope_CatalogAssetView_ {
   data: CatalogAssetView
   meta: ApiMeta
@@ -197,7 +212,7 @@ export interface ClarifiedOutcomeAcceptanceCommand {
   active_role: ActiveRole
   clarified_outcome_digest: Digest
   decision: Decision
-  expected_revision: ExpectedRevision
+  expected_revision: ExpectedRevision1
 }
 export interface ConsoleEnvelope_ClarifiedOutcomeView_ {
   data: ClarifiedOutcomeView
@@ -217,7 +232,7 @@ export interface ConversationMessageCommand {
   active_role: ActorRole
   body: NonEmptyText
   conversation_digest: Digest
-  expected_revision: ExpectedRevision1
+  expected_revision: ExpectedRevision2
 }
 export interface ConsoleEnvelope_ConversationView_ {
   data: ConversationView
@@ -239,7 +254,7 @@ export interface ConversationMessageView {
 }
 export interface CreateRequestCommand {
   active_role: ActiveRole1
-  expected_revision: ExpectedRevision2
+  expected_revision: ExpectedRevision3
   request: RequestInput
   request_digest: Digest
   title: NonEmptyText
@@ -283,8 +298,8 @@ export interface DataProductView {
 export interface DecisionCommand {
   active_role: ActorRole
   decision: Decision1
-  expected_revision: ExpectedRevision3
-  reviewed_digest: ReviewedDigest
+  expected_revision: ExpectedRevision4
+  reviewed_digest: ReviewedDigest1
 }
 export interface ConsoleErrorEnvelope {
   error: ApiError
@@ -347,7 +362,7 @@ export interface OperationFailureView {
 }
 export interface ProcessPackageCommand {
   active_role: ActorRole
-  expected_revision: ExpectedRevision4
+  expected_revision: ExpectedRevision5
   file_name: NonEmptyText
   media_type: MediaType
   package_digest: Digest
@@ -357,6 +372,7 @@ export interface ConsoleEnvelope_RequestDetailView_ {
   meta: ApiMeta
 }
 export interface RequestDetailView {
+  admission?: AdmissionView | null
   available_actions?: JsonTuple_Decision_
   conversation: ConversationView
   evidence: EvidenceContextView
@@ -369,6 +385,19 @@ export interface RequestDetailView {
   revision: Revision3
   state: RequestState
   title: NonEmptyText
+}
+/**
+ * Whether the approved proposal can be admitted to execution, and why not.
+ *
+ * Admission is a separate owning transaction from a decision: it requires every
+ * required approval to be recorded against the exact proposal, and it is what moves
+ * a request past `awaiting_approval`. The console projects availability and the
+ * reason rather than a bare flag, because a disabled action with no stated cause is
+ * the thing this console exists not to do.
+ */
+export interface AdmissionView {
+  available: Available
+  blocking_reason?: NonEmptyText | null
 }
 export interface EvidenceContextView {
   as_of?: UtcDatetime | null
@@ -449,13 +478,13 @@ export interface ConsoleEnvelope_JsonTuple_RequesterRequestView__ {
 }
 export interface ResetCommand {
   active_role: ActiveRole2
-  expected_revision: ExpectedRevision5
+  expected_revision: ExpectedRevision6
   reset_token: OpaqueToken
   setup_digest: Digest
 }
 export interface RetryOperationCommand {
   active_role: ActorRole
-  expected_revision: ExpectedRevision6
+  expected_revision: ExpectedRevision7
   operation_digest: Digest
   retry_token: OpaqueToken
 }
@@ -603,7 +632,7 @@ export interface WarehouseBindingCommand {
   active_role: ActorRole
   capacity: NonEmptyText
   engine: WarehouseEngine
-  expected_revision: ExpectedRevision7
+  expected_revision: ExpectedRevision8
   region: NonEmptyText
   reviewed_digest: Digest
 }

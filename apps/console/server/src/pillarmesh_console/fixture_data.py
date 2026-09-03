@@ -190,10 +190,15 @@ def _request_details() -> dict[str, RequestDetailView]:
             DatasetEvidenceView(dataset_ref="dataset-orders", display_name="Synthetic orders"),
         ),
         lineage_summary="Synthetic orders to net revenue.",
-        authorization_summary="Data owner approval remains required.",
+        authorization_summary="Architect approval remains required.",
         required_authorities=(
+            # The demonstration issues one architect identity, so an authority no
+            # identity here can hold would leave the required-roles list reading
+            # `Not recorded` forever and admission honestly unreachable. The access
+            # preview keeps a policy authority the architect cannot satisfy, which is
+            # where the demonstration shows an approval it cannot record itself.
             AuthorityStatusView(
-                role="data_owner",
+                role="data_architect",
                 reason="Approve the stakeholder answer scope.",
                 satisfied=False,
             ),

@@ -4,6 +4,7 @@ import {useParams} from "react-router-dom"
 import {ConsoleApiError, ConsoleMutationOutcomeUnknown} from "../../api/client"
 import type {MutationRequestContext} from "../../api/client"
 import type {
+  AdmissionCommand,
   ActorRole,
   ConsoleEnvelopeInboxView,
   ConsoleEnvelopeRequestDetailView,
@@ -34,6 +35,11 @@ export interface InboxClient
   extends CatalogEvidenceClient,
     ConversationPanelClient,
     DashboardPreviewClient {
+  admitRequest(
+    requestId: string,
+    command: AdmissionCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeRequestDetailView>
   decideRequest(
     requestId: string,
     command: DecisionCommand,
@@ -95,6 +101,10 @@ function RequestDetailPanel({
   const [comment, setComment] = useState("")
   const [digestConfirmed, setDigestConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState<Decision1 | null>(null)
+  const [admitting, setAdmitting] = useState(false)
+  const [admissionReconciliation, setAdmissionReconciliation] = useState<{
+    readonly idempotencyKey: string
+  } | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
   const [refreshNotice, setRefreshNotice] = useState<string | null>(null)
   const [reconciliation, setReconciliation] = useState<{
@@ -126,6 +136,44 @@ function RequestDetailPanel({
       )
     } catch {
       setFailure("The refreshed request detail could not be reconciled safely.")
+    }
+  }
+
+  async function admitProposal(reusedKey?: string): Promise<void> {
+    if (proposalDigest === null || proposalDigest === undefined) {
+      return
+    }
+    const idempotencyKey = reusedKey ?? idempotencyKeyFactory()
+    setAdmitting(true)
+    setFailure(null)
+    setRefreshNotice(null)
+    try {
+      const response = await client.admitRequest(
+        detail.request_id,
+        {
+          active_role: session.active_role,
+          expected_revision: detail.revision,
+          reviewed_digest: proposalDigest,
+        },
+        {csrfToken: session.csrf_token, idempotencyKey},
+      )
+      setAdmissionReconciliation(null)
+      onAuthoritativeDetail(response.data)
+    } catch (error: unknown) {
+      if (error instanceof ConsoleMutationOutcomeUnknown) {
+        // The admission may well have been recorded. Saying the proposal is
+        // unchanged would assert something the console does not know, so it offers
+        // the same command identity again instead.
+        setAdmissionReconciliation({idempotencyKey})
+        return
+      }
+      setFailure(
+        error instanceof ConsoleApiError
+          ? error.message
+          : "The admission could not be recorded safely.",
+      )
+    } finally {
+      setAdmitting(false)
     }
   }
 
@@ -261,6 +309,47 @@ function RequestDetailPanel({
             ))}
           </div>
         </>
+      )}
+
+      {detail.admission === null || detail.admission === undefined ? null : (
+        <div className="decision-detail__admission">
+          <h3>Admission to execution</h3>
+          {detail.admission.available ? (
+            <>
+              <p>
+                Every required approval is recorded against this proposal. Admission is the
+                separate transaction that carries it into execution.
+              </p>
+              <button
+                className="primary-action"
+                disabled={admitting || proposalDigest === null || proposalDigest === undefined}
+                onClick={() => void admitProposal()}
+                type="button"
+              >
+                {admitting ? "Admitting…" : "Admit to execution"}
+              </button>
+            </>
+          ) : (
+            <p className="inbox-unavailable" role="status">
+              {detail.admission.blocking_reason ?? "This proposal cannot be admitted yet."}
+            </p>
+          )}
+          {admissionReconciliation === null ? null : (
+            <div className="decision-detail__reconciliation">
+              <p role="alert">
+                Outcome unknown; reconciling. The same command identity is reused; no second
+                admission is created.
+              </p>
+              <button
+                disabled={admitting}
+                onClick={() => void admitProposal(admissionReconciliation.idempotencyKey)}
+                type="button"
+              >
+                Reconcile the submitted admission
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {reconciliation === null ? null : (

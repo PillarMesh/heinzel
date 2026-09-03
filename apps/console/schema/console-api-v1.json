@@ -90,6 +90,58 @@
       ],
       "type": "string"
     },
+    "AdmissionCommand": {
+      "additionalProperties": false,
+      "description": "Admit the exact proposal the architect reviewed.\n\n`reviewed_digest` is the proposal digest the browser displayed, so an admission\ncannot be applied to a proposal that changed after it was read.",
+      "properties": {
+        "active_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "reviewed_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Reviewed Digest",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "reviewed_digest",
+        "active_role"
+      ],
+      "title": "AdmissionCommand",
+      "type": "object"
+    },
+    "AdmissionView": {
+      "additionalProperties": false,
+      "description": "Whether the approved proposal can be admitted to execution, and why not.\n\nAdmission is a separate owning transaction from a decision: it requires every\nrequired approval to be recorded against the exact proposal, and it is what moves\na request past `awaiting_approval`. The console projects availability and the\nreason rather than a bare flag, because a disabled action with no stated cause is\nthe thing this console exists not to do.",
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "blocking_reason": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "available"
+      ],
+      "title": "AdmissionView",
+      "type": "object"
+    },
     "ApiError": {
       "additionalProperties": false,
       "properties": {
@@ -2331,6 +2383,17 @@
     "RequestDetailView": {
       "additionalProperties": false,
       "properties": {
+        "admission": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AdmissionView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "available_actions": {
           "$ref": "#/$defs/JsonTuple_Decision_",
           "default": []
@@ -3308,6 +3371,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "admission_command": {
+      "$ref": "#/$defs/AdmissionCommand"
+    },
     "catalog_asset_response": {
       "$ref": "#/$defs/ConsoleEnvelope_CatalogAssetView_"
     },
@@ -3405,6 +3471,7 @@
     "warehouse_binding_command",
     "process_package_command",
     "decision_command",
+    "admission_command",
     "create_request_command",
     "conversation_message_command",
     "clarified_outcome_acceptance_command",

@@ -110,6 +110,7 @@ capabilities rather than simulate completion.
 - product, run, catalog, dashboard, and evidence summary routes;
 - authoritative command submission with exact revision, digest, role, tenant, and idempotency
   binding;
+- admission of a fully approved proposal to execution;
 - visible stale-state, denial, `No Valid Plan`, transient-failure, ambiguous-outcome, and
   not-delivered states;
 - deterministic revenue-to-cash demo fixtures;
@@ -255,6 +256,14 @@ The inbox uses a three-part review layout:
 A request whose clarified outcome is unaccepted shows the missing requester acceptance as an
 outstanding required authority, not as an architect action. The queue marks it blocked on the
 requester so the architect is never presented with a decision that cannot be admitted.
+
+Approval is not delivery. Recording every required approval leaves the request `awaiting_approval`;
+admission is the separate owning transaction that carries the proposal into execution, and the
+console offers it as its own action once the approvals it can see are complete. The console does
+not judge the approvals - `FulfillmentService.admit` re-checks every requirement against the exact
+proposal - it only declines to submit a command whose precondition it can already see is unmet,
+because the service reports a missing authority as not-visible and a plainly visible request must
+not answer with a `404`.
 
 The queue supports request-type and state filtering. It does not permit user-authored lifecycle
 columns or arbitrary workflow transitions.

@@ -189,6 +189,14 @@ test("keyboard alone records a decision against the confirmed digest", async ({p
   await tabTo(page, approve)
   await page.keyboard.press("Enter")
 
+  // Approving records one authority's approval; admission is the separate
+  // transaction that carries the proposal into execution, and it is reachable by
+  // keyboard alone too.
+  await expect(detail).toContainText("awaiting approval")
+  const admit = detail.getByRole("button", {name: "Admit to execution"})
+  await tabTo(page, admit)
+  await page.keyboard.press("Enter")
+
   await expect(detail).toContainText("execution ready")
   const committed = await (await request.get("/api/v1/inbox/request-answer")).json()
   expect(committed.data.state).toBe("execution_ready")

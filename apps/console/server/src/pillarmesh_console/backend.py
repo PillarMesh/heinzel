@@ -5,6 +5,7 @@ from typing import Protocol
 
 from .auth import TrustedActorContext
 from .contracts import (
+    AdmissionCommand,
     CatalogAssetView,
     ClarifiedOutcomeAcceptanceCommand,
     ClarifiedOutcomeView,
@@ -102,6 +103,10 @@ class ConsoleBackend(Protocol):
 
     def decide_request(
         self, context: TrustedActorContext, request_id: str, command: DecisionCommand
+    ) -> RequestDetailView: ...
+
+    def admit_request(
+        self, context: TrustedActorContext, request_id: str, command: AdmissionCommand
     ) -> RequestDetailView: ...
 
     def create_request(

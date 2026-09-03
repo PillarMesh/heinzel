@@ -18,6 +18,7 @@ The console reports each of these as a `not_delivered` capability on
 | `POST /api/v1/requests/{id}/conversation` | `RequestManagementService.append_conversation` |
 | `POST /api/v1/requests/{id}/clarified-outcome/acceptance` | `FulfillmentService.record_approval` under the requester principal |
 | `POST /api/v1/inbox/{id}/decisions` | `FulfillmentService.record_approval` under the architect authority |
+| `POST /api/v1/inbox/{id}/admission` | `FulfillmentService.admit` |
 | `POST /api/v1/reviews/{id}/decisions` | `SemanticReviewService.decide_item` |
 
 ## Capabilities that remain undelivered
@@ -53,13 +54,19 @@ architect surface offers previews and authenticated deep links only, and the dee
 issuer (`GET /api/v1/links/{ref}`) is itself undelivered because no owning service
 issues server-side managed-service links yet.
 
-### Stakeholder answer delivery
+### Stakeholder answer text delivery
 
-`FulfillmentService.admit` promotes an approved proposal to execution and writes the
-admission and evidence receipts. The console contract exposes no admission command, so
-the terminal state a console-driven journey can reach is *every required approval
-recorded against the exact proposal*, with the request still `awaiting_approval`.
-Delivering the answer text to the requester is a further step with no console route.
+Admission is now wired: `POST /api/v1/inbox/{id}/admission` calls
+`FulfillmentService.admit`, which promotes an approved proposal to execution and writes
+the admission and evidence receipts, so a console-driven journey reaches `executing`
+rather than stopping at *every required approval recorded*.
+
+What remains undelivered is the answer **text**. `RequesterRequestView` carries the
+request state, the clarified outcomes, the requester's own decisions and a denial
+explanation - it has no field for the proposed answer. After admission the requester
+sees `ready_for_execution`, not the answer itself. Publishing the text would need an
+owning field to publish; composing one in the console would make it the author of a
+governed artifact.
 
 ### Access grant application, expiry and revocation
 

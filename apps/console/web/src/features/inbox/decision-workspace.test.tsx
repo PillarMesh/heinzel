@@ -488,3 +488,37 @@ test("the architect can reply in the clarification conversation", async () => {
     ),
   ).toBeNull()
 })
+
+test("an admission whose outcome is unknown is reconciled, not reported as unchanged", async () => {
+  // The console cannot say the proposal is unchanged when it does not know whether
+  // the admission was recorded. Every other command offers reconciliation under the
+  // same command identity; admission did not, and asserted the stronger claim.
+  const user = userEvent.setup()
+  const admitRequest = vi.fn(async (_requestId, _command, context) => {
+    throw new ConsoleMutationOutcomeUnknown(
+      "request_detail_response",
+      context.idempotencyKey,
+      null,
+      null,
+    )
+  })
+  const client = createClient({
+    admitRequest,
+    getRequestDetail: vi.fn(async () => detailEnvelope({...answerDetail, admission: {available: true, blocking_reason: null}})),
+  })
+  renderWorkspace(client, answerDetail.request_id)
+
+  await user.click(await screen.findByRole("button", {name: "Admit to execution"}))
+
+  expect(
+    await screen.findByText(/Outcome unknown; reconciling\./),
+  ).toBeVisible()
+  expect(screen.queryByText(/The proposal is unchanged\./)).toBeNull()
+
+  await user.click(screen.getByRole("button", {name: "Reconcile the submitted admission"}))
+
+  expect(admitRequest).toHaveBeenCalledTimes(2)
+  const first = admitRequest.mock.calls[0] as unknown as [string, object, {idempotencyKey: string}]
+  const second = admitRequest.mock.calls[1] as unknown as [string, object, {idempotencyKey: string}]
+  expect(second[2].idempotencyKey).toBe(first[2].idempotencyKey)
+})

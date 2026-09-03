@@ -108,6 +108,7 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/setup/process-packages", "POST"),
         ("/api/v1/reviews/{review_id}/decisions", "POST"),
         ("/api/v1/inbox/{request_id}/decisions", "POST"),
+        ("/api/v1/inbox/{request_id}/admission", "POST"),
         ("/api/v1/requests", "POST"),
         ("/api/v1/requests/{request_id}/conversation", "POST"),
         ("/api/v1/requests/{request_id}/clarified-outcome/acceptance", "POST"),
@@ -468,6 +469,15 @@ def test_remaining_reviewed_commands_return_authoritative_typed_projections() ->
                 "decision": "approve",
             },
         )
+        admission = client.post(
+            "/api/v1/inbox/request-answer/admission",
+            headers=_command_headers(client, "idem-flow-admission"),
+            json={
+                "expected_revision": 3,
+                "reviewed_digest": "d" * 64,
+                "active_role": "data_architect",
+            },
+        )
         conversation = client.post(
             "/api/v1/requests/request-answer/conversation",
             headers=_command_headers(client, "idem-flow-message"),
@@ -495,7 +505,13 @@ def test_remaining_reviewed_commands_return_authoritative_typed_projections() ->
     assert review.status_code == 200
     assert review.json()["data"]["decisions"][0]["decision"] == "approve"
     assert request.status_code == 200
-    assert request.json()["data"]["state"] == "execution_ready"
+    # Approving records one authority's approval. Admission is the separate
+    # transaction that carries the proposal into execution.
+    assert request.json()["data"]["state"] == "awaiting_approval"
+    assert request.json()["data"]["admission"] == {"available": True, "blocking_reason": None}
+    assert admission.status_code == 200
+    assert admission.json()["data"]["state"] == "execution_ready"
+    assert admission.json()["data"]["admission"] is None
     assert conversation.status_code == 200
     assert conversation.json()["data"]["revision"] == 3
     assert conversation.json()["data"]["messages"][-1]["body"].startswith("Please confirm")

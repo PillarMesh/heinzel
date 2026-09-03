@@ -526,6 +526,20 @@ class EvidenceContextView(StrictModel):
     )
 
 
+class AdmissionView(StrictModel):
+    """Whether the approved proposal can be admitted to execution, and why not.
+
+    Admission is a separate owning transaction from a decision: it requires every
+    required approval to be recorded against the exact proposal, and it is what moves
+    a request past `awaiting_approval`. The console projects availability and the
+    reason rather than a bare flag, because a disabled action with no stated cause is
+    the thing this console exists not to do.
+    """
+
+    available: bool
+    blocking_reason: NonEmptyText | None = None
+
+
 class RequestDetailView(StrictModel):
     request_id: PublicId
     kind: RequestKind
@@ -539,6 +553,7 @@ class RequestDetailView(StrictModel):
     lifecycle: JsonTuple[LifecycleEventView] = Field(default=())
     evidence: EvidenceContextView
     available_actions: JsonTuple[Decision] = Field(default=())
+    admission: AdmissionView | None = None
 
 
 class OperationFailureView(StrictModel):
@@ -716,6 +731,18 @@ class DecisionCommand(StrictModel):
     decision: Literal["approve", "reject", "request_changes"]
 
 
+class AdmissionCommand(StrictModel):
+    """Admit the exact proposal the architect reviewed.
+
+    `reviewed_digest` is the proposal digest the browser displayed, so an admission
+    cannot be applied to a proposal that changed after it was read.
+    """
+
+    expected_revision: int = Field(ge=1)
+    reviewed_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    active_role: ActorRole
+
+
 class StakeholderQuestionInput(StrictModel):
     kind: Literal["stakeholder_question"]
     purpose: NonEmptyText
@@ -805,6 +832,7 @@ class ConsoleApiSchema(StrictModel):
     warehouse_binding_command: WarehouseBindingCommand
     process_package_command: ProcessPackageCommand
     decision_command: DecisionCommand
+    admission_command: AdmissionCommand
     create_request_command: CreateRequestCommand
     conversation_message_command: ConversationMessageCommand
     clarified_outcome_acceptance_command: ClarifiedOutcomeAcceptanceCommand

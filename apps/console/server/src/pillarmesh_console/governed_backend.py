@@ -21,6 +21,7 @@ from pillarmesh_contract_model import digest
 from pillarmesh_request_management import (
     ArchitectRequestView,
     ConversationEntry,
+    FulfillmentApprovalBinding,
     FulfillmentProposal,
     InboxRequest,
     RequestState,
@@ -46,6 +47,8 @@ from .auth import TrustedActorContext
 from .contracts import (
     ActorDisplayView,
     ActorRole,
+    AdmissionCommand,
+    AdmissionView,
     CapabilityState,
     CapabilityView,
     CatalogAssetView,
@@ -721,6 +724,53 @@ class GovernedConsoleBackend:
         )
         return self._request_detail_view(context, self._visible_request(context, request_id))
 
+    def admit_request(
+        self, context: TrustedActorContext, request_id: str, command: AdmissionCommand
+    ) -> RequestDetailView:
+        """Admit the reviewed proposal to execution through the owning transaction.
+
+        The console checks only what it can see - the actor's role, the revision, and
+        that the digest the browser displayed is still the proposal's. Whether every
+        required approval is recorded against that exact proposal is the fulfillment
+        service's judgement, not the console's, and it refuses the admission itself
+        when one is missing.
+        """
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        commands = self._require_fulfillment_commands()
+        request = self._visible_request(context, request_id)
+        self._require_current_revision(command.expected_revision, request.revision)
+        detail = self._request_detail_view(context, request)
+        if command.reviewed_digest != detail.proposal_digest:
+            self._stale("The proposal changed. Reload it before admitting it.")
+        if detail.admission is None or not detail.admission.available:
+            # Declining to submit is not a second authority: the console can already
+            # see the approvals it projected, and the fulfillment service classifies a
+            # missing one as an authority failure, which the console must report as
+            # not-visible. Sending it anyway would answer a plainly visible request
+            # with a 404.
+            raise ConsoleConflict(
+                code="admission_unavailable",
+                safe_message=(
+                    detail.admission.blocking_reason
+                    if detail.admission is not None and detail.admission.blocking_reason is not None
+                    else "This proposal cannot be admitted yet."
+                ),
+                recovery_action="reload",
+            )
+        self._guarded(
+            lambda: commands.admit(
+                tenant_id=context.tenant_id,
+                request_id=request_id,
+                actor_id=context.actor_id,
+                expected_revision=command.expected_revision,
+            )
+        )
+        # Re-project rather than describe the receipt: admission may have superseded
+        # the proposal or produced `No Valid Plan` instead, and the request's own
+        # state is what says which.
+        return self._request_detail_view(context, self._visible_request(context, request_id))
+
     def create_request(
         self, context: TrustedActorContext, command: CreateRequestCommand
     ) -> RequesterRequestView:
@@ -1063,6 +1113,56 @@ class GovernedConsoleBackend:
                 ("approve", "reject", "request_changes")
                 if requirement is not None and not decided
                 else ()
+            ),
+            admission=self._admission_view(request, proposal, view.approvals),
+        )
+
+    @staticmethod
+    def _admission_view(
+        request: InboxRequest,
+        proposal: FulfillmentProposal | None,
+        approvals: tuple[FulfillmentApprovalBinding, ...],
+    ) -> AdmissionView | None:
+        """Whether the fulfillment service would accept an admission now.
+
+        This mirrors the bindings `FulfillmentService.admit` requires of each
+        approval, and it has to mirror all of them. Matching on the authority alone
+        left the action advertised after any revision bump - posting a clarification
+        message is enough - and the service then refused with an authority failure,
+        which the console must report as not-visible. The architect was offered a
+        command that answered `404` on a request they were looking at.
+
+        The one binding not mirrored is the service's role check: whether the actor
+        who recorded an approval still holds that authority is the resolver's
+        judgement, and duplicating it here would make the console a second authority
+        over someone else's transaction.
+        """
+        if request.state is not RequestState.AWAITING_APPROVAL or proposal is None:
+            return None
+        proposal_digest = digest(proposal)
+        outstanding = tuple(
+            requirement
+            for requirement in proposal.required_approvals
+            if sum(
+                1
+                for approval in approvals
+                if approval.request_revision == request.revision
+                and approval.proposal_id == proposal.proposal_id
+                and approval.proposal_revision == proposal.revision
+                and approval.proposal_digest == proposal_digest
+                and approval.authority_ref == requirement.authority_ref
+                and approval.subject_digest == requirement.subject_digest
+                and approval.decision == "approve"
+            )
+            != 1
+        )
+        if not outstanding:
+            return AdmissionView(available=True)
+        return AdmissionView(
+            available=False,
+            blocking_reason=(
+                f"{len(outstanding)} of {len(proposal.required_approvals)} required "
+                "approvals are not recorded against this revision of the proposal."
             ),
         )
 

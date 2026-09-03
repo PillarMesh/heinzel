@@ -143,6 +143,7 @@ def test_schema_exposes_every_modeled_response_and_command() -> None:
         "error_response",
         "warehouse_binding_command",
         "process_package_command",
+        "admission_command",
         "decision_command",
         "create_request_command",
         "conversation_message_command",

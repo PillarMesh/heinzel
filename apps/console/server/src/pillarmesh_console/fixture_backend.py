@@ -13,6 +13,8 @@ from .backend import AuthorizedLink, PreviewContent
 from .contracts import (
     ActorDisplayView,
     ActorRole,
+    AdmissionCommand,
+    AdmissionView,
     CatalogAssetView,
     ClarifiedOutcomeAcceptanceCommand,
     ClarifiedOutcomeView,
@@ -36,6 +38,7 @@ from .contracts import (
     RecoveryAction,
     RequestDetailView,
     RequesterRequestView,
+    RequestProposalView,
     ResetCommand,
     RetryOperationCommand,
     ReviewView,
@@ -68,7 +71,8 @@ class _DomainCommandIdentity:
 
 
 type _FixtureCommand = (
-    WarehouseBindingCommand
+    AdmissionCommand
+    | WarehouseBindingCommand
     | ProcessPackageCommand
     | DecisionCommand
     | CreateRequestCommand
@@ -165,6 +169,35 @@ def _with_entry[Key, Value](source: dict[Key, Value], key: Key, value: Value) ->
     updated = dict(source)
     updated[key] = value
     return updated
+
+
+def _satisfy_authority(
+    proposal: RequestProposalView | None,
+    role: ActorRole,
+    decision: str,
+) -> RequestProposalView | None:
+    """Record an approval against the authority the deciding role holds.
+
+    The demonstration's required-roles list is what tells the architect which
+    authorities a proposal still needs. An approval that never marks one satisfied
+    leaves the list saying `Not recorded` forever, and admission could then never
+    honestly become available.
+    """
+    if proposal is None or decision != "approve":
+        return proposal
+    authorities = getattr(proposal, "required_authorities", ())
+    if not any(authority.role == role and not authority.satisfied for authority in authorities):
+        return proposal
+    return proposal.model_copy(
+        update={
+            "required_authorities": tuple(
+                authority.model_copy(update={"satisfied": True})
+                if authority.role == role
+                else authority
+                for authority in authorities
+            )
+        }
+    )
 
 
 class FixtureConsoleBackend:
@@ -758,7 +791,7 @@ class FixtureConsoleBackend:
                 )
 
             state_by_decision = {
-                "approve": "execution_ready",
+                "approve": "awaiting_approval",
                 "reject": "denied",
                 "request_changes": "clarifying",
             }
@@ -769,8 +802,12 @@ class FixtureConsoleBackend:
                     "state": state_by_decision[command.decision],
                     "revision": detail.revision + 1,
                     "available_actions": (),
+                    "proposal": _satisfy_authority(
+                        detail.proposal, context.active_role, command.decision
+                    ),
                 }
             )
+            decided = decided.model_copy(update={"admission": self._admission_for(decided)})
             requester = self._state.requester_requests.get(request_id)
             requester_requests = self._state.requester_requests
             if requester is not None:
@@ -803,6 +840,76 @@ class FixtureConsoleBackend:
             )
             self._commit(next_state)
             return decided
+
+    @staticmethod
+    def _admission_for(detail: RequestDetailView) -> AdmissionView | None:
+        """Admission follows the proposal's own declared authorities.
+
+        Offering it while an authority the same screen lists as unrecorded is still
+        outstanding is the answer-delivery claim section 4.2 forbids making as live.
+        """
+        if detail.state != "awaiting_approval" or detail.proposal is None:
+            return None
+        authorities = detail.proposal.required_authorities
+        outstanding = tuple(authority for authority in authorities if not authority.satisfied)
+        if not outstanding:
+            return AdmissionView(available=True)
+        return AdmissionView(
+            available=False,
+            blocking_reason=(
+                f"{len(outstanding)} of {len(authorities)} required approvals are not recorded."
+            ),
+        )
+
+    def admit_request(
+        self, context: TrustedActorContext, request_id: str, command: AdmissionCommand
+    ) -> RequestDetailView:
+        """Admit an approved proposal to execution in the demonstration."""
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        # Every other command records its identity so a retry after an unknown outcome
+        # returns the recorded result rather than a stale-revision conflict, which is
+        # what the console's reconciliation path depends on.
+        identity = self._command_identity(
+            resource_id=f"request-admission:{request_id}",
+            expected_revision=command.expected_revision,
+            digest=command.reviewed_digest,
+        )
+        with self._lock:
+            replay = self._replay_result(identity, command, RequestDetailView)
+            if replay is not None:
+                return replay
+            detail = self._state.request_details.get(request_id)
+            if detail is None:
+                raise ConsoleNotFound()
+            if detail.revision != command.expected_revision:
+                self._conflict("stale_revision", "The request changed; reload before admitting it.")
+            if detail.proposal_digest != command.reviewed_digest:
+                self._conflict(
+                    "stale_digest", "The reviewed proposal changed; reload before admitting it."
+                )
+            if detail.admission is None or not detail.admission.available:
+                self._conflict(
+                    "admission_unavailable",
+                    "Every required approval must be recorded before admission.",
+                )
+            admitted = RequestDetailView.model_validate(
+                detail.model_dump()
+                | {
+                    "state": "execution_ready",
+                    "revision": detail.revision + 1,
+                    "available_actions": (),
+                    "admission": None,
+                }
+            )
+            self._commit(
+                replace(
+                    self._state,
+                    request_details=_with_entry(self._state.request_details, request_id, admitted),
+                    domain_replays=self._replays_with(identity, command, admitted),
+                )
+            )
+            return admitted
 
     def create_request(
         self, context: TrustedActorContext, command: CreateRequestCommand

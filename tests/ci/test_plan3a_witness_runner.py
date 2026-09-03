@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import signal
@@ -93,8 +94,18 @@ def _process_is_absent(process_id: int) -> bool:
     return False
 
 
+# Absence is the property; how quickly the kernel reaps is not. Three seconds was
+# enough on an idle machine and not on a loaded one, where this failed while the
+# runner was behaving correctly.
+_ABSENCE_DEADLINE_SECONDS = 30
+# Long enough that the witnessed command has recorded its process ids before the
+# deadline fires, and far below the sixty seconds the command would otherwise sleep,
+# so the timeout is still what ends it.
+_STARTUP_TOLERANT_TIMEOUT_SECONDS = 3.0
+
+
 def _wait_for_process_absence(process_id: int) -> None:
-    deadline = time.monotonic() + 3
+    deadline = time.monotonic() + _ABSENCE_DEADLINE_SECONDS
     while time.monotonic() < deadline:
         if _process_is_absent(process_id):
             return
@@ -391,7 +402,7 @@ def test_timeout_terminates_the_witness_process_group_and_records_timeout(tmp_pa
     exit_code = run_bounded_witness(
         command,
         output_path=output,
-        timeout_seconds=0.3,
+        timeout_seconds=_STARTUP_TOLERANT_TIMEOUT_SECONDS,
         sample_interval_seconds=0.01,
         sampler=_IncreasingSampler(),
     )
@@ -433,7 +444,7 @@ def test_hard_deadline_immediately_kills_a_sigterm_ignoring_process_group(
     exit_code = run_bounded_witness(
         command,
         output_path=output,
-        timeout_seconds=0.2,
+        timeout_seconds=_STARTUP_TOLERANT_TIMEOUT_SECONDS,
         sample_interval_seconds=0.01,
         sampler=_IncreasingSampler(),
     )
@@ -444,10 +455,89 @@ def test_hard_deadline_immediately_kills_a_sigterm_ignoring_process_group(
 
     assert exit_code == 124
     assert _read_cost(output)["timed_out"] is True
-    assert elapsed_seconds < 0.7
+    # The property is that the runner escalated instead of waiting out its own
+    # termination grace. An implementation that waits takes the timeout plus the whole
+    # grace; this bound leaves half the grace as slack, which is about the
+    # implementation rather than about how fast the machine starts interpreters.
+    assert elapsed_seconds < _STARTUP_TOLERANT_TIMEOUT_SECONDS + (
+        witness_runner._TERMINATION_GRACE_SECONDS / 2
+    )
     _wait_for_process_absence(parent_process_id)
     _wait_for_process_absence(child_process_id)
     assert witness_runner._process_group_is_absent(parent_process_id)
+
+
+def test_a_slow_reap_is_waited_out_rather_than_reported_as_a_termination_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A loaded machine reaps a killed process group slowly; that is not a failure.
+
+    The runner used one constant for two different things: how long it politely waits
+    before escalating, and how long it waits to observe that the kernel has reaped the
+    group. Five seconds is right for the first and far too short for the second -
+    under load the group was gone but not yet observed absent, so the runner reported
+    `126` termination-failure for a command that had simply timed out, and a loaded CI
+    runner would fail the build on it.
+
+    Both constants are shortened here so the test stays fast; what it pins is that the
+    observation is bounded by the verification deadline and not by the grace.
+    """
+    output = tmp_path / "plan3a-cost.json"
+    real_absence = witness_runner._process_group_is_absent
+    monkeypatch.setattr(witness_runner, "_TERMINATION_GRACE_SECONDS", 0.2)
+    monkeypatch.setattr(witness_runner, "_TERMINATION_VERIFICATION_SECONDS", 3.0)
+    unobservable_until = time.monotonic() + 1.0
+
+    def slow_to_observe(process_group_id: int) -> bool:
+        # Gone in truth, but not yet observable - longer than the grace, well inside
+        # the verification deadline.
+        if time.monotonic() < unobservable_until:
+            return False
+        return bool(real_absence(process_group_id))
+
+    monkeypatch.setattr(witness_runner, "_process_group_is_absent", slow_to_observe)
+
+    exit_code = run_bounded_witness(
+        _python_command(exit_code=0, delay_seconds=60),
+        output_path=output,
+        timeout_seconds=0.2,
+        sample_interval_seconds=0.01,
+        sampler=_IncreasingSampler(),
+    )
+
+    assert exit_code == witness_runner.TIMEOUT_EXIT_CODE
+    assert _read_cost(output)["timed_out"] is True
+
+
+def test_a_process_group_the_runner_may_no_longer_signal_counts_as_absent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`EPERM` from `killpg` means the group is not ours, not that it is running.
+
+    Under load `os.killpg(pgid, 0)` answers `EPERM` once the group identifier has
+    been recycled away from us. The runner treated every errno except `ESRCH` as a
+    verification failure, so a command that had timed out cleanly, with its group
+    gone, was reported as `126` termination-failure and would fail a build.
+
+    Anything else stays a failure: the runner must not decide a group is gone because
+    it could not tell.
+    """
+    absent_calls: list[int] = []
+
+    def denied(process_group_id: int, signal_number: int) -> None:
+        absent_calls.append(signal_number)
+        raise PermissionError(errno.EPERM, "Operation not permitted")
+
+    monkeypatch.setattr(witness_runner.os, "killpg", denied)
+    assert witness_runner._process_group_is_absent(4242) is True
+    assert absent_calls == [0]
+
+    def broken(process_group_id: int, signal_number: int) -> None:
+        raise OSError(errno.EIO, "Input/output error")
+
+    monkeypatch.setattr(witness_runner.os, "killpg", broken)
+    with pytest.raises(witness_runner.ProcessTerminationError):
+        witness_runner._process_group_is_absent(4242)
 
 
 def test_command_ceiling_is_enforced_even_when_the_sampler_blocks(tmp_path: Path) -> None:

@@ -504,6 +504,27 @@ def test_a_stale_conversation_reply_is_refused_and_writes_nothing(journey: _Jour
     assert entries == ()
 
 
+def _submitted_question(journey: _Journey, *, key: str) -> str:
+    created = journey.post(
+        "/api/v1/requests",
+        {
+            "expected_revision": 1,
+            "request_digest": "0" * 64,
+            "active_role": "requester",
+            "title": "What does net revenue mean?",
+            "request": {
+                "kind": "stakeholder_question",
+                "purpose": "semantic definition",
+                "question": "What does net revenue mean?",
+            },
+        },
+        key=key,
+    )
+    assert created.status_code == 200
+    request_id: str = created.json()["data"]["request_id"]
+    return request_id
+
+
 def _compile_proposal(journey: _Journey, request_id: str) -> FulfillmentProposal:
     request = journey.requests.get(_TENANT, request_id)
     journey.fulfillment.clarify_outcome(
@@ -597,9 +618,6 @@ def test_a_clarified_outcome_and_an_architect_decision_reach_the_fulfillment_ser
     finally:
         reopened.close()
 
-    # Admission to execution is a separate owning transaction that the console
-    # contract exposes no command for, so both approvals standing against the exact
-    # proposal is the terminal state this journey can honestly prove.
     assert stored is not None
     assert stored.state is RequestState.AWAITING_APPROVAL
     assert {approval.authority_ref for approval in approvals} == {
@@ -617,6 +635,157 @@ def test_a_clarified_outcome_and_an_architect_decision_reach_the_fulfillment_ser
     )
     assert requester_approval.subject_digest == digest(outcomes[-1])
     assert architect_approval.subject_digest == digest(proposal.subject)
+
+
+def test_an_admitted_proposal_reaches_execution_through_the_owning_transaction(
+    journey: _Journey,
+) -> None:
+    """Admission is what carries an approved proposal past `awaiting_approval`.
+
+    Every required approval standing against the exact proposal used to be the
+    terminal state a console-driven journey could reach, because the contract carried
+    no admission command. The console now offers one, and the fulfillment service
+    still decides whether it may be applied.
+    """
+    journey.as_actor(_REQUESTER)
+    request_id = _submitted_question(journey, key="request-intake-admission")
+    proposal = _compile_proposal(journey, request_id)
+    outcome = journey.get(f"/api/v1/requests/{request_id}/clarified-outcome").json()["data"]
+    journey.post(
+        f"/api/v1/requests/{request_id}/clarified-outcome/acceptance",
+        {
+            "expected_revision": outcome["revision"],
+            "clarified_outcome_digest": outcome["statement_digest"],
+            "active_role": "requester",
+            "decision": "approve",
+        },
+        key="clarified-outcome-admission",
+    )
+
+    journey.as_actor(_ARCHITECT)
+    before = journey.get(f"/api/v1/inbox/{request_id}").json()["data"]
+    blocked = journey.post(
+        f"/api/v1/inbox/{request_id}/admission",
+        {
+            "expected_revision": before["revision"],
+            "reviewed_digest": before["proposal_digest"],
+            "active_role": "data_architect",
+        },
+        key="admission-before-approval",
+    )
+    journey.post(
+        f"/api/v1/inbox/{request_id}/decisions",
+        {
+            "expected_revision": before["revision"],
+            "reviewed_digest": before["proposal_digest"],
+            "active_role": "data_architect",
+            "decision": "approve",
+        },
+        key="architect-decision-admission",
+    )
+    ready = journey.get(f"/api/v1/inbox/{request_id}").json()["data"]
+    admitted = journey.post(
+        f"/api/v1/inbox/{request_id}/admission",
+        {
+            "expected_revision": ready["revision"],
+            "reviewed_digest": ready["proposal_digest"],
+            "active_role": "data_architect",
+        },
+        key="admission-after-approval",
+    )
+
+    # The architect's own approval is outstanding until it is recorded, so the console
+    # says so rather than offering a command the service would refuse.
+    assert before["admission"]["available"] is False
+    assert "1 of 2 required approvals" in before["admission"]["blocking_reason"]
+    assert blocked.status_code == 409
+    assert ready["admission"] == {"available": True, "blocking_reason": None}
+    assert admitted.status_code == 200
+
+    reopened = SQLiteRequestRepository.open(journey.request_path)
+    try:
+        fulfillment = SQLiteFulfillmentRepository(reopened)
+        stored = reopened.load(_TENANT, request_id)
+        admissions = fulfillment.list_admissions(_TENANT, request_id)
+        receipts = fulfillment.list_evidence(_TENANT, request_id)
+    finally:
+        reopened.close()
+
+    assert stored is not None
+    assert stored.state is RequestState.EXECUTING
+    assert len(admissions) == 1
+    assert admissions[-1].proposal_digest == digest(proposal)
+    assert admissions[-1].execution_status == "ready_for_execution"
+    assert {receipt.outcome for receipt in receipts} == {"execution_ready"}
+
+
+def test_a_revision_bump_after_the_approvals_withdraws_the_offered_admission(
+    journey: _Journey,
+) -> None:
+    """`admit` binds each approval to the request revision it was recorded at.
+
+    Any later command moves the revision on, and a clarification message is one an
+    architect sends routinely. Matching approvals on the authority alone left the
+    action advertised after that, and the service then refused with an authority
+    failure, which the console reports as not-visible: a `404` on a request the
+    architect is looking at.
+    """
+    journey.as_actor(_REQUESTER)
+    request_id = _submitted_question(journey, key="request-intake-revision")
+    _compile_proposal(journey, request_id)
+    outcome = journey.get(f"/api/v1/requests/{request_id}/clarified-outcome").json()["data"]
+    journey.post(
+        f"/api/v1/requests/{request_id}/clarified-outcome/acceptance",
+        {
+            "expected_revision": outcome["revision"],
+            "clarified_outcome_digest": outcome["statement_digest"],
+            "active_role": "requester",
+            "decision": "approve",
+        },
+        key="clarified-outcome-revision",
+    )
+
+    journey.as_actor(_ARCHITECT)
+    detail = journey.get(f"/api/v1/inbox/{request_id}").json()["data"]
+    journey.post(
+        f"/api/v1/inbox/{request_id}/decisions",
+        {
+            "expected_revision": detail["revision"],
+            "reviewed_digest": detail["proposal_digest"],
+            "active_role": "data_architect",
+            "decision": "approve",
+        },
+        key="architect-decision-revision",
+    )
+    approved = journey.get(f"/api/v1/inbox/{request_id}").json()["data"]
+    conversation = approved["conversation"]
+    journey.post(
+        f"/api/v1/requests/{request_id}/conversation",
+        {
+            "expected_revision": conversation["revision"],
+            "conversation_digest": conversation["conversation_digest"],
+            "active_role": "data_architect",
+            "body": "One more note before admission.",
+        },
+        key="conversation-revision",
+    )
+    bumped = journey.get(f"/api/v1/inbox/{request_id}").json()["data"]
+    refused = journey.post(
+        f"/api/v1/inbox/{request_id}/admission",
+        {
+            "expected_revision": bumped["revision"],
+            "reviewed_digest": bumped["proposal_digest"],
+            "active_role": "data_architect",
+        },
+        key="admission-after-bump",
+    )
+
+    assert approved["admission"] == {"available": True, "blocking_reason": None}
+    assert bumped["revision"] > approved["revision"]
+    assert bumped["admission"]["available"] is False
+    # Refused as a conflict the architect can act on, never as a missing resource.
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "admission_unavailable"
 
 
 def test_an_unapproved_proposal_never_reaches_the_requesters_own_projection(

@@ -24,7 +24,15 @@ TIMEOUT_EXIT_CODE = 124
 SAMPLER_FAILURE_EXIT_CODE = 125
 TERMINATION_FAILURE_EXIT_CODE = 126
 _SAMPLER_COMMAND_TIMEOUT_SECONDS = 15.0
+# How long the runner politely waits for a signalled process to exit before it
+# escalates. This is a behavioural choice about the command under witness.
 _TERMINATION_GRACE_SECONDS = 5.0
+# How long it then waits to *observe* that the process group is gone. That is a
+# property of the machine, not of the command: on a loaded runner the kernel reaps
+# well after the group has stopped existing for any practical purpose, and sharing
+# the grace here made the runner report `126` termination-failure for a command that
+# had merely timed out. The deadline exists only so the runner cannot hang.
+_TERMINATION_VERIFICATION_SECONDS = 30.0
 _SIZE_PATTERN = re.compile(
     r"^(?P<amount>(?:0|[1-9][0-9]*)(?:\.[0-9]+)?)\s*"
     r"(?P<unit>B|kB|KB|MB|GB|TB|KiB|MiB|GiB|TiB)$"
@@ -322,6 +330,13 @@ def _process_group_is_absent(process_group_id: int) -> bool:
         os.killpg(process_group_id, 0)
     except ProcessLookupError:
         return True
+    except PermissionError:
+        # `EPERM` says this process group is not ours to signal, which happens once
+        # the identifier has been recycled away from us. The witnessed group is
+        # therefore gone. Reading it as a verification failure reported `126`
+        # termination-failure for commands that had timed out cleanly, and on a loaded
+        # runner that fails the build.
+        return True
     except OSError as error:
         raise ProcessTerminationError("witness process-group verification failed") from error
     return False
@@ -344,8 +359,10 @@ def _kill_and_reap_process_group(
         except OSError:
             failures.append("witness process kill failed")
     try:
-        process.wait(timeout=_TERMINATION_GRACE_SECONDS)
-    except (OSError, subprocess.TimeoutExpired):
+        process.wait(timeout=_TERMINATION_VERIFICATION_SECONDS)
+    except subprocess.TimeoutExpired:
+        pass
+    except OSError:
         failures.append("witness process reaping failed")
 
 
@@ -382,8 +399,10 @@ def _terminate_process_group(process: subprocess.Popen[bytes], *, force_immediat
 
     if process.poll() is None:
         try:
-            process.wait(timeout=_TERMINATION_GRACE_SECONDS)
-        except (OSError, subprocess.TimeoutExpired):
+            process.wait(timeout=_TERMINATION_VERIFICATION_SECONDS)
+        except subprocess.TimeoutExpired:
+            pass
+        except OSError:
             failures.append("witness process reaping failed")
         if process.poll() is None:
             try:
@@ -393,7 +412,7 @@ def _terminate_process_group(process: subprocess.Popen[bytes], *, force_immediat
             except OSError:
                 failures.append("witness process kill failed")
 
-    verification_deadline = time.monotonic() + _TERMINATION_GRACE_SECONDS
+    verification_deadline = time.monotonic() + _TERMINATION_VERIFICATION_SECONDS
     verified_absent = False
     while time.monotonic() < verification_deadline:
         try:

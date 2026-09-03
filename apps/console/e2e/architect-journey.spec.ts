@@ -197,11 +197,22 @@ test.describe("architect journey", () => {
     await expect(detail).toContainText("proposed")
     await approve.click()
 
-    await expect(detail).toContainText("execution ready")
+    // Approval is not delivery. The request stays awaiting approval and the console
+    // offers admission, which is the owning transaction that admits the proposal to
+    // execution; the demonstration used to jump straight to `execution_ready`, which
+    // claimed answer-delivery behaviour section 4.2 forbids claiming as live.
+    await expect(detail).toContainText("awaiting approval")
     await expect(detail).toContainText("No decision is admissible from this projection.")
+    const midway = await (await request.get("/api/v1/inbox/request-answer")).json()
+    expect(midway.data.state).toBe("awaiting_approval")
+    expect(midway.data.admission).toEqual({available: true, blocking_reason: null})
 
+    await detail.getByRole("button", {name: "Admit to execution"}).click()
+
+    await expect(detail).toContainText("execution ready")
     const committed = await (await request.get("/api/v1/inbox/request-answer")).json()
     expect(committed.data.state).toBe("execution_ready")
+    expect(committed.data.admission).toBeNull()
   })
 
   test("step 10: a proposal blocked on requester acceptance offers the architect no admitting action", async ({
