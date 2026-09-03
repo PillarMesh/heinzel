@@ -14,6 +14,7 @@ from pillarmesh_request_management import (
     DataAccessRequest,
     DecisionKind,
     DenialDispositionReceipt,
+    FreshnessDisposition,
     FulfillmentAdmissionReceipt,
     FulfillmentGroundingSnapshot,
     FulfillmentNotVisible,
@@ -72,7 +73,9 @@ class ScenarioAuthorityResolver:
         self._integration_contract = integration_contract
 
     def resolve(self, *, tenant_id: str, request: InboxRequest) -> FulfillmentAuthorityObservation:
-        observation = base_authority(self._publication_id, self._integration_contract)
+        observation: FulfillmentAuthorityObservation = base_authority(
+            self._publication_id, self._integration_contract
+        )
         purpose = request.payload.purpose
         updates: dict[str, object] = {
             "requester_id": request.requester_id,
@@ -153,7 +156,7 @@ class ScenarioRoleResolver:
 
 
 class ScenarioFreshness:
-    def derive(self, grounding: FulfillmentGroundingSnapshot) -> str:
+    def derive(self, grounding: FulfillmentGroundingSnapshot) -> FreshnessDisposition:
         return "current" if grounding.freshness_observation_ref is not None else "not_applicable"
 
 
@@ -207,6 +210,18 @@ def _submit_for_review(
         actor_id="architect-a",
         expected_revision=proposal.request_revision,
     )
+
+
+def _held(claim: str, observed: bool) -> Literal[True]:
+    """Assert an acceptance invariant, and give the checker the `Literal[True]` it is.
+
+    `Plan3BAcceptanceResult` declares these fields `Literal[True]` because the run
+    has no result to report unless every one of them held. Raising here names which
+    invariant failed, rather than leaving the reader a field-level validation error.
+    """
+    if not observed:
+        raise AssertionError(f"plan 3B acceptance did not hold: {claim}")
+    return True
 
 
 def run_offline_plan3b() -> Plan3BAcceptanceResult:
@@ -301,6 +316,11 @@ def run_offline_plan3b() -> Plan3BAcceptanceResult:
     )
     if not isinstance(dependency, RequestDependency):
         raise AssertionError("missing factual data did not create a dependency")
+    missing_data_dependency = dependency.kind
+    if missing_data_dependency != "data_product_change":
+        raise AssertionError(
+            "missing governed data raised a semantic dependency, not a data product one"
+        )
 
     denied_request = _clarify(
         fulfillment,
@@ -421,16 +441,25 @@ def run_offline_plan3b() -> Plan3BAcceptanceResult:
     evidence_payload = package_fulfillment_receipts(all_evidence)
     return Plan3BAcceptanceResult(
         authorized_answer_status=answer_admission.execution_status,
-        missing_data_dependency=dependency.kind,
+        missing_data_dependency=missing_data_dependency,
         unauthorized_answer_status="denied",
         access_status=access_admission.execution_status,
-        clarified_outcome_bound=clarified_outcome_bound,
-        plan2_decision_separate=plan2_decision_separate,
-        access_scope_narrowed=access_scope_narrowed,
-        distinct_access_authorities=distinct_access_authorities,
-        requester_candidate_hidden="Net revenue is gross revenue" not in requester_payload,
-        cross_tenant_denied=cross_tenant_denied,
-        unrelated_actor_denied=unrelated_denied,
+        clarified_outcome_bound=_held(
+            "the clarified outcome bound the approval", clarified_outcome_bound
+        ),
+        plan2_decision_separate=_held(
+            "the plan 2 decision stayed separate", plan2_decision_separate
+        ),
+        access_scope_narrowed=_held("the access scope was narrowed", access_scope_narrowed),
+        distinct_access_authorities=_held(
+            "access required distinct authorities", distinct_access_authorities
+        ),
+        requester_candidate_hidden=_held(
+            "the candidate answer stayed hidden from the requester",
+            "Net revenue is gross revenue" not in requester_payload,
+        ),
+        cross_tenant_denied=_held("a cross-tenant read was denied", cross_tenant_denied),
+        unrelated_actor_denied=_held("an unrelated actor was denied", unrelated_denied),
         external_effects=(
             "credentials:0",
             "grants:0",

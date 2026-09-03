@@ -27,7 +27,6 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import RLock
-from typing import Any
 
 import psycopg
 from cryptography.fernet import Fernet
@@ -43,7 +42,10 @@ from pillarmesh_warehouse_control import (
     PrivateWarehouseResource,
     WarehouseBinding,
     WarehouseFailureClassification,
+    WarehouseOperationSecretCapability,
+    WarehouseOperationSecretPurpose,
     WarehouseOperationSecrets,
+    WarehouseProvider,
     WarehouseProvisionResult,
     WarehouseResourceCleanupStatus,
     WarehouseResourceCreationState,
@@ -185,13 +187,13 @@ class DeferredPostgreSQLProvider:
 
     engine_kind = EngineKind.POSTGRESQL
 
-    def __init__(self, factory: Callable[..., Any]) -> None:
+    def __init__(self, factory: Callable[..., WarehouseProvider]) -> None:
         self._factory = factory
         self._lock = RLock()
         self._binding_id: str | None = None
-        self._providers: dict[str, Any] = {}
+        self._providers: dict[str, WarehouseProvider] = {}
 
-    def provider_for(self, binding_id: str, operation_id: str) -> Any:
+    def provider_for(self, binding_id: str, operation_id: str) -> WarehouseProvider:
         # Command routes run the backend in a threadpool and `InFlightCommandKeys`
         # serializes only one command identity, so two confirmations carrying
         # different idempotency keys arrive here concurrently.
@@ -209,7 +211,9 @@ class DeferredPostgreSQLProvider:
                 self._providers[operation_id] = provider
             return provider
 
-    def _for(self, binding: WarehouseBinding, operation: PrivateWarehouseOperation) -> Any:
+    def _for(
+        self, binding: WarehouseBinding, operation: PrivateWarehouseOperation
+    ) -> WarehouseProvider:
         return self.provider_for(binding.binding_id, operation.operation_id)
 
     def provision(
@@ -325,7 +329,9 @@ def build_postgresql_provider(
     )
     recorder = RepositoryResourceRecorder(repository, binding_id=binding_id, clock=clock)
 
-    def capability(purpose: str):
+    def capability(
+        purpose: WarehouseOperationSecretPurpose,
+    ) -> WarehouseOperationSecretCapability:
         return authority.operation_capability(reference, operation_id=operation_id, purpose=purpose)
 
     return PostgreSQLWarehouseProvider(

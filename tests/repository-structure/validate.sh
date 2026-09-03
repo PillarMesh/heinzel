@@ -59,7 +59,7 @@ for entry_path in "$TARGET"/* "$TARGET"/.[!.]* "$TARGET"/..?*; do
     [ -e "$entry_path" ] || continue
     entry=${entry_path##*/}
     case "$entry" in
-        .git|.editorconfig|.env.example|.gitattributes|.gitignore|.github|.mypy_cache|.pytest_cache|.python-version|.ruff_cache|.venv|AGENTS.md|CLAUDE.md|CONTRIBUTING.md|README.md|SECURITY.md|apps|deploy|docs|packages|providers|pyproject.toml|services|tests|uv.lock)
+        .git|.editorconfig|.env.example|.gitattributes|.gitignore|.github|.mypy_cache|.pytest_cache|.python-version|.ruff_cache|.superpowers|.venv|AGENTS.md|CLAUDE.md|CONTRIBUTING.md|README.md|SECURITY.md|apps|deploy|docs|packages|providers|pyproject.toml|services|tests|uv.lock)
             ;;
         *)
             printf 'UNEXPECTED: %s\n' "$entry" >&2

@@ -82,6 +82,7 @@ packages = [
   "pillarmesh_semantic_registry",
   "pillarmesh_state",
   "pillarmesh_warehouse_control",
+  "tests.acceptance.run_console_governed",
   "tests.acceptance.run_m0",
   "tests.ci.run_plan3a_witness",
 ]

@@ -71,6 +71,7 @@ from pillarmesh_warehouse_control import (
     WarehouseBinding,
     WarehouseControlService,
     WarehouseLifecycleOrchestrator,
+    WarehouseProvider,
     WarehouseProvisionResult,
     WarehouseRestoreVerification,
     WarehouseRetirementEvidence,
@@ -78,6 +79,7 @@ from pillarmesh_warehouse_control import (
     WarehouseValidationProfile,
 )
 from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from starlette.applications import Starlette
 from starlette.requests import Request
 
 from tests.acceptance.run_plan3b import (
@@ -448,7 +450,7 @@ class GovernedConsoleDeployment:
             ),
         )
 
-    def _provider(self, engine: str):
+    def _provider(self, engine: str) -> WarehouseProvider:
         """The local-acceptance harness, or the real PostgreSQL provider.
 
         The real one is deferred: its ledger recorder is scoped to a binding that
@@ -468,7 +470,7 @@ class GovernedConsoleDeployment:
         # passwords with it would not match the container already created.
         operation_secrets = run_operation_secrets(clock=_clock)
 
-        def factory(*, binding_id: str, operation_id: str):
+        def factory(*, binding_id: str, operation_id: str) -> WarehouseProvider:
             return build_postgresql_provider(
                 repository=self.warehouse_repository,
                 binding_id=binding_id,
@@ -490,7 +492,7 @@ class GovernedConsoleDeployment:
             )
         return host
 
-    def build_app(self, *, origin: str | None = None, dist: Path | None = None):
+    def build_app(self, *, origin: str | None = None, dist: Path | None = None) -> Starlette:
         return create_app(
             backend=self.backend,
             context_provider=self._actor_for,

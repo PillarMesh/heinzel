@@ -52,4 +52,19 @@ cp -R "$TEMP_ROOT/complete" "$TEMP_ROOT/unexpected-component"
 mkdir "$TEMP_ROOT/unexpected-component/services/scheduler"
 assert_fails_with "$TEMP_ROOT/unexpected-component" "UNEXPECTED: services/scheduler"
 
+# A local tool directory the repository already ignores must not fail the gate.
+# `.gitignore` alone cannot achieve that: this validator enumerates the filesystem
+# and never reads it, so an ignored directory was still reported UNEXPECTED and the
+# gate failed for anyone whose tooling created one.
+cp -R "$TEMP_ROOT/complete" "$TEMP_ROOT/ignored-tool-directory"
+mkdir "$TEMP_ROOT/ignored-tool-directory/.superpowers"
+"$VALIDATOR" "$TEMP_ROOT/ignored-tool-directory" >/dev/null \
+    || fail "validator rejected an ignored local tool directory"
+
+# The gate still exists to catch stray top-level directories, so widening it for one
+# tool must not have widened it for everything.
+cp -R "$TEMP_ROOT/complete" "$TEMP_ROOT/still-strict"
+mkdir "$TEMP_ROOT/still-strict/.superpowers-not-really"
+assert_fails_with "$TEMP_ROOT/still-strict" "UNEXPECTED: .superpowers-not-really"
+
 printf 'PASS: repository structure validation fixtures\n'
