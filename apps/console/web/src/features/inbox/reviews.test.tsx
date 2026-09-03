@@ -13,6 +13,7 @@ import type {
   SessionView,
   StakeholderAnswerProposalView,
 } from "../../api/generated"
+import {ConsoleApiError} from "../../api/client"
 import {AccessPreviewReview} from "./access-preview-review"
 import {CatalogEvidence} from "./catalog-evidence"
 import {ConversationPanel} from "./conversation-panel"
@@ -292,12 +293,12 @@ test("the conversation panel renders requester text as text and labels every aut
   expect(panel).toHaveTextContent("Requester reply")
 })
 
-test("the architect cannot intervene without a server-issued conversation digest", () => {
+test("a read-only conversation projection offers no intervention and says so", () => {
   render(<ConversationPanel conversation={conversation} session={session} />)
 
   expect(screen.getByRole("button", {name: "Send architect message"})).toBeDisabled()
   expect(screen.getByRole("status")).toHaveTextContent(
-    "Intervention is unavailable until the server supplies the conversation digest.",
+    "This projection is read-only, so the conversation cannot be joined from here.",
   )
 })
 
@@ -327,7 +328,6 @@ test("an architect intervention replaces the conversation with the authoritative
     <ConversationPanel
       client={client}
       conversation={conversation}
-      conversationDigest={"8".repeat(64)}
       idempotencyKeyFactory={() => "idempotency-conversation"}
       session={session}
     />,
@@ -345,7 +345,7 @@ test("an architect intervention replaces the conversation with the authoritative
     {
       active_role: "data_architect",
       body: "Recognized means invoiced and accepted.",
-      conversation_digest: "8".repeat(64),
+      conversation_digest: conversation.conversation_digest,
       expected_revision: 2,
     },
     {
@@ -353,4 +353,85 @@ test("an architect intervention replaces the conversation with the authoritative
       idempotencyKey: "idempotency-conversation",
     },
   )
+})
+
+test("a second architect reply carries the digest the first reply returned", async () => {
+  // The panel took the revision from the conversation a send returned but the digest
+  // from a prop nothing refreshed, so after one reply the two disagreed and the
+  // server refused everything after it with `stale_revision`.
+  const user = userEvent.setup()
+  const replies = [
+    {...conversation, revision: 3, conversation_digest: "d".repeat(64)},
+    {...conversation, revision: 4, conversation_digest: "e".repeat(64)},
+  ]
+  const appendConversationMessage = vi.fn(async () => ({
+    meta: {correlation_id: "correlation-conversation", data_provenance: "demo_fixture" as const},
+    data: replies.shift() ?? conversation,
+  }))
+
+  render(
+    <ConversationPanel
+      client={{appendConversationMessage}}
+      conversation={conversation}
+      session={session}
+    />,
+  )
+
+  const compose = screen.getByRole("textbox", {name: "Architect message"})
+  await user.type(compose, "First.")
+  await user.click(screen.getByRole("button", {name: "Send architect message"}))
+  await waitFor(() => expect(appendConversationMessage).toHaveBeenCalledTimes(1))
+  await user.type(compose, "Second.")
+  await user.click(screen.getByRole("button", {name: "Send architect message"}))
+  await waitFor(() => expect(appendConversationMessage).toHaveBeenCalledTimes(2))
+
+  expect(appendConversationMessage).toHaveBeenNthCalledWith(
+    1,
+    conversation.request_id,
+    expect.objectContaining({
+      conversation_digest: conversation.conversation_digest,
+      expected_revision: conversation.revision,
+    }),
+    expect.anything(),
+  )
+  expect(appendConversationMessage).toHaveBeenNthCalledWith(
+    2,
+    conversation.request_id,
+    expect.objectContaining({conversation_digest: "d".repeat(64), expected_revision: 3}),
+    expect.anything(),
+  )
+})
+
+test("a refused reply reports the server's own reason and keeps the message", async () => {
+  // The bare `catch` discarded a typed error carrying the cause and the recovery
+  // action, so the architect was told only that something failed.
+  const user = userEvent.setup()
+  const appendConversationMessage = vi.fn(async () => {
+    throw new ConsoleApiError(409, {
+      meta: {correlation_id: "correlation-stale", data_provenance: "demo_fixture"},
+      error: {
+        code: "stale_revision",
+        safe_message: "The conversation changed. Reload it before posting a message.",
+        recovery_action: "reload",
+        field: null,
+      },
+    })
+  })
+
+  render(
+    <ConversationPanel
+      client={{appendConversationMessage}}
+      conversation={conversation}
+      session={session}
+    />,
+  )
+
+  const compose = screen.getByRole("textbox", {name: "Architect message"})
+  await user.type(compose, "Following up.")
+  await user.click(screen.getByRole("button", {name: "Send architect message"}))
+
+  expect(
+    await screen.findByText("The conversation changed. Reload it before posting a message."),
+  ).toBeVisible()
+  expect(compose).toHaveValue("Following up.")
 })

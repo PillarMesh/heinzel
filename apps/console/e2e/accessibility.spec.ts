@@ -194,24 +194,32 @@ test("keyboard alone records a decision against the confirmed digest", async ({p
   expect(committed.data.state).toBe("execution_ready")
 })
 
-test("the clarification thread offers no enabled intervention control and says why", async ({
+test("the clarification thread is reachable by keyboard while the requester is awaited", async ({
   page,
 }) => {
+  // This test used to assert that both intervention controls were permanently
+  // disabled, with the panel blaming the server for a conversation digest the
+  // fixture supplies. That was the wiring defect written down as a requirement:
+  // section 5.5 of the design names the conversation as the place the architect
+  // "observes, intervenes, or takes over". Being blocked on the requester removes
+  // the architect's *decision*, not their voice.
   await openRequest(page, "request-blocked-acceptance")
 
   const conversation = page.getByRole("region", {name: "Clarification conversation"})
   await expect(conversation).toBeVisible()
   await expect(conversation).toContainText("Awaiting requester")
+  await expect(conversation).not.toContainText("Intervention is unavailable")
 
-  // Both controls are disabled rather than absent, and the reason is stated in
-  // text rather than implied by their state alone. A disabled control is correctly
-  // outside the keyboard order, so the reachable control on this route is the
-  // review comment instead.
-  await expect(conversation.getByRole("textbox", {name: "Architect message"})).toBeDisabled()
-  await expect(conversation.getByRole("button", {name: "Send architect message"})).toBeDisabled()
-  await expect(conversation).toContainText(
-    "Intervention is unavailable until the server supplies the conversation digest.",
-  )
+  // The send control stays disabled until there is something to send, and the
+  // reason is the empty message rather than a claim about the server.
+  const compose = conversation.getByRole("textbox", {name: "Architect message"})
+  const send = conversation.getByRole("button", {name: "Send architect message"})
+  await expect(compose).toBeEnabled()
+  await expect(send).toBeDisabled()
+
+  await tabTo(page, compose)
+  await compose.pressSequentially("Following up with the requester.")
+  await expect(send).toBeEnabled()
 
   const comment = page
     .getByRole("region", {name: "Request detail"})

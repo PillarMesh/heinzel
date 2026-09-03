@@ -215,7 +215,14 @@ function RequestDetailPanel({
         <AccessPreviewReview proposal={detail.proposal} />
       )}
 
-      <ConversationPanel conversation={detail.conversation} session={session} />
+      {/* The client is what makes a reply possible at all; without it the panel
+          refuses every message. The digest comes from the conversation itself. */}
+      <ConversationPanel
+        client={client}
+        conversation={detail.conversation}
+        idempotencyKeyFactory={idempotencyKeyFactory}
+        session={session}
+      />
 
       <label className="decision-detail__comment">
         <span>Review comment</span>

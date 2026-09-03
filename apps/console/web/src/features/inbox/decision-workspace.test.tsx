@@ -439,3 +439,52 @@ test("a detail projection from another provenance never reaches the decision sur
   )
   expect(screen.queryByRole("button", {name: "Approve"})).toBeNull()
 })
+
+test("the architect can reply in the clarification conversation", async () => {
+  // `POST /api/v1/requests/{id}/conversation` is wired, and the detail projection
+  // carries the digest the command needs, but the panel was rendered without the
+  // client or the digest. Both props are optional, so it silently refused every
+  // reply and told the architect the server had not supplied a digest it had.
+  const user = userEvent.setup()
+  const appendConversationMessage = vi.fn(async () => ({
+    meta: {correlation_id: "correlation-conversation", data_provenance: "demo_fixture" as const},
+    data: {
+      ...answerDetail.conversation,
+      revision: answerDetail.conversation.revision + 1,
+      conversation_digest: "d".repeat(64),
+      messages: [
+        ...(answerDetail.conversation.messages ?? []),
+        {
+          message_id: "con-architect-reply",
+          author_label: "architect-a",
+          author_role: "data_architect" as const,
+          body: "Using the governed definition.",
+          created_at: "2026-09-01T16:05:00Z",
+        },
+      ],
+    },
+  }))
+  const client = createClient({appendConversationMessage})
+  renderWorkspace(client, answerDetail.request_id)
+
+  const compose = await screen.findByRole("textbox", {name: "Architect message"})
+  await user.type(compose, "Using the governed definition.")
+  await user.click(screen.getByRole("button", {name: "Send architect message"}))
+
+  await waitFor(() => expect(appendConversationMessage).toHaveBeenCalled())
+  expect(appendConversationMessage).toHaveBeenCalledWith(
+    answerDetail.request_id,
+    expect.objectContaining({
+      active_role: "data_architect",
+      body: "Using the governed definition.",
+      conversation_digest: answerDetail.conversation.conversation_digest,
+      expected_revision: answerDetail.conversation.revision,
+    }),
+    expect.objectContaining({idempotencyKey: expect.any(String)}),
+  )
+  expect(
+    screen.queryByText(
+      "Intervention is unavailable until the server supplies the conversation digest.",
+    ),
+  ).toBeNull()
+})

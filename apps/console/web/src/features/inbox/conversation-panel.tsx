@@ -7,7 +7,7 @@ import type {
   ConversationView,
   SessionView,
 } from "../../api/generated"
-import type {MutationRequestContext} from "../../api/client"
+import {ConsoleApiError, type MutationRequestContext} from "../../api/client"
 
 const authorLabels = {
   pillarmesh: "PillarMesh question",
@@ -29,7 +29,6 @@ export interface ConversationPanelClient {
 interface ConversationPanelProps {
   readonly client?: ConversationPanelClient
   readonly conversation: ConversationView
-  readonly conversationDigest?: string
   readonly idempotencyKeyFactory?: () => string
   readonly session: SessionView
 }
@@ -41,7 +40,6 @@ function defaultIdempotencyKey(): string {
 export function ConversationPanel({
   client,
   conversation,
-  conversationDigest,
   idempotencyKeyFactory = defaultIdempotencyKey,
   session,
 }: ConversationPanelProps) {
@@ -60,10 +58,16 @@ export function ConversationPanel({
       ? authoritative.value
       : conversation
   const messages = active.messages ?? []
-  const canIntervene = client !== undefined && conversationDigest !== undefined
+  // Whether a reply is possible depends only on having a client. The digest is a
+  // required field of the projection, so a separate prop for it was a second source
+  // of truth: the revision came from `active` and the digest from the parent, and
+  // after one successful send the parent's copy was a revision behind. Every reply
+  // after the first then carried a fresh revision with a stale digest and the server
+  // refused it as `stale_revision`.
+  const canIntervene = client !== undefined
 
   async function sendMessage(): Promise<void> {
-    if (client === undefined || conversationDigest === undefined || body.trim() === "") {
+    if (client === undefined || body.trim() === "") {
       return
     }
     setSubmitting(true)
@@ -74,7 +78,7 @@ export function ConversationPanel({
         {
           active_role: session.active_role,
           body,
-          conversation_digest: conversationDigest,
+          conversation_digest: active.conversation_digest,
           expected_revision: active.revision,
         },
         {csrfToken: session.csrf_token, idempotencyKey: idempotencyKeyFactory()},
@@ -85,8 +89,12 @@ export function ConversationPanel({
       }
       setAuthoritative({source: conversation, value: response.data})
       setBody("")
-    } catch {
-      setFailure("The message could not be recorded safely. The prior conversation is unchanged.")
+    } catch (error: unknown) {
+      setFailure(
+        error instanceof ConsoleApiError
+          ? error.message
+          : "The message could not be recorded safely. The prior conversation is unchanged.",
+      )
     } finally {
       setSubmitting(false)
     }
@@ -131,7 +139,7 @@ export function ConversationPanel({
       </button>
       {canIntervene ? null : (
         <p className="inbox-unavailable" role="status">
-          Intervention is unavailable until the server supplies the conversation digest.
+          This projection is read-only, so the conversation cannot be joined from here.
         </p>
       )}
       {failure === null ? null : <p role="alert">{failure}</p>}
