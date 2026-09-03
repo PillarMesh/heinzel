@@ -81,7 +81,22 @@ no acquisition operation can be projected or commanded.
 
 ### Data products and runs (`data-product-runs`)
 
-No owning service publishes tenant-scoped data products or runs.
+No owning service publishes tenant-scoped data products or runs, and the two halves
+fail for different reasons, both checked against the code:
+
+- A data product exists only as an `ArtifactReference` — an artifact id, a digest and a
+  version — carried by policy snapshots, access previews and grounding snapshots. No
+  service stores a data product row, so of the five fields `DataProductView` projects
+  only the identifier and the version have an owning field.
+- A run is not tenant-scoped. `contract-service` records it through
+  `EvidenceStore.create_run`, and `RunRecord` carries `activation_key` and
+  `contract_digest` but no tenant; the store reads runs by run id or activation key and
+  offers no listing. Listing runs for a tenant today would either cross tenants or make
+  the console invent a scope.
+
+`docs/superpowers/specs/2026-09-03-data-product-and-run-read-interface-design.md`
+proposes deriving the tenant through the activation chain rather than storing it on an
+append-only evidence record, and publishing references rather than composing names.
 
 ### Catalog asset preview (`catalog-asset-preview`)
 
