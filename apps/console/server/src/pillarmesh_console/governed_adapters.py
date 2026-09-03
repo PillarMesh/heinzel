@@ -10,6 +10,7 @@ them.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal, Protocol
@@ -19,6 +20,9 @@ from pillarmesh_catalog_control import (
     CatalogControlService,
     CatalogPersistenceError,
 )
+from pillarmesh_contract_model import ArtifactReference
+from pillarmesh_contract_service import AcquisitionContractLifecycleRepository
+from pillarmesh_evidence import RunRecord
 from pillarmesh_request_management import (
     ArchitectRequestView,
     ConversationEntry,
@@ -29,6 +33,8 @@ from pillarmesh_request_management import (
     FulfillmentNotVisible,
     FulfillmentOwnershipError,
     FulfillmentPolicyError,
+    FulfillmentPolicySnapshot,
+    FulfillmentProposal,
     FulfillmentStaleRevision,
     InboxRequest,
     RequesterRequestView,
@@ -154,6 +160,109 @@ class RequestInboxReader(Protocol):
     def list_inbox(self, tenant_id: str) -> tuple[InboxRequest, ...]: ...
 
     def get(self, tenant_id: str, request_id: str) -> InboxRequest: ...
+
+
+class TenantRunReader(Protocol):
+    def list_runs(self, tenant_id: str) -> tuple[RunRecord, ...]: ...
+
+
+class DerivedTenantRunReader:
+    """Resolve a tenant's runs without any run recording a tenant.
+
+    A run is stored in an append-only, digested evidence chain and carries no
+    tenant. Adding one would change the digest of every existing record and demand
+    a migration with an evidence-continuity story. It is not needed: a run carries
+    a contract digest, and a contract digest is tenant-qualified by the acquisition
+    lifecycle. The tenant is therefore derived at read time --
+    tenant -> activated contracts -> runs witnessed under them -- and the evidence
+    chain stays exactly as it was witnessed.
+
+    A tenant with no activated contracts yields no digests and therefore no runs,
+    which is the answer that keeps one tenant from reading another's evidence.
+    """
+
+    def __init__(
+        self,
+        *,
+        lifecycles: AcquisitionContractLifecycleRepository,
+        evidence: EvidenceRunReader,
+    ) -> None:
+        self._lifecycles = lifecycles
+        self._evidence = evidence
+
+    def list_runs(self, tenant_id: str) -> tuple[RunRecord, ...]:
+        digests = tuple(
+            state.contract_digest for state in self._lifecycles.list_activated(tenant_id)
+        )
+        return self._evidence.list_runs_for_contracts(digests)
+
+
+class EvidenceRunReader(Protocol):
+    def list_runs_for_contracts(
+        self, contract_digests: Collection[str]
+    ) -> tuple[RunRecord, ...]: ...
+
+
+class DataProductReferenceReader(Protocol):
+    def permitted_references(self, tenant_id: str) -> tuple[ArtifactReference, ...]: ...
+
+
+class PolicyPermittedDataProductReader:
+    """The data product references a tenant's own policy snapshots permit.
+
+    This is the whole of what the estate asserts about a data product. The refs are
+    read back from the fulfillment proposals the tenant already owns, so the console
+    reports what a governing decision permitted rather than maintaining a product
+    catalogue of its own.
+
+    Proposals are owned per request, not per tenant: `list_proposals` requires a
+    request identifier and there is no tenant-wide listing. The tenant's requests are
+    therefore walked first. An earlier version called `list_proposals(tenant_id)`,
+    which no owning repository accepts, so every data-product read raised.
+    """
+
+    def __init__(
+        self,
+        *,
+        repository: FulfillmentReadRepository,
+        requests: RequestInboxReader,
+    ) -> None:
+        self._repository = repository
+        self._requests = requests
+
+    def permitted_references(self, tenant_id: str) -> tuple[ArtifactReference, ...]:
+        references: list[ArtifactReference] = []
+        for request in self._requests.list_inbox(tenant_id):
+            for proposal in self._repository.list_proposals(tenant_id, request.request_id):
+                try:
+                    snapshot = self._repository.load_policy_snapshot(
+                        tenant_id, proposal.policy_snapshot_digest
+                    )
+                except KeyError:
+                    # The snapshot is not readable by this tenant, so the proposal
+                    # permits nothing this reader may report. One unreadable snapshot
+                    # is not grounds for failing the whole listing.
+                    continue
+                references.extend(snapshot.permitted_data_product_refs)
+        return tuple(references)
+
+
+class FulfillmentReadRepository(Protocol):
+    """Mirrors the owning repository exactly, including that a missing snapshot raises.
+
+    Both signatures were previously wrong here -- `list_proposals` lost its request
+    identifier and `load_policy_snapshot` was declared optional when it raises -- and
+    because the harness that passes the real repository is not type checked, nothing
+    caught it before the route returned 500.
+    """
+
+    def list_proposals(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[FulfillmentProposal, ...]: ...
+
+    def load_policy_snapshot(
+        self, tenant_id: str, snapshot_digest: str
+    ) -> FulfillmentPolicySnapshot: ...
 
 
 class FulfillmentViewReader(Protocol):

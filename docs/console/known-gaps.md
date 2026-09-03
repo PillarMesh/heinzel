@@ -81,22 +81,33 @@ no acquisition operation can be projected or commanded.
 
 ### Data products and runs (`data-product-runs`)
 
-No owning service publishes tenant-scoped data products or runs, and the two halves
-fail for different reasons, both checked against the code:
+**Closed.** Both halves are delivered; this entry is kept because what the capability
+does *not* assert is still a live constraint.
 
-- A data product exists only as an `ArtifactReference` — an artifact id, a digest and a
-  version — carried by policy snapshots, access previews and grounding snapshots. No
-  service stores a data product row, so of the five fields `DataProductView` projects
-  only the identifier and the version have an owning field.
-- A run is not tenant-scoped. `contract-service` records it through
-  `EvidenceStore.create_run`, and `RunRecord` carries `activation_key` and
-  `contract_digest` but no tenant; the store reads runs by run id or activation key and
-  offers no listing. Listing runs for a tenant today would either cross tenants or make
-  the console invent a scope.
+The tenant is derived, never stored. `AcquisitionContractLifecycleRepository.
+list_activated(tenant_id)` names the contracts a tenant has activated, and
+`SQLiteStore.list_runs_for_contracts(digests)` names the runs witnessed under them.
+`RunRecord` is unchanged, no digest moved, and the append-only evidence store was not
+migrated. A tenant with no activated contracts yields no digests and therefore no runs,
+which is the boundary the derivation rests on.
+
+What remains deliberately unasserted:
+
+- A data product is still only an `ArtifactReference`. `DataProductView` carries the
+  identifier, the version and the digest, and omits a display name and a summary,
+  because no owning service stores either. The console shows the newest permitted
+  version of a reference, and its scope is what the tenant's own policy snapshots
+  permit.
+- `RunView` carries the evidence store's own state vocabulary rather than the shared
+  `OperationState`. The two do not map without loss: `non_conforming` is a witnessed
+  outcome, and `outcome_unknown` would report it as ignorance. This answers open
+  question 3 of the design document with evidence rather than with a choice.
+- The projected timestamps are the record's own `created_at` and `updated_at`. They are
+  not renamed to `started_at` and `completed_at`, which would assert a lifecycle meaning
+  the stored fields do not carry.
 
 `docs/superpowers/specs/2026-09-03-data-product-and-run-read-interface-design.md`
-proposes deriving the tenant through the activation chain rather than storing it on an
-append-only evidence record, and publishing references rather than composing names.
+records the decisions and the measured cost.
 
 ### Catalog asset preview (`catalog-asset-preview`)
 

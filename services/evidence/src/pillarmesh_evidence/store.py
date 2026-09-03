@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import sqlite3
+from collections.abc import Collection
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -41,8 +42,24 @@ class SQLiteStore:
         self._connection.row_factory = sqlite3.Row
 
     @classmethod
-    def open(cls, path: Path) -> SQLiteStore:
-        connection = sqlite3.connect(path, isolation_level=None)
+    def open(cls, path: Path, *, check_same_thread: bool = True) -> SQLiteStore:
+        """Open the store, optionally for use from more than one thread.
+
+        SQLite connections carry thread affinity and a server route runs its work in
+        a threadpool, so a caller that composes on one thread and reads on another
+        must say so. It stays opt-in rather than becoming the default, because most
+        callers own their connection on one thread and should keep the check.
+
+        This does not make concurrent writers safe, and it does not pretend to. The
+        write paths hold their own `BEGIN IMMEDIATE`, and a second one arriving on
+        the same connection raises `cannot start a transaction within a transaction`
+        rather than interleaving silently -- a loud failure, not a corrupt one. That
+        is the same posture every other repository in this estate takes with a
+        thread-tolerant connection; none of them holds a lock either.
+        """
+        connection = sqlite3.connect(
+            path, isolation_level=None, check_same_thread=check_same_thread
+        )
         connection.execute("PRAGMA foreign_keys = ON")
         store = cls(connection)
         try:
@@ -321,6 +338,34 @@ class SQLiteStore:
             ),
         )
         return self.get_run(run_id)
+
+    def list_runs_for_contracts(self, contract_digests: Collection[str]) -> tuple[RunRecord, ...]:
+        """Every run witnessed under any of these contract digests, newest first.
+
+        This is the evidence half of deriving a run's tenant. The caller resolves
+        which contracts a tenant has activated and passes those digests here; the
+        store never learns what a tenant is, which is why `RunRecord` needs no
+        tenant and the append-only chain needs no migration.
+
+        An empty digest set answers with no runs, because a tenant that has
+        activated nothing must see nothing. SQLite would reach that answer anyway
+        -- it reads `IN ()` as always false -- but `IN ()` is a SQLite extension
+        rather than standard SQL, so the guard states the intent here instead of
+        resting on one engine's tolerance.
+        """
+        if not contract_digests:
+            return ()
+        digests = tuple(contract_digests)
+        placeholders = ", ".join("?" for _ in digests)
+        rows = self._connection.execute(
+            f"SELECT * FROM runs WHERE contract_digest IN ({placeholders}) "
+            # `datetime()` normalises each stored offset to UTC. Ordering the ISO
+            # text directly compared "12:00+05:30" against "09:00+00:00" as strings
+            # and reversed two runs whose real instants are the other way round.
+            "ORDER BY datetime(created_at) DESC, run_id",
+            digests,
+        ).fetchall()
+        return tuple(self._run_from_row(row) for row in rows)
 
     def get_run(self, run_id: str) -> RunRecord:
         row = self._connection.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()

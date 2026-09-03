@@ -7,6 +7,8 @@ dependencies = [
   # The console never opens another component's database.
   "pillarmesh-catalog-control",
   "pillarmesh-contract-model",
+  "pillarmesh-contract-service",
+  "pillarmesh-evidence",
   "pillarmesh-request-management",
   "pillarmesh-semantic-registry",
   "pillarmesh-warehouse-control",
@@ -18,6 +20,8 @@ dependencies = [
 [tool.uv.sources]
 pillarmesh-catalog-control = { workspace = true }
 pillarmesh-contract-model = { workspace = true }
+pillarmesh-contract-service = { workspace = true }
+pillarmesh-evidence = { workspace = true }
 pillarmesh-request-management = { workspace = true }
 pillarmesh-semantic-registry = { workspace = true }
 pillarmesh-warehouse-control = { workspace = true }

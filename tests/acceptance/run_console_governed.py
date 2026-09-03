@@ -34,9 +34,11 @@ from pillarmesh_console.app import create_app
 from pillarmesh_console.auth import TrustedActorContext
 from pillarmesh_console.governed_adapters import (
     CatalogControlBindingReader,
+    DerivedTenantRunReader,
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceBindingDirectory,
     InMemoryWorkspacePrincipalDirectory,
+    PolicyPermittedDataProductReader,
     WarehouseControlBindingReader,
     WarehouseControlLifecycleCommands,
     WarehouseRepositoryOperationReader,
@@ -44,6 +46,10 @@ from pillarmesh_console.governed_adapters import (
 from pillarmesh_console.governed_backend import GovernedConsoleBackend
 from pillarmesh_console.operation_handles import InMemoryOperationHandleRepository
 from pillarmesh_contract_model import digest
+from pillarmesh_contract_service import (
+    SQLiteAcquisitionContractLifecycleRepository,
+)
+from pillarmesh_evidence import SQLiteStore
 from pillarmesh_request_management import (
     FulfillmentPolicyCompiler,
     FulfillmentProposal,
@@ -266,6 +272,8 @@ class SeededDecision:
     request_id: str
     proposal_digest: str
     """The digest of the proposal subject an approving authority must sign."""
+    data_product_ref: str
+    """The data product the seeded policy permits, so a caller can read it back."""
 
 
 class _PersistedWorkspaceBindingDirectory(InMemoryWorkspaceBindingDirectory):
@@ -376,6 +384,14 @@ class GovernedConsoleDeployment:
             repository=self.fulfillment_repository,
             authority_role_resolver=_DeploymentRoleResolver(),
         )
+        # The two reads a tenant-scoped run listing derives its tenant through. A run
+        # carries no tenant; it is reachable only because its contract digest is
+        # activated for one. Composing them here is what makes the capability
+        # delivered rather than merely built.
+        self.lifecycle_path = str(directory / "acquisition-lifecycle.sqlite3")
+        self.lifecycles = SQLiteAcquisitionContractLifecycleRepository(self.lifecycle_path)
+        self.evidence_path = directory / "evidence.sqlite3"
+        self.evidence = SQLiteStore.open(self.evidence_path, check_same_thread=False)
         self.bindings = _PersistedWorkspaceBindingDirectory(directory / "bindings.json")
         if self.bindings.catalog_binding_id(TENANT) is None:
             # Only when the workspace has none: catalog-control publishes no way to
@@ -426,6 +442,10 @@ class GovernedConsoleDeployment:
             fulfillment_commands=self.fulfillment,
             semantic_reviews=self.semantic_repository,
             semantic_review_commands=self.semantic_reviews,
+            runs=DerivedTenantRunReader(lifecycles=self.lifecycles, evidence=self.evidence),
+            data_products=PolicyPermittedDataProductReader(
+                repository=self.fulfillment_repository, requests=self.requests
+            ),
         )
 
     def _provider(self, engine: str):
@@ -525,7 +545,9 @@ class GovernedConsoleDeployment:
             expected_revision=proposal.request_revision,
         )
         return SeededDecision(
-            request_id=request.request_id, proposal_digest=digest(proposal.subject)
+            request_id=request.request_id,
+            proposal_digest=digest(proposal.subject),
+            data_product_ref=self._permitted_product_ref(proposal),
         )
 
     def _already_seeded(self) -> SeededDecision | None:
@@ -541,20 +563,44 @@ class GovernedConsoleDeployment:
                 return SeededDecision(
                     request_id=request.request_id,
                     proposal_digest=digest(proposals[-1].subject),
+                    data_product_ref=self._permitted_product_ref(proposals[-1]),
                 )
         return None
 
+    def _permitted_product_ref(self, proposal: FulfillmentProposal) -> str:
+        """The data product this proposal's governing policy permits.
+
+        Named from the committed policy rather than hardcoded, so a test reads back
+        the reference the seed actually created.
+        """
+        policy = self.fulfillment_repository.load_policy_snapshot(
+            TENANT, proposal.policy_snapshot_digest
+        )
+        return policy.permitted_data_product_refs[0].artifact_id
+
     def close(self) -> None:
-        try:
-            self.warehouse_repository.close()
-        finally:
+        """Close every store, then raise the first failure.
+
+        A chain of nested `finally` blocks grew one level per store and abandoned
+        the remaining handles whenever an early close raised. Closing all of them
+        first and re-raising afterwards keeps the state directory reusable between
+        runs while still surfacing the failure.
+        """
+        failure: BaseException | None = None
+        for closing in (
+            self.warehouse_repository,
+            self.request_repository,
+            self.catalog_repository,
+            self.semantic_repository,
+            self.lifecycles,
+            self.evidence,
+        ):
             try:
-                self.request_repository.close()
-            finally:
-                try:
-                    self.catalog_repository.close()
-                finally:
-                    self.semantic_repository.close()
+                closing.close()
+            except BaseException as error:
+                failure = failure or error
+        if failure is not None:
+            raise failure
 
     def _actor_for(self, request: Request) -> TrustedActorContext:
         requested = request.headers.get(ACTOR_HEADER, ARCHITECT)

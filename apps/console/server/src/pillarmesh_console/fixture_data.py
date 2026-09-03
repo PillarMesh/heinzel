@@ -456,9 +456,7 @@ def build_fixture_seed() -> FixtureSeed:
             {
                 "product-revenue": DataProductView(
                     data_product_id="product-revenue",
-                    display_name="Synthetic net revenue",
-                    state="ready",
-                    summary="Fixture-only revenue data product.",
+                    artifact_digest="a" * 64,
                     version=1,
                 )
             }
@@ -467,11 +465,10 @@ def build_fixture_seed() -> FixtureSeed:
             runs=(
                 RunView(
                     run_id="run-synthetic",
-                    data_product_ref="product-revenue",
+                    contract_digest="b" * 64,
                     state="succeeded",
-                    summary="Historical fixture run; not live execution evidence.",
-                    started_at=FIXED_TIME - timedelta(minutes=2),
-                    completed_at=FIXED_TIME - timedelta(minutes=1),
+                    created_at=FIXED_TIME - timedelta(minutes=2),
+                    updated_at=FIXED_TIME - timedelta(minutes=1),
                 ),
             )
         ),

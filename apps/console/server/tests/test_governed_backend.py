@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Never
 
 import pytest
@@ -11,6 +12,7 @@ from pillarmesh_console.auth import TrustedActorContext
 from pillarmesh_console.errors import ConsoleNotFound, ConsoleUnavailable
 from pillarmesh_console.governed_adapters import (
     GovernedWorkspaceIdentity,
+    PolicyPermittedDataProductReader,
     WarehouseOperationIdentity,
 )
 from pillarmesh_console.governed_backend import (
@@ -557,3 +559,248 @@ def test_the_warehouse_options_present_an_engine_name_rather_than_its_enum_value
     for option in setup.warehouse_options:
         assert len(option.supported_region.split()) <= 4
         assert not option.supported_region.endswith(".")
+
+
+class _StubRunReader:
+    """A tenant run reader that records the tenant it was asked about."""
+
+    def __init__(self, runs: dict[str, tuple[object, ...]]) -> None:
+        self._runs = runs
+        self.asked: list[str] = []
+
+    def list_runs(self, tenant_id: str) -> tuple[object, ...]:
+        self.asked.append(tenant_id)
+        return self._runs.get(tenant_id, ())
+
+
+def _run(run_id: str, contract_digest: str, state: str) -> object:
+    from pillarmesh_evidence import RunRecord
+
+    return RunRecord(
+        run_id=run_id,
+        activation_key=f"activation-{run_id}",
+        contract_digest=contract_digest,
+        summary_digest="b" * 64,
+        signed_graph_json="{}",
+        state=state,
+        checkpoint="closed",
+        batch_id=None,
+        created_at=datetime(2026, 9, 1, 12, tzinfo=UTC),
+        updated_at=datetime(2026, 9, 1, 13, tzinfo=UTC),
+    )
+
+
+def test_runs_are_read_for_the_calling_tenant_only() -> None:
+    """The console never widens a read past the tenant its context names."""
+    reader = _StubRunReader({_TENANT: (_run("run-1", "a" * 64, "succeeded"),)})
+    backend = _backend(runs=reader)
+
+    view = backend.get_runs(_architect_context())
+
+    assert reader.asked == [_TENANT]
+    assert [run.run_id for run in view.runs] == ["run-1"]
+
+
+def test_a_run_projects_the_owner_s_own_state_without_a_lossy_mapping() -> None:
+    """`non_conforming` is a witnessed outcome, not an unknown one.
+
+    Folding it into the shared `OperationState` vocabulary would have to call it
+    `outcome_unknown`, which reports a known non-conformance as ignorance. The run
+    projection therefore carries the evidence store's own vocabulary verbatim.
+    """
+    reader = _StubRunReader({_TENANT: (_run("run-1", "a" * 64, "non_conforming"),)})
+    backend = _backend(runs=reader)
+
+    view = backend.get_runs(_architect_context())
+
+    assert view.runs[0].state == "non_conforming"
+
+
+def test_a_run_projects_the_contract_digest_rather_than_an_invented_product_name() -> None:
+    reader = _StubRunReader({_TENANT: (_run("run-1", "a" * 64, "succeeded"),)})
+    backend = _backend(runs=reader)
+
+    view = backend.get_runs(_architect_context())
+
+    assert view.runs[0].contract_digest == "a" * 64
+
+
+def test_a_tenant_with_no_runs_reads_an_empty_listing_rather_than_a_failure() -> None:
+    """Delivered-and-empty is a different answer from not-delivered."""
+    backend = _backend(runs=_StubRunReader({}))
+
+    assert backend.get_runs(_architect_context()).runs == ()
+
+
+class _StubDataProductReader:
+    def __init__(self, references: dict[str, tuple[object, ...]]) -> None:
+        self._references = references
+        self.asked: list[str] = []
+
+    def permitted_references(self, tenant_id: str) -> tuple[object, ...]:
+        self.asked.append(tenant_id)
+        return self._references.get(tenant_id, ())
+
+
+def _reference(artifact_id: str, version: int = 1) -> object:
+    from pillarmesh_contract_model import ArtifactReference
+
+    return ArtifactReference(artifact_id=artifact_id, version=version, digest="c" * 64)
+
+
+def test_a_data_product_projects_only_the_reference_an_owning_service_asserts() -> None:
+    """A data product is an `ArtifactReference` and nothing more.
+
+    No service stores a name, a state or a summary for one, so the projection
+    carries the identifier, the version and the digest, and the console invents
+    none of the rest.
+    """
+    reader = _StubDataProductReader({_TENANT: (_reference("product-revenue", version=3),)})
+    backend = _backend(data_products=reader)
+
+    view = backend.get_data_product(_architect_context(), "product-revenue")
+
+    assert view.data_product_id == "product-revenue"
+    assert view.version == 3
+    assert view.artifact_digest == "c" * 64
+
+
+def test_a_data_product_outside_the_tenant_s_permitted_references_is_not_found() -> None:
+    """Reading is scoped by what the tenant's own policy snapshots permit."""
+    reader = _StubDataProductReader({_TENANT: (_reference("product-revenue"),)})
+    backend = _backend(data_products=reader)
+
+    with pytest.raises(ConsoleNotFound):
+        backend.get_data_product(_architect_context(), "product-somebody-elses")
+
+    assert reader.asked == [_TENANT]
+
+
+def test_the_newest_version_of_a_permitted_reference_is_the_one_projected() -> None:
+    """Policy snapshots accumulate, so the same product appears at several versions."""
+    reader = _StubDataProductReader(
+        {
+            _TENANT: (
+                _reference("product-revenue", version=1),
+                _reference("product-revenue", version=4),
+                _reference("product-revenue", version=2),
+            )
+        }
+    )
+    backend = _backend(data_products=reader)
+
+    assert backend.get_data_product(_architect_context(), "product-revenue").version == 4
+
+
+def test_the_run_capability_is_ready_only_when_both_owning_reads_are_wired() -> None:
+    """The register must follow the wiring, not a hardcoded verdict.
+
+    Reporting `not_delivered` for a capability that was merely uncomposed has
+    already happened twice in this console, so the state is derived from whether
+    the readers are present rather than asserted in a constant.
+    """
+    unwired = _backend().get_workspace(_architect_context())
+    wired = _backend(
+        runs=_StubRunReader({}), data_products=_StubDataProductReader({})
+    ).get_workspace(_architect_context())
+
+    def state(view: object) -> str:
+        return next(
+            capability.state
+            for capability in view.capabilities  # type: ignore[attr-defined]
+            if capability.capability_id == "data-product-runs"
+        )
+
+    assert state(unwired) == "not_delivered"
+    assert state(wired) == "ready"
+
+
+class _RealShapedFulfillmentRepository:
+    """Stubs that mirror the OWNING repository's signatures exactly.
+
+    The previous stub took `list_proposals(tenant_id)`. The real repository takes
+    `(tenant_id, request_id)` and raises `KeyError` for a policy snapshot it cannot
+    read, so the tests agreed with a reader that could never work against it.
+    """
+
+    def __init__(
+        self,
+        *,
+        proposals: dict[str, tuple[object, ...]],
+        snapshots: dict[str, object],
+    ) -> None:
+        self._proposals = proposals
+        self._snapshots = snapshots
+        self.requested: list[tuple[str, str]] = []
+
+    def list_proposals(self, tenant_id: str, request_id: str) -> tuple[object, ...]:
+        self.requested.append((tenant_id, request_id))
+        return self._proposals.get(request_id, ())
+
+    def load_policy_snapshot(self, tenant_id: str, snapshot_digest: str) -> object:
+        if snapshot_digest not in self._snapshots:
+            raise KeyError("policy snapshot is unavailable to the tenant")
+        return self._snapshots[snapshot_digest]
+
+
+class _StubRequestLister:
+    def __init__(self, request_ids: tuple[str, ...]) -> None:
+        self._request_ids = request_ids
+
+    def list_inbox(self, tenant_id: str) -> tuple[object, ...]:
+        return tuple(SimpleNamespace(request_id=identifier) for identifier in self._request_ids)
+
+
+def _policy(*references: object) -> object:
+    return SimpleNamespace(permitted_data_product_refs=tuple(references))
+
+
+def _proposal(policy_snapshot_digest: str) -> object:
+    return SimpleNamespace(policy_snapshot_digest=policy_snapshot_digest)
+
+
+def test_permitted_references_walk_every_request_of_the_tenant() -> None:
+    """There is no tenant-wide proposal listing; proposals are per request.
+
+    `list_proposals` requires a request id, so the references have to be gathered by
+    walking the tenant's own requests. Calling it with a tenant alone raised
+    TypeError and made every data-product read a 500.
+    """
+    repository = _RealShapedFulfillmentRepository(
+        proposals={"req-1": (_proposal("d" * 64),), "req-2": (_proposal("e" * 64),)},
+        snapshots={
+            "d" * 64: _policy(_reference("product-revenue", version=2)),
+            "e" * 64: _policy(_reference("product-orders", version=1)),
+        },
+    )
+    reader = PolicyPermittedDataProductReader(
+        repository=repository, requests=_StubRequestLister(("req-1", "req-2"))
+    )
+
+    references = reader.permitted_references(_TENANT)
+
+    assert repository.requested == [(_TENANT, "req-1"), (_TENANT, "req-2")]
+    assert {reference.artifact_id for reference in references} == {
+        "product-revenue",
+        "product-orders",
+    }
+
+
+def test_a_snapshot_the_tenant_cannot_read_skips_that_proposal() -> None:
+    """`load_policy_snapshot` raises rather than returning None.
+
+    The reader tested `snapshot is not None`, a branch that can never be taken, so a
+    single unreadable snapshot turned the whole read into a 500 instead of skipping
+    the one proposal it belongs to.
+    """
+    repository = _RealShapedFulfillmentRepository(
+        proposals={"req-1": (_proposal("d" * 64), _proposal("f" * 64))},
+        snapshots={"d" * 64: _policy(_reference("product-revenue"))},
+    )
+    reader = PolicyPermittedDataProductReader(
+        repository=repository, requests=_StubRequestLister(("req-1",))
+    )
+
+    references = reader.permitted_references(_TENANT)
+
+    assert [reference.artifact_id for reference in references] == ["product-revenue"]

@@ -40,6 +40,8 @@ type ActorRole = Literal[
 ]
 type CapabilityState = Literal["ready", "blocked", "degraded", "not_delivered"]
 type OperationState = Literal["accepted", "running", "succeeded", "failed", "outcome_unknown"]
+# Mirrors the evidence store's `RunState` exactly; see `RunView`.
+type RunLifecycleState = Literal["created", "running", "succeeded", "failed", "non_conforming"]
 type ReviewKind = Literal["meaning", "data_product", "activation"]
 type RequestKind = Literal["stakeholder_question", "data_access"]
 type RequestState = Literal[
@@ -654,20 +656,39 @@ class OperationView(StrictModel):
 
 
 class DataProductView(StrictModel):
+    """A data product as far as any owning service will assert one.
+
+    Nothing in the estate stores a data product row. It exists only as an
+    `ArtifactReference` -- an identifier, a version and a digest -- inside policy
+    snapshots and access previews. A display name and a summary would therefore be
+    the console's inventions, and the console does not become an authority over
+    records it merely projects. The same rule already governs
+    `EvidenceContextView.datasets`.
+    """
+
     data_product_id: PublicId
-    display_name: NonEmptyText
-    state: CapabilityState
-    summary: NonEmptyText
+    artifact_digest: Digest
     version: int = Field(ge=1)
 
 
 class RunView(StrictModel):
+    """A run as the evidence store witnessed it.
+
+    `state` carries the store's own vocabulary rather than the shared
+    `OperationState`, because the two do not map without loss: a `non_conforming`
+    run is a known outcome, and the nearest shared value, `outcome_unknown`, would
+    report a witnessed non-conformance as ignorance.
+
+    The timestamps are the record's own `created_at` and `updated_at`. Renaming
+    them to `started_at` and `completed_at` would assert a lifecycle meaning the
+    stored fields do not carry.
+    """
+
     run_id: PublicId
-    data_product_ref: PublicId
-    state: OperationState
-    summary: NonEmptyText
-    started_at: UtcDatetime | None = None
-    completed_at: UtcDatetime | None = None
+    contract_digest: Digest
+    state: RunLifecycleState
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
 
 
 class RunsView(StrictModel):

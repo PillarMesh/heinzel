@@ -68,3 +68,52 @@ def test_retirement_is_exact_cas_and_cannot_reactivate() -> None:
             contract_digest="4" * 64,
             activated_at=NOW + timedelta(seconds=3),
         )
+
+
+def test_activated_contracts_list_only_for_their_own_tenant() -> None:
+    """A tenant-scoped listing is the first half of deriving a run's tenant.
+
+    The repository could only read one contract at a time, so nothing could answer
+    "which contracts are activated for this tenant". Listing is what makes the
+    tenant derivable from a run's contract digest without storing a tenant on the
+    run itself.
+    """
+    repository = SQLiteAcquisitionContractLifecycleRepository(":memory:")
+    repository.activate(tenant_id="tenant-a", contract_digest="4" * 64, activated_at=NOW)
+    repository.activate(tenant_id="tenant-a", contract_digest="5" * 64, activated_at=NOW)
+    repository.activate(tenant_id="tenant-b", contract_digest="6" * 64, activated_at=NOW)
+
+    listed = repository.list_activated("tenant-a")
+
+    assert {state.contract_digest for state in listed} == {"4" * 64, "5" * 64}
+    assert {state.tenant_id for state in listed} == {"tenant-a"}
+
+
+def test_a_retired_contract_leaves_the_activated_listing() -> None:
+    """Listing means *activated*, not *ever activated*.
+
+    A retired contract's runs were still witnessed under this tenant, but the
+    listing answers which contracts are live, and retirement is exactly the
+    transition that ends that.
+    """
+    repository = SQLiteAcquisitionContractLifecycleRepository(":memory:")
+    activated = repository.activate(
+        tenant_id="tenant-a", contract_digest="4" * 64, activated_at=NOW
+    )
+    repository.activate(tenant_id="tenant-a", contract_digest="5" * 64, activated_at=NOW)
+
+    repository.retire(
+        tenant_id="tenant-a",
+        contract_digest="4" * 64,
+        expected_revision=activated.revision,
+        retired_at=NOW + timedelta(seconds=1),
+    )
+
+    listed = repository.list_activated("tenant-a")
+    assert {state.contract_digest for state in listed} == {"5" * 64}
+
+
+def test_a_tenant_with_no_activated_contracts_lists_empty() -> None:
+    repository = SQLiteAcquisitionContractLifecycleRepository(":memory:")
+
+    assert repository.list_activated("tenant-unknown") == ()

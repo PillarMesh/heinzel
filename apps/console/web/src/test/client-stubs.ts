@@ -3,6 +3,7 @@ import {vi} from "vitest"
 import type {ApiMeta} from "../api/generated"
 import type {InboxClient} from "../features/inbox/decision-workspace"
 import type {RequesterClient} from "../features/requests/my-requests"
+import type {RunsClient} from "../features/runs/runs-page"
 
 /**
  * Stubs for the feature protocols a test does not itself exercise.
@@ -24,7 +25,7 @@ function stubMeta(provenance: ApiMeta["data_provenance"]): ApiMeta {
 
 export function featureClientStubs(
   provenance: ApiMeta["data_provenance"] = "demo_fixture",
-): InboxClient & RequesterClient {
+): InboxClient & RequesterClient & RunsClient {
   const meta = stubMeta(provenance)
   return {
     acceptClarifiedOutcome: unexpected("acceptClarifiedOutcome"),
@@ -38,5 +39,6 @@ export function featureClientStubs(
     getInbox: vi.fn(async () => ({meta, data: {items: [], selected_request_id: null}})),
     getRequestDetail: unexpected("getRequestDetail"),
     getRequesterRequests: vi.fn(async () => ({meta, data: []})),
-  } as unknown as InboxClient & RequesterClient
+    getRuns: vi.fn(async () => ({meta, data: {runs: []}})),
+  } as unknown as InboxClient & RequesterClient & RunsClient
 }

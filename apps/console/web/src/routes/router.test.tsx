@@ -252,7 +252,6 @@ describe("ConsoleRoutes", () => {
 
   test.each([
     ["/data-products", "Data products", "Review versioned products and their governed state."],
-    ["/runs", "Runs", "Track accepted, running, and terminal product operations."],
     ["/catalog", "Catalog", "Inspect published meaning, ownership, and lineage."],
     ["/dashboards", "Dashboards", "Review managed dashboard capability and delivery boundaries."],
     ["/evidence", "Evidence", "Trace decisions and outcomes to immutable evidence references."],
@@ -264,6 +263,19 @@ describe("ConsoleRoutes", () => {
     expect(screen.getByRole("list", {name: `${heading} capability states`})).toBeVisible()
     expect(screen.getAllByText("Ready").length).toBeGreaterThan(0)
     expect(screen.getAllByText("Not delivered").length).toBeGreaterThan(0)
+  })
+
+  test("renders /runs as the delivered listing rather than a capability summary", async () => {
+    // `/runs` was one of the summary placeholders above until the owning services
+    // published the reads it needs. It now reads real runs, so it is asserted as a
+    // listing; leaving it in the parametrised set would have kept pinning the
+    // placeholder in place.
+    renderRoutes("/runs")
+
+    await waitFor(() =>
+      expect(screen.getByText(/no runs have been recorded/i)).toBeVisible(),
+    )
+    expect(screen.getByRole("heading", {name: "Runs"})).toBeVisible()
   })
 
   test.each([

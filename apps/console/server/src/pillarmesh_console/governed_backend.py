@@ -84,6 +84,7 @@ from .contracts import (
     ReviewView,
     RiskLevel,
     RunsView,
+    RunView,
     SessionView,
     SetupStage,
     SetupStageState,
@@ -108,6 +109,7 @@ from .errors import (
 )
 from .governed_adapters import (
     CatalogBindingReader,
+    DataProductReferenceReader,
     FulfillmentDecisionCommands,
     FulfillmentViewReader,
     GovernedWorkspaceIdentity,
@@ -115,6 +117,7 @@ from .governed_adapters import (
     RequestIntakeCommands,
     SemanticReviewCommands,
     SemanticReviewReader,
+    TenantRunReader,
     WarehouseBindingReader,
     WarehouseConfirmation,
     WarehouseLifecycleCommands,
@@ -237,12 +240,6 @@ _UNDELIVERED_CAPABILITIES: tuple[_Capability, ...] = (
         ),
     ),
     _Capability(
-        capability_id="data-product-runs",
-        label="Data products and runs",
-        dependency="a tenant-scoped data product and run read interface",
-        detail="No owning service publishes tenant-scoped data products or runs.",
-    ),
-    _Capability(
         capability_id="analyst-dashboard",
         label="Analyst dashboards",
         dependency="the governed Superset embedding surface",
@@ -303,6 +300,8 @@ class GovernedConsoleBackend:
         semantic_reviews: SemanticReviewReader | None = None,
         requests: RequestInboxReader | None = None,
         fulfillment: FulfillmentViewReader | None = None,
+        runs: TenantRunReader | None = None,
+        data_products: DataProductReferenceReader | None = None,
         principals: WorkspacePrincipalDirectory | None = None,
         warehouse_commands: WarehouseLifecycleCommands | None = None,
         request_commands: RequestIntakeCommands | None = None,
@@ -318,6 +317,8 @@ class GovernedConsoleBackend:
         self._semantic_reviews = semantic_reviews
         self._requests = requests
         self._fulfillment = fulfillment
+        self._runs = runs
+        self._data_products = data_products
         self._principals = principals
         self._warehouse_commands = warehouse_commands
         self._request_commands = request_commands
@@ -406,6 +407,27 @@ class GovernedConsoleBackend:
                     None
                     if self._request_commands is not None
                     else "request-management conversation wiring"
+                ),
+            ),
+            CapabilityView(
+                capability_id="data-product-runs",
+                label="Data products and runs",
+                state=(
+                    "ready"
+                    if self._runs is not None and self._data_products is not None
+                    else "not_delivered"
+                ),
+                detail=(
+                    "Runs are listed by deriving the tenant through its activated "
+                    "contracts, and a data product is shown as the reference its "
+                    "governing policy permitted."
+                    if self._runs is not None and self._data_products is not None
+                    else "No owning service publishes tenant-scoped data products or runs."
+                ),
+                dependency=(
+                    None
+                    if self._runs is not None and self._data_products is not None
+                    else "a tenant-scoped data product and run read interface"
                 ),
             ),
         ]
@@ -544,10 +566,40 @@ class GovernedConsoleBackend:
     def get_data_product(
         self, context: TrustedActorContext, data_product_id: str
     ) -> DataProductView:
-        raise _not_delivered("a tenant-scoped data product read interface")
+        if self._data_products is None:
+            raise _not_delivered("a tenant-scoped data product read interface")
+        permitted = [
+            reference
+            for reference in self._data_products.permitted_references(context.tenant_id)
+            if reference.artifact_id == data_product_id
+        ]
+        if not permitted:
+            raise ConsoleNotFound()
+        # Policy snapshots accumulate over a tenant's history, so one product is
+        # permitted at several versions. The newest is the one a reader means.
+        newest = max(permitted, key=lambda reference: reference.version)
+        return DataProductView(
+            data_product_id=newest.artifact_id,
+            artifact_digest=newest.digest,
+            version=newest.version,
+        )
 
     def get_runs(self, context: TrustedActorContext) -> RunsView:
-        raise _not_delivered("a tenant-scoped run read interface")
+        if self._runs is None:
+            raise _not_delivered("a tenant-scoped run read interface")
+        records = self._runs.list_runs(context.tenant_id)
+        return RunsView(
+            runs=tuple(
+                RunView(
+                    run_id=record.run_id,
+                    contract_digest=record.contract_digest,
+                    state=record.state,
+                    created_at=record.created_at,
+                    updated_at=record.updated_at,
+                )
+                for record in records
+            )
+        )
 
     def get_catalog_asset(self, context: TrustedActorContext, asset_ref: str) -> CatalogAssetView:
         raise _not_delivered("a catalog asset read interface over published references")

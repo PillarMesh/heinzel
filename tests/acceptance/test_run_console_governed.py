@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import sqlite3
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -14,6 +16,8 @@ from tests.acceptance.run_console_governed import (
     GovernedConsoleDeployment,
     default_state_directory,
 )
+
+_NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -193,3 +197,127 @@ def test_a_non_loopback_host_is_refused() -> None:
     """This harness has no authentication; it may not leave the machine."""
     with pytest.raises(ValueError, match="loopback"):
         GovernedConsoleDeployment.require_loopback("0.0.0.0")
+
+
+def test_the_run_capability_is_delivered_rather_than_reported_as_undelivered(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """The reads exist now, so the harness must actually compose them.
+
+    Publishing `list_activated` and `list_runs_for_contracts` in the owning
+    services delivers nothing on its own. Leaving them uncomposed is exactly how
+    `catalog-binding` and `semantic-review` came to be reported as undelivered for
+    services that had been implemented for two plans.
+    """
+    with TestClient(deployment.build_app()) as client:
+        workspace = client.get("/api/v1/workspace").json()["data"]
+
+    runs = next(
+        capability
+        for capability in workspace["capabilities"]
+        if capability["capability_id"] == "data-product-runs"
+    )
+    assert runs["state"] == "ready"
+    assert runs["dependency"] is None
+
+
+def test_a_tenant_with_no_activated_contracts_reads_an_empty_run_listing(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """Delivered-and-empty is the honest answer, and it must not be a failure."""
+    with TestClient(deployment.build_app()) as client:
+        response = client.get("/api/v1/runs")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["runs"] == []
+
+
+def test_a_run_recorded_by_the_owning_services_reaches_the_console(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """The tenant is derived, never stored on the run.
+
+    The evidence record carries no tenant. It is reachable only because the
+    contract digest it was witnessed under is activated for this tenant, which is
+    the whole of the derivation this capability rests on.
+    """
+    deployment.lifecycles.activate(tenant_id=TENANT, contract_digest="a" * 64, activated_at=_NOW)
+    deployment.evidence.create_run(
+        "run-000000000000000000000001", "activation-1", "a" * 64, "b" * 64, "{}", _NOW
+    )
+
+    with TestClient(deployment.build_app()) as client:
+        listed = client.get("/api/v1/runs").json()["data"]["runs"]
+
+    assert [run["run_id"] for run in listed] == ["run-000000000000000000000001"]
+    assert listed[0]["contract_digest"] == "a" * 64
+
+
+def test_a_run_under_another_tenant_s_contract_is_not_listed(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """The derivation is the tenant boundary, so this is the test that matters."""
+    deployment.lifecycles.activate(
+        tenant_id="tenant-somebody-else", contract_digest="c" * 64, activated_at=_NOW
+    )
+    deployment.evidence.create_run(
+        "run-000000000000000000000002", "activation-2", "c" * 64, "b" * 64, "{}", _NOW
+    )
+
+    with TestClient(deployment.build_app()) as client:
+        listed = client.get("/api/v1/runs").json()["data"]["runs"]
+
+    assert listed == []
+
+
+def test_every_store_is_closed_even_when_one_close_raises(tmp_path: Path) -> None:
+    """Teardown must not abandon file handles because an earlier close failed.
+
+    The deployment now owns six databases. A chain of nested `finally` blocks grew
+    one level per store and silently skipped the rest whenever an early close
+    raised, which on this harness leaks the state directory between runs.
+    """
+    running = GovernedConsoleDeployment(tmp_path)
+
+    def explode() -> None:
+        raise RuntimeError("this store refuses to close")
+
+    running.warehouse_repository.close = explode  # type: ignore[method-assign]
+
+    with pytest.raises(RuntimeError, match="refuses to close"):
+        running.close()
+
+    # A closed connection is observed by using it, not by asking the store to
+    # carry a flag that exists only for this assertion.
+    with pytest.raises(sqlite3.ProgrammingError):
+        running.evidence.list_runs_for_contracts(("a" * 64,))
+
+
+def test_the_advertised_data_product_route_is_actually_exercised(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """The capability badge claimed a route no test had ever called.
+
+    `data-product-runs` reported `ready` because two readers were non-None, while
+    every call to the data-product half raised `TypeError` and returned 500. A badge
+    is only worth what an exercised route makes it worth, so this walks the route the
+    badge advertises rather than the wiring behind it.
+    """
+    seeded = deployment.seed()
+
+    with TestClient(deployment.build_app()) as client:
+        permitted = client.get(f"/api/v1/data-products/{seeded.data_product_ref}")
+
+    assert permitted.status_code == 200
+    assert permitted.json()["data"]["data_product_id"] == seeded.data_product_ref
+
+
+def test_a_data_product_no_policy_permits_is_not_found_rather_than_a_failure(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    deployment.seed()
+
+    with TestClient(deployment.build_app()) as client:
+        response = client.get("/api/v1/data-products/product-nobody-permits")
+
+    assert response.status_code == 404

@@ -110,6 +110,7 @@ export type NonEmptyJsonTuple_ReviewSectionView_ = [ReviewSectionView, ...Review
 export type MaterialChange = boolean
 export type JsonTuple_ReviewItemView_ = ReviewItemView[]
 export type ConsoleEnvelopeRunsView = ConsoleEnvelope_RunsView_
+export type RunLifecycleState = "created" | "running" | "succeeded" | "failed" | "non_conforming"
 export type JsonTuple_RunView_ = RunView[]
 export type ConsoleEnvelopeSessionView = ConsoleEnvelope_SessionView_
 export type SessionView = SessionView1
@@ -288,11 +289,19 @@ export interface ConsoleEnvelope_DataProductView_ {
   data: DataProductView
   meta: ApiMeta
 }
+/**
+ * A data product as far as any owning service will assert one.
+ *
+ * Nothing in the estate stores a data product row. It exists only as an
+ * `ArtifactReference` -- an identifier, a version and a digest -- inside policy
+ * snapshots and access previews. A display name and a summary would therefore be
+ * the console's inventions, and the console does not become an authority over
+ * records it merely projects. The same rule already governs
+ * `EvidenceContextView.datasets`.
+ */
 export interface DataProductView {
+  artifact_digest: Digest
   data_product_id: PublicId
-  display_name: NonEmptyText
-  state: CapabilityState
-  summary: NonEmptyText
   version: Version
 }
 export interface DecisionCommand {
@@ -541,13 +550,24 @@ export interface ConsoleEnvelope_RunsView_ {
 export interface RunsView {
   runs?: JsonTuple_RunView_
 }
+/**
+ * A run as the evidence store witnessed it.
+ *
+ * `state` carries the store's own vocabulary rather than the shared
+ * `OperationState`, because the two do not map without loss: a `non_conforming`
+ * run is a known outcome, and the nearest shared value, `outcome_unknown`, would
+ * report a witnessed non-conformance as ignorance.
+ *
+ * The timestamps are the record's own `created_at` and `updated_at`. Renaming
+ * them to `started_at` and `completed_at` would assert a lifecycle meaning the
+ * stored fields do not carry.
+ */
 export interface RunView {
-  completed_at?: UtcDatetime | null
-  data_product_ref: PublicId
+  contract_digest: Digest
+  created_at: UtcDatetime
   run_id: PublicId
-  started_at?: UtcDatetime | null
-  state: OperationState
-  summary: NonEmptyText
+  state: RunLifecycleState
+  updated_at: UtcDatetime
 }
 export interface ConsoleEnvelope_SessionView_ {
   data: SessionView

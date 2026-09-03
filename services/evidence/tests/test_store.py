@@ -1,6 +1,6 @@
 import hashlib
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -8,6 +8,7 @@ from pillarmesh_evidence import (
     ActiveRunError,
     InvalidStateTransition,
     MigrationError,
+    RunRecord,
     SQLiteStore,
 )
 
@@ -637,3 +638,99 @@ def test_replayed_activated_run_does_not_duplicate_lifecycle_evidence(tmp_path: 
         "draft_created",
         "activation",
     )
+
+
+def _settled_run(
+    database: SQLiteStore, run_id: str, activation_key: str, contract_digest: str
+) -> None:
+    """Create a run and settle it, because only one run may be active at a time."""
+    database.create_run(run_id, activation_key, contract_digest, "b" * 64, "{}", NOW)
+    database.transition_run(run_id, "created", "succeeded", "closed", NOW)
+
+
+def test_runs_list_for_the_contracts_they_were_witnessed_under(tmp_path: Path) -> None:
+    """A run carries a contract digest, and a contract digest carries the tenant.
+
+    The store could only read a run by its own identifier or by its activation key,
+    so nothing could gather the runs belonging to a tenant. Listing by contract
+    digest is the evidence half of deriving a run's tenant without storing one on
+    an append-only record.
+    """
+    database = store(tmp_path / "m0.sqlite3")
+    _settled_run(database, "run-1", "activation-1", "a" * 64)
+    _settled_run(database, "run-2", "activation-2", "a" * 64)
+    _settled_run(database, "run-3", "activation-3", "c" * 64)
+
+    listed = database.list_runs_for_contracts(("a" * 64,))
+
+    assert {record.run_id for record in listed} == {"run-1", "run-2"}
+
+
+def test_listing_no_contracts_returns_no_runs_rather_than_every_run(tmp_path: Path) -> None:
+    """A tenant with no activated contracts must not see the whole estate.
+
+    An empty digest set is what a tenant with nothing activated produces. This
+    pins the answer as behaviour rather than as an implementation detail: it holds
+    whether the filter short-circuits in Python or collapses in SQL.
+    """
+    database = store(tmp_path / "m0.sqlite3")
+    _settled_run(database, "run-1", "activation-1", "a" * 64)
+
+    assert database.list_runs_for_contracts(()) == ()
+
+
+def test_listed_runs_are_ordered_newest_first_and_are_deterministic(tmp_path: Path) -> None:
+    database = store(tmp_path / "m0.sqlite3")
+    database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
+    database.transition_run("run-1", "created", "succeeded", "closed", NOW)
+    later = datetime(2026, 8, 14, 12, 0, tzinfo=UTC)
+    database.create_run("run-2", "activation-2", "a" * 64, "b" * 64, "{}", later)
+    database.transition_run("run-2", "created", "succeeded", "closed", later)
+
+    listed = database.list_runs_for_contracts(("a" * 64,))
+
+    assert [record.run_id for record in listed] == ["run-2", "run-1"]
+
+
+def test_a_store_can_be_opened_for_use_from_a_threadpool_worker(tmp_path: Path) -> None:
+    """SQLite connections carry thread affinity; server routes do not.
+
+    A console route runs its backend in a threadpool, so a store opened on the
+    composing thread raises `ProgrammingError` the first time a worker reads it.
+    Opening thread-tolerantly is the caller's explicit choice, so it is a named
+    argument rather than the default.
+    """
+    import threading
+
+    database = SQLiteStore.open(tmp_path / "m0.sqlite3", check_same_thread=False)
+    _settled_run(database, "run-1", "activation-1", "a" * 64)
+    listed: list[tuple[RunRecord, ...]] = []
+
+    worker = threading.Thread(
+        target=lambda: listed.append(database.list_runs_for_contracts(("a" * 64,)))
+    )
+    worker.start()
+    worker.join()
+
+    assert [record.run_id for record in listed[0]] == ["run-1"]
+
+
+def test_runs_are_ordered_by_instant_rather_than_by_timestamp_text(tmp_path: Path) -> None:
+    """`_timestamp` keeps each datetime's own offset, so text order is not time order.
+
+    A store only requires timestamps to be timezone-aware, not UTC, and a service's
+    clock is injectable. Sorting the stored ISO text lexicographically therefore put
+    a run recorded at 12:00+05:30 (06:30Z) ahead of one at 09:00Z, reversing
+    newest-first for any estate that records under more than one offset.
+    """
+    database = store(tmp_path / "m0.sqlite3")
+    earlier = datetime(2026, 9, 1, 12, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    later = datetime(2026, 9, 1, 9, tzinfo=UTC)
+    database.create_run("run-earlier", "activation-1", "a" * 64, "b" * 64, "{}", earlier)
+    database.transition_run("run-earlier", "created", "succeeded", "closed", earlier)
+    database.create_run("run-later", "activation-2", "a" * 64, "b" * 64, "{}", later)
+    database.transition_run("run-later", "created", "succeeded", "closed", later)
+
+    listed = database.list_runs_for_contracts(("a" * 64,))
+
+    assert [record.run_id for record in listed] == ["run-later", "run-earlier"]

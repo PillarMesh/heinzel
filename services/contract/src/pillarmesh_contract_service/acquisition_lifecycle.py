@@ -3,7 +3,7 @@ from __future__ import annotations
 import sqlite3
 from datetime import datetime
 from threading import Lock
-from typing import Protocol
+from typing import Any, Protocol
 
 from .models import AcquisitionContractLifecycleState
 
@@ -30,6 +30,11 @@ class AcquisitionContractLifecycleRepository(Protocol):
         tenant_id: str,
         contract_digest: str,
     ) -> AcquisitionContractLifecycleState: ...
+
+    def list_activated(
+        self,
+        tenant_id: str,
+    ) -> tuple[AcquisitionContractLifecycleState, ...]: ...
 
     def retire(
         self,
@@ -172,6 +177,33 @@ class SQLiteAcquisitionContractLifecycleRepository:
                 self._connection.rollback()
                 raise
 
+    def list_activated(
+        self,
+        tenant_id: str,
+    ) -> tuple[AcquisitionContractLifecycleState, ...]:
+        """Every contract currently activated for one tenant.
+
+        This is the tenant half of deriving a run's tenant: a run carries a contract
+        digest, and a contract digest is tenant-qualified only here. The filter is
+        `activated` rather than "every row", because a retired contract is no longer
+        a live contract of this tenant.
+        """
+        with self._lock:
+            rows = self._connection.execute(
+                "SELECT revision, lifecycle_state, payload "
+                "FROM acquisition_contract_lifecycles "
+                "WHERE tenant_id = ? AND lifecycle_state = 'activated' "
+                "ORDER BY contract_digest",
+                (tenant_id,),
+            ).fetchall()
+        return tuple(self._state_from_row(row) for row in rows)
+
+    def _state_from_row(self, row: tuple[Any, ...]) -> AcquisitionContractLifecycleState:
+        state = AcquisitionContractLifecycleState.model_validate_json(row[2], strict=True)
+        if state.revision != int(row[0]) or state.lifecycle_state != str(row[1]):
+            raise RuntimeError("stored acquisition contract lifecycle authority mismatch")
+        return state
+
     def _load_optional(
         self,
         tenant_id: str,
@@ -185,7 +217,4 @@ class SQLiteAcquisitionContractLifecycleRepository:
         ).fetchone()
         if row is None:
             return None
-        state = AcquisitionContractLifecycleState.model_validate_json(row[2], strict=True)
-        if state.revision != int(row[0]) or state.lifecycle_state != str(row[1]):
-            raise RuntimeError("stored acquisition contract lifecycle authority mismatch")
-        return state
+        return self._state_from_row(row)

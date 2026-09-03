@@ -1484,18 +1484,13 @@
     },
     "DataProductView": {
       "additionalProperties": false,
+      "description": "A data product as far as any owning service will assert one.\n\nNothing in the estate stores a data product row. It exists only as an\n`ArtifactReference` -- an identifier, a version and a digest -- inside policy\nsnapshots and access previews. A display name and a summary would therefore be\nthe console's inventions, and the console does not become an authority over\nrecords it merely projects. The same rule already governs\n`EvidenceContextView.datasets`.",
       "properties": {
+        "artifact_digest": {
+          "$ref": "#/$defs/Digest"
+        },
         "data_product_id": {
           "$ref": "#/$defs/PublicId"
-        },
-        "display_name": {
-          "$ref": "#/$defs/NonEmptyText"
-        },
-        "state": {
-          "$ref": "#/$defs/CapabilityState"
-        },
-        "summary": {
-          "$ref": "#/$defs/NonEmptyText"
         },
         "version": {
           "minimum": 1,
@@ -1505,9 +1500,7 @@
       },
       "required": [
         "data_product_id",
-        "display_name",
-        "state",
-        "summary",
+        "artifact_digest",
         "version"
       ],
       "title": "DataProductView",
@@ -2756,49 +2749,42 @@
       ],
       "type": "string"
     },
+    "RunLifecycleState": {
+      "enum": [
+        "created",
+        "running",
+        "succeeded",
+        "failed",
+        "non_conforming"
+      ],
+      "type": "string"
+    },
     "RunView": {
       "additionalProperties": false,
+      "description": "A run as the evidence store witnessed it.\n\n`state` carries the store's own vocabulary rather than the shared\n`OperationState`, because the two do not map without loss: a `non_conforming`\nrun is a known outcome, and the nearest shared value, `outcome_unknown`, would\nreport a witnessed non-conformance as ignorance.\n\nThe timestamps are the record's own `created_at` and `updated_at`. Renaming\nthem to `started_at` and `completed_at` would assert a lifecycle meaning the\nstored fields do not carry.",
       "properties": {
-        "completed_at": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/UtcDatetime"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
+        "contract_digest": {
+          "$ref": "#/$defs/Digest"
         },
-        "data_product_ref": {
-          "$ref": "#/$defs/PublicId"
+        "created_at": {
+          "$ref": "#/$defs/UtcDatetime"
         },
         "run_id": {
           "$ref": "#/$defs/PublicId"
         },
-        "started_at": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/UtcDatetime"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
         "state": {
-          "$ref": "#/$defs/OperationState"
+          "$ref": "#/$defs/RunLifecycleState"
         },
-        "summary": {
-          "$ref": "#/$defs/NonEmptyText"
+        "updated_at": {
+          "$ref": "#/$defs/UtcDatetime"
         }
       },
       "required": [
         "run_id",
-        "data_product_ref",
+        "contract_digest",
         "state",
-        "summary"
+        "created_at",
+        "updated_at"
       ],
       "title": "RunView",
       "type": "object"
