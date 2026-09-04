@@ -804,3 +804,232 @@ def test_a_snapshot_the_tenant_cannot_read_skips_that_proposal() -> None:
     references = reader.permitted_references(_TENANT)
 
     assert [reference.artifact_id for reference in references] == ["product-revenue"]
+
+
+class _StubAcquisitionReceiptReader:
+    """Mirrors the OWNING store's method name and signature exactly.
+
+    `SQLiteStore.list_acquisition_receipts` is what the console composes in
+    governed-local mode, so a double that renamed or reshaped the call would let a
+    signature mismatch reach a live run instead of this test.
+    """
+
+    def __init__(self, receipts: dict[str, tuple[object, ...]]) -> None:
+        self._receipts = receipts
+        self.asked: list[str] = []
+
+    def list_acquisition_receipts(self, tenant_id: str) -> tuple[object, ...]:
+        self.asked.append(tenant_id)
+        return self._receipts.get(tenant_id, ())
+
+
+def _receipt(
+    evidence_id: str = "evidence-ref:prepared-1",
+    *,
+    outcome: str = "prepared",
+    reason_codes: tuple[str, ...] = (),
+    logical_object_refs: tuple[str, ...] = ("orders",),
+) -> object:
+    from pillarmesh_evidence import AcquisitionEvidenceReceipt
+
+    prepared = outcome in ("prepared", "acknowledged")
+    return AcquisitionEvidenceReceipt(
+        evidence_id=evidence_id,
+        tenant_id=_TENANT,
+        run_intent_ref="1" * 64,
+        contract_ref="contract:orders:v1",
+        source_binding_ref="source-binding:orders",
+        acquisition_mode="snapshot",
+        logical_object_refs=logical_object_refs,
+        prepared_receipt_ref="receipt-ref:prepared-1" if prepared else None,
+        checkpoint_receipt_ref="receipt-ref:checkpoint-1" if outcome == "acknowledged" else None,
+        prior_checkpoint_revision=0,
+        resulting_checkpoint_revision=1 if outcome == "acknowledged" else None,
+        reason_codes=reason_codes,
+        outcome=outcome,
+        created_at=datetime(2026, 9, 1, 12, tzinfo=UTC),
+    )
+
+
+def test_acquisition_receipts_are_read_for_the_calling_tenant_only() -> None:
+    reader = _StubAcquisitionReceiptReader({_TENANT: (_receipt(),)})
+    backend = _backend(acquisition_receipts=reader)
+
+    view = backend.get_acquisition_receipts(_architect_context())
+
+    assert reader.asked == [_TENANT]
+    assert [receipt.evidence_id for receipt in view.receipts] == ["evidence-ref:prepared-1"]
+
+
+def test_a_governed_refusal_is_listed_beside_a_successful_acquisition() -> None:
+    """A refusal an operator cannot see is a refusal they cannot act on.
+
+    The receipt model carries `outcome` and `reason_codes` precisely so a refusal
+    is publishable, so filtering refused receipts out of the listing would discard
+    the half of the record that explains why nothing was acquired.
+    """
+    reader = _StubAcquisitionReceiptReader(
+        {
+            _TENANT: (
+                _receipt("evidence-ref:prepared-1"),
+                _receipt(
+                    "evidence-ref:refused-1",
+                    outcome="no_valid_plan",
+                    reason_codes=("contract_not_activated",),
+                ),
+            )
+        }
+    )
+    backend = _backend(acquisition_receipts=reader)
+
+    view = backend.get_acquisition_receipts(_architect_context())
+
+    assert [receipt.outcome for receipt in view.receipts] == ["prepared", "no_valid_plan"]
+    assert view.receipts[1].reason_codes == ("contract_not_activated",)
+    assert view.receipts[0].reason_codes == ()
+
+
+def test_an_acquisition_receipt_projects_references_and_invents_no_names() -> None:
+    """The rule `DataProductView` follows applies here unchanged.
+
+    Every identifier on a receipt is a reference an owning service allocated. The
+    console shows those references and does not invent a display name for a
+    contract, a source binding or a logical object it has no authority to name.
+    """
+    reader = _StubAcquisitionReceiptReader({_TENANT: (_receipt(),)})
+    backend = _backend(acquisition_receipts=reader)
+
+    receipt = backend.get_acquisition_receipts(_architect_context()).receipts[0]
+
+    assert receipt.contract_ref == "contract:orders:v1"
+    assert receipt.source_binding_ref == "source-binding:orders"
+    assert receipt.logical_object_refs == ("orders",)
+    assert receipt.acquisition_mode == "snapshot"
+
+
+def test_an_acquisition_receipt_projection_excludes_every_private_field() -> None:
+    """The receipt is public, but the projection must not widen it by accident.
+
+    A checkpoint revision and a prepared-receipt reference are internal recovery
+    state; they say where the runtime is in its own protocol, which is not
+    something an operator reads and not something the console should republish.
+    """
+    reader = _StubAcquisitionReceiptReader({_TENANT: (_receipt(outcome="acknowledged"),)})
+    backend = _backend(acquisition_receipts=reader)
+
+    serialized = backend.get_acquisition_receipts(_architect_context()).model_dump_json()
+
+    for forbidden in (
+        "prepared_receipt_ref",
+        "checkpoint_receipt_ref",
+        "prior_checkpoint_revision",
+        "resulting_checkpoint_revision",
+        "run_intent_ref",
+        "tenant_id",
+    ):
+        assert forbidden not in serialized
+
+
+def test_a_tenant_with_no_acquisition_receipts_reads_an_empty_listing() -> None:
+    """Delivered-and-empty is a different answer from not-delivered."""
+    backend = _backend(acquisition_receipts=_StubAcquisitionReceiptReader({}))
+
+    assert backend.get_acquisition_receipts(_architect_context()).receipts == ()
+
+
+def test_reading_acquisition_receipts_without_a_store_is_not_delivered() -> None:
+    with pytest.raises(ConsoleUnavailable) as raised:
+        _backend().get_acquisition_receipts(_architect_context())
+
+    assert raised.value.code == CAPABILITY_NOT_DELIVERED
+
+
+def test_the_acquisition_evidence_capability_follows_the_wiring() -> None:
+    unwired = _backend().get_workspace(_architect_context())
+    wired = _backend(acquisition_receipts=_StubAcquisitionReceiptReader({})).get_workspace(
+        _architect_context()
+    )
+
+    def state(view: object, capability_id: str) -> str:
+        return next(
+            capability.state
+            for capability in view.capabilities  # type: ignore[attr-defined]
+            if capability.capability_id == capability_id
+        )
+
+    assert state(unwired, "acquisition-evidence") == "not_delivered"
+    assert state(wired, "acquisition-evidence") == "ready"
+
+
+def test_source_acquisition_stays_undelivered_while_no_runtime_is_composed() -> None:
+    """Retaining receipts is not the same capability as performing an acquisition.
+
+    Nothing in the console can start an acquisition, so reporting
+    `source-acquisition` as ready once the read exists would assert a capability
+    that cannot happen -- the exact defect the register was rebuilt to prevent.
+    """
+    view = _backend(acquisition_receipts=_StubAcquisitionReceiptReader({})).get_workspace(
+        _architect_context()
+    )
+
+    capability = next(
+        item for item in view.capabilities if item.capability_id == "source-acquisition"
+    )
+
+    assert capability.state == "not_delivered"
+    assert "in-memory test double" not in capability.detail
+
+
+def test_the_console_acquisition_vocabulary_mirrors_the_owning_receipt_exactly() -> None:
+    """A mirrored vocabulary that drifts silently rejects what the owner accepts.
+
+    The console restates these closed vocabularies rather than importing the
+    provider SDK it does not depend on, so the mirror is pinned to the owning
+    model's own annotations here instead of to a copied literal.
+    """
+    from typing import get_args
+
+    from pillarmesh_console.contracts import (
+        AcquisitionModeView,
+        AcquisitionOutcomeView,
+        AcquisitionReasonCodeView,
+    )
+    from pillarmesh_evidence import AcquisitionEvidenceReceipt
+
+    fields = AcquisitionEvidenceReceipt.model_fields
+
+    assert set(get_args(AcquisitionOutcomeView)) == set(get_args(fields["outcome"].annotation))
+    assert set(get_args(AcquisitionModeView)) == set(
+        get_args(fields["acquisition_mode"].annotation)
+    )
+    assert set(get_args(AcquisitionReasonCodeView)) == set(
+        get_args(get_args(fields["reason_codes"].annotation)[0])
+    )
+
+
+def test_the_governed_reads_enforce_the_role_set_the_fixture_backend_declares() -> None:
+    """Governed mode must never be more permissive than the demo it stands in for.
+
+    Both reads served any authenticated actor while `FixtureConsoleBackend`
+    restricted them to `("data_architect", "data_owner")`, so a requester could read
+    acquisition and run evidence in the real product that the demo refused them.
+    """
+    requester = TrustedActorContext(
+        tenant_id=_TENANT,
+        actor_id="actor-requester",
+        roles=("requester",),
+        active_role="requester",
+        session_id="session-requester",
+    )
+    backend = _backend(
+        runs=_StubRunReader({_TENANT: (_run("run-1", "a" * 64, "succeeded"),)}),
+        acquisition_receipts=_StubAcquisitionReceiptReader({_TENANT: (_receipt(),)}),
+    )
+
+    with pytest.raises(ConsoleNotFound):
+        backend.get_acquisition_receipts(requester)
+    with pytest.raises(ConsoleNotFound):
+        backend.get_runs(requester)
+
+    assert backend.get_acquisition_receipts(_architect_context()).receipts != ()
+    assert backend.get_runs(_architect_context()).runs != ()

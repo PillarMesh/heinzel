@@ -5,6 +5,7 @@ from typing import Protocol
 
 from .auth import TrustedActorContext
 from .contracts import (
+    AcquisitionReceiptsView,
     AdmissionCommand,
     CatalogAssetView,
     ClarifiedOutcomeAcceptanceCommand,
@@ -78,6 +79,8 @@ class ConsoleBackend(Protocol):
     ) -> DataProductView: ...
 
     def get_runs(self, context: TrustedActorContext) -> RunsView: ...
+
+    def get_acquisition_receipts(self, context: TrustedActorContext) -> AcquisitionReceiptsView: ...
 
     def get_catalog_asset(
         self, context: TrustedActorContext, asset_ref: str

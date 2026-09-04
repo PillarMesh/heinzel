@@ -12,10 +12,13 @@ from typing import cast
 
 from pillarmesh_contract_model import JsonValue, canonical_bytes, canonical_value, digest
 
+from .acquisition import AcquisitionEvidenceReceipt
 from .migrations import (
     MIGRATION_CHECKSUM,
     MIGRATION_SQL,
     MIGRATION_VERSION,
+    VERSION_2_CHECKSUM,
+    VERSION_3_SQL,
 )
 from .models import EvidenceEvent, RunRecord, RunState
 from .private_state import RunPrivateState
@@ -87,10 +90,18 @@ class SQLiteStore:
             if version > MIGRATION_VERSION:
                 raise MigrationError("database schema is newer than this runtime")
             if version == 1:
+                # Version 1 kept private state in a `runs` column this schema no longer
+                # has, so there was no shape to carry forward; version 3 only adds
+                # tables, which is why it is upgraded below instead of refused.
                 raise MigrationError(
-                    "database schema version 1 is unsupported; required version 2; "
+                    "database schema version 1 is unsupported; required version 3; "
                     "start with a fresh state path"
                 )
+            if version == 2:
+                if checksum != VERSION_2_CHECKSUM:
+                    raise MigrationError("database migration checksum mismatch")
+                self._upgrade_from_version_2()
+                return
             if version != MIGRATION_VERSION or checksum != MIGRATION_CHECKSUM:
                 raise MigrationError("database migration checksum mismatch")
             return
@@ -109,6 +120,45 @@ class SQLiteStore:
                 self._connection.execute("ROLLBACK")
             raise
         self._connection.execute("COMMIT")
+
+    def _upgrade_from_version_2(self) -> None:
+        """Add the acquisition receipt table to an existing store, in one transaction.
+
+        The added tables and the version row must land together for the same reason
+        the fresh install needs it: a database carrying one without the other is
+        refused by every later open() and cannot be repaired.
+        """
+        try:
+            self._connection.executescript(f"BEGIN IMMEDIATE;\n{VERSION_3_SQL}")
+            try:
+                self._connection.execute(
+                    "UPDATE schema_metadata SET version = ?, checksum = ? WHERE singleton = 1",
+                    (MIGRATION_VERSION, MIGRATION_CHECKSUM),
+                )
+            except BaseException:
+                if self._connection.in_transaction:
+                    self._connection.execute("ROLLBACK")
+                raise
+            self._connection.execute("COMMIT")
+        except sqlite3.OperationalError as error:
+            # Only the read-only case becomes a migration failure. `OperationalError`
+            # also carries `SQLITE_BUSY`, which means a concurrent opener holds the
+            # write lock and retrying would succeed; reporting that as "needs write
+            # access" sends an operator to check permissions that are already
+            # correct, and collapsing a transient failure into a permanent one
+            # disables every retry built above it. The driver's own code is the
+            # signal -- an exception carrying none did not come from SQLite, so it
+            # is not this store's to reclassify.
+            if not getattr(error, "sqlite_errorname", "").startswith("SQLITE_READONLY"):
+                raise
+            # Opening a version 2 store now writes to it, so one that was readable
+            # before -- on a read-only archive, say -- stops opening. Report it as
+            # this store's own error naming the cause, because a caller that
+            # classifies `MigrationError` would never recognise a raw driver error.
+            raise MigrationError(
+                f"version 2 database could not be upgraded to version {MIGRATION_VERSION}; "
+                "the store requires write access to migrate"
+            ) from error
 
     def save_artifact(self, kind: str, artifact_digest: str, payload: bytes) -> None:
         self._connection.execute("BEGIN IMMEDIATE")
@@ -656,6 +706,60 @@ class SQLiteStore:
                 return False
             previous = event.event_digest
         return True
+
+    def append_acquisition_receipt(self, receipt: AcquisitionEvidenceReceipt) -> None:
+        """Retain one acquisition receipt, tolerating an identical replay.
+
+        The runtime re-derives the same receipt when it recovers a run, and it
+        classifies any writer failure as `evidence_write_failed`. Refusing an
+        identical second append would therefore turn a recovered run into an
+        integrity error. A differing payload under the same identity is not a
+        replay but a contradiction, and is refused -- the same distinction
+        `save_artifact` draws for an artifact digest.
+        """
+        payload = canonical_bytes(receipt)
+        self._connection.execute("BEGIN IMMEDIATE")
+        try:
+            existing = self._connection.execute(
+                "SELECT payload FROM acquisition_evidence_receipts "
+                "WHERE tenant_id = ? AND evidence_id = ?",
+                (receipt.tenant_id, receipt.evidence_id),
+            ).fetchone()
+            if existing is not None and bytes(existing["payload"]) != payload:
+                raise ValueError(
+                    "acquisition evidence identity already exists with a different payload"
+                )
+            self._connection.execute(
+                "INSERT OR IGNORE INTO acquisition_evidence_receipts"
+                "(tenant_id, evidence_id, created_at, payload) VALUES (?, ?, ?, ?)",
+                (receipt.tenant_id, receipt.evidence_id, receipt.created_at.isoformat(), payload),
+            )
+        # `BaseException` rather than `Exception`: an interrupt that escaped here
+        # would leave `BEGIN IMMEDIATE` open, and every later write on this
+        # connection would fail with "cannot start a transaction within a
+        # transaction" -- including writes belonging to other callers, because the
+        # console shares one thread-tolerant connection.
+        except BaseException:
+            self._connection.execute("ROLLBACK")
+            raise
+        self._connection.execute("COMMIT")
+
+    def list_acquisition_receipts(self, tenant_id: str) -> tuple[AcquisitionEvidenceReceipt, ...]:
+        """Every acquisition receipt this tenant owns, newest first.
+
+        Unlike a run, a receipt names its own tenant, so this is a direct filter and
+        needs no derivation through the contracts a tenant activated. It needs no
+        `datetime()` normalisation either: the model admits only UTC instants, so
+        every stored row shares one offset and the text order is the instant order.
+        """
+        rows = self._connection.execute(
+            "SELECT payload FROM acquisition_evidence_receipts WHERE tenant_id = ? "
+            "ORDER BY created_at DESC, evidence_id",
+            (tenant_id,),
+        ).fetchall()
+        return tuple(
+            AcquisitionEvidenceReceipt.model_validate_json(bytes(row["payload"])) for row in rows
+        )
 
 
 def _like_literal(value: str) -> str:

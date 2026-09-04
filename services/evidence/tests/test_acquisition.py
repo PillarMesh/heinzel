@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
-from pillarmesh_evidence import AcquisitionEvidenceReceipt
+from pillarmesh_evidence import (
+    AcquisitionEvidenceReceipt,
+    SQLiteAcquisitionEvidenceWriter,
+    SQLiteStore,
+)
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 31, 12, 0, tzinfo=UTC)
@@ -116,3 +121,22 @@ def test_public_reason_codes_reject_arbitrary_dependency_text() -> None:
             prepared_receipt_ref=None,
             reason_codes=("private-provider-response-canary",),
         )
+
+
+def test_durable_writer_retains_what_it_appends(tmp_path: Path) -> None:
+    """The writer is the seam the runtime holds; it must persist, not just accept.
+
+    Every writer the estate had was a list in a test double, so a receipt the runtime
+    built was discarded the moment the process ended. This is the smallest statement
+    that the seam now leads somewhere durable.
+    """
+    store = SQLiteStore.open(tmp_path / "m0.sqlite3")
+    writer = SQLiteAcquisitionEvidenceWriter(store)
+    receipt = _receipt()
+
+    writer.append(receipt)
+    store.close()
+
+    assert SQLiteStore.open(tmp_path / "m0.sqlite3").list_acquisition_receipts("tenant-a") == (
+        receipt,
+    )

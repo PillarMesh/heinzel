@@ -8,6 +8,8 @@ from types import MappingProxyType
 
 from .contracts import (
     AccessPreviewProposalView,
+    AcquisitionReceiptsView,
+    AcquisitionReceiptView,
     ActorRole,
     AuthorityRequirementView,
     AuthorityStatusView,
@@ -68,6 +70,7 @@ class FixtureSeed:
     clarified_outcomes: Mapping[str, ClarifiedOutcomeView]
     data_products: Mapping[str, DataProductView]
     runs: RunsView
+    acquisition_receipts: AcquisitionReceiptsView
     catalog_assets: Mapping[str, CatalogAssetView]
     dashboards: Mapping[str, DashboardView]
 
@@ -469,6 +472,32 @@ def build_fixture_seed() -> FixtureSeed:
                     state="succeeded",
                     created_at=FIXED_TIME - timedelta(minutes=2),
                     updated_at=FIXED_TIME - timedelta(minutes=1),
+                ),
+            )
+        ),
+        acquisition_receipts=AcquisitionReceiptsView(
+            receipts=(
+                AcquisitionReceiptView(
+                    evidence_id="evidence-ref:synthetic-prepared",
+                    contract_ref="contract:synthetic-orders:v1",
+                    source_binding_ref="source-binding:synthetic-orders",
+                    acquisition_mode="snapshot",
+                    logical_object_refs=("orders",),
+                    outcome="prepared",
+                    reason_codes=(),
+                    created_at=FIXED_TIME - timedelta(minutes=4),
+                ),
+                # A refusal is seeded beside a success so the demo shows the shape an
+                # operator actually has to act on, not only the happy path.
+                AcquisitionReceiptView(
+                    evidence_id="evidence-ref:synthetic-refused",
+                    contract_ref="contract:synthetic-payments:v1",
+                    source_binding_ref="source-binding:synthetic-payments",
+                    acquisition_mode="incremental",
+                    logical_object_refs=("payments",),
+                    outcome="no_valid_plan",
+                    reason_codes=("contract_not_activated",),
+                    created_at=FIXED_TIME - timedelta(minutes=6),
                 ),
             )
         ),

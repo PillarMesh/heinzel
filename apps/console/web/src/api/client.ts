@@ -14,6 +14,7 @@ import type {
   ConsoleEnvelopeRequesterRequestView,
   ConsoleEnvelopeRequestDetailView,
   ConsoleEnvelopeReviewView,
+  ConsoleEnvelopeAcquisitionReceiptsView,
   ConsoleEnvelopeRunsView,
   ConsoleEnvelopeSessionView,
   ConsoleEnvelopeSetupView,
@@ -394,6 +395,10 @@ export class ConsoleApiClient {
 
   getRuns(): Promise<ConsoleEnvelopeRunsView> {
     return this.#request("/api/v1/runs", "runs_response")
+  }
+
+  getAcquisitionReceipts(): Promise<ConsoleEnvelopeAcquisitionReceiptsView> {
+    return this.#request("/api/v1/acquisition-receipts", "acquisition_receipts_response")
   }
 
   getCatalogAsset(assetRef: string): Promise<ConsoleEnvelopeCatalogAssetView> {

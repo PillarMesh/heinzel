@@ -21,6 +21,26 @@ The console reports each of these as a `not_delivered` capability on
 | `POST /api/v1/inbox/{id}/admission` | `FulfillmentService.admit` |
 | `POST /api/v1/reviews/{id}/decisions` | `SemanticReviewService.decide_item` |
 
+## Governed reads are not yet role-gated the way the demo is
+
+`FixtureConsoleBackend` authorizes every read against an explicit role set.
+`GovernedConsoleBackend` authorizes only `get_request_detail`, `get_runs` and
+`get_acquisition_receipts`, so for the remaining reads governed-local mode is more
+permissive than the demo that stands in for it.
+
+Confirmed against the governed deployment, with the requester actor header:
+`GET /api/v1/inbox` and `GET /api/v1/setup` both answer `200`, while the fixture
+backend restricts the first to `("data_architect", "data_owner", "policy_approver",
+"budget_approver")` and the second to `("data_architect",)`. `get_review`,
+`get_conversation` and `get_clarified_outcome` carry the same asymmetry.
+`get_data_product`, `get_evidence`, `get_operation` and `get_preview` do not: the
+fixture role sets there admit every role anyway.
+
+This predates the acquisition work and is not fixed by it. Closing it means choosing
+the governed role set for each read, which is a decision about who may see an
+architect's decision queue rather than a mechanical change, and it needs its own
+tests.
+
 ## Capabilities that remain undelivered
 
 ### Business process package submission (`process-package`)
@@ -74,33 +94,50 @@ An approved `AccessScopePreview` is a decision record, not an applied grant. Not
 the console applies, expires, or revokes a grant, and no owning service publishes those
 transactions today.
 
+### Acquisition evidence (`acquisition-evidence`)
+
+**Closed.** Receipts an acquisition records are retained and readable per tenant.
+
+`AcquisitionEvidenceReceipt` already carried `tenant_id`, so unlike a run the read needs
+no derivation: `SQLiteStore.list_acquisition_receipts(tenant_id)` is a direct filter, and
+the store satisfies the console's reader protocol without an adapter. Evidence schema
+version 3 adds the table, guarded by the same append-only triggers the evidence chain
+carries. An existing version 2 database is upgraded in place rather than refused, because
+version 3 only adds tables and refusing would discard the run evidence the service exists
+to retain.
+
+What remains deliberately unasserted:
+
+- A listed receipt records work an acquisition performed. It does not assert that data
+  reached a destination; nothing in this estate writes one.
+- Refusals are listed beside successes. The receipt carries `outcome` and `reason_codes`
+  so a refusal is publishable, and a refusal an operator cannot see is one they cannot
+  act on. This answers open question 1 of the design document.
+- Every identifier is projected as the reference an owning service allocated, including
+  `logical_object_refs`, and the console invents no display name for any of them — the
+  rule `DataProductView` follows. This answers open question 2.
+- The recovery state — both receipt references and both checkpoint revisions — is not
+  projected. It says where the runtime is in its own protocol, which is not something an
+  operator reads.
+- Retention has no bound. The table is append-only and grows; open question 3 of the
+  design document is still open.
+
 ### Source acquisition (`source-acquisition`)
 
-This entry previously said receipts were "not publicly listable per tenant", which
-understated the gap. A read interface is the smallest part of it, and the receipt is
-already tenant-qualified — `AcquisitionEvidenceReceipt` carries `tenant_id`, so unlike a
-run it needs no derivation to be read per tenant.
+Receipts are now retained (see above), but nothing here can perform an acquisition.
 
-The gap is that the evidence is never kept. `AcquisitionEvidenceWriter` has exactly one
-method, `append`, and every implementation of it in this repository is an in-memory list
-inside a test double (`tests/acceptance/run_plan4a.py`,
-`tests/fault-injection/test_source_acquisition_recovery.py`,
-`services/runtime/tests/test_acquisition.py`). There is no durable writer, no table and no
-read path, so a receipt lives until the process exits.
-
-Nor is the runtime composed anywhere outside tests: `AcquisitionRunner` is constructed only
-in the Plan 4A acceptance harness and in unit tests, with its four resolvers bound to the
-scenario. Three of its nine collaborators do have durable implementations already
-(`SQLiteAcquisitionStateRepository`, `LocalAcquisitionArtifactStore` and
-`PostgreSQLAcquisitionProvider` — not the reference factory, which exists only as a test
-double), and its `BindingResolver` signature already matches
+`AcquisitionRunner` is constructed only in the Plan 4A acceptance harness and in unit
+tests, with its four resolvers bound to the scenario. Three of its nine collaborators have
+durable implementations already (`SQLiteAcquisitionStateRepository`,
+`LocalAcquisitionArtifactStore` and `PostgreSQLAcquisitionProvider` — not the reference
+factory, which exists only as a test double), and a fourth is now real: the durable
+`SQLiteAcquisitionEvidenceWriter`. Its `BindingResolver` signature already matches
 connection-broker's `load(tenant_id, binding_id)` exactly — it has simply never been handed
-over. What has no owning publisher is `ActivatedAcquisitionContract`, a sixteen-field model
+over. What has no owning publisher is `ActivatedAcquisitionContract`, a fifteen-field model
 declared in the runtime itself against contract-service's six-field lifecycle state.
 
 `docs/superpowers/specs/2026-09-03-source-acquisition-delivery-design.md` measures all of
-this and sequences the work so that retaining the evidence — the part that needs no
-ownership decision — can ship first.
+this and sequences the remaining work.
 
 ### Data products and runs (`data-product-runs`)
 

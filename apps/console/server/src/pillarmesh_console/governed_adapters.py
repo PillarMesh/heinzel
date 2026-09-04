@@ -22,7 +22,7 @@ from pillarmesh_catalog_control import (
 )
 from pillarmesh_contract_model import ArtifactReference
 from pillarmesh_contract_service import AcquisitionContractLifecycleRepository
-from pillarmesh_evidence import RunRecord
+from pillarmesh_evidence import AcquisitionEvidenceReceipt, RunRecord
 from pillarmesh_request_management import (
     ArchitectRequestView,
     ConversationEntry,
@@ -164,6 +164,20 @@ class RequestInboxReader(Protocol):
 
 class TenantRunReader(Protocol):
     def list_runs(self, tenant_id: str) -> tuple[RunRecord, ...]: ...
+
+
+class TenantAcquisitionReceiptReader(Protocol):
+    """The evidence store's own acquisition read, named as the store names it.
+
+    Unlike a run, a receipt records the tenant it belongs to, so no derivation
+    stands between the console and the store and `SQLiteStore` satisfies this
+    directly. Naming the method anything else would require an adapter whose only
+    purpose was to rename a call.
+    """
+
+    def list_acquisition_receipts(
+        self, tenant_id: str
+    ) -> tuple[AcquisitionEvidenceReceipt, ...]: ...
 
 
 class DerivedTenantRunReader:

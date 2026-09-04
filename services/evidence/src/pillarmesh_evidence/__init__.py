@@ -3,6 +3,7 @@ from .acquisition import (
     AcquisitionEvidenceReceipt,
     AcquisitionPublicReasonCode,
 )
+from .acquisition_writer import SQLiteAcquisitionEvidenceWriter
 from .fulfillment import FulfillmentEvidencePackage, package_fulfillment_receipts
 from .models import EvidenceEvent, RunRecord, RunState
 from .package import PackageError, export_package, verify_package
@@ -42,6 +43,7 @@ __all__ = [
     "RunPrivateState",
     "RunRecord",
     "RunState",
+    "SQLiteAcquisitionEvidenceWriter",
     "SQLiteStore",
     "ScanFinding",
     "ScanInput",

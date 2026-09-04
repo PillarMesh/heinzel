@@ -45,6 +45,7 @@ from pillarmesh_runtime import (
     AcquisitionCeilingExceeded,
     AcquisitionContractError,
     AcquisitionDriftError,
+    AcquisitionEvidenceWriter,
     AcquisitionIntegrityError,
     AcquisitionOwnershipError,
     AcquisitionPreparationResult,
@@ -551,13 +552,25 @@ class StateStore:
 
 
 class EvidenceWriter:
-    def __init__(self, events: list[str]) -> None:
+    """Records what the runner wrote, and optionally forwards it to a real writer.
+
+    The delegate lets a cross-component test drive this same runner into the durable
+    evidence store without restating the runner's nine collaborators, while every
+    test here keeps asserting against the recorded receipts.
+    """
+
+    def __init__(
+        self, events: list[str], *, delegate: AcquisitionEvidenceWriter | None = None
+    ) -> None:
         self.events = events
         self.receipts: list[AcquisitionEvidenceReceipt] = []
+        self._delegate = delegate
 
     def append(self, receipt: AcquisitionEvidenceReceipt) -> None:
         self.events.append("evidence")
         self.receipts.append(receipt)
+        if self._delegate is not None:
+            self._delegate.append(receipt)
 
 
 def _runner(
@@ -580,6 +593,7 @@ def _runner(
     acquisition_mode: AcquisitionMode = "snapshot",
     fault_hook: Callable[[str], None] | None = None,
     reference_prefix: str = "",
+    evidence_delegate: AcquisitionEvidenceWriter | None = None,
 ) -> tuple[
     AcquisitionRunner,
     AcquisitionSourceObservation,
@@ -617,7 +631,7 @@ def _runner(
     resolutions: list[str] = []
     state = StateStore(events, checkpoint=checkpoint, fail_preparation=state_failure)
     artifacts = ArtifactStore(events, fail=artifact_failure)
-    evidence = EvidenceWriter(events)
+    evidence = EvidenceWriter(events, delegate=evidence_delegate)
     references = iter(
         (
             f"{reference_prefix}receipt-ref:prepared-1",

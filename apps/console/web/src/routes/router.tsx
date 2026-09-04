@@ -8,6 +8,10 @@ import type {
 import {AppShell} from "../components/app-shell"
 import {CapabilitySummaryPage} from "../components/capability-summary-page"
 import {RunsPage, type RunsClient} from "../features/runs/runs-page"
+import {
+  AcquisitionReceiptsPage,
+  type AcquisitionReceiptsClient,
+} from "../features/acquisition/acquisition-receipts-page"
 import DecisionWorkspaceRoute, {
   DecisionWorkspace,
   type InboxClient,
@@ -23,7 +27,11 @@ interface ConsoleRoutesProps {
   readonly sessionEnvelope: ConsoleEnvelopeSessionView
   // One memoized client instance satisfies every feature protocol structurally,
   // so the feature read effects do not re-fire on each render.
-  readonly setupClient: SetupClient & InboxClient & RequesterClient & RunsClient
+  readonly setupClient: SetupClient &
+    InboxClient &
+    RequesterClient &
+    RunsClient &
+    AcquisitionReceiptsClient
   readonly setupEnvelope: ConsoleEnvelopeSetupView | undefined
   readonly workspaceEnvelope: ConsoleEnvelopeWorkspaceView
 }
@@ -190,6 +198,10 @@ export function ConsoleRoutes({
           path="/data-products"
         />
         <Route element={<RunsPage client={setupClient} />} path="/runs" />
+        <Route
+          element={<AcquisitionReceiptsPage client={setupClient} />}
+          path="/acquisition-receipts"
+        />
         <Route
           element={<CapabilitySummaryPage capabilities={capabilities} kind="catalog" />}
           path="/catalog"

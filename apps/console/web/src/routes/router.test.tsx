@@ -265,6 +265,17 @@ describe("ConsoleRoutes", () => {
     expect(screen.getAllByText("Not delivered").length).toBeGreaterThan(0)
   })
 
+  test("reaches the acquisition receipt listing from its own route", async () => {
+    // A route with no navigation entry is a dead feature, so this asserts the
+    // listing renders at the path the shell links to.
+    renderRoutes("/acquisition-receipts")
+
+    await waitFor(() =>
+      expect(screen.getByText(/no acquisition has recorded a receipt/i)).toBeVisible(),
+    )
+    expect(screen.getByRole("heading", {name: "Acquisition evidence"})).toBeVisible()
+  })
+
   test("renders /runs as the delivered listing rather than a capability summary", async () => {
     // `/runs` was one of the summary placeholders above until the owning services
     // published the reads it needs. It now reads real runs, so it is asserted as a

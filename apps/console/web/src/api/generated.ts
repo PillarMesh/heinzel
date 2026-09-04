@@ -1,12 +1,44 @@
+export type ConsoleEnvelopeAcquisitionReceiptsView = ConsoleEnvelope_AcquisitionReceiptsView_
+export type AcquisitionModeView = "snapshot" | "incremental" | "reconciliation"
+export type NonEmptyText = string
+export type UtcDatetime = string
+/**
+ * @minItems 1
+ */
+export type NonEmptyJsonTuple_NonEmptyText_ = [NonEmptyText, ...NonEmptyText[]]
+export type AcquisitionOutcomeView =
+  "prepared" | "acknowledged" | "no_valid_plan" | "resynchronization_required" | "failed"
+export type AcquisitionReasonCodeView =
+  | "acquisition_mode_not_admitted"
+  | "authorization_denied"
+  | "contract_invalid"
+  | "contract_not_activated"
+  | "encoded_byte_ceiling_exceeded"
+  | "encoded_byte_ceiling_not_admitted"
+  | "integrity_failure"
+  | "logical_object_not_admitted"
+  | "physical_delete_capture_unsupported"
+  | "provider_unavailable"
+  | "rate_limited"
+  | "record_ceiling_exceeded"
+  | "record_ceiling_not_admitted"
+  | "source_binding_authority_stale"
+  | "source_binding_not_admitted"
+  | "source_drift"
+  | "source_observation_not_admitted"
+  | "stale_checkpoint"
+  | "stripe_event_cursor_expired"
+  | "stripe_event_overlap_gap"
+export type JsonTuple_AcquisitionReasonCodeView_ = AcquisitionReasonCodeView[]
+export type JsonTuple_AcquisitionReceiptView_ = AcquisitionReceiptView[]
+export type PublicId = string
+export type DataProvenance = "demo_fixture" | "governed_local"
 export type ActorRole =
   "requester" | "data_architect" | "data_owner" | "policy_approver" | "budget_approver"
 export type ExpectedRevision = number
 export type ReviewedDigest = string
 export type ConsoleEnvelopeCatalogAssetView = ConsoleEnvelope_CatalogAssetView_
-export type PublicId = string
-export type NonEmptyText = string
 export type JsonTuple_NonEmptyText_ = NonEmptyText[]
-export type DataProvenance = "demo_fixture" | "governed_local"
 export type ActiveRole = "requester"
 export type Digest = string
 export type Decision = "approve" | "request_changes"
@@ -17,7 +49,6 @@ export type Revision = number
 export type ExpectedRevision2 = number
 export type ConsoleEnvelopeConversationView = ConsoleEnvelope_ConversationView_
 export type AuthorRole = ActorRole | "pillarmesh"
-export type UtcDatetime = string
 export type JsonTuple_ConversationMessageView_ = ConversationMessageView[]
 export type Revision1 = number
 export type ActiveRole1 = "requester"
@@ -26,10 +57,6 @@ export type RequestInput = StakeholderQuestionInput | DataAccessRequestInput
 export type Kind = "stakeholder_question"
 export type AccessMode = "query" | "dashboard" | "export"
 export type Kind1 = "data_access"
-/**
- * @minItems 1
- */
-export type NonEmptyJsonTuple_NonEmptyText_ = [NonEmptyText, ...NonEmptyText[]]
 export type ConsoleEnvelopeDashboardView = ConsoleEnvelope_DashboardView_
 export type CapabilityState = "ready" | "blocked" | "degraded" | "not_delivered"
 export type ConsoleEnvelopeDataProductView = ConsoleEnvelope_DataProductView_
@@ -154,6 +181,7 @@ export type JsonTuple_CapabilityView_ = CapabilityView[]
 export type WorkspaceState = "setup" | "pending_activation" | "active" | "unavailable"
 
 export interface ConsoleApiSchema {
+  acquisition_receipts_response: ConsoleEnvelopeAcquisitionReceiptsView
   admission_command: AdmissionCommand
   catalog_asset_response: ConsoleEnvelopeCatalogAssetView
   clarified_outcome_acceptance_command: ClarifiedOutcomeAcceptanceCommand
@@ -181,6 +209,46 @@ export interface ConsoleApiSchema {
   warehouse_binding_command: WarehouseBindingCommand
   workspace_response: ConsoleEnvelopeWorkspaceView
 }
+export interface ConsoleEnvelope_AcquisitionReceiptsView_ {
+  data: AcquisitionReceiptsView
+  meta: ApiMeta
+}
+export interface AcquisitionReceiptsView {
+  receipts?: JsonTuple_AcquisitionReceiptView_
+}
+/**
+ * An acquisition receipt as the runtime recorded it.
+ *
+ * Failed and governed-refusal receipts are projected beside successful ones. The
+ * receipt model carries `outcome` and `reason_codes` precisely so a refusal is
+ * publishable, and a refusal an operator cannot see is one they cannot act on.
+ *
+ * Every identifier here is a reference an owning service allocated, and the
+ * console shows the reference rather than inventing a display name for it -- the
+ * rule `DataProductView` already follows. They are typed as text rather than as
+ * `PublicId` because that vocabulary admits neither the separators these
+ * references use nor anything the owning model does not itself constrain:
+ * narrowing further would reject a receipt the owner considers valid, and the
+ * console would report a capability it cannot serve.
+ *
+ * The recovery state -- both receipt references and both checkpoint revisions --
+ * is deliberately absent. It says where the runtime is in its own protocol, which
+ * is not something an operator reads.
+ */
+export interface AcquisitionReceiptView {
+  acquisition_mode: AcquisitionModeView
+  contract_ref: NonEmptyText
+  created_at: UtcDatetime
+  evidence_id: NonEmptyText
+  logical_object_refs: NonEmptyJsonTuple_NonEmptyText_
+  outcome: AcquisitionOutcomeView
+  reason_codes?: JsonTuple_AcquisitionReasonCodeView_
+  source_binding_ref: NonEmptyText
+}
+export interface ApiMeta {
+  correlation_id: PublicId
+  data_provenance: DataProvenance
+}
 /**
  * Admit the exact proposal the architect reviewed.
  *
@@ -204,10 +272,6 @@ export interface CatalogAssetView {
   lineage_summary: NonEmptyText
   link_ref?: PublicId | null
   owner: NonEmptyText
-}
-export interface ApiMeta {
-  correlation_id: PublicId
-  data_provenance: DataProvenance
 }
 export interface ClarifiedOutcomeAcceptanceCommand {
   active_role: ActiveRole

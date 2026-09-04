@@ -67,6 +67,102 @@
       "title": "AccessPreviewProposalView",
       "type": "object"
     },
+    "AcquisitionModeView": {
+      "enum": [
+        "snapshot",
+        "incremental",
+        "reconciliation"
+      ],
+      "type": "string"
+    },
+    "AcquisitionOutcomeView": {
+      "enum": [
+        "prepared",
+        "acknowledged",
+        "no_valid_plan",
+        "resynchronization_required",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "AcquisitionReasonCodeView": {
+      "enum": [
+        "acquisition_mode_not_admitted",
+        "authorization_denied",
+        "contract_invalid",
+        "contract_not_activated",
+        "encoded_byte_ceiling_exceeded",
+        "encoded_byte_ceiling_not_admitted",
+        "integrity_failure",
+        "logical_object_not_admitted",
+        "physical_delete_capture_unsupported",
+        "provider_unavailable",
+        "rate_limited",
+        "record_ceiling_exceeded",
+        "record_ceiling_not_admitted",
+        "source_binding_authority_stale",
+        "source_binding_not_admitted",
+        "source_drift",
+        "source_observation_not_admitted",
+        "stale_checkpoint",
+        "stripe_event_cursor_expired",
+        "stripe_event_overlap_gap"
+      ],
+      "type": "string"
+    },
+    "AcquisitionReceiptView": {
+      "additionalProperties": false,
+      "description": "An acquisition receipt as the runtime recorded it.\n\nFailed and governed-refusal receipts are projected beside successful ones. The\nreceipt model carries `outcome` and `reason_codes` precisely so a refusal is\npublishable, and a refusal an operator cannot see is one they cannot act on.\n\nEvery identifier here is a reference an owning service allocated, and the\nconsole shows the reference rather than inventing a display name for it -- the\nrule `DataProductView` already follows. They are typed as text rather than as\n`PublicId` because that vocabulary admits neither the separators these\nreferences use nor anything the owning model does not itself constrain:\nnarrowing further would reject a receipt the owner considers valid, and the\nconsole would report a capability it cannot serve.\n\nThe recovery state -- both receipt references and both checkpoint revisions --\nis deliberately absent. It says where the runtime is in its own protocol, which\nis not something an operator reads.",
+      "properties": {
+        "acquisition_mode": {
+          "$ref": "#/$defs/AcquisitionModeView"
+        },
+        "contract_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "created_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "evidence_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "logical_object_refs": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_NonEmptyText_"
+        },
+        "outcome": {
+          "$ref": "#/$defs/AcquisitionOutcomeView"
+        },
+        "reason_codes": {
+          "$ref": "#/$defs/JsonTuple_AcquisitionReasonCodeView_",
+          "default": []
+        },
+        "source_binding_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "evidence_id",
+        "contract_ref",
+        "source_binding_ref",
+        "acquisition_mode",
+        "logical_object_refs",
+        "outcome",
+        "created_at"
+      ],
+      "title": "AcquisitionReceiptView",
+      "type": "object"
+    },
+    "AcquisitionReceiptsView": {
+      "additionalProperties": false,
+      "properties": {
+        "receipts": {
+          "$ref": "#/$defs/JsonTuple_AcquisitionReceiptView_",
+          "default": []
+        }
+      },
+      "title": "AcquisitionReceiptsView",
+      "type": "object"
+    },
     "ActorDisplayView": {
       "additionalProperties": false,
       "properties": {
@@ -404,6 +500,57 @@
         "accepted"
       ],
       "title": "ClarifiedOutcomeView",
+      "type": "object"
+    },
+    "ConsoleEnvelope_AcquisitionReceiptsView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AcquisitionReceiptsView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[AcquisitionReceiptsView]",
       "type": "object"
     },
     "ConsoleEnvelope_CatalogAssetView_": {
@@ -1752,6 +1899,18 @@
       },
       "title": "InboxView",
       "type": "object"
+    },
+    "JsonTuple_AcquisitionReasonCodeView_": {
+      "items": {
+        "$ref": "#/$defs/AcquisitionReasonCodeView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_AcquisitionReceiptView_": {
+      "items": {
+        "$ref": "#/$defs/AcquisitionReceiptView"
+      },
+      "type": "array"
     },
     "JsonTuple_AuthorityRequirementView_": {
       "items": {
@@ -3357,6 +3516,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "acquisition_receipts_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_AcquisitionReceiptsView_"
+    },
     "admission_command": {
       "$ref": "#/$defs/AdmissionCommand"
     },
@@ -3449,6 +3611,7 @@
     "clarified_outcome_response",
     "data_product_response",
     "runs_response",
+    "acquisition_receipts_response",
     "catalog_asset_response",
     "dashboard_response",
     "evidence_response",

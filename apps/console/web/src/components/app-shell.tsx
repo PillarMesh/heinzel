@@ -13,6 +13,7 @@ const productNavigation = [
   {label: "Inbox", to: "/inbox"},
   {label: "Data products", to: "/data-products"},
   {label: "Runs", to: "/runs"},
+  {label: "Acquisition", to: "/acquisition-receipts"},
   {label: "Catalog", to: "/catalog"},
   {label: "Dashboards", to: "/dashboards"},
   {label: "Evidence", to: "/evidence"},

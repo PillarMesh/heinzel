@@ -45,6 +45,8 @@ from pillarmesh_warehouse_control import (
 
 from .auth import TrustedActorContext
 from .contracts import (
+    AcquisitionReceiptsView,
+    AcquisitionReceiptView,
     ActorDisplayView,
     ActorRole,
     AdmissionCommand,
@@ -117,6 +119,7 @@ from .governed_adapters import (
     RequestIntakeCommands,
     SemanticReviewCommands,
     SemanticReviewReader,
+    TenantAcquisitionReceiptReader,
     TenantRunReader,
     WarehouseBindingReader,
     WarehouseConfirmation,
@@ -254,11 +257,10 @@ _UNDELIVERED_CAPABILITIES: tuple[_Capability, ...] = (
     _Capability(
         capability_id="source-acquisition",
         label="Source acquisition",
-        dependency="a durable acquisition evidence store and a composed acquisition runtime",
+        dependency="a composed acquisition runtime",
         detail=(
-            "Acquisition receipts are built during a run and then discarded: every "
-            "evidence writer in the estate is an in-memory test double, and the runtime "
-            "is composed only in tests."
+            "Receipts an acquisition records are now retained and readable, but "
+            "nothing here can perform one: the runtime is composed only in tests."
         ),
     ),
     _Capability(
@@ -305,6 +307,7 @@ class GovernedConsoleBackend:
         requests: RequestInboxReader | None = None,
         fulfillment: FulfillmentViewReader | None = None,
         runs: TenantRunReader | None = None,
+        acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
         data_products: DataProductReferenceReader | None = None,
         principals: WorkspacePrincipalDirectory | None = None,
         warehouse_commands: WarehouseLifecycleCommands | None = None,
@@ -322,6 +325,7 @@ class GovernedConsoleBackend:
         self._requests = requests
         self._fulfillment = fulfillment
         self._runs = runs
+        self._acquisition_receipts = acquisition_receipts
         self._data_products = data_products
         self._principals = principals
         self._warehouse_commands = warehouse_commands
@@ -432,6 +436,22 @@ class GovernedConsoleBackend:
                     None
                     if self._runs is not None and self._data_products is not None
                     else "a tenant-scoped data product and run read interface"
+                ),
+            ),
+            CapabilityView(
+                capability_id="acquisition-evidence",
+                label="Acquisition evidence",
+                state="ready" if self._acquisition_receipts is not None else "not_delivered",
+                detail=(
+                    "Receipts the acquisition runtime recorded are listed for the "
+                    "tenant that owns them, refusals included."
+                    if self._acquisition_receipts is not None
+                    else "No owning service retains the receipts an acquisition records."
+                ),
+                dependency=(
+                    None
+                    if self._acquisition_receipts is not None
+                    else "a durable acquisition evidence store"
                 ),
             ),
         ]
@@ -589,6 +609,7 @@ class GovernedConsoleBackend:
         )
 
     def get_runs(self, context: TrustedActorContext) -> RunsView:
+        self._authorize(context, ("data_architect", "data_owner"))
         if self._runs is None:
             raise _not_delivered("a tenant-scoped run read interface")
         records = self._runs.list_runs(context.tenant_id)
@@ -602,6 +623,29 @@ class GovernedConsoleBackend:
                     updated_at=record.updated_at,
                 )
                 for record in records
+            )
+        )
+
+    def get_acquisition_receipts(self, context: TrustedActorContext) -> AcquisitionReceiptsView:
+        # The same role set the fixture backend enforces. Governed mode must never be
+        # more permissive than the demo that stands in for it.
+        self._authorize(context, ("data_architect", "data_owner"))
+        if self._acquisition_receipts is None:
+            raise _not_delivered("a durable acquisition evidence store")
+        receipts = self._acquisition_receipts.list_acquisition_receipts(context.tenant_id)
+        return AcquisitionReceiptsView(
+            receipts=tuple(
+                AcquisitionReceiptView(
+                    evidence_id=receipt.evidence_id,
+                    contract_ref=receipt.contract_ref,
+                    source_binding_ref=receipt.source_binding_ref,
+                    acquisition_mode=receipt.acquisition_mode,
+                    logical_object_refs=receipt.logical_object_refs,
+                    outcome=receipt.outcome,
+                    reason_codes=receipt.reason_codes,
+                    created_at=receipt.created_at,
+                )
+                for receipt in receipts
             )
         )
 

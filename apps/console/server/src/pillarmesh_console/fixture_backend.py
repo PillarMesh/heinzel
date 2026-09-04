@@ -11,6 +11,7 @@ from typing import Never
 from .auth import TrustedActorContext
 from .backend import AuthorizedLink, PreviewContent
 from .contracts import (
+    AcquisitionReceiptsView,
     ActorDisplayView,
     ActorRole,
     AdmissionCommand,
@@ -490,6 +491,10 @@ class FixtureConsoleBackend:
     def get_runs(self, context: TrustedActorContext) -> RunsView:
         self._authorize(context, ("data_architect", "data_owner"))
         return self._seed.runs
+
+    def get_acquisition_receipts(self, context: TrustedActorContext) -> AcquisitionReceiptsView:
+        self._authorize(context, ("data_architect", "data_owner"))
+        return self._seed.acquisition_receipts
 
     def get_catalog_asset(self, context: TrustedActorContext, asset_ref: str) -> CatalogAssetView:
         self._authorize(context, ("requester", "data_architect", "data_owner"))

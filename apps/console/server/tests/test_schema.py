@@ -136,6 +136,7 @@ def test_schema_exposes_every_modeled_response_and_command() -> None:
         "clarified_outcome_response",
         "data_product_response",
         "runs_response",
+        "acquisition_receipts_response",
         "catalog_asset_response",
         "dashboard_response",
         "evidence_response",

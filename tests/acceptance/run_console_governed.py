@@ -445,6 +445,10 @@ class GovernedConsoleDeployment:
             semantic_reviews=self.semantic_repository,
             semantic_review_commands=self.semantic_reviews,
             runs=DerivedTenantRunReader(lifecycles=self.lifecycles, evidence=self.evidence),
+            # The store satisfies the receipt reader directly: a receipt records its
+            # own tenant, so unlike a run there is nothing to derive and no adapter
+            # whose only purpose would be to rename the call.
+            acquisition_receipts=self.evidence,
             data_products=PolicyPermittedDataProductReader(
                 repository=self.fulfillment_repository, requests=self.requests
             ),

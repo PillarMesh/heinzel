@@ -26,6 +26,7 @@ export const MAJOR_ROUTES: readonly string[] = [
   "/requests",
   "/data-products",
   "/runs",
+  "/acquisition-receipts",
   "/catalog",
   "/dashboards",
   "/evidence",

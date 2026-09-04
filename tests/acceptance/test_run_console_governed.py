@@ -321,3 +321,112 @@ def test_a_data_product_no_policy_permits_is_not_found_rather_than_a_failure(
         response = client.get("/api/v1/data-products/product-nobody-permits")
 
     assert response.status_code == 404
+
+
+def test_a_tenant_with_no_acquisitions_reads_an_empty_receipt_listing(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    with TestClient(deployment.build_app()) as client:
+        response = client.get("/api/v1/acquisition-receipts")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["receipts"] == []
+
+
+def test_a_receipt_the_acquisition_runtime_recorded_reaches_the_console(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """A real acquisition, its own receipt, and the console's own HTTP read.
+
+    Nothing here is a fixture or a hand-built row: the runtime prepares an
+    acquisition, the durable writer retains what it produced, and the assertion is
+    made against what the served route returns. That is the only evidence that the
+    capability the workspace now reports as ready is one the product can serve.
+    """
+    from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter
+
+    from services.runtime.tests.test_acquisition import _intent, _runner
+
+    runner, observation, *_rest = _runner(
+        evidence_delegate=SQLiteAcquisitionEvidenceWriter(deployment.evidence)
+    )
+    result = runner.prepare(_intent(observation, tenant_id=TENANT))
+
+    with TestClient(deployment.build_app()) as client:
+        body = client.get("/api/v1/acquisition-receipts").json()["data"]["receipts"]
+
+    assert [receipt["evidence_id"] for receipt in body] == [result.evidence.evidence_id]
+    assert body[0]["outcome"] == "prepared"
+    assert body[0]["contract_ref"] == result.evidence.contract_ref
+    assert body[0]["logical_object_refs"] == list(result.evidence.logical_object_refs)
+
+
+def test_a_receipt_belonging_to_another_tenant_is_not_listed(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """The receipt's own tenant is the boundary, so this is the test that matters.
+
+    The foreign receipt is written straight to the store rather than produced by the
+    runner, because the runner refuses to acquire under a contract another tenant
+    owns -- it raises `contract_authority_mismatch` before any receipt exists. That
+    refusal is the runtime's boundary and is tested there; this asserts the
+    console's, which has to hold even for a row the runtime would never write.
+    """
+    from pillarmesh_evidence import AcquisitionEvidenceReceipt
+
+    deployment.evidence.append_acquisition_receipt(
+        AcquisitionEvidenceReceipt(
+            evidence_id="evidence-ref:somebody-elses",
+            tenant_id="tenant-somebody-else",
+            run_intent_ref="1" * 64,
+            contract_ref="contract:theirs:v1",
+            source_binding_ref="source-binding:theirs",
+            acquisition_mode="snapshot",
+            logical_object_refs=("orders",),
+            prepared_receipt_ref="receipt-ref:theirs",
+            checkpoint_receipt_ref=None,
+            prior_checkpoint_revision=0,
+            resulting_checkpoint_revision=None,
+            reason_codes=(),
+            outcome="prepared",
+            created_at=_NOW,
+        )
+    )
+
+    with TestClient(deployment.build_app()) as client:
+        body = client.get("/api/v1/acquisition-receipts").json()["data"]["receipts"]
+
+    assert body == []
+
+
+def test_the_acquisition_evidence_capability_is_ready_in_the_governed_workspace(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    with TestClient(deployment.build_app()) as client:
+        capabilities = client.get("/api/v1/workspace").json()["data"]["capabilities"]
+
+    by_id = {capability["capability_id"]: capability for capability in capabilities}
+
+    assert by_id["acquisition-evidence"]["state"] == "ready"
+    assert by_id["acquisition-evidence"]["dependency"] is None
+    # Retaining receipts is not the same capability as performing an acquisition.
+    assert by_id["source-acquisition"]["state"] == "not_delivered"
+
+
+@pytest.mark.parametrize("path", ("/api/v1/acquisition-receipts", "/api/v1/runs"))
+def test_a_requester_cannot_read_acquisition_or_run_evidence(
+    deployment: GovernedConsoleDeployment, path: str
+) -> None:
+    """Governed mode must not be more permissive than the demo it stands in for.
+
+    `FixtureConsoleBackend` restricts both reads to `("data_architect",
+    "data_owner")`. The governed backend served them to any authenticated actor, so
+    a requester could read the tenant's contract references, source binding
+    references, object references and refusal reason codes -- material the demo
+    refuses them. An unauthorized read answers exactly as an unknown resource does.
+    """
+    with TestClient(deployment.build_app()) as client:
+        response = client.get(path, headers={"x-pillarmesh-actor": REQUESTER})
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"

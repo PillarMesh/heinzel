@@ -8,6 +8,7 @@ from starlette.responses import RedirectResponse, Response
 from starlette.routing import Route
 
 from ..contracts import (
+    AcquisitionReceiptsView,
     CatalogAssetView,
     ClarifiedOutcomeView,
     ConsoleEnvelope,
@@ -46,6 +47,7 @@ _CONVERSATION_RESPONSE = TypeAdapter(ConsoleEnvelope[ConversationView])
 _CLARIFIED_OUTCOME_RESPONSE = TypeAdapter(ConsoleEnvelope[ClarifiedOutcomeView])
 _DATA_PRODUCT_RESPONSE = TypeAdapter(ConsoleEnvelope[DataProductView])
 _RUNS_RESPONSE = TypeAdapter(ConsoleEnvelope[RunsView])
+_ACQUISITION_RECEIPTS_RESPONSE = TypeAdapter(ConsoleEnvelope[AcquisitionReceiptsView])
 _CATALOG_ASSET_RESPONSE = TypeAdapter(ConsoleEnvelope[CatalogAssetView])
 _DASHBOARD_RESPONSE = TypeAdapter(ConsoleEnvelope[DashboardView])
 _EVIDENCE_RESPONSE = TypeAdapter(ConsoleEnvelope[EvidenceView])
@@ -150,6 +152,15 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
             request, dependencies, dependencies.backend.get_runs(context), _RUNS_RESPONSE
         )
 
+    async def acquisition_receipts(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        return envelope_response(
+            request,
+            dependencies,
+            dependencies.backend.get_acquisition_receipts(context),
+            _ACQUISITION_RECEIPTS_RESPONSE,
+        )
+
     async def catalog_asset(request: Request) -> Response:
         context = trusted_context(request, dependencies)
         asset_ref = path_parameter(request, "asset_ref")
@@ -244,6 +255,7 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
         ),
         Route("/api/v1/data-products/{data_product_id}", data_product, methods=["GET"]),
         Route("/api/v1/runs", runs, methods=["GET"]),
+        Route("/api/v1/acquisition-receipts", acquisition_receipts, methods=["GET"]),
         Route("/api/v1/catalog/{asset_ref}", catalog_asset, methods=["GET"]),
         Route("/api/v1/dashboards/{dashboard_ref}", dashboard, methods=["GET"]),
         Route("/api/v1/evidence/{evidence_ref}", evidence, methods=["GET"]),

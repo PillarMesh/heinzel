@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from pillarmesh_evidence import (
+    AcquisitionEvidenceReceipt,
     ActiveRunError,
     InvalidStateTransition,
     MigrationError,
@@ -52,6 +53,74 @@ CREATE TABLE IF NOT EXISTS runs (
 
 CREATE UNIQUE INDEX IF NOT EXISTS one_active_run_per_store
 ON runs((1)) WHERE state IN ('created', 'running');
+
+CREATE TABLE IF NOT EXISTS evidence_events (
+    run_id TEXT NOT NULL REFERENCES runs(run_id),
+    sequence INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    occurred_at TEXT NOT NULL,
+    producer TEXT NOT NULL,
+    attributes_json TEXT NOT NULL,
+    previous_digest TEXT,
+    event_digest TEXT NOT NULL,
+    PRIMARY KEY (run_id, sequence),
+    UNIQUE (run_id, event_digest)
+);
+
+CREATE TRIGGER IF NOT EXISTS evidence_events_no_update
+BEFORE UPDATE ON evidence_events
+BEGIN SELECT RAISE(ABORT, 'evidence is append-only'); END;
+
+CREATE TRIGGER IF NOT EXISTS evidence_events_no_delete
+BEFORE DELETE ON evidence_events
+BEGIN SELECT RAISE(ABORT, 'evidence is append-only'); END;
+""".strip()
+
+
+HISTORICAL_V2_CHECKSUM = "3604484b5d0845784f044f5a78542ed01ef37419eb04d04db9073b67734534fc"
+HISTORICAL_V2_SQL = """
+CREATE TABLE IF NOT EXISTS schema_metadata (
+    singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+    version INTEGER NOT NULL,
+    checksum TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS artifacts (
+    kind TEXT NOT NULL,
+    digest TEXT NOT NULL,
+    payload BLOB NOT NULL,
+    PRIMARY KEY (kind, digest)
+);
+
+CREATE TABLE IF NOT EXISTS artifact_refs (
+    namespace TEXT NOT NULL,
+    ref_key TEXT NOT NULL,
+    artifact_digest TEXT NOT NULL,
+    PRIMARY KEY (namespace, ref_key)
+);
+
+CREATE TABLE IF NOT EXISTS runs (
+    run_id TEXT PRIMARY KEY,
+    activation_key TEXT NOT NULL UNIQUE,
+    contract_digest TEXT NOT NULL,
+    summary_digest TEXT NOT NULL,
+    signed_graph_json TEXT NOT NULL,
+    state TEXT NOT NULL
+        CHECK (state IN ('created','running','succeeded','failed','non_conforming')),
+    checkpoint TEXT NOT NULL,
+    batch_id TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS one_active_run_per_store
+ON runs((1)) WHERE state IN ('created', 'running');
+
+CREATE TABLE IF NOT EXISTS run_private_state (
+    run_id TEXT PRIMARY KEY REFERENCES runs(run_id),
+    acceptance_key INTEGER,
+    segment_path TEXT
+);
 
 CREATE TABLE IF NOT EXISTS evidence_events (
     run_id TEXT NOT NULL REFERENCES runs(run_id),
@@ -472,7 +541,7 @@ def test_v1_database_is_refused_without_application_table_access_or_mutation(
     with pytest.raises(
         MigrationError,
         match=(
-            "database schema version 1 is unsupported; required version 2; "
+            "database schema version 1 is unsupported; required version 3; "
             "start with a fresh state path"
         ),
     ):
@@ -543,7 +612,7 @@ def test_migration_checksum_and_newer_version_are_rejected(tmp_path: Path) -> No
     database = store(newer)
     database.close()
     connection = sqlite3.connect(newer)
-    connection.execute("UPDATE schema_metadata SET version = 3")
+    connection.execute("UPDATE schema_metadata SET version = 4")
     connection.commit()
     connection.close()
     with pytest.raises(MigrationError, match="newer"):
@@ -734,3 +803,325 @@ def test_runs_are_ordered_by_instant_rather_than_by_timestamp_text(tmp_path: Pat
     listed = database.list_runs_for_contracts(("a" * 64,))
 
     assert [record.run_id for record in listed] == ["run-later", "run-earlier"]
+
+
+def create_historical_v2_database(path: Path) -> None:
+    assert hashlib.sha256(HISTORICAL_V2_SQL.encode("utf-8")).hexdigest() == HISTORICAL_V2_CHECKSUM
+    connection = sqlite3.connect(path)
+    connection.executescript(HISTORICAL_V2_SQL)
+    connection.execute(
+        "INSERT INTO schema_metadata(singleton, version, checksum) VALUES (1, ?, ?)",
+        (2, HISTORICAL_V2_CHECKSUM),
+    )
+    connection.execute(
+        """INSERT INTO runs(
+            run_id, activation_key, contract_digest, summary_digest, signed_graph_json,
+            state, checkpoint, batch_id, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            "run-1",
+            "activation-1",
+            "a" * 64,
+            "b" * 64,
+            "{}",
+            "succeeded",
+            "closed",
+            None,
+            NOW.isoformat(),
+            NOW.isoformat(),
+        ),
+    )
+    connection.execute(
+        """INSERT INTO evidence_events(
+            run_id, sequence, event_type, occurred_at, producer,
+            attributes_json, previous_digest, event_digest
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        ("run-1", 1, "activation", NOW.isoformat(), "contract", "{}", None, "c" * 64),
+    )
+    connection.commit()
+    connection.close()
+
+
+def _receipt(
+    *,
+    tenant_id: str = "tenant-a",
+    evidence_id: str = "evidence-ref:prepared-1",
+    created_at: datetime = NOW,
+    logical_object_refs: tuple[str, ...] = ("orders",),
+) -> AcquisitionEvidenceReceipt:
+    return AcquisitionEvidenceReceipt(
+        evidence_id=evidence_id,
+        tenant_id=tenant_id,
+        run_intent_ref="1" * 64,
+        contract_ref="contract:orders:v1",
+        source_binding_ref="source-binding:orders",
+        acquisition_mode="snapshot",
+        logical_object_refs=logical_object_refs,
+        prepared_receipt_ref="receipt-ref:prepared-1",
+        checkpoint_receipt_ref=None,
+        prior_checkpoint_revision=0,
+        resulting_checkpoint_revision=None,
+        reason_codes=(),
+        outcome="prepared",
+        created_at=created_at,
+    )
+
+
+def test_acquisition_receipts_are_listed_for_their_own_tenant_only(tmp_path: Path) -> None:
+    """A receipt carries its own tenant, so the read is a filter and not a derivation.
+
+    This is what separates acquisition receipts from runs. A run has no tenant and
+    has to be reached through the contracts a tenant activated; a receipt names the
+    tenant it belongs to, so listing one tenant's receipts must never require the
+    caller to know anything about that tenant's contracts.
+    """
+    database = store(tmp_path / "m0.sqlite3")
+    mine = _receipt(tenant_id="tenant-a", evidence_id="evidence-ref:mine")
+    theirs = _receipt(tenant_id="tenant-b", evidence_id="evidence-ref:theirs")
+
+    database.append_acquisition_receipt(mine)
+    database.append_acquisition_receipt(theirs)
+
+    assert database.list_acquisition_receipts("tenant-a") == (mine,)
+    assert database.list_acquisition_receipts("tenant-b") == (theirs,)
+    assert database.list_acquisition_receipts("tenant-c") == ()
+
+
+def test_acquisition_receipts_are_retained_across_a_restart(tmp_path: Path) -> None:
+    """The whole point of the writer: a receipt outlives the process that produced it."""
+    path = tmp_path / "m0.sqlite3"
+    database = store(path)
+    receipt = _receipt()
+    database.append_acquisition_receipt(receipt)
+    database.close()
+
+    resumed = store(path)
+
+    assert resumed.list_acquisition_receipts("tenant-a") == (receipt,)
+
+
+def test_acquisition_receipt_rows_cannot_be_updated_or_deleted(tmp_path: Path) -> None:
+    path = tmp_path / "m0.sqlite3"
+    database = store(path)
+    database.append_acquisition_receipt(_receipt())
+    connection = sqlite3.connect(path)
+
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        connection.execute("UPDATE acquisition_evidence_receipts SET tenant_id = 'tenant-b'")
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        connection.execute("DELETE FROM acquisition_evidence_receipts")
+    connection.close()
+
+
+def test_replaying_an_identical_receipt_is_accepted_without_duplicating_it(
+    tmp_path: Path,
+) -> None:
+    """The runtime re-derives the same receipt when it recovers, and must not fail there.
+
+    Refusing the second append would turn a recovered run into an integrity error,
+    because the runtime classifies any writer failure as `evidence_write_failed`.
+    """
+    database = store(tmp_path / "m0.sqlite3")
+    receipt = _receipt()
+
+    database.append_acquisition_receipt(receipt)
+    database.append_acquisition_receipt(receipt)
+
+    assert database.list_acquisition_receipts("tenant-a") == (receipt,)
+
+
+def test_a_contradictory_receipt_under_an_existing_identity_is_refused(tmp_path: Path) -> None:
+    """Same identity, different content is an integrity failure rather than a replay.
+
+    Silently keeping either version would let the retained evidence disagree with
+    what the run actually recorded, which is the one thing an evidence store may
+    not do.
+    """
+    database = store(tmp_path / "m0.sqlite3")
+    database.append_acquisition_receipt(_receipt())
+
+    with pytest.raises(ValueError, match="different payload"):
+        database.append_acquisition_receipt(_receipt(logical_object_refs=("payments",)))
+
+    assert database.list_acquisition_receipts("tenant-a") == (_receipt(),)
+
+
+def test_listed_acquisition_receipts_are_ordered_newest_first_and_are_deterministic(
+    tmp_path: Path,
+) -> None:
+    """Ordering needs no `datetime()` normalisation, unlike the run listing.
+
+    A run accepts any timezone-aware instant, so its stored text carries mixed
+    offsets and only `datetime()` orders it correctly. A receipt is validated to
+    UTC by its model before it can be written, so every row shares one offset and
+    the text order is already the instant order. `evidence_id` breaks ties so two
+    receipts recorded in the same instant list in a stable order.
+    """
+    database = store(tmp_path / "m0.sqlite3")
+    later = datetime(2026, 9, 1, 12, tzinfo=UTC)
+    database.append_acquisition_receipt(_receipt(evidence_id="evidence-ref:first"))
+    database.append_acquisition_receipt(_receipt(evidence_id="evidence-ref:second"))
+    database.append_acquisition_receipt(
+        _receipt(evidence_id="evidence-ref:latest", created_at=later)
+    )
+
+    listed = database.list_acquisition_receipts("tenant-a")
+
+    assert [receipt.evidence_id for receipt in listed] == [
+        "evidence-ref:latest",
+        "evidence-ref:first",
+        "evidence-ref:second",
+    ]
+
+
+def test_a_version_2_database_is_upgraded_in_place_and_keeps_its_evidence(
+    tmp_path: Path,
+) -> None:
+    """Version 3 only adds tables, so refusing a version 2 store would destroy evidence.
+
+    Version 1 is refused because it stored private state in a column this schema no
+    longer has, so there was nothing to carry forward safely. That is not true here,
+    and an evidence service that discards evidence to gain a table is a worse
+    outcome than carrying one upgrade path.
+    """
+    path = tmp_path / "m0.sqlite3"
+    create_historical_v2_database(path)
+
+    upgraded = store(path)
+
+    assert upgraded.get_run("run-1").state == "succeeded"
+    assert [event.event_type for event in upgraded.trace("run-1")] == ["activation"]
+    receipt = _receipt()
+    upgraded.append_acquisition_receipt(receipt)
+    assert upgraded.list_acquisition_receipts("tenant-a") == (receipt,)
+    upgraded.close()
+
+    assert store(path).list_acquisition_receipts("tenant-a") == (receipt,)
+
+
+def test_a_version_2_database_whose_schema_was_altered_is_refused_rather_than_upgraded(
+    tmp_path: Path,
+) -> None:
+    """An upgrade may only be applied to the schema it was written against.
+
+    Without this the upgrade would run over a database whose tables are unknown,
+    and record a version 3 checksum asserting a shape nobody verified.
+    """
+    path = tmp_path / "m0.sqlite3"
+    create_historical_v2_database(path)
+    connection = sqlite3.connect(path)
+    connection.execute("UPDATE schema_metadata SET checksum = 'tampered'")
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(MigrationError, match="checksum"):
+        store(path)
+
+    connection = sqlite3.connect(path)
+    version = connection.execute("SELECT version FROM schema_metadata").fetchone()[0]
+    connection.close()
+    assert version == 2
+
+
+class _RefusingConnection:
+    """Refuses the statements a caller names, leaving everything else untouched."""
+
+    def __init__(self, wrapped: sqlite3.Connection, *, refuse: str, error: BaseException) -> None:
+        self._wrapped = wrapped
+        self._refuse = refuse
+        self._error = error
+
+    def execute(self, statement: str, *arguments: object) -> sqlite3.Cursor:
+        if self._refuse in statement:
+            raise self._error
+        return self._wrapped.execute(statement, *arguments)
+
+    def executescript(self, script: str) -> sqlite3.Cursor:
+        if self._refuse in script:
+            raise self._error
+        return self._wrapped.executescript(script)
+
+    def __getattr__(self, name: str) -> object:
+        return getattr(self._wrapped, name)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        if name in ("_wrapped", "_refuse", "_error"):
+            super().__setattr__(name, value)
+        else:
+            setattr(self._wrapped, name, value)
+
+
+def test_a_version_2_store_that_cannot_be_written_reports_a_migration_failure(
+    tmp_path: Path,
+) -> None:
+    """Upgrading writes, so a store that opened read-only before now needs write access.
+
+    That is a real behaviour change: a version 2 database on a read-only archive
+    used to open for reading and now cannot. It must at least fail as this store's
+    own typed error naming the cause, rather than as a raw driver error a caller
+    catching `MigrationError` would never classify.
+
+    The connection is genuinely read-only rather than a double raising a synthetic
+    error, because the code distinguishes this case by the driver's own
+    `SQLITE_READONLY` code -- a hand-built exception carries no such code and would
+    prove nothing. It also keeps the test honest where a suite runs as root, which
+    file permissions alone would not.
+    """
+    path = tmp_path / "m0.sqlite3"
+    create_historical_v2_database(path)
+    connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, isolation_level=None)
+
+    with pytest.raises(MigrationError, match="version 2 database could not be upgraded"):
+        SQLiteStore(connection)._migrate()
+
+    connection.close()
+
+
+def test_a_locked_version_2_store_is_not_reported_as_needing_write_access(
+    tmp_path: Path,
+) -> None:
+    """A busy database is retryable; a read-only one is not. They must not read alike.
+
+    Both surface as `sqlite3.OperationalError`, so converting the class wholesale
+    told an operator whose only problem was a concurrent opener to go and check
+    filesystem permissions that were already correct. Collapsing a transient
+    failure into a permanent one is exactly what disables every retry built above
+    it.
+    """
+    path = tmp_path / "m0.sqlite3"
+    create_historical_v2_database(path)
+    holder = sqlite3.connect(path, isolation_level=None, timeout=0)
+    holder.execute("BEGIN IMMEDIATE")
+    contending = sqlite3.connect(path, isolation_level=None, timeout=0)
+
+    with pytest.raises(sqlite3.OperationalError, match="locked"):
+        SQLiteStore(contending)._migrate()
+
+    contending.close()
+    holder.execute("ROLLBACK")
+    holder.close()
+
+
+def test_an_interrupted_receipt_append_does_not_strand_its_transaction(tmp_path: Path) -> None:
+    """A `BaseException` must still close the transaction it opened.
+
+    `except Exception` lets `KeyboardInterrupt` escape with `BEGIN IMMEDIATE` still
+    open, and the connection then refuses every later write with "cannot start a
+    transaction within a transaction" -- on the thread-tolerant connection the
+    console shares, that strands every subsequent writer, not just this one.
+    """
+    path = tmp_path / "m0.sqlite3"
+    store(path).close()
+    connection = sqlite3.connect(path, isolation_level=None)
+    refusing = _RefusingConnection(
+        connection,
+        refuse="INSERT OR IGNORE INTO acquisition_evidence_receipts",
+        error=KeyboardInterrupt("interrupted mid-append"),
+    )
+    database = SQLiteStore(refusing)  # type: ignore[arg-type]
+
+    with pytest.raises(KeyboardInterrupt):
+        database.append_acquisition_receipt(_receipt())
+
+    assert connection.in_transaction is False
+    connection.close()

@@ -12,6 +12,7 @@ import {RecoveryPage} from "./routes/recovery-page"
 import type {InboxClient} from "./features/inbox/decision-workspace"
 import type {RequesterClient} from "./features/requests/my-requests"
 import type {RunsClient} from "./features/runs/runs-page"
+import type {AcquisitionReceiptsClient} from "./features/acquisition/acquisition-receipts-page"
 import {ConsoleRoutes} from "./routes/router"
 import type {SetupClient} from "./features/setup/setup-workbench"
 import "./styles/global.css"
@@ -20,7 +21,8 @@ export interface ConsoleBootstrapClient
   extends SetupClient,
     InboxClient,
     RequesterClient,
-    RunsClient {
+    RunsClient,
+    AcquisitionReceiptsClient {
   getSession(): Promise<ConsoleEnvelopeSessionView>
   getSetup(): Promise<ConsoleEnvelopeSetupView>
   getWorkspace(): Promise<ConsoleEnvelopeWorkspaceView>

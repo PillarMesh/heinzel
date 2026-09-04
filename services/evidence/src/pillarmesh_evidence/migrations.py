@@ -1,7 +1,7 @@
 import hashlib
 
-MIGRATION_VERSION = 2
-MIGRATION_SQL = """
+MIGRATION_VERSION = 3
+_VERSION_2_SQL = """
 CREATE TABLE IF NOT EXISTS schema_metadata (
     singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
     version INTEGER NOT NULL,
@@ -66,4 +66,27 @@ CREATE TRIGGER IF NOT EXISTS evidence_events_no_delete
 BEFORE DELETE ON evidence_events
 BEGIN SELECT RAISE(ABORT, 'evidence is append-only'); END;
 """.strip()
+# Version 3 only adds tables, so it is applied to an existing version 2 database
+# rather than refusing it. `VERSION_2_CHECKSUM` is derived from the same text that
+# created such a database, so a schema altered outside these migrations is refused
+# instead of being upgraded to a shape nobody verified.
+VERSION_3_SQL = """
+CREATE TABLE IF NOT EXISTS acquisition_evidence_receipts (
+    tenant_id TEXT NOT NULL,
+    evidence_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    payload BLOB NOT NULL,
+    PRIMARY KEY (tenant_id, evidence_id)
+);
+
+CREATE TRIGGER IF NOT EXISTS acquisition_evidence_receipts_no_update
+BEFORE UPDATE ON acquisition_evidence_receipts
+BEGIN SELECT RAISE(ABORT, 'acquisition evidence is append-only'); END;
+
+CREATE TRIGGER IF NOT EXISTS acquisition_evidence_receipts_no_delete
+BEFORE DELETE ON acquisition_evidence_receipts
+BEGIN SELECT RAISE(ABORT, 'acquisition evidence is append-only'); END;
+""".strip()
+VERSION_2_CHECKSUM = hashlib.sha256(_VERSION_2_SQL.encode("utf-8")).hexdigest()
+MIGRATION_SQL = f"{_VERSION_2_SQL}\n\n{VERSION_3_SQL}"
 MIGRATION_CHECKSUM = hashlib.sha256(MIGRATION_SQL.encode("utf-8")).hexdigest()

@@ -42,6 +42,40 @@ type CapabilityState = Literal["ready", "blocked", "degraded", "not_delivered"]
 type OperationState = Literal["accepted", "running", "succeeded", "failed", "outcome_unknown"]
 # Mirrors the evidence store's `RunState` exactly; see `RunView`.
 type RunLifecycleState = Literal["created", "running", "succeeded", "failed", "non_conforming"]
+# Mirror the acquisition evidence receipt's own vocabularies. The console does not
+# depend on the provider SDK that declares `acquisition_mode`, so these are restated
+# rather than imported, and a test pins each one to the owning model's annotation so
+# a mirror that drifts fails there instead of rejecting a receipt at a live read.
+type AcquisitionModeView = Literal["snapshot", "incremental", "reconciliation"]
+type AcquisitionOutcomeView = Literal[
+    "prepared",
+    "acknowledged",
+    "no_valid_plan",
+    "resynchronization_required",
+    "failed",
+]
+type AcquisitionReasonCodeView = Literal[
+    "acquisition_mode_not_admitted",
+    "authorization_denied",
+    "contract_invalid",
+    "contract_not_activated",
+    "encoded_byte_ceiling_exceeded",
+    "encoded_byte_ceiling_not_admitted",
+    "integrity_failure",
+    "logical_object_not_admitted",
+    "physical_delete_capture_unsupported",
+    "provider_unavailable",
+    "rate_limited",
+    "record_ceiling_exceeded",
+    "record_ceiling_not_admitted",
+    "source_binding_authority_stale",
+    "source_binding_not_admitted",
+    "source_drift",
+    "source_observation_not_admitted",
+    "stale_checkpoint",
+    "stripe_event_cursor_expired",
+    "stripe_event_overlap_gap",
+]
 type ReviewKind = Literal["meaning", "data_product", "activation"]
 type RequestKind = Literal["stakeholder_question", "data_access"]
 type RequestState = Literal[
@@ -695,6 +729,40 @@ class RunsView(StrictModel):
     runs: JsonTuple[RunView] = Field(default=())
 
 
+class AcquisitionReceiptView(StrictModel):
+    """An acquisition receipt as the runtime recorded it.
+
+    Failed and governed-refusal receipts are projected beside successful ones. The
+    receipt model carries `outcome` and `reason_codes` precisely so a refusal is
+    publishable, and a refusal an operator cannot see is one they cannot act on.
+
+    Every identifier here is a reference an owning service allocated, and the
+    console shows the reference rather than inventing a display name for it -- the
+    rule `DataProductView` already follows. They are typed as text rather than as
+    `PublicId` because that vocabulary admits neither the separators these
+    references use nor anything the owning model does not itself constrain:
+    narrowing further would reject a receipt the owner considers valid, and the
+    console would report a capability it cannot serve.
+
+    The recovery state -- both receipt references and both checkpoint revisions --
+    is deliberately absent. It says where the runtime is in its own protocol, which
+    is not something an operator reads.
+    """
+
+    evidence_id: NonEmptyText
+    contract_ref: NonEmptyText
+    source_binding_ref: NonEmptyText
+    acquisition_mode: AcquisitionModeView
+    logical_object_refs: NonEmptyJsonTuple[NonEmptyText]
+    outcome: AcquisitionOutcomeView
+    reason_codes: JsonTuple[AcquisitionReasonCodeView] = Field(default=())
+    created_at: UtcDatetime
+
+
+class AcquisitionReceiptsView(StrictModel):
+    receipts: JsonTuple[AcquisitionReceiptView] = Field(default=())
+
+
 class CatalogAssetView(StrictModel):
     asset_ref: PublicId
     display_name: NonEmptyText
@@ -845,6 +913,7 @@ class ConsoleApiSchema(StrictModel):
     clarified_outcome_response: ConsoleEnvelope[ClarifiedOutcomeView]
     data_product_response: ConsoleEnvelope[DataProductView]
     runs_response: ConsoleEnvelope[RunsView]
+    acquisition_receipts_response: ConsoleEnvelope[AcquisitionReceiptsView]
     catalog_asset_response: ConsoleEnvelope[CatalogAssetView]
     dashboard_response: ConsoleEnvelope[DashboardView]
     evidence_response: ConsoleEnvelope[EvidenceView]
