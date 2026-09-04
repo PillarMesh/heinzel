@@ -8,6 +8,7 @@ from .private_state import PrivateSourceCapability
 from .protocols import SourceCapabilityProbe, SourceSecretResolver
 from .repository import (
     SourceBindingConflictError,
+    SourceBindingIntegrityError,
     SourceBindingNotFoundError,
     SourceBindingPersistenceError,
     SourceBindingRepository,
@@ -27,6 +28,7 @@ __all__ = [
     "SourceAcquisitionAuthorityInvalidator",
     "SourceBindingBoundaryError",
     "SourceBindingConflictError",
+    "SourceBindingIntegrityError",
     "SourceBindingNotFoundError",
     "SourceBindingPersistenceError",
     "SourceBindingRepository",

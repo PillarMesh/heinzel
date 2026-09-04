@@ -794,6 +794,13 @@ class AcquisitionRunner:
             provider = self._provider_resolver(binding)
         except AcquisitionProviderError as error:
             raise _map_provider_error(error, binding.provider_kind) from None
+        # A resolver that already classified its own failure keeps that
+        # classification, exactly as contract, binding and observation resolution do.
+        # Resolving a provider reads the private capability from connection-broker,
+        # whose transient and corrupt-row failures are distinguishable; replacing
+        # them here recorded a permanent denial for a momentary one.
+        except AcquisitionRuntimeError:
+            raise
         except Exception:
             raise AcquisitionAuthorizationError("private_capability_resolution_failed") from None
         if not isinstance(provider, AcquisitionProvider):

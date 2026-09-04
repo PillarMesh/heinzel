@@ -54,6 +54,8 @@ from pillarmesh_runtime import (
     AcquisitionThrottledError,
     AcquisitionTransientError,
     ActivatedAcquisitionContract,
+    BindingResolver,
+    ProviderResolver,
 )
 from pillarmesh_state import (
     AcquisitionArtifactStoreError,
@@ -594,6 +596,8 @@ def _runner(
     fault_hook: Callable[[str], None] | None = None,
     reference_prefix: str = "",
     evidence_delegate: AcquisitionEvidenceWriter | None = None,
+    binding_resolver: BindingResolver | None = None,
+    provider_resolver: ProviderResolver | None = None,
 ) -> tuple[
     AcquisitionRunner,
     AcquisitionSourceObservation,
@@ -650,10 +654,10 @@ def _runner(
         return provider
 
     runner = AcquisitionRunner(
-        binding_resolver=lambda tenant_id, binding_ref: binding,
+        binding_resolver=binding_resolver or (lambda tenant_id, binding_ref: binding),
         contract_resolver=lambda tenant_id, contract_ref: contract,
         observation_resolver=lambda tenant_id, observation_digest: observation,
-        provider_resolver=resolve_provider,
+        provider_resolver=provider_resolver or resolve_provider,
         state_store=state,
         artifact_store=artifacts,
         evidence_writer=evidence,
@@ -1713,3 +1717,60 @@ def test_source_observation_drift_precedes_provider_resolution() -> None:
         runner.prepare(_intent(observation))
 
     assert resolutions == []
+
+
+def test_a_provider_resolver_s_own_classification_reaches_the_receipt() -> None:
+    """Every other resolver re-raises a runtime error untouched; this one did not.
+
+    `_resolve_provider` caught `Exception` without first letting
+    `AcquisitionRuntimeError` through, so a resolver that had already classified its
+    failure correctly still had that classification replaced with a denial. Resolving
+    a provider means reading the private capability from connection-broker, whose
+    transient store failure and corrupt-row failure are exactly the cases a caller
+    can classify -- and both were recorded as a permanent verdict that the tenant's
+    authorization was denied.
+    """
+
+    def unavailable(binding: SourceConnectionBinding) -> Provider:
+        raise AcquisitionTransientError("private_capability_store_unavailable")
+
+    (
+        runner,
+        observation,
+        _session,
+        _provider,
+        _resolutions,
+        _state,
+        _artifacts,
+        evidence,
+        _events,
+    ) = _runner(provider_resolver=unavailable)
+
+    with pytest.raises(AcquisitionTransientError):
+        runner.prepare(_intent(observation))
+
+    assert evidence.receipts[-1].reason_codes == ("provider_unavailable",)
+
+
+def test_an_unclassified_provider_resolver_failure_is_still_a_denial() -> None:
+    """The catch-all stays for anything that arrives without a classification."""
+
+    def broken(binding: SourceConnectionBinding) -> Provider:
+        raise RuntimeError("private-resolution-fault")
+
+    (
+        runner,
+        observation,
+        _session,
+        _provider,
+        _resolutions,
+        _state,
+        _artifacts,
+        evidence,
+        _events,
+    ) = _runner(provider_resolver=broken)
+
+    with pytest.raises(AcquisitionAuthorizationError):
+        runner.prepare(_intent(observation))
+
+    assert evidence.receipts[-1].reason_codes == ("authorization_denied",)

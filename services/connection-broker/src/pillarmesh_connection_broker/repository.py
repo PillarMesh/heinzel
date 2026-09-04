@@ -38,6 +38,21 @@ class SourceBindingPersistenceError(RuntimeError):
         super().__init__(f"{message}: {detail}" if detail else message)
 
 
+class SourceBindingIntegrityError(SourceBindingPersistenceError):
+    """The stored row is wrong, rather than the store being unreachable.
+
+    A driver failure is transient and a caller may retry it; corruption is
+    permanent and retrying only repeats it. Both arrived as
+    `SourceBindingPersistenceError`, which forced any consumer classifying the
+    failure to pick one verdict for both -- the acquisition runtime picked
+    `authorization_denied` and wrote it into durable evidence for what was a
+    momentary database failure.
+
+    It stays a subclass so every existing consumer keeps failing closed exactly as
+    it did; only a caller that asks for the distinction sees one.
+    """
+
+
 _SCHEMA_VERSION = 1
 _SCHEMA_DEFINITIONS = (
     (
@@ -300,7 +315,7 @@ class SQLiteSourceBindingRepository:
             or capability.binding_id != binding_id
             or capability.credential_revision != credential_revision
         ):
-            raise SourceBindingPersistenceError(
+            raise SourceBindingIntegrityError(
                 operation="load private source capability",
                 detail="stored row identity mismatch",
             )
@@ -332,7 +347,7 @@ class SQLiteSourceBindingRepository:
             or evidence.binding_id != binding_id
             or evidence.binding_revision != binding_revision
         ):
-            raise SourceBindingPersistenceError(
+            raise SourceBindingIntegrityError(
                 operation="load source binding validation",
                 detail="stored row identity mismatch",
             )
@@ -359,7 +374,7 @@ class SQLiteSourceBindingRepository:
             or binding.tenant_id != tenant_id
             or binding.binding_id != binding_id
         ):
-            raise SourceBindingPersistenceError(
+            raise SourceBindingIntegrityError(
                 operation="load source binding",
                 detail="stored row identity mismatch",
             )
@@ -455,7 +470,7 @@ def _revalidate_payload[Model: BaseModel](
     try:
         return model.model_validate_json(payload)
     except (TypeError, ValueError, ValidationError) as error:
-        raise SourceBindingPersistenceError(
+        raise SourceBindingIntegrityError(
             operation=operation,
             detail="stored payload is invalid",
         ) from error

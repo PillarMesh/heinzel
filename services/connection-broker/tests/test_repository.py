@@ -8,6 +8,7 @@ import pytest
 from pillarmesh_connection_broker import (
     PrivateSourceCapability,
     SourceBindingConflictError,
+    SourceBindingIntegrityError,
     SourceBindingNotFoundError,
     SourceBindingPersistenceError,
     SourceBindingValidationEvidence,
@@ -668,3 +669,58 @@ def test_repository_rejects_live_schema_definition_drift(tmp_path: Path) -> None
 
     with pytest.raises(SourceBindingPersistenceError, match="definition"):
         SQLiteSourceBindingRepository(database_path)
+
+
+def test_corrupt_stored_data_is_distinguishable_from_a_driver_failure(tmp_path: Path) -> None:
+    """A consumer cannot retry its way out of corruption, and must be able to tell.
+
+    Both conditions arrived as `SourceBindingPersistenceError`, so a caller that
+    classified it had to choose one verdict for both: treat corruption as
+    retryable, or treat a closed connection as permanent. The acquisition runtime
+    made the second choice and recorded `authorization_denied` in durable evidence
+    for what was a transient database failure.
+
+    `SourceBindingIntegrityError` stays a subclass so every existing consumer keeps
+    failing closed exactly as before.
+    """
+    database_path = str(tmp_path / "binding-classification.sqlite")
+    repository = SQLiteSourceBindingRepository(database_path)
+    repository.create(binding(), capability())
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        "UPDATE source_bindings SET payload = ? WHERE tenant_id = ? AND binding_id = ?",
+        (
+            canonical_bytes(binding().model_copy(update={"tenant_id": "tenant-b"})),
+            "tenant-a",
+            "source-binding-a",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(SourceBindingIntegrityError, match="identity"):
+        repository.load("tenant-a", "source-binding-a")
+
+    driver_failure = SQLiteSourceBindingRepository(":memory:")
+    driver_failure.close()
+
+    with pytest.raises(SourceBindingPersistenceError) as captured:
+        driver_failure.load("tenant-a", "source-binding-a")
+
+    assert not isinstance(captured.value, SourceBindingIntegrityError)
+
+
+def test_an_invalid_stored_payload_is_reported_as_corruption(tmp_path: Path) -> None:
+    database_path = str(tmp_path / "binding-invalid-payload.sqlite")
+    repository = SQLiteSourceBindingRepository(database_path)
+    repository.create(binding(), capability())
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        "UPDATE source_bindings SET payload = ? WHERE tenant_id = ? AND binding_id = ?",
+        (b'{"not":"a binding"}', "tenant-a", "source-binding-a"),
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(SourceBindingIntegrityError, match="invalid"):
+        repository.load("tenant-a", "source-binding-a")

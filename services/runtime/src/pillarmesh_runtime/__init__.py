@@ -5,6 +5,8 @@ from .acquisition import (
     AcquisitionRunner,
     AcquisitionStateStore,
     ActivatedAcquisitionContract,
+    BindingResolver,
+    ProviderResolver,
 )
 from .acquisition_errors import (
     AcquisitionAuthorizationError,
@@ -19,6 +21,7 @@ from .acquisition_errors import (
     AcquisitionThrottledError,
     AcquisitionTransientError,
 )
+from .binding_resolution import SourceBindingReader, source_binding_resolver
 from .faults import FaultHook, noop_fault_hook
 from .models import RunResult
 from .retry import retry_bounded
@@ -42,12 +45,16 @@ __all__ = [
     "AcquisitionThrottledError",
     "AcquisitionTransientError",
     "ActivatedAcquisitionContract",
+    "BindingResolver",
     "FaultHook",
+    "ProviderResolver",
     "RunResult",
     "Runtime",
     "RuntimeDestination",
     "RuntimeSource",
     "SegmentEncoder",
+    "SourceBindingReader",
     "noop_fault_hook",
     "retry_bounded",
+    "source_binding_resolver",
 ]
