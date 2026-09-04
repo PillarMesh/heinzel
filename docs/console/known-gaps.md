@@ -76,8 +76,31 @@ transactions today.
 
 ### Source acquisition (`source-acquisition`)
 
-Acquisition receipts are produced per run and are not publicly listable per tenant, so
-no acquisition operation can be projected or commanded.
+This entry previously said receipts were "not publicly listable per tenant", which
+understated the gap. A read interface is the smallest part of it, and the receipt is
+already tenant-qualified — `AcquisitionEvidenceReceipt` carries `tenant_id`, so unlike a
+run it needs no derivation to be read per tenant.
+
+The gap is that the evidence is never kept. `AcquisitionEvidenceWriter` has exactly one
+method, `append`, and every implementation of it in this repository is an in-memory list
+inside a test double (`tests/acceptance/run_plan4a.py`,
+`tests/fault-injection/test_source_acquisition_recovery.py`,
+`services/runtime/tests/test_acquisition.py`). There is no durable writer, no table and no
+read path, so a receipt lives until the process exits.
+
+Nor is the runtime composed anywhere outside tests: `AcquisitionRunner` is constructed only
+in the Plan 4A acceptance harness and in unit tests, with its four resolvers bound to the
+scenario. Three of its nine collaborators do have durable implementations already
+(`SQLiteAcquisitionStateRepository`, `LocalAcquisitionArtifactStore` and
+`PostgreSQLAcquisitionProvider` — not the reference factory, which exists only as a test
+double), and its `BindingResolver` signature already matches
+connection-broker's `load(tenant_id, binding_id)` exactly — it has simply never been handed
+over. What has no owning publisher is `ActivatedAcquisitionContract`, a sixteen-field model
+declared in the runtime itself against contract-service's six-field lifecycle state.
+
+`docs/superpowers/specs/2026-09-03-source-acquisition-delivery-design.md` measures all of
+this and sequences the work so that retaining the evidence — the part that needs no
+ownership decision — can ship first.
 
 ### Data products and runs (`data-product-runs`)
 

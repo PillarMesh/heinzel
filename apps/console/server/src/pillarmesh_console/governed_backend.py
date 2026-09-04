@@ -254,8 +254,12 @@ _UNDELIVERED_CAPABILITIES: tuple[_Capability, ...] = (
     _Capability(
         capability_id="source-acquisition",
         label="Source acquisition",
-        dependency="a tenant-scoped acquisition receipt read interface",
-        detail="Acquisition receipts are produced per run and are not publicly listable.",
+        dependency="a durable acquisition evidence store and a composed acquisition runtime",
+        detail=(
+            "Acquisition receipts are built during a run and then discarded: every "
+            "evidence writer in the estate is an in-memory test double, and the runtime "
+            "is composed only in tests."
+        ),
     ),
     _Capability(
         capability_id="operation-retry",
