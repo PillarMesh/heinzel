@@ -178,10 +178,10 @@ def assert_warehouse_lifecycle_contract(
         "initial_validation_result_count",
     )
     initial_validation = validation_results[0]
-    require_warehouse_lifecycle_conformance(
-        isinstance(initial_validation, InitialWarehouseValidationResult),
-        "initial_validation_result_type",
-    )
+    # Raised directly rather than through the conformance helper so the narrowed
+    # type reaches the observation below; the failure is identical either way.
+    if not isinstance(initial_validation, InitialWarehouseValidationResult):
+        raise WarehouseLifecycleConformanceError("initial_validation_result_type")
     require_warehouse_lifecycle_conformance(
         initial_validation.evidence.positive_probe_digest
         != initial_validation.evidence.denial_probe_digest,
@@ -274,10 +274,10 @@ def assert_warehouse_lifecycle_contract(
         "resume_validation_result_count",
     )
     resume_validation = validation_results[-1]
-    require_warehouse_lifecycle_conformance(
-        isinstance(resume_validation, ResumeWarehouseValidationResult),
-        "resume_validation_result_type",
-    )
+    # Raised directly rather than through the conformance helper so the narrowed
+    # type reaches the observation below; the failure is identical either way.
+    if not isinstance(resume_validation, ResumeWarehouseValidationResult):
+        raise WarehouseLifecycleConformanceError("resume_validation_result_type")
     require_warehouse_lifecycle_conformance(
         resume_validation.evidence.observed_at > initial_validation.evidence.observed_at,
         "resume_validation_freshness",

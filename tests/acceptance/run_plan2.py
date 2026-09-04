@@ -1690,7 +1690,8 @@ def _run(config: Plan2Config) -> int:
             raise Plan2HarnessError("runtime identity could not read its published semantic object")
         runtime_client.assert_administration_denied()
         runtime_client.assert_other_tenant_namespace_denied(tenant_key="other-tenant")
-        tenant_isolation_verified = True
+        # Reaching this line is the proof: both denial assertions raise otherwise.
+        tenant_isolation_verified: Literal[True] = True
 
         phase = "drift_observation"
         client.ensure_glossary_term(

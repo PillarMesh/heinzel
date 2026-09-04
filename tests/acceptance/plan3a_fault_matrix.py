@@ -192,19 +192,23 @@ class WarehouseFaultScenarioOutcome(ArtifactModel):
                 and self.provider_operation in {"provision", "reconcile"}
                 else 1
             )
-            terminal_operation_count = {
-                "provision": 2,
-                "reconcile": 2,
-                "validate": 2,
-                "suspend": 3,
-                "resume": 4,
-                "retire": (
-                    3
-                    if self.failure_classification
-                    is WarehouseFailureClassification.PERMANENT_CONFIGURATION
-                    else 2
-                ),
-            }.get(self.provider_operation, 0)
+            terminal_operation_count = (
+                0
+                if self.provider_operation is None
+                else {
+                    "provision": 2,
+                    "reconcile": 2,
+                    "validate": 2,
+                    "suspend": 3,
+                    "resume": 4,
+                    "retire": (
+                        3
+                        if self.failure_classification
+                        is WarehouseFailureClassification.PERMANENT_CONFIGURATION
+                        else 2
+                    ),
+                }.get(self.provider_operation, 0)
+            )
             expected_cleanup = {
                 "repository_reopen_count": 3 if self.provider_operation == "reconcile" else 2,
                 "repository_session_count": 4 if self.provider_operation == "reconcile" else 3,
@@ -364,7 +368,10 @@ class _DurableProviderState:
             )
 
     def load(self) -> dict[str, object]:
-        return json.loads(self._path.read_text())
+        payload = json.loads(self._path.read_text())
+        if not isinstance(payload, dict):
+            raise RuntimeError("durable provider state is not an object")
+        return payload
 
     def update(self, **changes: object) -> None:
         payload = self.load()
@@ -404,7 +411,10 @@ class LifecycleProvider:
 
     @property
     def provision_operation_ids(self) -> tuple[str, ...]:
-        return tuple(str(value) for value in self._state.load()["provision_operation_ids"])
+        operation_ids = self._state.load()["provision_operation_ids"]
+        if not isinstance(operation_ids, list):
+            raise RuntimeError("durable provision operation ids are invalid")
+        return tuple(str(value) for value in operation_ids)
 
     @property
     def effect_counts(self) -> dict[str, int]:
@@ -524,10 +534,10 @@ class LifecycleProvider:
         self._complete_provider_phase(WarehouseLifecycleCheckpoint.AFTER_PROVIDER_CREATE)
 
     def _completed_provider_checkpoints(self) -> set[WarehouseLifecycleCheckpoint]:
-        return {
-            WarehouseLifecycleCheckpoint(value)
-            for value in self._state.load()["completed_provider_checkpoints"]
-        }
+        checkpoints = self._state.load()["completed_provider_checkpoints"]
+        if not isinstance(checkpoints, list):
+            raise RuntimeError("durable provider checkpoints are invalid")
+        return {WarehouseLifecycleCheckpoint(value) for value in checkpoints}
 
     def _complete_provider_phase(self, checkpoint: WarehouseLifecycleCheckpoint) -> None:
         completed = self._completed_provider_checkpoints()
@@ -814,6 +824,17 @@ def _drive_complete_lifecycle(
     return session, retired
 
 
+def _retired_terminal_state(state: WarehouseBindingState) -> Literal["retired"]:
+    """The outcome field is `Literal["retired"]`; `state.value` is only `str`.
+
+    `_verify_durable_terminal_cleanup` already refuses to return a binding in any
+    other state, so this re-states that guarantee where the checker can see it.
+    """
+    if state is not WarehouseBindingState.RETIRED:
+        raise RuntimeError("fault matrix outcome observed a non-retired terminal state")
+    return "retired"
+
+
 def _verify_durable_terminal_cleanup(
     session: _LifecycleSession,
     scenario_directory: Path,
@@ -943,7 +964,7 @@ def _run_checkpoint_scenario(
         failure_classification=None,
         expected_fault_state="process_stopped",
         observed_fault_state="process_stopped",
-        observed_terminal_state=durable.lifecycle_state.value,
+        observed_terminal_state=_retired_terminal_state(durable.lifecycle_state),
         replay_disposition="durable_restart_replayed",
         cleanup_proof=proof,
         cleanup_proof_digest=proof_digest,
@@ -1085,7 +1106,7 @@ def _run_classification_scenario(
         failure_classification=classification,
         expected_fault_state=expected_fault_state,
         observed_fault_state=observed_fault_state,
-        observed_terminal_state=durable.lifecycle_state.value,
+        observed_terminal_state=_retired_terminal_state(durable.lifecycle_state),
         replay_disposition=replay_disposition,
         cleanup_proof=proof,
         cleanup_proof_digest=proof_digest,

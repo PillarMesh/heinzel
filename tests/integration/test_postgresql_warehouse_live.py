@@ -25,7 +25,11 @@ from pillarmesh_provider_postgresql import (
     PostgreSQLWarehouseSettings,
 )
 from pillarmesh_provider_postgresql.warehouse import _restore_identity, _warehouse_identity
-from pillarmesh_provider_sdk import DockerComposeProcess
+from pillarmesh_provider_sdk import (
+    ComposeErrorClassification,
+    ComposeResourceKind,
+    DockerComposeProcess,
+)
 from pillarmesh_warehouse_control import (
     EngineKind,
     LocalAcceptanceWarehouseReadinessPolicy,
@@ -57,6 +61,8 @@ from pydantic import SecretStr
 
 import tests.conformance.warehouse_lifecycle as warehouse_lifecycle_module
 from tests.conformance.warehouse_lifecycle import (
+    WarehouseLifecycleContractDriver,
+    WarehouseLifecycleProviderFactory,
     assert_warehouse_lifecycle_contract,
     require_warehouse_lifecycle_conformance,
 )
@@ -116,12 +122,16 @@ class _LiveFaultComposeProcess(DockerComposeProcess):
         arguments: tuple[str, ...],
         environment: Mapping[str, str],
         input_bytes: bytes | None = None,
+        nonzero_classification: ComposeErrorClassification = "rejected",
     ) -> bytes:
+        # Forwarded rather than dropped: a caller that classifies its own nonzero
+        # exit (the ClickHouse provider does) would otherwise raise TypeError here.
         result = super().exec(
             project_name=project_name,
             arguments=arguments,
             environment=environment,
             input_bytes=input_bytes,
+            nonzero_classification=nonzero_classification,
         )
         if arguments == ("--profile", "restore", "up", "--detach", "postgresql_restore"):
             self._fault_controller.crash("restore_compose_up_before_created_commit")
@@ -446,7 +456,7 @@ class _LiveHarness:
         self,
         resources: tuple[PrivateWarehouseResource, ...],
     ) -> bool:
-        docker_kinds = {
+        docker_kinds: dict[WarehouseResourceKind, ComposeResourceKind] = {
             WarehouseResourceKind.WAREHOUSE_CONTAINER: "container",
             WarehouseResourceKind.PRIVATE_NETWORK: "network",
             WarehouseResourceKind.WAREHOUSE_DATA_VOLUME: "volume",
@@ -536,6 +546,18 @@ class _LiveHarness:
         except WarehouseProviderError as error:
             return error.classification is WarehouseFailureClassification.INVALID_PROVIDER_RESPONSE
         return False
+
+
+def _provider_factory_for(
+    driver: WarehouseLifecycleContractDriver,
+) -> WarehouseLifecycleProviderFactory:
+    """Bind one already-built driver as the factory the contract suite calls.
+
+    Closing over the loop variable directly is what a default-argument lambda was
+    working around; binding a parameter instead satisfies the checker and the
+    loop-capture lint without either workaround.
+    """
+    return lambda: driver
 
 
 def _new_harness(
@@ -775,11 +797,12 @@ def _remove_exact_test_docker_resources(
     network_names: tuple[str, ...],
 ) -> None:
     first_failure: Exception | None = None
-    for resource_kind, identifier in (
+    removals: tuple[tuple[ComposeResourceKind, str], ...] = (
         ("container", container_name),
         *(("network", network_name) for network_name in network_names),
         ("volume", volume_name),
-    ):
+    )
+    for resource_kind, identifier in removals:
         try:
             compose.remove_resource(
                 resource_kind=resource_kind,
@@ -1012,7 +1035,7 @@ def test_real_postgresql_warehouse_lifecycle_is_replay_safe_and_retention_aware(
         run_directory.mkdir(mode=0o700)
         harness = _new_harness(run_directory)
         try:
-            observation = assert_warehouse_lifecycle_contract(lambda harness=harness: harness)
+            observation = assert_warehouse_lifecycle_contract(_provider_factory_for(harness))
             initial = observation.initial_validation
             assert isinstance(initial.restore_verification, WarehouseRestoreVerification)
             resource_counts = Counter(

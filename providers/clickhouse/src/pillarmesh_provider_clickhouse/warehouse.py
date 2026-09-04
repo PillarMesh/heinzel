@@ -73,9 +73,18 @@ type _Entropy = Callable[[int], bytes]
 
 
 class _Client(Protocol):
-    def execute(self, statement: str, *, operation: str = "validate") -> bytes: ...
+    """`operation` is the closed provider vocabulary, not `str`.
 
-    def query_lines(self, statement: str, *, operation: str = "validate") -> tuple[str, ...]: ...
+    Declaring it `str` made this protocol wider than every implementation, so no
+    client actually satisfied it and a caller could name an operation that the
+    resulting `WarehouseProviderError` cannot carry.
+    """
+
+    def execute(self, statement: str, *, operation: _ClickHouseOperation = "validate") -> bytes: ...
+
+    def query_lines(
+        self, statement: str, *, operation: _ClickHouseOperation = "validate"
+    ) -> tuple[str, ...]: ...
 
     def close(self) -> None: ...
 

@@ -44,7 +44,7 @@ members = [
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers --import-mode=importlib"
-testpaths = ["packages", "providers", "services", "tests"]
+testpaths = ["apps", "packages", "providers", "services", "tests"]
 markers = [
   "emulator: requires an explicitly started local service emulator",
   "live: requires dedicated real service credentials or an explicitly started emulator",
@@ -82,7 +82,17 @@ packages = [
   "pillarmesh_semantic_registry",
   "pillarmesh_state",
   "pillarmesh_warehouse_control",
+  "tests.acceptance.console_postgresql_engine",
+  "tests.acceptance.plan2_orchestration",
+  "tests.acceptance.plan3a_fault_matrix",
+  "tests.acceptance.plan3a_orchestration",
   "tests.acceptance.run_console_governed",
   "tests.acceptance.run_m0",
+  "tests.acceptance.run_plan2",
+  "tests.acceptance.run_plan3a",
+  "tests.acceptance.run_plan3b",
+  "tests.acceptance.run_plan4a",
   "tests.ci.run_plan3a_witness",
+  "tests.conformance.source_acquisition",
+  "tests.conformance.warehouse_lifecycle",
 ]

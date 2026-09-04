@@ -27,6 +27,7 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 from threading import RLock
+from typing import Protocol
 
 import psycopg
 from cryptography.fernet import Fernet
@@ -163,6 +164,17 @@ class RepositoryResourceRecorder:
         raise RuntimeError(f"resource {resource_id!r} is not recorded in the binding ledger")
 
 
+class _ProviderFactory(Protocol):
+    """The two keywords `provider_for` calls the factory with.
+
+    `Callable[..., WarehouseProvider]` typed the result but left the call itself
+    unchecked, so renaming either keyword type checked and raised `TypeError` only
+    once a real binding was confirmed -- a path the offline suite never runs.
+    """
+
+    def __call__(self, *, binding_id: str, operation_id: str) -> WarehouseProvider: ...
+
+
 class DeferredPostgreSQLProvider:
     """Build the real provider per operation, on first use rather than at startup.
 
@@ -187,7 +199,7 @@ class DeferredPostgreSQLProvider:
 
     engine_kind = EngineKind.POSTGRESQL
 
-    def __init__(self, factory: Callable[..., WarehouseProvider]) -> None:
+    def __init__(self, factory: _ProviderFactory) -> None:
         self._factory = factory
         self._lock = RLock()
         self._binding_id: str | None = None

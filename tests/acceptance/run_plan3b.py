@@ -212,16 +212,27 @@ def _submit_for_review(
     )
 
 
-def _held(claim: str, observed: bool) -> Literal[True]:
-    """Assert an acceptance invariant, and give the checker the `Literal[True]` it is.
+class _AcceptanceInvariants:
+    """Records every invariant that did not hold, so one run reports all of them.
 
     `Plan3BAcceptanceResult` declares these fields `Literal[True]` because the run
-    has no result to report unless every one of them held. Raising here names which
-    invariant failed, rather than leaving the reader a field-level validation error.
+    has no result to report unless every one of them held. Raising inside `held`
+    would stop at the first failure and hide the rest, costing an acceptance run
+    per additional break; the failures are collected and reported together by
+    `require_all_held`, which the caller must run before it builds a result.
     """
-    if not observed:
-        raise AssertionError(f"plan 3B acceptance did not hold: {claim}")
-    return True
+
+    def __init__(self) -> None:
+        self._failed: list[str] = []
+
+    def held(self, claim: str, observed: bool) -> Literal[True]:
+        if not observed:
+            self._failed.append(claim)
+        return True
+
+    def require_all_held(self) -> None:
+        if self._failed:
+            raise AssertionError("plan 3B acceptance did not hold: " + "; ".join(self._failed))
 
 
 def run_offline_plan3b() -> Plan3BAcceptanceResult:
@@ -439,27 +450,50 @@ def run_offline_plan3b() -> Plan3BAcceptanceResult:
         for evidence in repository.list_evidence("tenant-a", request_id)
     )
     evidence_payload = package_fulfillment_receipts(all_evidence)
+    # Every invariant is recorded, then all of them are required, and only then is
+    # the result built. Requiring them after construction would lose them entirely
+    # whenever another field failed validation first, because the keyword arguments
+    # are evaluated before the model is constructed and `require_all_held` would
+    # never run -- reporting an unrelated field error instead of the invariant that
+    # actually broke.
+    invariants = _AcceptanceInvariants()
+    held = {
+        "clarified_outcome_bound": invariants.held(
+            "the clarified outcome bound the approval", clarified_outcome_bound
+        ),
+        "plan2_decision_separate": invariants.held(
+            "the plan 2 decision stayed separate", plan2_decision_separate
+        ),
+        "access_scope_narrowed": invariants.held(
+            "the access scope was narrowed", access_scope_narrowed
+        ),
+        "distinct_access_authorities": invariants.held(
+            "access required distinct authorities", distinct_access_authorities
+        ),
+        "requester_candidate_hidden": invariants.held(
+            "the candidate answer stayed hidden from the requester",
+            "Net revenue is gross revenue" not in requester_payload,
+        ),
+        "cross_tenant_denied": invariants.held(
+            "a cross-tenant read was denied", cross_tenant_denied
+        ),
+        "unrelated_actor_denied": invariants.held(
+            "an unrelated actor was denied", unrelated_denied
+        ),
+    }
+    invariants.require_all_held()
     return Plan3BAcceptanceResult(
         authorized_answer_status=answer_admission.execution_status,
         missing_data_dependency=missing_data_dependency,
         unauthorized_answer_status="denied",
         access_status=access_admission.execution_status,
-        clarified_outcome_bound=_held(
-            "the clarified outcome bound the approval", clarified_outcome_bound
-        ),
-        plan2_decision_separate=_held(
-            "the plan 2 decision stayed separate", plan2_decision_separate
-        ),
-        access_scope_narrowed=_held("the access scope was narrowed", access_scope_narrowed),
-        distinct_access_authorities=_held(
-            "access required distinct authorities", distinct_access_authorities
-        ),
-        requester_candidate_hidden=_held(
-            "the candidate answer stayed hidden from the requester",
-            "Net revenue is gross revenue" not in requester_payload,
-        ),
-        cross_tenant_denied=_held("a cross-tenant read was denied", cross_tenant_denied),
-        unrelated_actor_denied=_held("an unrelated actor was denied", unrelated_denied),
+        clarified_outcome_bound=held["clarified_outcome_bound"],
+        plan2_decision_separate=held["plan2_decision_separate"],
+        access_scope_narrowed=held["access_scope_narrowed"],
+        distinct_access_authorities=held["distinct_access_authorities"],
+        requester_candidate_hidden=held["requester_candidate_hidden"],
+        cross_tenant_denied=held["cross_tenant_denied"],
+        unrelated_actor_denied=held["unrelated_actor_denied"],
         external_effects=(
             "credentials:0",
             "grants:0",

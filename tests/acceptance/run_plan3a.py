@@ -18,7 +18,7 @@ from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Final, Literal, Protocol, Self, runtime_checkable
+from typing import Final, Literal, Protocol, Self, TypedDict, runtime_checkable
 
 from cryptography.fernet import Fernet, InvalidToken
 from pillarmesh_contract_model import ArtifactModel, digest
@@ -387,6 +387,30 @@ class Plan3AFaultMatrixEvidence(ArtifactModel):
                 WarehouseFaultScenarioOutcome.model_validate_json(canonical_json_bytes(payload))
             )
         return canonical_fault_matrix_outcomes(tuple(parsed))
+
+
+class _Plan3AProvisionalEvidence(TypedDict):
+    """Every `Plan3AEvidence` field except the privacy digest computed from it.
+
+    The payload is serialized to derive `privacy_scan_digest` before the model can
+    be built, so it exists as a mapping first. Typing it keeps the `**` expansion
+    below checked against the model instead of erasing all thirteen fields to
+    `object`.
+    """
+
+    run_id: str
+    source_commit: str
+    engine_results: tuple[EngineWitnessResult, EngineWitnessResult]
+    cross_engine_conformance_digest: str
+    tenant_isolation_digest: str
+    failure_matrix: Plan3AFaultMatrixEvidence
+    failure_matrix_digest: str
+    local_encryption_limitation: Literal["deferred_local_acceptance"]
+    production_readiness: Literal["not_proven"]
+    lifecycle_conformance: Literal["proven"]
+    cleanup_digest: str
+    started_at: datetime
+    completed_at: datetime
 
 
 class Plan3AEvidence(ArtifactModel):
@@ -1282,10 +1306,12 @@ def run_plan3a(
     if not cleanup.zero_residual_resources:
         raise Plan3AHarnessError("Plan 3A exact cleanup left residual resources")
     fault_matrix_evidence = Plan3AFaultMatrixEvidence(outcomes=fault_outcomes)
-    provisional = {
+    if len(results) != 2:
+        raise Plan3AHarnessError("Plan 3A requires exactly two engine witnesses")
+    provisional: _Plan3AProvisionalEvidence = {
         "run_id": run_id,
         "source_commit": config.source_commit,
-        "engine_results": tuple(results),
+        "engine_results": (results[0], results[1]),
         "cross_engine_conformance_digest": digest(
             {"domain": "pillarmesh-plan3a-cross-engine-v1", "outcomes": normalized}
         ),
