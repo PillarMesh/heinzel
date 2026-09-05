@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import os
 import shlex
+import signal
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,95 @@ def _docker_process(process_source: str, tmp_path: Path, monkeypatch: pytest.Mon
     )
     docker.chmod(0o755)
     monkeypatch.setenv("PATH", str(tmp_path))
+
+
+_HUNG_CHILD_SLEEP_SECONDS = 10.0
+
+
+class _ChildNeverBecameReady(BaseException):
+    """Raised from the process starter, where the boundary converts every `Exception`.
+
+    The compose boundary reports any failure to start a child as `unavailable`, so a
+    readiness failure raised as an ordinary exception would surface as a misleading
+    classification instead of the assertion the test is making.
+    """
+
+
+class _StartedChild:
+    """Record the child the compose boundary starts, so a test can watch its process id.
+
+    Taking the process id from the parent instead of from a file the child writes
+    as its first act keeps a termination test measuring termination, rather than
+    whether interpreter startup beat the timeout on a loaded machine.
+
+    A child that must reach a particular state before the timeout is meaningful --
+    an installed signal handler, say -- names a `ready_marker` it writes on arrival.
+    The boundary starts its timeout only once this starter returns, so waiting here
+    gives the child unbounded startup time without spending the timeout budget. The
+    wait ends as soon as the child exits, because a child that is gone cannot become
+    ready and waiting out the deadline would only hide why it went.
+    """
+
+    def __init__(self, *, ready_marker: Path | None = None) -> None:
+        self._ready_marker = ready_marker
+        self._started: list[subprocess.Popen[bytes]] = []
+
+    def __call__(
+        self,
+        command: list[str],
+        *,
+        env: Mapping[str, str],
+        stdin: int | IO[bytes] | None,
+        stdout: int,
+        stderr: int,
+    ) -> subprocess.Popen[bytes]:
+        started = subprocess.Popen(command, env=env, stdin=stdin, stdout=stdout, stderr=stderr)
+        self._started.append(started)
+        if self._ready_marker is not None:
+            self._await_ready(started, self._ready_marker)
+        return started
+
+    @staticmethod
+    def _await_ready(
+        started: subprocess.Popen[bytes],
+        marker: Path,
+        *,
+        deadline_seconds: float = 60.0,
+    ) -> None:
+        deadline = time.monotonic() + deadline_seconds
+        while time.monotonic() < deadline:
+            if marker.exists() and marker.read_text():
+                return
+            exit_status = started.poll()
+            if exit_status is not None:
+                # Re-read first: a child that wrote its marker and exited immediately
+                # is ready, and the two observations are not simultaneous.
+                if marker.exists() and marker.read_text():
+                    return
+                raise _ChildNeverBecameReady(
+                    f"the child exited with {exit_status} before reporting that it was ready"
+                )
+            time.sleep(0.02)
+        started.kill()
+        started.wait()
+        raise _ChildNeverBecameReady("the child never reported that it was ready")
+
+    @property
+    def started(self) -> tuple[subprocess.Popen[bytes], ...]:
+        return tuple(self._started)
+
+    @property
+    def process_id(self) -> int:
+        return self._only_child().pid
+
+    @property
+    def exit_status(self) -> int | None:
+        return self._only_child().returncode
+
+    def _only_child(self) -> subprocess.Popen[bytes]:
+        if len(self._started) != 1:
+            raise AssertionError(f"expected exactly one child, started {len(self._started)}")
+        return self._started[0]
 
 
 class _FinishedProcess:
@@ -869,7 +959,7 @@ def test_compose_exec_stops_a_running_child_when_stdout_crosses_the_limit(
         "import sys, time\n"
         f"sys.stdout.buffer.write(b'x' * {MAX_COMPOSE_OUTPUT_BYTES + 1})\n"
         "sys.stdout.flush()\n"
-        "time.sleep(2)\n",
+        f"time.sleep({_HUNG_CHILD_SLEEP_SECONDS})\n",
         tmp_path,
         monkeypatch,
     )
@@ -880,7 +970,10 @@ def test_compose_exec_stops_a_running_child_when_stdout_crosses_the_limit(
         process.exec(project_name="project-a", arguments=("ps",), environment={})
 
     assert captured.value.classification == "output_limit"
-    assert time.monotonic() - started_at < 1
+    # Returning before the child's own sleep would have ended it is what proves the
+    # limit stopped the call. The previous one-second bound left roughly nothing for
+    # interpreter startup, so a cold or loaded run failed here reproducibly.
+    assert time.monotonic() - started_at < _HUNG_CHILD_SLEEP_SECONDS
 
 
 def test_compose_exec_stops_a_running_child_when_stderr_crosses_the_limit(
@@ -891,7 +984,7 @@ def test_compose_exec_stops_a_running_child_when_stderr_crosses_the_limit(
         "import sys, time\n"
         f"sys.stderr.buffer.write(b'x' * {MAX_COMPOSE_OUTPUT_BYTES + 1})\n"
         "sys.stderr.flush()\n"
-        "time.sleep(2)\n",
+        f"time.sleep({_HUNG_CHILD_SLEEP_SECONDS})\n",
         tmp_path,
         monkeypatch,
     )
@@ -907,16 +1000,15 @@ def test_compose_exec_timeout_terminates_and_reaps_a_hung_child(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    process_identifier = tmp_path / "process-id"
     _docker_process(
-        "import os, pathlib, time\n"
-        f"pathlib.Path({str(process_identifier)!r}).write_text(str(os.getpid()))\n"
-        "time.sleep(10)\n",
+        f"import time\ntime.sleep({_HUNG_CHILD_SLEEP_SECONDS})\n",
         tmp_path,
         monkeypatch,
     )
+    child = _StartedChild()
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
+        run=child,
         timeout_seconds=0.5,
         termination_grace_seconds=0.1,
     )
@@ -926,19 +1018,25 @@ def test_compose_exec_timeout_terminates_and_reaps_a_hung_child(
         process.exec(project_name="project-a", arguments=("ps",), environment={})
 
     assert captured.value.classification == "timeout"
-    assert time.monotonic() - started_at < 2
-    process_id = int(process_identifier.read_text())
-    with pytest.raises(ProcessLookupError):
-        os.kill(process_id, 0)
+    # Returning before the child's own sleep would have ended it is what proves the
+    # timeout ended the call; a tighter bound would measure the host's load instead.
+    assert time.monotonic() - started_at < _HUNG_CHILD_SLEEP_SECONDS
+    _assert_process_exits(child.process_id)
 
 
 def test_compose_stream_timeout_terminates_and_reaps_a_hung_child(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    _docker_process("import time\ntime.sleep(10)\n", tmp_path, monkeypatch)
+    _docker_process(
+        f"import time\ntime.sleep({_HUNG_CHILD_SLEEP_SECONDS})\n",
+        tmp_path,
+        monkeypatch,
+    )
+    child = _StartedChild()
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
+        run=child,
         timeout_seconds=0.1,
         termination_grace_seconds=0.1,
     )
@@ -953,24 +1051,8 @@ def test_compose_stream_timeout_terminates_and_reaps_a_hung_child(
         output.read(1)
 
     assert captured.value.classification == "timeout"
-    assert time.monotonic() - started_at < 1
-
-
-def _recorded_process_id(path: Path, *, deadline_seconds: float = 10.0) -> int:
-    """Read the pid the child recorded, waiting for it to appear.
-
-    The child records its pid as its first act, but interpreter startup competes
-    with everything else on the machine. Waiting for the file keeps the test
-    measuring termination rather than how loaded the host happened to be.
-    """
-    deadline = time.monotonic() + deadline_seconds
-    while time.monotonic() < deadline:
-        if path.exists():
-            recorded = path.read_text().strip()
-            if recorded:
-                return int(recorded)
-        time.sleep(0.02)
-    raise AssertionError("the child never recorded its process id")
+    assert time.monotonic() - started_at < _HUNG_CHILD_SLEEP_SECONDS
+    _assert_process_exits(child.process_id)
 
 
 def _assert_process_exits(process_id: int, *, deadline_seconds: float = 10.0) -> None:
@@ -993,18 +1075,20 @@ def test_compose_timeout_escalates_to_kill_for_a_child_that_ignores_terminate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    process_identifier = tmp_path / "process-id"
+    ignoring_terminate = tmp_path / "ignoring-terminate"
     _docker_process(
-        "import os, pathlib, signal, time\n"
+        "import pathlib, signal, time\n"
         "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
-        f"pathlib.Path({str(process_identifier)!r}).write_text(str(os.getpid()))\n"
-        "time.sleep(10)\n",
+        f"pathlib.Path({str(ignoring_terminate)!r}).write_text('ready')\n"
+        f"time.sleep({_HUNG_CHILD_SLEEP_SECONDS})\n",
         tmp_path,
         monkeypatch,
     )
+    child = _StartedChild(ready_marker=ignoring_terminate)
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
-        timeout_seconds=2.0,
+        run=child,
+        timeout_seconds=0.5,
         termination_grace_seconds=0.1,
     )
 
@@ -1012,42 +1096,31 @@ def test_compose_timeout_escalates_to_kill_for_a_child_that_ignores_terminate(
         process.exec(project_name="project-a", arguments=("ps",), environment={})
 
     assert captured.value.classification == "timeout"
-    _assert_process_exits(_recorded_process_id(process_identifier))
+    _assert_process_exits(child.process_id)
+    # The child is only known to have ignored the terminate, rather than never having
+    # installed its handler, because the kill signal is the one that ended it.
+    assert child.exit_status == -signal.SIGKILL
 
 
 def test_compose_exec_drains_output_while_writing_input_and_honors_the_deadline(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    process_identifier = tmp_path / "process-id"
     output_drained = tmp_path / "output-drained"
     _docker_process(
-        "import os, pathlib, sys, time\n"
-        f"pathlib.Path({str(process_identifier)!r}).write_text(str(os.getpid()))\n"
+        "import pathlib, sys, time\n"
         "sys.stdout.buffer.write(b'o' * (256 * 1024))\n"
         "sys.stdout.buffer.flush()\n"
         f"pathlib.Path({str(output_drained)!r}).write_text('drained')\n"
-        "time.sleep(10)\n",
+        f"time.sleep({_HUNG_CHILD_SLEEP_SECONDS})\n",
         tmp_path,
         monkeypatch,
     )
-    started_children: list[subprocess.Popen[bytes]] = []
-
-    def start(
-        command: list[str],
-        *,
-        env: Mapping[str, str],
-        stdin: int | IO[bytes] | None,
-        stdout: int,
-        stderr: int,
-    ) -> subprocess.Popen[bytes]:
-        child = subprocess.Popen(command, env=env, stdin=stdin, stdout=stdout, stderr=stderr)
-        started_children.append(child)
-        return child
+    child = _StartedChild()
 
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
-        run=start,
+        run=child,
         timeout_seconds=2.0,
         termination_grace_seconds=0.1,
     )
@@ -1072,17 +1145,17 @@ def test_compose_exec_drains_output_while_writing_input_and_honors_the_deadline(
     try:
         assert completed.wait(timeout=20)
     finally:
-        for child in started_children:
-            if child.poll() is None:
-                child.kill()
-                child.wait(timeout=1)
+        for started in child.started:
+            if started.poll() is None:
+                started.kill()
+                started.wait(timeout=1)
         worker.join(timeout=1)
 
     assert len(failures) == 1
     assert isinstance(failures[0], ComposeCommandError)
     assert failures[0].classification == "timeout"
     assert output_drained.read_text() == "drained"
-    _assert_process_exits(_recorded_process_id(process_identifier))
+    _assert_process_exits(child.process_id)
 
 
 def test_compose_stream_reports_an_unreaped_child_after_kill_escalation(tmp_path: Path) -> None:
@@ -1623,3 +1696,21 @@ def test_compose_io_cleanup_cannot_replace_the_sanitized_primary_failure(
     assert private_error not in str(captured.value)
     assert child.terminated is True
     assert child.killed is True
+
+
+def test_readiness_waiting_gives_up_as_soon_as_the_child_is_gone() -> None:
+    """A child that died cannot become ready, so waiting for it only hides why.
+
+    Waiting the whole deadline out costs a minute per broken run and reports a
+    readiness failure, when what a reader needs is that the child exited and what
+    it exited with -- a typo in the inlined source, or an interpreter that could
+    not start under the monkeypatched PATH, looks identical otherwise.
+    """
+    dead = subprocess.Popen([sys.executable, "-c", "raise SystemExit(3)"])
+    dead.wait()
+    started_at = time.monotonic()
+
+    with pytest.raises(_ChildNeverBecameReady, match="exited with 3"):
+        _StartedChild._await_ready(dead, Path("/nonexistent/marker"), deadline_seconds=30.0)
+
+    assert time.monotonic() - started_at < 5
