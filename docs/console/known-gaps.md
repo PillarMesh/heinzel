@@ -164,17 +164,22 @@ state is authoritative and nothing in the console may reset it; the route is abs
 These are console contract gaps found while wiring Task 10. Each is worked around in a
 way that never invents authority, and each needs a contract change to close.
 
-1. **`DecisionCommand` names no review item.** `SemanticReviewService.decide_item`
-   decides one ontology review item. A bundle-wide decision therefore cannot be
-   expressed. The console decides the bundle only when exactly one item is still
-   pending; a multi-item bundle is refused with `review_item_required` rather than
-   fanning one decision across several owning transactions, which could not be applied
-   atomically.
-2. **`DecisionCommand.decision = "request_changes"` cannot reach semantic review.** The
-   owning `revise`/`merge` decisions require replacement wording; the command carries
-   none. Refused with `review_revision_content_required`. The remaining `unresolved`
-   decision drives the bundle to `no_valid_plan`, which is far stronger than "request
-   changes" and must not be substituted for it.
+1. **Closed.** `DecisionCommand` names a review item. `SemanticReviewService.decide_item`
+   has always decided one ontology review item and the command could not say which, so
+   a bundle with several undecided items was refused outright and an architect could
+   decide none of them here. `review_item_id` carries it now. A bundle-wide decision is
+   still not expressible, and is still not attempted: fanning one decision across
+   several owning transactions could not be applied atomically. Naming an item that is
+   absent or already decided is refused rather than resolved to the nearest pending
+   one.
+2. **Closed.** `request_changes` reaches semantic review as the owning `revise`
+   decision, carrying the replacement wording that decision requires in
+   `revised_content`. A change request without wording is still refused, because there
+   is nothing to revise with; `unresolved` is still never substituted, because it
+   drives the bundle to `no_valid_plan`, a far stronger verdict than asking for a
+   change. Wording sent with an approval or a rejection is refused rather than dropped.
+   `merge` remains unreachable: it needs candidate identifiers the command does not
+   carry.
 3. **`CreateRequestCommand.title` has no owning field.** Request-management stores no
    title, so the console returns the title derived from the owning payload (the
    question text or the data product reference) rather than echoing the browser's.

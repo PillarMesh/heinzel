@@ -328,6 +328,8 @@ class _RecordingSemanticReviewCommands:
         decision: ReviewItemDecision,
         actor_id: str,
         expected_revision: int,
+        revised_content: str | None = None,
+        merge_candidate_ids: tuple[str, ...] = (),
     ) -> OntologyReviewBundle:
         self.calls.append(
             {
@@ -337,6 +339,8 @@ class _RecordingSemanticReviewCommands:
                 "decision": decision,
                 "actor_id": actor_id,
                 "expected_revision": expected_revision,
+                "revised_content": revised_content,
+                "merge_candidate_ids": merge_candidate_ids,
             }
         )
         return self._bundle.model_copy(
@@ -914,6 +918,8 @@ def test_a_semantic_review_decision_delegates_the_bundles_exact_revision(stack: 
             "decision": ReviewItemDecision.ACCEPT,
             "actor_id": _ARCHITECT,
             "expected_revision": bundle.revision,
+            "revised_content": None,
+            "merge_candidate_ids": (),
         }
     ]
     assert review.revision == bundle.revision + 1
@@ -963,9 +969,15 @@ def test_a_multi_item_review_cannot_be_decided_by_a_command_that_names_no_item(
     assert commands.calls == []
 
 
-def test_a_review_change_request_is_refused_because_no_revision_content_can_be_carried(
+def test_a_review_change_request_without_replacement_wording_is_refused(
     stack: _Stack,
 ) -> None:
+    """The owning revise decision requires wording; the command may carry it now.
+
+    This once read "because no revision content can be carried", which stopped being
+    true when `DecisionCommand` gained the field. What remains true is that a change
+    request arriving without wording has nothing to revise with.
+    """
     bundle = _review_bundle()
     commands = _RecordingSemanticReviewCommands(bundle)
     backend = stack.backend(
@@ -1053,3 +1065,124 @@ def test_another_tenants_request_is_not_readable_as_a_conversation(stack: _Stack
 
     with pytest.raises(ConsoleNotFound):
         stack.backend().get_conversation(_requester_context(), request.request_id)
+
+
+def test_a_named_item_decides_that_item_of_a_multi_item_review(stack: _Stack) -> None:
+    """`decide_item` has always decided one item; the command can now say which.
+
+    A bundle with several undecided items was refused outright, so an architect could
+    not decide any of them through the console until every other item happened to be
+    resolved elsewhere.
+    """
+    bundle = _review_bundle(pending_items=3)
+    commands = _RecordingSemanticReviewCommands(bundle)
+    backend = stack.backend(
+        semantic_reviews=_StaticSemanticReviewReader(bundle),
+        semantic_review_commands=commands,
+    )
+
+    backend.decide_review(
+        _architect_context(),
+        bundle.bundle_id,
+        DecisionCommand(
+            expected_revision=bundle.revision,
+            reviewed_digest=bundle.candidate_set_digest,
+            active_role="data_architect",
+            decision="approve",
+            review_item_id="ori-1",
+        ),
+    )
+
+    assert [call["item_id"] for call in commands.calls] == ["ori-1"]
+
+
+def test_a_change_request_delegates_the_replacement_wording(stack: _Stack) -> None:
+    """`request_changes` reaches the owning revise decision now, carrying its wording.
+
+    The console previously refused it and could not substitute `unresolved`, which
+    drives the bundle to `no_valid_plan` -- a far stronger verdict than asking for a
+    change.
+    """
+    bundle = _review_bundle()
+    commands = _RecordingSemanticReviewCommands(bundle)
+    backend = stack.backend(
+        semantic_reviews=_StaticSemanticReviewReader(bundle),
+        semantic_review_commands=commands,
+    )
+
+    backend.decide_review(
+        _architect_context(),
+        bundle.bundle_id,
+        DecisionCommand(
+            expected_revision=bundle.revision,
+            reviewed_digest=bundle.candidate_set_digest,
+            active_role="data_architect",
+            decision="request_changes",
+            revised_content="net revenue excludes refunds",
+        ),
+    )
+
+    assert commands.calls[0]["decision"] is ReviewItemDecision.REVISE
+    assert commands.calls[0]["revised_content"] == "net revenue excludes refunds"
+
+
+@pytest.mark.parametrize("named", ("ori-9", "ori-0"))
+def test_an_item_that_is_not_awaiting_a_decision_is_refused(stack: _Stack, named: str) -> None:
+    """Naming an absent item, or one already decided, is refused rather than resolved.
+
+    Falling back to "the only pending one" for an unrecognised name would apply the
+    decision to an item the architect did not read.
+    """
+    bundle = _review_bundle(pending_items=2).model_copy(
+        update={
+            "items": (
+                _review_bundle(pending_items=2).items[0].model_copy(update={"status": "accepted"}),
+                _review_bundle(pending_items=2).items[1],
+            )
+        }
+    )
+    commands = _RecordingSemanticReviewCommands(bundle)
+    backend = stack.backend(
+        semantic_reviews=_StaticSemanticReviewReader(bundle),
+        semantic_review_commands=commands,
+    )
+
+    with pytest.raises(ConsoleInvalidRequest):
+        backend.decide_review(
+            _architect_context(),
+            bundle.bundle_id,
+            DecisionCommand(
+                expected_revision=bundle.revision,
+                reviewed_digest=bundle.candidate_set_digest,
+                active_role="data_architect",
+                decision="approve",
+                review_item_id=named,
+            ),
+        )
+
+    assert commands.calls == []
+
+
+def test_replacement_wording_on_an_approval_is_refused(stack: _Stack) -> None:
+    """Wording only means something for a revision, so accepting it elsewhere invents one."""
+    bundle = _review_bundle()
+    commands = _RecordingSemanticReviewCommands(bundle)
+    backend = stack.backend(
+        semantic_reviews=_StaticSemanticReviewReader(bundle),
+        semantic_review_commands=commands,
+    )
+
+    with pytest.raises(ConsoleInvalidRequest):
+        backend.decide_review(
+            _architect_context(),
+            bundle.bundle_id,
+            DecisionCommand(
+                expected_revision=bundle.revision,
+                reviewed_digest=bundle.candidate_set_digest,
+                active_role="data_architect",
+                decision="approve",
+                revised_content="wording that approves nothing",
+            ),
+        )
+
+    assert commands.calls == []

@@ -368,11 +368,22 @@ export interface DataProductView {
   data_product_id: PublicId
   version: Version
 }
+/**
+ * One decision, against the exact revision and content the browser displayed.
+ *
+ * `review_item_id` and `revised_content` carry what `decide_item` already accepts
+ * and this command previously could not express, so a bundle with several undecided
+ * items and a change request with replacement wording both had to be refused. They
+ * are optional because the same command decides a fulfillment request, where
+ * neither has any meaning; that route refuses them rather than ignoring them.
+ */
 export interface DecisionCommand {
   active_role: ActorRole
   decision: Decision1
   expected_revision: ExpectedRevision4
+  review_item_id?: NonEmptyText | null
   reviewed_digest: ReviewedDigest1
+  revised_content?: NonEmptyText | null
 }
 export interface ConsoleErrorEnvelope {
   error: ApiError

@@ -814,10 +814,21 @@ class ProcessPackageCommand(StrictModel):
 
 
 class DecisionCommand(StrictModel):
+    """One decision, against the exact revision and content the browser displayed.
+
+    `review_item_id` and `revised_content` carry what `decide_item` already accepts
+    and this command previously could not express, so a bundle with several undecided
+    items and a change request with replacement wording both had to be refused. They
+    are optional because the same command decides a fulfillment request, where
+    neither has any meaning; that route refuses them rather than ignoring them.
+    """
+
     expected_revision: int = Field(ge=1)
     reviewed_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     active_role: ActorRole
     decision: Literal["approve", "reject", "request_changes"]
+    review_item_id: NonEmptyText | None = None
+    revised_content: NonEmptyText | None = None
 
 
 class AdmissionCommand(StrictModel):

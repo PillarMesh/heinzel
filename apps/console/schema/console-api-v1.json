@@ -1687,6 +1687,7 @@
     },
     "DecisionCommand": {
       "additionalProperties": false,
+      "description": "One decision, against the exact revision and content the browser displayed.\n\n`review_item_id` and `revised_content` carry what `decide_item` already accepts\nand this command previously could not express, so a bundle with several undecided\nitems and a change request with replacement wording both had to be refused. They\nare optional because the same command decides a fulfillment request, where\nneither has any meaning; that route refuses them rather than ignoring them.",
       "properties": {
         "active_role": {
           "$ref": "#/$defs/ActorRole"
@@ -1705,10 +1706,32 @@
           "title": "Expected Revision",
           "type": "integer"
         },
+        "review_item_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "reviewed_digest": {
           "pattern": "^[0-9a-f]{64}$",
           "title": "Reviewed Digest",
           "type": "string"
+        },
+        "revised_content": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

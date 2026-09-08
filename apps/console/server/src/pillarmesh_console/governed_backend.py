@@ -197,11 +197,12 @@ _TRANSIENT_CLASSIFICATIONS = frozenset(
     }
 )
 _DECISIONS: frozenset[str] = frozenset({"approve", "reject", "request_changes"})
-# `request_changes` is deliberately absent: the owning revise decision requires
-# replacement wording, and `DecisionCommand` carries none.
+# `request_changes` maps to the owning revise decision, which requires replacement
+# wording; the command carries it now, and a request without it is still refused.
 _REVIEW_DECISIONS: dict[Decision, ReviewItemDecision] = {
     "approve": ReviewItemDecision.ACCEPT,
     "reject": ReviewItemDecision.REJECT,
+    "request_changes": ReviewItemDecision.REVISE,
 }
 _BINDING_OPERATION_STATES: dict[WarehouseBindingState, OperationState] = {
     WarehouseBindingState.DRAFT: "accepted",
@@ -781,43 +782,82 @@ class GovernedConsoleBackend:
             self._stale("The review bundle changed. Reload it before deciding.")
         if command.reviewed_digest != bundle.candidate_set_digest:
             self._stale("The reviewed candidate set changed. Reload it before deciding.")
-        decision = _REVIEW_DECISIONS.get(command.decision)
-        if decision is None:
+        decision = _REVIEW_DECISIONS[command.decision]
+        if decision is ReviewItemDecision.REVISE and command.revised_content is None:
             raise ConsoleInvalidRequest(
                 code="review_revision_content_required",
-                safe_message=(
-                    "Requesting changes needs replacement wording, which this command cannot carry."
-                ),
-                recovery_action="none",
-                field="decision",
+                safe_message="Requesting changes needs the replacement wording.",
+                recovery_action="correct_input",
+                field="revised_content",
             )
-        pending = tuple(item for item in bundle.items if item.status == "pending")
-        if len(pending) != 1:
+        if decision is not ReviewItemDecision.REVISE and command.revised_content is not None:
             raise ConsoleInvalidRequest(
-                code="review_item_required",
-                safe_message=(
-                    "This review has more than one undecided item and the command names "
-                    "none of them."
-                ),
-                recovery_action="none",
+                code="review_revision_content_not_admitted",
+                safe_message="Only a change request carries replacement wording.",
+                recovery_action="correct_input",
+                field="revised_content",
             )
+        item_id = self._review_item_to_decide(bundle, command.review_item_id)
         updated = self._guarded(
             lambda: commands.decide_item(
                 tenant_id=context.tenant_id,
                 bundle_id=bundle.bundle_id,
-                item_id=pending[0].item_id,
+                item_id=item_id,
                 decision=decision,
                 actor_id=context.actor_id,
                 expected_revision=command.expected_revision,
+                revised_content=command.revised_content,
             )
         )
         return self._review_view(context, updated)
+
+    @staticmethod
+    def _review_item_to_decide(bundle: OntologyReviewBundle, named: str | None) -> str:
+        """The one undecided item this decision applies to.
+
+        A decision is applied to a single item by the owning transaction, so a bundle
+        with several undecided items needs the command to say which. Naming an item
+        that is already decided, or one this bundle never held, is refused rather
+        than resolved to something nearby.
+        """
+        pending = tuple(item for item in bundle.items if item.status == "pending")
+        if named is None:
+            if len(pending) != 1:
+                raise ConsoleInvalidRequest(
+                    code="review_item_required",
+                    safe_message=(
+                        "This review has more than one undecided item and the command "
+                        "names none of them."
+                    ),
+                    recovery_action="correct_input",
+                    field="review_item_id",
+                )
+            return pending[0].item_id
+        if named not in {item.item_id for item in pending}:
+            raise ConsoleInvalidRequest(
+                code="review_item_not_pending",
+                safe_message="That review item is not awaiting a decision.",
+                recovery_action="reload",
+                field="review_item_id",
+            )
+        return named
 
     def decide_request(
         self, context: TrustedActorContext, request_id: str, command: DecisionCommand
     ) -> RequestDetailView:
         self._authorize(context, ("data_architect",))
         self._require_command_role(context, command.active_role)
+        # `DecisionCommand` also decides an ontology review, where these two carry
+        # meaning. A fulfillment decision has no review item and no wording to revise,
+        # so they are refused rather than ignored: silently dropping a field a caller
+        # sent is how a caller comes to believe it was applied.
+        if command.review_item_id is not None or command.revised_content is not None:
+            raise ConsoleInvalidRequest(
+                code="review_fields_not_admitted",
+                safe_message="A fulfillment decision carries no review item or wording.",
+                recovery_action="correct_input",
+                field="review_item_id" if command.review_item_id is not None else "revised_content",
+            )
         commands = self._require_fulfillment_commands()
         authority_ref = self._principal_ref(context)
         request = self._visible_request(context, request_id)

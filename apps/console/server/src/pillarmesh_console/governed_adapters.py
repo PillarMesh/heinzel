@@ -456,6 +456,14 @@ class FulfillmentDecisionCommands(Protocol):
 
 
 class SemanticReviewCommands(Protocol):
+    """Mirrors `SemanticReviewService.decide_item` exactly, defaults included.
+
+    A protocol narrower than the transaction it stands for hides whatever it omits:
+    `revised_content` was missing here, so the console could not express a revision
+    and the type checker agreed with it. `merge_candidate_ids` is declared for the
+    same reason, though nothing sends it yet.
+    """
+
     def decide_item(
         self,
         *,
@@ -465,6 +473,8 @@ class SemanticReviewCommands(Protocol):
         decision: ReviewItemDecision,
         actor_id: str,
         expected_revision: int,
+        revised_content: str | None = None,
+        merge_candidate_ids: tuple[str, ...] = (),
     ) -> OntologyReviewBundle: ...
 
 
