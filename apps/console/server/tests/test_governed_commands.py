@@ -47,6 +47,7 @@ from pillarmesh_console.operation_handles import (
     CONSOLE_HANDLE_PATTERN,
     InMemoryOperationHandleRepository,
 )
+from pillarmesh_console.request_intake import request_intake_content
 from pillarmesh_contract_model import digest
 from pillarmesh_request_management import (
     ArchitectRequestView,
@@ -445,6 +446,7 @@ def test_request_intake_delegates_the_trusted_tenant_and_actor_not_the_browser_p
         }
     )
 
+    command = command.model_copy(update={"request_digest": digest(request_intake_content(command))})
     created = stack.backend().create_request(_requester_context(), command)
     stored = stack.requests.get(_TENANT, created.request_id)
 
@@ -476,6 +478,7 @@ def test_data_access_intake_delegates_every_declared_scope_field(stack: _Stack) 
         }
     )
 
+    command = command.model_copy(update={"request_digest": digest(request_intake_content(command))})
     created = stack.backend().create_request(_requester_context(), command)
     stored = stack.requests.get(_TENANT, created.request_id)
 
@@ -1192,3 +1195,38 @@ def test_replacement_wording_on_an_approval_is_refused(stack: _Stack) -> None:
         )
 
     assert commands.calls == []
+
+
+@pytest.mark.parametrize("kind", ["stakeholder_question", "data_access"])
+def test_request_intake_rejects_a_mismatched_digest_without_writing(
+    stack: _Stack, kind: str
+) -> None:
+    command = CreateRequestCommand.model_validate(
+        {
+            "expected_revision": 1,
+            "request_digest": "0" * 64,
+            "active_role": "requester",
+            "title": "Quarterly revenue",
+            "request": {
+                "kind": "stakeholder_question",
+                "purpose": "Quarterly board reporting",
+                "question": "What was net revenue last quarter?",
+            }
+            if kind == "stakeholder_question"
+            else {
+                "kind": "data_access",
+                "purpose": "Reporting",
+                "data_product_ref": "product-revenue",
+                "requested_fields": ["total"],
+                "access_mode": "export",
+                "expires_at": (_FIXED_TIME + timedelta(days=7)).isoformat(),
+            },
+        }
+    )
+
+    with pytest.raises(ConsoleInvalidRequest) as failure:
+        stack.backend().create_request(_requester_context(), command)
+
+    assert failure.value.code == "request_digest_mismatch"
+    assert failure.value.field == "request_digest"
+    assert stack.requests.list_inbox(_TENANT) == ()

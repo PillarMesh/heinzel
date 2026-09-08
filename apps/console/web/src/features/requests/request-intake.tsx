@@ -10,6 +10,7 @@ import type {
   RequesterRequestView,
   SessionView,
 } from "../../api/generated"
+import {canonicalRequestIntakeContent} from "./request-intake-content"
 import type {DigestText, IdempotencyKeyFactory, RequesterClient} from "./my-requests"
 
 const publicIdPattern = /^[a-z][a-z0-9_-]{2,127}$/
@@ -135,7 +136,7 @@ export function RequestIntake({
     setFieldError(null)
     // The digest binds the exact submitted content. Requester identity is never sent; the server
     // derives it from trusted context.
-    const requestDigest = await digestText(JSON.stringify({title: title.trim(), request}))
+    const requestDigest = await digestText(canonicalRequestIntakeContent(title.trim(), request))
     await submitAttempt({
       command: {
         expected_revision: 1,

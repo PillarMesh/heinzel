@@ -1289,6 +1289,21 @@ One typed request boundary accepts:
 
 The MVP includes native UI/API intake and platform-generated tickets. Slack and email intake are deferred, but their future adapters must create the same typed object rather than bypassing authorization or semantics.
 
+Request-management owns the native question/access intake checksum. Its
+`RequestIntakeContent` consists of `title` (string, or null for untitled internal intake)
+and the typed `payload` (`StakeholderQuestion` or `DataAccessRequest`). The lowercase
+SHA-256 digest uses the contract-model canonical serializer: UTF-8 JSON without extra
+whitespace, lexicographically sorted keys, preserved text and array order, and UTC
+expiry timestamps with six fractional digits. Generated request IDs, tenant/actor
+context, lifecycle state, revisions, and submission timestamps are outside this content
+checksum. Trusted context still determines identity and visibility.
+
+A declared checksum must match before an intake allocates an identity or persists a
+request. Native console commands must declare it; existing internal callers without a
+declared checksum remain supported. The checksum is neither approval nor retry authority,
+and identical content submitted separately still produces separate request identities.
+No durable-record migration or rewrite is required.
+
 ### 13.2 Request types
 
 - stakeholder data question;

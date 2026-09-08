@@ -539,7 +539,9 @@ def test_requester_commands_create_request_and_accept_clarified_outcome() -> Non
             headers=_command_headers(client, "idem-requester-create"),
             json={
                 "expected_revision": 1,
-                "request_digest": "6" * 64,
+                "request_digest": (
+                    "0022a11a86c939c770a3d876ee58b1f450040edbc26b1b176c749255406def2d"
+                ),
                 "active_role": "requester",
                 "title": "Explain synthetic revenue",
                 "request": {

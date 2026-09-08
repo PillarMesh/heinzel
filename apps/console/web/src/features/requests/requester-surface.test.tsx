@@ -216,6 +216,9 @@ test("submits a stakeholder question without any browser-supplied requester iden
       question: "Why did net revenue move last week?",
     },
   })
+  expect(digestText).toHaveBeenCalledWith(
+    '{"payload":{"purpose":"Prepare the weekly revenue review.","question":"Why did net revenue move last week?","request_type":"stakeholder_question"},"title":"Weekly net revenue movement"}',
+  )
   expect(Object.keys(command)).not.toContain("actor_id")
   expect(Object.keys(command)).not.toContain("tenant_id")
   expect(Object.keys(command)).not.toContain("requester")

@@ -8,6 +8,9 @@ from datetime import datetime, timedelta
 from threading import RLock
 from typing import Never
 
+from pillarmesh_request_management.intake import RequestDigestMismatch
+from pydantic import ValidationError
+
 from .auth import TrustedActorContext
 from .backend import AuthorizedLink, PreviewContent
 from .contracts import (
@@ -61,6 +64,8 @@ from .fixture_data import (
     conversation_digest,
     fixture_clock,
 )
+from .governed_adapters import console_error_for
+from .request_intake import request_intake_content
 
 
 @dataclass(frozen=True, slots=True)
@@ -921,6 +926,10 @@ class FixtureConsoleBackend:
     ) -> RequesterRequestView:
         self._authorize(context, ("requester",))
         self._require_command_role(context, command.active_role)
+        try:
+            request_intake_content(command).verify_digest(command.request_digest)
+        except (RequestDigestMismatch, ValidationError) as error:
+            raise console_error_for(error) from error
         identity = self._command_identity(
             resource_id=f"request-create:{context.actor_id}",
             expected_revision=command.expected_revision,

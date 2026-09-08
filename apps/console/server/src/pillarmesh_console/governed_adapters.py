@@ -40,6 +40,7 @@ from pillarmesh_request_management import (
     RequesterRequestView,
     TransitionEvent,
 )
+from pillarmesh_request_management.intake import RequestDigestMismatch
 from pillarmesh_semantic_registry import OntologyReviewBundle, SemanticPersistenceError
 from pillarmesh_semantic_registry.review import ReviewItemDecision
 from pillarmesh_warehouse_control import (
@@ -57,7 +58,13 @@ from pillarmesh_warehouse_control.repository import WarehouseRepository
 from pydantic import ValidationError
 
 from .contracts import ActorRole
-from .errors import ConsoleConflict, ConsoleError, ConsoleNotFound, ConsoleUnavailable
+from .errors import (
+    ConsoleConflict,
+    ConsoleError,
+    ConsoleInvalidRequest,
+    ConsoleNotFound,
+    ConsoleUnavailable,
+)
 
 _WAREHOUSE_IDENTITY_SEPARATOR = "/"
 
@@ -403,6 +410,7 @@ class RequestIntakeCommands(Protocol):
         purpose: str,
         question: str,
         title: str | None = None,
+        request_digest: str | None = None,
     ) -> InboxRequest: ...
 
     def submit_access_request(
@@ -416,6 +424,7 @@ class RequestIntakeCommands(Protocol):
         access_mode: Literal["query", "dashboard", "export"],
         expires_at: datetime,
         title: str | None = None,
+        request_digest: str | None = None,
     ) -> InboxRequest: ...
 
     def append_conversation(
@@ -604,6 +613,13 @@ def classify_downstream_failure(error: Exception) -> DownstreamClassification:
 
 
 def console_error_for(error: Exception) -> ConsoleError:
+    if isinstance(error, RequestDigestMismatch):
+        return ConsoleInvalidRequest(
+            code="request_digest_mismatch",
+            safe_message="Request digest mismatch. Review the content and submit it again.",
+            recovery_action="correct_input",
+            field="request_digest",
+        )
     classification = classify_downstream_failure(error)
     if classification == "not_visible":
         return ConsoleNotFound()

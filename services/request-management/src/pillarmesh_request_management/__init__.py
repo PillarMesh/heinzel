@@ -48,6 +48,7 @@ from .fulfillment_protocols import (
 )
 from .fulfillment_repository import FulfillmentRepository, SQLiteFulfillmentRepository
 from .fulfillment_service import FulfillmentOutcomeResult, FulfillmentService
+from .intake import RequestDigestMismatch, RequestIntakeContent
 from .models import (
     ConversationEntry,
     DataAccessRequest,
@@ -120,6 +121,8 @@ __all__ = [
     "ProposalCompilation",
     "ProposalCompilationResult",
     "RequestDependency",
+    "RequestDigestMismatch",
+    "RequestIntakeContent",
     "RequestManagementService",
     "RequestNoValidPlan",
     "RequestRepository",

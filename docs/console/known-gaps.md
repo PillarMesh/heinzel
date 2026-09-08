@@ -186,10 +186,18 @@ way that never invents authority, and each needs a contract change to close.
    and durable records without a title remain supported. Only those untitled records
    use the existing payload-derived display label. Absent titles are omitted from
    serialization to preserve legacy request bytes; reads do not rewrite old records.
-4. **`CreateRequestCommand.request_digest` is not verified.** No owning service defines
-   a canonicalization for the submitted request content, so the console cannot check
-   the declared digest without inventing one. Replay safety for intake comes from
-   request-management minting a fresh identity per submission.
+4. **Closed: `CreateRequestCommand.request_digest` is verified by request-management.**
+   The lowercase SHA-256 digest covers canonical `RequestIntakeContent`: `title` and the
+   owning typed `payload`. The console maps `kind` to `request_type` and
+   `data_product_ref` to `data_product_id`; keys are sorted, array order and text are
+   preserved, and expiry uses UTC with six fractional digits. Both intake methods
+   reject a supplied mismatch before allocating an identity or writing. The console
+   always supplies the required digest and returns `request_digest_mismatch` with
+   `correct_input` recovery on failure. Demo intake validates the same content model.
+   Existing trusted internal callers may omit the optional digest. This checksum
+   provides content integrity, not authorization or deduplication: separate service
+   submissions still allocate separate request identities. Retry authority is unchanged.
+
 5. **`ConversationMessageView.author_role` has no owning source.** Request-management
    records an actor, not a role. The console labels the requester's own entries
    `requester` and every other entry `data_architect`. This is a presentation

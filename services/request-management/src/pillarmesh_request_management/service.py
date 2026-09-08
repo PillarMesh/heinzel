@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from pillarmesh_contract_model import digest
 
+from .intake import RequestIntakeContent
 from .models import (
     ConversationEntry,
     DataAccessRequest,
@@ -51,14 +54,19 @@ class RequestManagementService:
         purpose: str,
         question: str,
         title: str | None = None,
+        request_digest: str | None = None,
     ) -> InboxRequest:
+        payload = StakeholderQuestion(purpose=purpose, question=question)
+        content = RequestIntakeContent(title=title, payload=payload)
+        if request_digest is not None:
+            content.verify_digest(request_digest)
         now = self._now()
         request = InboxRequest(
             title=title,
             request_id=self._request_id(tenant_id),
             tenant_id=tenant_id,
             requester_id=requester_id,
-            payload=StakeholderQuestion(purpose=purpose, question=question),
+            payload=payload,
             state=RequestState.SUBMITTED,
             revision=1,
             submitted_at=now,
@@ -78,7 +86,18 @@ class RequestManagementService:
         access_mode: Literal["query", "dashboard", "export"],
         expires_at: datetime,
         title: str | None = None,
+        request_digest: str | None = None,
     ) -> InboxRequest:
+        payload = DataAccessRequest(
+            purpose=purpose,
+            data_product_id=data_product_id,
+            requested_fields=requested_fields,
+            access_mode=access_mode,
+            expires_at=expires_at,
+        )
+        content = RequestIntakeContent(title=title, payload=payload)
+        if request_digest is not None:
+            content.verify_digest(request_digest)
         now = self._now()
         if expires_at.tzinfo is None or expires_at.utcoffset() is None or expires_at <= now:
             raise ValueError("expires_at must be timezone-aware and after submission")
@@ -87,13 +106,7 @@ class RequestManagementService:
             request_id=self._request_id(tenant_id),
             tenant_id=tenant_id,
             requester_id=requester_id,
-            payload=DataAccessRequest(
-                purpose=purpose,
-                data_product_id=data_product_id,
-                requested_fields=requested_fields,
-                access_mode=access_mode,
-                expires_at=expires_at,
-            ),
+            payload=payload,
             state=RequestState.SUBMITTED,
             revision=1,
             submitted_at=now,

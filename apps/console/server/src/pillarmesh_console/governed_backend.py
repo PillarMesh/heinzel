@@ -136,6 +136,7 @@ from .operation_handles import (
     mint_console_handle,
     serialize_operation,
 )
+from .request_intake import request_intake_content
 
 CAPABILITY_NOT_DELIVERED = "capability_not_delivered"
 
@@ -932,13 +933,14 @@ class GovernedConsoleBackend:
         self._authorize(context, ("requester",))
         self._require_command_role(context, command.active_role)
         commands = self._require_request_commands()
-        request_input = command.request
-        if request_input.kind == "stakeholder_question":
+        request_input = self._guarded(lambda: request_intake_content(command)).payload
+        if request_input.request_type == "stakeholder_question":
             created = self._guarded(
                 lambda: commands.submit_question(
                     tenant_id=context.tenant_id,
                     requester_id=context.actor_id,
                     title=command.title,
+                    request_digest=command.request_digest,
                     purpose=request_input.purpose,
                     question=request_input.question,
                 )
@@ -949,8 +951,9 @@ class GovernedConsoleBackend:
                     tenant_id=context.tenant_id,
                     requester_id=context.actor_id,
                     title=command.title,
+                    request_digest=command.request_digest,
                     purpose=request_input.purpose,
-                    data_product_id=request_input.data_product_ref,
+                    data_product_id=request_input.data_product_id,
                     requested_fields=tuple(request_input.requested_fields),
                     access_mode=request_input.access_mode,
                     expires_at=request_input.expires_at,

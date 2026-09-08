@@ -30,14 +30,17 @@ from pillarmesh_console.governed_backend import CAPABILITY_NOT_DELIVERED, Govern
 from pillarmesh_console.operation_handles import InMemoryOperationHandleRepository
 from pillarmesh_contract_model import digest
 from pillarmesh_request_management import (
+    DataAccessRequest,
     FulfillmentPolicyCompiler,
     FulfillmentProposal,
     FulfillmentReadService,
     FulfillmentService,
+    RequestIntakeContent,
     RequestManagementService,
     RequestState,
     SQLiteFulfillmentRepository,
     SQLiteRequestRepository,
+    StakeholderQuestion,
 )
 from pillarmesh_semantic_registry import SemanticFulfillmentSnapshotAdapter
 from pillarmesh_warehouse_control import (
@@ -419,7 +422,7 @@ def test_a_requester_journey_commits_every_step_to_the_owning_request_service(
         "/api/v1/requests",
         {
             "expected_revision": 1,
-            "request_digest": "0" * 64,
+            "request_digest": _question_intake_digest(),
             "active_role": "requester",
             "title": "What does net revenue mean?",
             "request": {
@@ -468,7 +471,7 @@ def test_a_stale_conversation_reply_is_refused_and_writes_nothing(journey: _Jour
         "/api/v1/requests",
         {
             "expected_revision": 1,
-            "request_digest": "0" * 64,
+            "request_digest": _question_intake_digest(),
             "active_role": "requester",
             "title": "What does net revenue mean?",
             "request": {
@@ -504,12 +507,23 @@ def test_a_stale_conversation_reply_is_refused_and_writes_nothing(journey: _Jour
     assert entries == ()
 
 
+def _question_intake_digest() -> str:
+    return digest(
+        RequestIntakeContent(
+            title="What does net revenue mean?",
+            payload=StakeholderQuestion(
+                purpose="semantic definition", question="What does net revenue mean?"
+            ),
+        )
+    )
+
+
 def _submitted_question(journey: _Journey, *, key: str) -> str:
     created = journey.post(
         "/api/v1/requests",
         {
             "expected_revision": 1,
-            "request_digest": "0" * 64,
+            "request_digest": _question_intake_digest(),
             "active_role": "requester",
             "title": "What does net revenue mean?",
             "request": {
@@ -561,7 +575,7 @@ def test_a_clarified_outcome_and_an_architect_decision_reach_the_fulfillment_ser
         "/api/v1/requests",
         {
             "expected_revision": 1,
-            "request_digest": "0" * 64,
+            "request_digest": _question_intake_digest(),
             "active_role": "requester",
             "title": "What does net revenue mean?",
             "request": {
@@ -796,7 +810,7 @@ def test_an_unapproved_proposal_never_reaches_the_requesters_own_projection(
         "/api/v1/requests",
         {
             "expected_revision": 1,
-            "request_digest": "0" * 64,
+            "request_digest": _question_intake_digest(),
             "active_role": "requester",
             "title": "What does net revenue mean?",
             "request": {
@@ -886,7 +900,7 @@ def test_a_repeated_idempotency_key_does_not_make_the_console_a_replay_authority
     journey.as_actor(_REQUESTER)
     payload = {
         "expected_revision": 1,
-        "request_digest": "0" * 64,
+        "request_digest": _question_intake_digest(),
         "active_role": "requester",
         "title": "What does net revenue mean?",
         "request": {
@@ -965,7 +979,18 @@ def test_the_expiry_of_a_data_access_request_reaches_the_owning_service_unchange
         "/api/v1/requests",
         {
             "expected_revision": 1,
-            "request_digest": "0" * 64,
+            "request_digest": digest(
+                RequestIntakeContent(
+                    title="Finance export",
+                    payload=DataAccessRequest(
+                        purpose="finance access",
+                        data_product_id="product-revenue",
+                        requested_fields=("order_total", "customer_id"),
+                        access_mode="export",
+                        expires_at=expires_at,
+                    ),
+                )
+            ),
             "active_role": "requester",
             "title": "Finance export",
             "request": {
@@ -991,3 +1016,34 @@ def test_the_expiry_of_a_data_access_request_reaches_the_owning_service_unchange
     assert stored.payload.request_type == "data_access"
     assert stored.payload.expires_at == expires_at
     assert stored.payload.requested_fields == ("order_total", "customer_id")
+
+
+def test_a_tampered_intake_is_refused_before_any_durable_request_is_created(
+    journey: _Journey,
+) -> None:
+    journey.as_actor(_REQUESTER)
+
+    response = journey.post(
+        "/api/v1/requests",
+        {
+            "expected_revision": 1,
+            "request_digest": _question_intake_digest(),
+            "active_role": "requester",
+            "title": "Changed after hashing",
+            "request": {
+                "kind": "stakeholder_question",
+                "purpose": "semantic definition",
+                "question": "What does net revenue mean?",
+            },
+        },
+        key="request-intake-tampered",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "request_digest_mismatch"
+    reopened = SQLiteRequestRepository.open(journey.request_path)
+    try:
+        assert reopened.list_inbox(_TENANT) == ()
+        assert reopened.peek_next_sequence(_TENANT) == 1
+    finally:
+        reopened.close()

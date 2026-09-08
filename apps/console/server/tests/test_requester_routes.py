@@ -5,9 +5,11 @@ from contextlib import contextmanager
 
 from pillarmesh_console import create_app
 from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.contracts import ActorRole
+from pillarmesh_console.contracts import ActorRole, CreateRequestCommand
 from pillarmesh_console.fixture_backend import FixtureConsoleBackend
 from pillarmesh_console.fixture_data import BLOCKED_REQUEST_DIGEST, build_fixture_seed
+from pillarmesh_console.request_intake import request_intake_content
+from pillarmesh_contract_model import digest
 from starlette.testclient import TestClient
 
 _BLOCKED_REQUEST_ID = "request-blocked-acceptance"
@@ -98,7 +100,7 @@ def _command_headers(client: TestClient, key: str) -> dict[str, str]:
 
 
 def _stakeholder_question_payload() -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "expected_revision": 1,
         "request_digest": "c" * 64,
         "active_role": "requester",
@@ -109,6 +111,11 @@ def _stakeholder_question_payload() -> dict[str, object]:
             "question": "Why did net revenue move last week?",
         },
     }
+
+    payload["request_digest"] = digest(
+        request_intake_content(CreateRequestCommand.model_validate(payload))
+    )
+    return payload
 
 
 def test_the_requester_list_contains_only_requests_owned_by_the_calling_requester() -> None:
@@ -321,3 +328,19 @@ def test_requesting_changes_leaves_the_outcome_unaccepted_and_the_request_clarif
         item for item in followed.json()["data"] if item["request_id"] == _BLOCKED_REQUEST_ID
     )
     assert changed_request["state"] == "clarifying"
+
+
+def test_a_mismatched_intake_digest_returns_an_input_error_without_creating_a_request() -> None:
+    with _client() as client:
+        before = client.get("/api/v1/requests/mine").json()["data"]
+        response = client.post(
+            "/api/v1/requests",
+            json=_stakeholder_question_payload() | {"title": "Changed after hashing"},
+            headers=_command_headers(client, "idempotency-create-tampered"),
+        )
+        after = client.get("/api/v1/requests/mine").json()["data"]
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "request_digest_mismatch"
+    assert response.json()["error"]["recovery_action"] == "correct_input"
+    assert after == before
