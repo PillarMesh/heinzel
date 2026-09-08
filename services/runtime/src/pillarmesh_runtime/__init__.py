@@ -22,6 +22,11 @@ from .acquisition_errors import (
     AcquisitionTransientError,
 )
 from .binding_resolution import SourceBindingReader, source_binding_resolver
+from .contract_composition import (
+    AcquisitionDeclaredActivation,
+    ContractActivationLifecycle,
+    compose_activated_acquisition_contract,
+)
 from .faults import FaultHook, noop_fault_hook
 from .models import RunResult
 from .retry import retry_bounded
@@ -33,6 +38,7 @@ __all__ = [
     "AcquisitionCeilingExceeded",
     "AcquisitionContractError",
     "AcquisitionCursorExpiredError",
+    "AcquisitionDeclaredActivation",
     "AcquisitionDriftError",
     "AcquisitionEvidenceWriter",
     "AcquisitionIntegrityError",
@@ -46,6 +52,7 @@ __all__ = [
     "AcquisitionTransientError",
     "ActivatedAcquisitionContract",
     "BindingResolver",
+    "ContractActivationLifecycle",
     "FaultHook",
     "ProviderResolver",
     "RunResult",
@@ -54,6 +61,7 @@ __all__ = [
     "RuntimeSource",
     "SegmentEncoder",
     "SourceBindingReader",
+    "compose_activated_acquisition_contract",
     "noop_fault_hook",
     "retry_bounded",
     "source_binding_resolver",
