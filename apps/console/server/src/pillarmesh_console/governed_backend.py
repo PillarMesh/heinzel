@@ -938,6 +938,7 @@ class GovernedConsoleBackend:
                 lambda: commands.submit_question(
                     tenant_id=context.tenant_id,
                     requester_id=context.actor_id,
+                    title=command.title,
                     purpose=request_input.purpose,
                     question=request_input.question,
                 )
@@ -947,6 +948,7 @@ class GovernedConsoleBackend:
                 lambda: commands.submit_access_request(
                     tenant_id=context.tenant_id,
                     requester_id=context.actor_id,
+                    title=command.title,
                     purpose=request_input.purpose,
                     data_product_id=request_input.data_product_ref,
                     requested_fields=tuple(request_input.requested_fields),
@@ -1532,6 +1534,8 @@ class GovernedConsoleBackend:
 
     @staticmethod
     def _request_title(request: InboxRequest) -> str:
+        if request.title is not None:
+            return request.title
         if isinstance(request.payload, StakeholderQuestion):
             return request.payload.question
         if isinstance(request.payload, DataAccessRequest):

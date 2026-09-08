@@ -50,9 +50,11 @@ class RequestManagementService:
         requester_id: str,
         purpose: str,
         question: str,
+        title: str | None = None,
     ) -> InboxRequest:
         now = self._now()
         request = InboxRequest(
+            title=title,
             request_id=self._request_id(tenant_id),
             tenant_id=tenant_id,
             requester_id=requester_id,
@@ -75,11 +77,13 @@ class RequestManagementService:
         requested_fields: tuple[str, ...],
         access_mode: Literal["query", "dashboard", "export"],
         expires_at: datetime,
+        title: str | None = None,
     ) -> InboxRequest:
         now = self._now()
         if expires_at.tzinfo is None or expires_at.utcoffset() is None or expires_at <= now:
             raise ValueError("expires_at must be timezone-aware and after submission")
         request = InboxRequest(
+            title=title,
             request_id=self._request_id(tenant_id),
             tenant_id=tenant_id,
             requester_id=requester_id,

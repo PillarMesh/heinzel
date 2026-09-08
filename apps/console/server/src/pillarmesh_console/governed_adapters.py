@@ -396,7 +396,13 @@ class WarehouseLifecycleCommands(Protocol):
 
 class RequestIntakeCommands(Protocol):
     def submit_question(
-        self, *, tenant_id: str, requester_id: str, purpose: str, question: str
+        self,
+        *,
+        tenant_id: str,
+        requester_id: str,
+        purpose: str,
+        question: str,
+        title: str | None = None,
     ) -> InboxRequest: ...
 
     def submit_access_request(
@@ -409,6 +415,7 @@ class RequestIntakeCommands(Protocol):
         requested_fields: tuple[str, ...],
         access_mode: Literal["query", "dashboard", "export"],
         expires_at: datetime,
+        title: str | None = None,
     ) -> InboxRequest: ...
 
     def append_conversation(

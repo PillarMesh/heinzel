@@ -180,9 +180,12 @@ way that never invents authority, and each needs a contract change to close.
    change. Wording sent with an approval or a rejection is refused rather than dropped.
    `merge` remains unreachable: it needs candidate identifiers the command does not
    carry.
-3. **`CreateRequestCommand.title` has no owning field.** Request-management stores no
-   title, so the console returns the title derived from the owning payload (the
-   question text or the data product reference) rather than echoing the browser's.
+3. **Closed.** `CreateRequestCommand.title` reaches request-management and is stored
+   in `InboxRequest.title`. Intake responses and subsequent reads project that stored
+   title. The owning field accepts 1–16,000 characters when supplied; existing callers
+   and durable records without a title remain supported. Only those untitled records
+   use the existing payload-derived display label. Absent titles are omitted from
+   serialization to preserve legacy request bytes; reads do not rewrite old records.
 4. **`CreateRequestCommand.request_digest` is not verified.** No owning service defines
    a canonicalization for the submitted request content, so the console cannot check
    the declared digest without inventing one. Replay safety for intake comes from

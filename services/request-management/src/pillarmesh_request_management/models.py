@@ -75,6 +75,9 @@ class DataProductChangeRequest(ArtifactModel):
 
 
 class InboxRequest(ArtifactModel):
+    title: str | None = Field(
+        default=None, min_length=1, max_length=16_000, exclude_if=lambda value: value is None
+    )
     request_id: str
     tenant_id: str
     requester_id: str

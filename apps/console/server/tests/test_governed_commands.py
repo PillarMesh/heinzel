@@ -451,6 +451,9 @@ def test_request_intake_delegates_the_trusted_tenant_and_actor_not_the_browser_p
     assert stored.requester_id == _REQUESTER
     assert stored.tenant_id == _TENANT
     assert stored.state is RequestState.SUBMITTED
+    assert stored.title == command.title
+    assert created.title == command.title
+    assert stack.backend().get_inbox(_architect_context()).items[0].title == command.title
     assert created.state == "submitted"
 
 
@@ -476,6 +479,9 @@ def test_data_access_intake_delegates_every_declared_scope_field(stack: _Stack) 
     created = stack.backend().create_request(_requester_context(), command)
     stored = stack.requests.get(_TENANT, created.request_id)
 
+    assert stored.title == command.title
+    assert created.title == command.title
+    assert stack.backend().get_inbox(_architect_context()).items[0].title == command.title
     assert stored.payload.request_type == "data_access"
     assert stored.payload.requested_fields == ("order_total", "closed_at")
     assert stored.payload.access_mode == "export"
