@@ -133,8 +133,10 @@ class CatalogPublicationRepository(Protocol):
 class SQLiteCatalogPublicationRepository:
     """Persist intent before effects and keep provider identifiers private."""
 
-    def __init__(self, database_path: str) -> None:
-        self._connection = sqlite3.connect(database_path)
+    def __init__(self, database_path: str, *, check_same_thread: bool = True) -> None:
+        # Local HTTP compositions opt in only when publication writes finish before
+        # serving concurrent reads; this flag does not serialize transactions.
+        self._connection = sqlite3.connect(database_path, check_same_thread=check_same_thread)
         self._connection.execute("PRAGMA foreign_keys = ON")
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS catalog_publication_intents ("

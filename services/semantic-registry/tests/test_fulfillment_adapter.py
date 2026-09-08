@@ -178,12 +178,14 @@ class StaticAuthorityResolver:
         return self.observation
 
 
-def published_repository() -> tuple[
+def published_repository(
+    *, check_same_thread: bool = True
+) -> tuple[
     SQLiteCatalogPublicationRepository,
     CatalogPublicationReceipt,
     ManagedIntegrationContract,
 ]:
-    repository = SQLiteCatalogPublicationRepository(":memory:")
+    repository = SQLiteCatalogPublicationRepository(":memory:", check_same_thread=check_same_thread)
     version = semantic_version()
     integration_contract = contract(version)
     intent = publication_intent(

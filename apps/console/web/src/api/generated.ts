@@ -90,6 +90,11 @@ export type OperationState = "accepted" | "running" | "succeeded" | "failed" | "
 export type ExpectedRevision5 = number
 export type MediaType =
   "application/pdf" | "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+export type ExpectedRevision6 = number
+export type ExpectedRevision7 = number
+export type InScopeSummary = string
+export type OutOfScopeSummary = string
+export type RestatedRequest = string
 export type ConsoleEnvelopeRequestDetailView = ConsoleEnvelope_RequestDetailView_
 export type Available = boolean
 export type Decision2 = "approve" | "reject" | "request_changes"
@@ -102,23 +107,26 @@ export type FreshnessState = "current" | "stale" | "unknown" | "not_applicable"
 export type JsonTuple_ArtifactReferenceView_ = ArtifactReferenceView[]
 export type JsonTuple_NonEmptyText_1 = NonEmptyText[]
 export type JsonTuple_LifecycleEventView_ = LifecycleEventView[]
+export type PreparationAction = "clarify" | "prepare_answer" | "submit_proposal"
+export type JsonTuple_PreparationAction_ = PreparationAction[]
+export type JsonTuple_NonEmptyText_2 = NonEmptyText[]
 export type RequestProposalView =
   StakeholderAnswerProposalView | AccessPreviewProposalView | DisclosureDenialProposalView
 export type JsonTuple_DatasetEvidenceView_1 = DatasetEvidenceView[]
 export type Kind2 = "stakeholder_answer"
 export type JsonTuple_ArtifactReferenceView_1 = ArtifactReferenceView[]
 export type JsonTuple_ArtifactReferenceView_2 = ArtifactReferenceView[]
-export type JsonTuple_NonEmptyText_2 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_3 = NonEmptyText[]
 export type JsonTuple_ArtifactReferenceView_3 = ArtifactReferenceView[]
 export type Satisfied = boolean
 export type JsonTuple_ProposalApprovalView_ = ProposalApprovalView[]
 export type Satisfied1 = boolean
 export type JsonTuple_AuthorityStatusView_ = AuthorityStatusView[]
-export type JsonTuple_NonEmptyText_3 = NonEmptyText[]
-export type JsonTuple_ArtifactReferenceView_4 = ArtifactReferenceView[]
 export type JsonTuple_NonEmptyText_4 = NonEmptyText[]
+export type JsonTuple_ArtifactReferenceView_4 = ArtifactReferenceView[]
 export type JsonTuple_NonEmptyText_5 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_6 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_7 = NonEmptyText[]
 export type Kind3 = "access_preview"
 export type JsonTuple_ProposalApprovalView_1 = ProposalApprovalView[]
 export type JsonTuple_AuthorityStatusView_1 = AuthorityStatusView[]
@@ -133,8 +141,8 @@ export type ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestVi
   ConsoleEnvelope_JsonTuple_RequesterRequestView__
 export type JsonTuple_RequesterRequestView_ = RequesterRequestView[]
 export type ActiveRole2 = "data_architect"
-export type ExpectedRevision6 = number
-export type ExpectedRevision7 = number
+export type ExpectedRevision8 = number
+export type ExpectedRevision9 = number
 export type ConsoleEnvelopeReviewView = ConsoleEnvelope_ReviewView_
 export type CanDecide = boolean
 export type JsonTuple_ConstraintView_ = ConstraintView[]
@@ -174,8 +182,8 @@ export type JsonTuple_ManagedServiceView_ = ManagedServiceView[]
 export type JsonTuple_PublicId_2 = PublicId[]
 export type Version2 = number
 export type Revision6 = number
-export type JsonTuple_NonEmptyText_7 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_8 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_9 = NonEmptyText[]
 export type SourceType = "postgresql" | "stripe"
 export type JsonTuple_SourceConnectionView_ = SourceConnectionView[]
 /**
@@ -189,7 +197,7 @@ export type Immutable = true
  * @minItems 1
  */
 export type NonEmptyJsonTuple_WarehouseOptionView_ = [WarehouseOptionView, ...WarehouseOptionView[]]
-export type ExpectedRevision8 = number
+export type ExpectedRevision10 = number
 export type ConsoleEnvelopeWorkspaceView = ConsoleEnvelope_WorkspaceView_
 export type JsonTuple_CapabilityView_ = CapabilityView[]
 export type WorkspaceState = "setup" | "pending_activation" | "active" | "unavailable"
@@ -211,6 +219,8 @@ export interface ConsoleApiSchema {
   inbox_response: ConsoleEnvelopeInboxView
   operation_response: ConsoleEnvelopeOperationView
   process_package_command: ProcessPackageCommand
+  proposal_preparation_command: ProposalPreparationCommand
+  request_clarification_command: RequestClarificationCommand
   request_detail_response: ConsoleEnvelopeRequestDetailView
   requester_request_response: ConsoleEnvelopeRequesterRequestView
   requester_requests_response: ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView
@@ -465,6 +475,17 @@ export interface ProcessPackageCommand {
   media_type: MediaType
   package_digest: Digest
 }
+export interface ProposalPreparationCommand {
+  active_role: ActorRole
+  expected_revision: ExpectedRevision6
+}
+export interface RequestClarificationCommand {
+  active_role: ActorRole
+  expected_revision: ExpectedRevision7
+  in_scope_summary: InScopeSummary
+  out_of_scope_summary: OutOfScopeSummary
+  restated_request: RestatedRequest
+}
 export interface ConsoleEnvelope_RequestDetailView_ {
   data: RequestDetailView
   meta: ApiMeta
@@ -476,9 +497,12 @@ export interface RequestDetailView {
   evidence: EvidenceContextView
   kind: RequestKind
   lifecycle?: JsonTuple_LifecycleEventView_
+  preparation_actions?: JsonTuple_PreparationAction_
+  preparation_notes?: JsonTuple_NonEmptyText_2
   proposal?: RequestProposalView | null
   proposal_digest?: Digest | null
   purpose: NonEmptyText
+  question?: NonEmptyText | null
   request_id: PublicId
   revision: Revision3
   state: RequestState
@@ -536,7 +560,7 @@ export interface StakeholderAnswerProposalView {
   metric_references?: JsonTuple_ArtifactReferenceView_2
   metric_version: NonEmptyText
   purpose: NonEmptyText
-  quality_limitations?: JsonTuple_NonEmptyText_2
+  quality_limitations?: JsonTuple_NonEmptyText_3
   quality_references?: JsonTuple_ArtifactReferenceView_3
   required_approvals?: JsonTuple_ProposalApprovalView_
   required_authorities?: JsonTuple_AuthorityStatusView_
@@ -556,12 +580,12 @@ export interface AccessPreviewProposalView {
   authority_summary: NonEmptyText
   data_product_ref: PublicId
   data_product_reference?: ArtifactReferenceView | null
-  denied_checks?: JsonTuple_NonEmptyText_3
+  denied_checks?: JsonTuple_NonEmptyText_4
   effective_object_references?: JsonTuple_ArtifactReferenceView_4
-  effective_scope?: JsonTuple_NonEmptyText_4
-  exclusions?: JsonTuple_NonEmptyText_5
+  effective_scope?: JsonTuple_NonEmptyText_5
+  exclusions?: JsonTuple_NonEmptyText_6
   expires_at: UtcDatetime
-  intended_checks?: JsonTuple_NonEmptyText_6
+  intended_checks?: JsonTuple_NonEmptyText_7
   kind: Kind3
   purpose: NonEmptyText
   requested_fields: NonEmptyJsonTuple_NonEmptyText_
@@ -602,13 +626,13 @@ export interface ConsoleEnvelope_JsonTuple_RequesterRequestView__ {
 }
 export interface ResetCommand {
   active_role: ActiveRole2
-  expected_revision: ExpectedRevision6
+  expected_revision: ExpectedRevision8
   reset_token: OpaqueToken
   setup_digest: Digest
 }
 export interface RetryOperationCommand {
   active_role: ActorRole
-  expected_revision: ExpectedRevision7
+  expected_revision: ExpectedRevision9
   operation_digest: Digest
   retry_token: OpaqueToken
 }
@@ -736,9 +760,9 @@ export interface ProcessPackageView {
   version: Version2
 }
 export interface SourceConnectionView {
-  denied_checks?: JsonTuple_NonEmptyText_7
+  denied_checks?: JsonTuple_NonEmptyText_8
   display_name: NonEmptyText
-  intended_checks?: JsonTuple_NonEmptyText_8
+  intended_checks?: JsonTuple_NonEmptyText_9
   source_ref: PublicId
   source_type: SourceType
   state: CapabilityState
@@ -767,7 +791,7 @@ export interface WarehouseBindingCommand {
   active_role: ActorRole
   capacity: NonEmptyText
   engine: WarehouseEngine
-  expected_revision: ExpectedRevision8
+  expected_revision: ExpectedRevision10
   region: NonEmptyText
   reviewed_digest: Digest
 }

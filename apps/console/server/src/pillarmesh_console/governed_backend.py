@@ -81,8 +81,11 @@ from .contracts import (
     OperationState,
     OperationView,
     OwnDecisionView,
+    PreparationAction,
     ProcessPackageCommand,
     ProposalApprovalView,
+    ProposalPreparationCommand,
+    RequestClarificationCommand,
     RequestDetailView,
     RequesterRequestView,
     RequestKind,
@@ -122,6 +125,7 @@ from .governed_adapters import (
     CatalogBindingReader,
     DataProductReferenceReader,
     FulfillmentDecisionCommands,
+    FulfillmentPreparationCommands,
     FulfillmentViewReader,
     GovernedWorkspaceIdentity,
     RequestInboxReader,
@@ -324,6 +328,7 @@ class GovernedConsoleBackend:
         warehouse_commands: WarehouseLifecycleCommands | None = None,
         request_commands: RequestIntakeCommands | None = None,
         fulfillment_commands: FulfillmentDecisionCommands | None = None,
+        fulfillment_preparation_commands: FulfillmentPreparationCommands | None = None,
         semantic_review_commands: SemanticReviewCommands | None = None,
         reset_tokens: Callable[[], str] = lambda: secrets.token_urlsafe(32),
     ) -> None:
@@ -342,6 +347,7 @@ class GovernedConsoleBackend:
         self._warehouse_commands = warehouse_commands
         self._request_commands = request_commands
         self._fulfillment_commands = fulfillment_commands
+        self._fulfillment_preparation_commands = fulfillment_preparation_commands
         self._semantic_review_commands = semantic_review_commands
         self._reset_tokens = reset_tokens
 
@@ -889,6 +895,91 @@ class GovernedConsoleBackend:
         )
         return self._request_detail_view(context, self._visible_request(context, request_id))
 
+    def _preparation_commands(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: ProposalPreparationCommand,
+        action: PreparationAction,
+    ) -> FulfillmentPreparationCommands:
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        commands = self._fulfillment_preparation_commands
+        if commands is None:
+            raise _not_delivered("proposal preparation delegation to request-management")
+        request = self._visible_request(context, request_id)
+        self._require_current_revision(command.expected_revision, request.revision)
+        view = self._architect_view(context, request_id)
+        if action not in self._preparation_actions(request, view):
+            raise ConsoleConflict(
+                code="preparation_unavailable",
+                safe_message="This preparation action is unavailable in the current request state.",
+                recovery_action="reload",
+            )
+        return commands
+
+    def clarify_request(
+        self, context: TrustedActorContext, request_id: str, command: RequestClarificationCommand
+    ) -> RequestDetailView:
+        commands = self._preparation_commands(context, request_id, command, "clarify")
+        self._guarded(
+            lambda: commands.clarify_outcome(
+                tenant_id=context.tenant_id,
+                request_id=request_id,
+                actor_id=context.actor_id,
+                expected_revision=command.expected_revision,
+                restated_request=command.restated_request,
+                in_scope_summary=command.in_scope_summary,
+                out_of_scope_summary=command.out_of_scope_summary,
+            )
+        )
+        return self._request_detail_view(context, self._visible_request(context, request_id))
+
+    def prepare_request_proposal(
+        self, context: TrustedActorContext, request_id: str, command: ProposalPreparationCommand
+    ) -> RequestDetailView:
+        commands = self._preparation_commands(context, request_id, command, "prepare_answer")
+        self._guarded(
+            lambda: commands.propose_answer(
+                tenant_id=context.tenant_id,
+                request_id=request_id,
+                actor_id=context.actor_id,
+                expected_revision=command.expected_revision,
+            )
+        )
+        return self._request_detail_view(context, self._visible_request(context, request_id))
+
+    def submit_request_proposal(
+        self, context: TrustedActorContext, request_id: str, command: ProposalPreparationCommand
+    ) -> RequestDetailView:
+        commands = self._preparation_commands(context, request_id, command, "submit_proposal")
+        self._guarded(
+            lambda: commands.submit_proposal(
+                tenant_id=context.tenant_id,
+                request_id=request_id,
+                actor_id=context.actor_id,
+                expected_revision=command.expected_revision,
+            )
+        )
+        return self._request_detail_view(context, self._visible_request(context, request_id))
+
+    def _preparation_actions(
+        self, request: InboxRequest, view: ArchitectRequestView
+    ) -> tuple[PreparationAction, ...]:
+        if self._fulfillment_preparation_commands is None:
+            return ()
+        if not isinstance(request.payload, StakeholderQuestion):
+            return ()
+        if request.state in (RequestState.SUBMITTED, RequestState.CLARIFYING):
+            return ("clarify",)
+        if view.dependencies:
+            return ()
+        if request.state is RequestState.INVESTIGATING and view.clarified_outcomes:
+            return ("prepare_answer",)
+        if request.state is RequestState.PROPOSED and view.proposals:
+            return ("submit_proposal",)
+        return ()
+
     def admit_request(
         self, context: TrustedActorContext, request_id: str, command: AdmissionCommand
     ) -> RequestDetailView:
@@ -1278,11 +1369,33 @@ class GovernedConsoleBackend:
             evidence=self._evidence_context(view),
             available_actions=(
                 ("approve", "reject", "request_changes")
-                if requirement is not None and not decided
+                if request.state is RequestState.AWAITING_APPROVAL
+                and requirement is not None
+                and not decided
                 else ()
             ),
             admission=self._admission_view(request, proposal, view.approvals),
+            preparation_actions=self._preparation_actions(request, view),
+            preparation_notes=self._preparation_notes(view),
+            question=(
+                request.payload.question
+                if isinstance(request.payload, StakeholderQuestion)
+                else None
+            ),
         )
+
+    @staticmethod
+    def _preparation_notes(view: ArchitectRequestView) -> tuple[str, ...]:
+        notes = tuple(
+            f"Blocked on {dependency.kind}: {dependency.reason_code}."
+            for dependency in view.dependencies
+        )
+        if view.no_valid_plans:
+            refusal = view.no_valid_plans[-1]
+            if refusal.resulting_request_revision == view.request.revision:
+                notes += tuple(f"No Valid Plan: {reason}." for reason in refusal.reason_codes)
+                notes += tuple(f"Required change: {change}" for change in refusal.smallest_changes)
+        return notes
 
     @staticmethod
     def _artifact_view(reference: ArtifactReference) -> ArtifactReferenceView:

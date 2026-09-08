@@ -20,6 +20,8 @@ from .contracts import (
     InboxView,
     OperationView,
     ProcessPackageCommand,
+    ProposalPreparationCommand,
+    RequestClarificationCommand,
     RequestDetailView,
     RequesterRequestView,
     ResetCommand,
@@ -106,6 +108,18 @@ class ConsoleBackend(Protocol):
 
     def decide_request(
         self, context: TrustedActorContext, request_id: str, command: DecisionCommand
+    ) -> RequestDetailView: ...
+
+    def clarify_request(
+        self, context: TrustedActorContext, request_id: str, command: RequestClarificationCommand
+    ) -> RequestDetailView: ...
+
+    def prepare_request_proposal(
+        self, context: TrustedActorContext, request_id: str, command: ProposalPreparationCommand
+    ) -> RequestDetailView: ...
+
+    def submit_request_proposal(
+        self, context: TrustedActorContext, request_id: str, command: ProposalPreparationCommand
     ) -> RequestDetailView: ...
 
     def admit_request(

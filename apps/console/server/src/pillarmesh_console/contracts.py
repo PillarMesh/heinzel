@@ -606,6 +606,9 @@ class AdmissionView(StrictModel):
     blocking_reason: NonEmptyText | None = None
 
 
+type PreparationAction = Literal["clarify", "prepare_answer", "submit_proposal"]
+
+
 class RequestDetailView(StrictModel):
     request_id: PublicId
     kind: RequestKind
@@ -620,6 +623,9 @@ class RequestDetailView(StrictModel):
     evidence: EvidenceContextView
     available_actions: JsonTuple[Decision] = Field(default=())
     admission: AdmissionView | None = None
+    preparation_actions: JsonTuple[PreparationAction] = Field(default=())
+    preparation_notes: JsonTuple[NonEmptyText] = Field(default=())
+    question: NonEmptyText | None = None
 
 
 class OperationFailureView(StrictModel):
@@ -861,6 +867,17 @@ class DecisionCommand(StrictModel):
     revised_content: NonEmptyText | None = None
 
 
+class ProposalPreparationCommand(StrictModel):
+    expected_revision: int = Field(ge=1)
+    active_role: ActorRole
+
+
+class RequestClarificationCommand(ProposalPreparationCommand):
+    restated_request: str = Field(min_length=1, max_length=4000)
+    in_scope_summary: str = Field(min_length=1, max_length=4000)
+    out_of_scope_summary: str = Field(min_length=1, max_length=4000)
+
+
 class AdmissionCommand(StrictModel):
     """Admit the exact proposal the architect reviewed.
 
@@ -964,6 +981,8 @@ class ConsoleApiSchema(StrictModel):
     process_package_command: ProcessPackageCommand
     decision_command: DecisionCommand
     admission_command: AdmissionCommand
+    request_clarification_command: RequestClarificationCommand
+    proposal_preparation_command: ProposalPreparationCommand
     create_request_command: CreateRequestCommand
     conversation_message_command: ConversationMessageCommand
     clarified_outcome_acceptance_command: ClarifiedOutcomeAcceptanceCommand

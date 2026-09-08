@@ -22,6 +22,8 @@ import type {
   ConversationMessageCommand,
   CreateRequestCommand,
   AdmissionCommand,
+  RequestClarificationCommand,
+  ProposalPreparationCommand,
   DecisionCommand,
   ProcessPackageCommand,
   RecoveryAction,
@@ -466,6 +468,51 @@ export class ConsoleApiClient {
     return (
       await this.#mutation(
         `/api/v1/inbox/${encodePathSegment(requestId)}/decisions`,
+        "request_detail_response",
+        command,
+        context,
+      )
+    ).envelope
+  }
+
+  async clarifyRequest(
+    requestId: string,
+    command: RequestClarificationCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeRequestDetailView> {
+    return (
+      await this.#mutation(
+        `/api/v1/inbox/${encodePathSegment(requestId)}/clarification`,
+        "request_detail_response",
+        command,
+        context,
+      )
+    ).envelope
+  }
+
+  async prepareRequestProposal(
+    requestId: string,
+    command: ProposalPreparationCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeRequestDetailView> {
+    return (
+      await this.#mutation(
+        `/api/v1/inbox/${encodePathSegment(requestId)}/proposal`,
+        "request_detail_response",
+        command,
+        context,
+      )
+    ).envelope
+  }
+
+  async submitRequestProposal(
+    requestId: string,
+    command: ProposalPreparationCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeRequestDetailView> {
+    return (
+      await this.#mutation(
+        `/api/v1/inbox/${encodePathSegment(requestId)}/proposal/submission`,
         "request_detail_response",
         command,
         context,

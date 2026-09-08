@@ -547,3 +547,25 @@ test("artifact display keys never become catalog or dashboard lookups", async ()
   expect(getCatalogAsset).not.toHaveBeenCalled()
   expect(getDashboard).not.toHaveBeenCalled()
 })
+
+test("refreshes the owning queue after preparation changes the request state", async () => {
+  let prepared = false
+  const before: RequestDetailView = {...answerDetail, state: "investigating", proposal: null,
+    preparation_actions: ["prepare_answer"], evidence: {...answerDetail.evidence, evidence_refs: []}}
+  const after: RequestDetailView = {...before, state: "proposed", revision: 3, preparation_actions: ["submit_proposal"]}
+  const getInbox = vi.fn(async () => validateConsoleResponse("inbox_response", {
+    ...inboxEnvelope, data: {...inboxEnvelope.data, items: [{...items[1], state: prepared ? "proposed" : "investigating"}]},
+  }))
+  const client = createClient({
+    getInbox,
+    getRequestDetail: vi.fn(async () => validateConsoleResponse("request_detail_response", detailEnvelope(before))),
+    prepareRequestProposal: vi.fn(async () => {
+      prepared = true
+      return validateConsoleResponse("request_detail_response", detailEnvelope(after))
+    }),
+  })
+  renderWorkspace(client, before.request_id)
+  await userEvent.click(await screen.findByRole("button", {name: "Prepare answer proposal"}))
+  await waitFor(() => expect(queueOptions()[0]).toHaveTextContent("proposed"))
+  expect(getInbox).toHaveBeenCalledTimes(2)
+})

@@ -1386,6 +1386,15 @@ or the exact approval IDs and source revision recorded by its admission or denia
 receipt. This display does not replace the owning service's current authority check.
 Requester projections continue to withhold unapproved candidate content.
 
+Architect preparation commands delegate clarification, answer proposal generation, and
+submission to request-management. Each requires the trusted architect role and the
+current request revision. The owning service authors the candidate and its constraints;
+the browser records only the clarified request and scope. Preparation grants no execution
+or disclosure authority. Approval controls appear only after submission for approval,
+and admission retains its exact reviewed-digest checks. A dependency or No Valid Plan
+is projected explicitly without substituting an answer or silently retrying preparation.
+Only preparation capabilities actually composed at the server are offered in the UI.
+
 
 A stakeholder data question is operational work, not an unrestricted natural-language query against raw tables. PillarMesh resolves the requester, purpose, authorized scope, applicable process and metric versions, catalog assets, freshness, and quality state before preparing an answer. An answer must identify the governed datasets and metric definitions used, their as-of time, material quality limitations, and lineage or evidence references. If the question cannot be answered from approved assets, PillarMesh creates a dependent data-product or semantic-change request instead of inventing a result.
 

@@ -25,6 +25,7 @@ from pillarmesh_contract_service import AcquisitionContractLifecycleRepository
 from pillarmesh_evidence import AcquisitionEvidenceReceipt, RunRecord
 from pillarmesh_request_management import (
     ArchitectRequestView,
+    ClarifiedOutcomeStatement,
     ConversationAuthorRole,
     ConversationEntry,
     FulfillmentApprovalBinding,
@@ -32,6 +33,7 @@ from pillarmesh_request_management import (
     FulfillmentGroundingError,
     FulfillmentIntegrityError,
     FulfillmentNotVisible,
+    FulfillmentOutcomeResult,
     FulfillmentOwnershipError,
     FulfillmentPolicyError,
     FulfillmentPolicySnapshot,
@@ -448,6 +450,38 @@ class RequestIntakeCommands(Protocol):
     ) -> tuple[TransitionEvent, ...]: ...
 
     def get(self, tenant_id: str, request_id: str) -> InboxRequest: ...
+
+
+class FulfillmentPreparationCommands(Protocol):
+    def clarify_outcome(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        restated_request: str,
+        in_scope_summary: str,
+        out_of_scope_summary: str,
+        expected_revision: int,
+    ) -> ClarifiedOutcomeStatement: ...
+
+    def propose_answer(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> FulfillmentOutcomeResult: ...
+
+    def submit_proposal(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> InboxRequest: ...
 
 
 class FulfillmentDecisionCommands(Protocol):

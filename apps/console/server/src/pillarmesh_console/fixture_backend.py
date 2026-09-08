@@ -38,8 +38,10 @@ from .contracts import (
     OwnDecisionView,
     ProcessPackageCommand,
     ProcessPackageView,
+    ProposalPreparationCommand,
     RecordedDecisionView,
     RecoveryAction,
+    RequestClarificationCommand,
     RequestDetailView,
     RequesterRequestView,
     RequestProposalView,
@@ -869,6 +871,36 @@ class FixtureConsoleBackend:
             blocking_reason=(
                 f"{len(outstanding)} of {len(authorities)} required approvals are not recorded."
             ),
+        )
+
+    def clarify_request(
+        self, context: TrustedActorContext, request_id: str, command: RequestClarificationCommand
+    ) -> RequestDetailView:
+        self._authorize(context, ("data_architect",))
+        raise ConsoleUnavailable(
+            code="fixture_preparation_unavailable",
+            safe_message="Proposal preparation requires the governed local service.",
+            recovery_action="none",
+        )
+
+    def prepare_request_proposal(
+        self, context: TrustedActorContext, request_id: str, command: ProposalPreparationCommand
+    ) -> RequestDetailView:
+        self._authorize(context, ("data_architect",))
+        raise ConsoleUnavailable(
+            code="fixture_preparation_unavailable",
+            safe_message="Proposal preparation requires the governed local service.",
+            recovery_action="none",
+        )
+
+    def submit_request_proposal(
+        self, context: TrustedActorContext, request_id: str, command: ProposalPreparationCommand
+    ) -> RequestDetailView:
+        self._authorize(context, ("data_architect",))
+        raise ConsoleUnavailable(
+            code="fixture_preparation_unavailable",
+            safe_message="Proposal preparation requires the governed local service.",
+            recovery_action="none",
         )
 
     def admit_request(

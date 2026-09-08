@@ -22,6 +22,8 @@ from ..contracts import (
     DecisionCommand,
     OperationView,
     ProcessPackageCommand,
+    ProposalPreparationCommand,
+    RequestClarificationCommand,
     RequestDetailView,
     RequesterRequestView,
     ResetCommand,
@@ -189,6 +191,45 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
         )
         return envelope_response(request, dependencies, result, _REQUEST_DETAIL_RESPONSE)
 
+    async def request_clarification(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        request_id = path_parameter(request, "request_id")
+        command = await _parse_command(request, RequestClarificationCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.clarify_request(context, request_id, command),
+        )
+        return envelope_response(request, dependencies, result, _REQUEST_DETAIL_RESPONSE)
+
+    async def request_proposal(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        request_id = path_parameter(request, "request_id")
+        command = await _parse_command(request, ProposalPreparationCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.prepare_request_proposal(context, request_id, command),
+        )
+        return envelope_response(request, dependencies, result, _REQUEST_DETAIL_RESPONSE)
+
+    async def request_proposal_submission(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        request_id = path_parameter(request, "request_id")
+        command = await _parse_command(request, ProposalPreparationCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.submit_request_proposal(context, request_id, command),
+        )
+        return envelope_response(request, dependencies, result, _REQUEST_DETAIL_RESPONSE)
+
     async def request_admission(request: Request) -> Response:
         context = trusted_context(request, dependencies)
         key = _validate_command_request(request, dependencies, context)
@@ -272,6 +313,13 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
         return envelope_response(request, dependencies, result, _SETUP_RESPONSE)
 
     routes = [
+        Route("/api/v1/inbox/{request_id}/clarification", request_clarification, methods=["POST"]),
+        Route("/api/v1/inbox/{request_id}/proposal", request_proposal, methods=["POST"]),
+        Route(
+            "/api/v1/inbox/{request_id}/proposal/submission",
+            request_proposal_submission,
+            methods=["POST"],
+        ),
         Route("/api/v1/setup/warehouse-binding", warehouse_binding, methods=["POST"]),
         Route("/api/v1/setup/process-packages", process_package, methods=["POST"]),
         Route("/api/v1/reviews/{review_id}/decisions", review_decision, methods=["POST"]),

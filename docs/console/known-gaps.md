@@ -17,6 +17,9 @@ The console reports each of these as a `not_delivered` capability on
 | `POST /api/v1/requests` | `RequestManagementService.submit_question` / `submit_access_request` |
 | `POST /api/v1/requests/{id}/conversation` | `RequestManagementService.append_conversation` |
 | `POST /api/v1/requests/{id}/clarified-outcome/acceptance` | `FulfillmentService.record_approval` under the requester principal |
+| `POST /api/v1/inbox/{id}/clarification` | `FulfillmentService.clarify_outcome` |
+| `POST /api/v1/inbox/{id}/proposal` | `FulfillmentService.propose_answer` |
+| `POST /api/v1/inbox/{id}/proposal/submission` | `FulfillmentService.submit_proposal` |
 | `POST /api/v1/inbox/{id}/decisions` | `FulfillmentService.record_approval` under the architect authority |
 | `POST /api/v1/inbox/{id}/admission` | `FulfillmentService.admit` |
 | `POST /api/v1/reviews/{id}/decisions` | `SemanticReviewService.decide_item` |
@@ -67,6 +70,12 @@ explanation - it has no field for the proposed answer. After admission the reque
 sees `ready_for_execution`, not the answer itself. Publishing the text would need an
 owning field to publish; composing one in the console would make it the author of a
 governed artifact.
+
+### Access proposal preparation
+
+The local harness composes answer preparation only. Access candidate generation and
+its owner resolver are not wired, so access preparation is not offered. Intake and
+review of an already-owned access proposal remain separate supported boundaries.
 
 ### Access grant application, expiry and revocation
 

@@ -234,9 +234,8 @@ def _context(actor: str) -> TrustedActorContext:
 class _Journey:
     """The governed application plus direct access to the owning services.
 
-    The owning services are used only for the steps the console contract has no
-    command for -- clarifying an outcome and compiling a proposal. Everything the
-    console does own goes through HTTP.
+    Earlier regression setup can use the owning services directly. The complete
+    new-request journey exercises every user command through HTTP.
     """
 
     def __init__(self, directory: Path) -> None:
@@ -260,7 +259,10 @@ class _Journey:
             clock=_clock,
         )
         self.requests = RequestManagementService(self.request_repository, clock=_clock)
-        publication_repository, receipt, integration_contract = published_repository()
+        publication_repository, receipt, integration_contract = published_repository(
+            check_same_thread=False
+        )
+        self.publication_repository = publication_repository
         self.fulfillment = FulfillmentService(
             request_service=self.requests,
             repository=self.fulfillment_repository,
@@ -318,6 +320,7 @@ class _Journey:
             ),
             request_commands=self.requests,
             fulfillment_commands=self.fulfillment,
+            fulfillment_preparation_commands=self.fulfillment,
             semantic_review_commands=None,
         )
         self.actor = _ARCHITECT
@@ -334,6 +337,7 @@ class _Journey:
         self.client.close()
         self.warehouse_repository.close()
         self.request_repository.close()
+        self.publication_repository.close()
 
     def as_actor(self, actor: str) -> None:
         self.actor = actor
@@ -1103,3 +1107,178 @@ def test_architect_reviews_the_owning_answer_and_artifacts_over_http(journey: _J
     ]
     assert detail["proposal"]["required_approvals"]
     assert all(not item["satisfied"] for item in detail["proposal"]["required_approvals"])
+
+
+def test_a_new_request_reaches_admission_using_only_console_http_commands(
+    journey: _Journey,
+) -> None:
+    journey.as_actor(_REQUESTER)
+    request_id = _submitted_question(journey, key="complete-ui-intake")
+    journey.as_actor(_ARCHITECT)
+    clarified = journey.post(
+        f"/api/v1/inbox/{request_id}/clarification",
+        {
+            "expected_revision": 1,
+            "active_role": "data_architect",
+            "restated_request": "Provide the governed definition of net revenue.",
+            "in_scope_summary": "Approved semantic scope only.",
+            "out_of_scope_summary": "No raw rows or wider access.",
+        },
+        key="complete-ui-clarification",
+    )
+    assert clarified.status_code == 200
+    prepared = journey.post(
+        f"/api/v1/inbox/{request_id}/proposal",
+        {
+            "expected_revision": clarified.json()["data"]["revision"],
+            "active_role": "data_architect",
+        },
+        key="complete-ui-prepare",
+    )
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["data"]["state"] == "proposed"
+    assert prepared.json()["data"]["available_actions"] == []
+    submitted = journey.post(
+        f"/api/v1/inbox/{request_id}/proposal/submission",
+        {"expected_revision": prepared.json()["data"]["revision"], "active_role": "data_architect"},
+        key="complete-ui-submit",
+    )
+    assert submitted.status_code == 200
+    assert submitted.json()["data"]["state"] == "awaiting_approval"
+    journey.as_actor(_REQUESTER)
+    outcome = journey.get(f"/api/v1/requests/{request_id}/clarified-outcome").json()["data"]
+    accepted = journey.post(
+        f"/api/v1/requests/{request_id}/clarified-outcome/acceptance",
+        {
+            "expected_revision": outcome["revision"],
+            "clarified_outcome_digest": outcome["statement_digest"],
+            "active_role": "requester",
+            "decision": "approve",
+        },
+        key="complete-ui-accept",
+    )
+    assert accepted.status_code == 200
+    journey.as_actor(_ARCHITECT)
+    detail = journey.get(f"/api/v1/inbox/{request_id}").json()["data"]
+    approved = journey.post(
+        f"/api/v1/inbox/{request_id}/decisions",
+        {
+            "expected_revision": detail["revision"],
+            "reviewed_digest": detail["proposal_digest"],
+            "active_role": "data_architect",
+            "decision": "approve",
+        },
+        key="complete-ui-approve",
+    )
+    assert approved.status_code == 200
+    admitted = journey.post(
+        f"/api/v1/inbox/{request_id}/admission",
+        {
+            "expected_revision": approved.json()["data"]["revision"],
+            "reviewed_digest": approved.json()["data"]["proposal_digest"],
+            "active_role": "data_architect",
+        },
+        key="complete-ui-admit",
+    )
+    assert admitted.status_code == 200
+    reopened = SQLiteRequestRepository.open(journey.request_path)
+    try:
+        stored = reopened.load(_TENANT, request_id)
+        assert stored is not None and stored.state is RequestState.EXECUTING
+        fulfillment = SQLiteFulfillmentRepository(reopened)
+        assert len(fulfillment.list_admissions(_TENANT, request_id)) == 1
+        assert len(fulfillment.list_evidence(_TENANT, request_id)) == 1
+    finally:
+        reopened.close()
+
+
+@pytest.mark.parametrize(
+    ("actor", "patch", "status"),
+    [
+        (_REQUESTER, {}, 404),
+        (_ARCHITECT, {"active_role": "requester"}, 404),
+        (_ARCHITECT, {"expected_revision": 99}, 409),
+        (_ARCHITECT, {"restated_request": "x" * 4001}, 422),
+        (_ARCHITECT, {"in_scope_summary": ""}, 422),
+        (_ARCHITECT, {"unexpected": True}, 422),
+    ],
+)
+def test_preparation_refusals_leave_the_request_and_clarification_unchanged(
+    journey: _Journey, actor: str, patch: dict[str, Any], status: int
+) -> None:
+    journey.as_actor(_REQUESTER)
+    request_id = _submitted_question(journey, key="refused-preparation-intake")
+    journey.as_actor(actor)
+
+    response = journey.post(
+        f"/api/v1/inbox/{request_id}/clarification",
+        {
+            "expected_revision": 1,
+            "active_role": "data_architect",
+            "restated_request": "Define net revenue.",
+            "in_scope_summary": "Governed definition.",
+            "out_of_scope_summary": "Raw rows.",
+            **patch,
+        },
+        key="refused-preparation-command",
+    )
+
+    assert response.status_code == status
+    request = journey.requests.get(_TENANT, request_id)
+    assert request.state is RequestState.SUBMITTED and request.revision == 1
+    assert journey.fulfillment_repository.list_clarified_outcomes(_TENANT, request_id) == ()
+
+
+@pytest.mark.parametrize("path", ["proposal", "proposal/submission"])
+def test_preparing_or_submitting_without_clarification_is_refused(
+    journey: _Journey, path: str
+) -> None:
+    journey.as_actor(_REQUESTER)
+    request_id = _submitted_question(journey, key="unclarified-intake")
+    journey.as_actor(_ARCHITECT)
+
+    response = journey.post(
+        f"/api/v1/inbox/{request_id}/{path}",
+        {"expected_revision": 1, "active_role": "data_architect"},
+        key="unclarified-command",
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "preparation_unavailable"
+    assert journey.requests.get(_TENANT, request_id).revision == 1
+    assert journey.fulfillment_repository.list_proposals(_TENANT, request_id) == ()
+
+
+def test_missing_governed_data_exposes_the_preparation_dependency(journey: _Journey) -> None:
+    request = journey.requests.submit_question(
+        tenant_id=_TENANT,
+        requester_id=_REQUESTER,
+        purpose="missing governed data",
+        question="What is net revenue?",
+    )
+    journey.as_actor(_ARCHITECT)
+    clarified = journey.post(
+        f"/api/v1/inbox/{request.request_id}/clarification",
+        {
+            "expected_revision": 1,
+            "active_role": "data_architect",
+            "restated_request": "Net revenue",
+            "in_scope_summary": "Current governed data",
+            "out_of_scope_summary": "Unapproved data",
+        },
+        key="dependency-clarify",
+    )
+    response = journey.post(
+        f"/api/v1/inbox/{request.request_id}/proposal",
+        {
+            "expected_revision": clarified.json()["data"]["revision"],
+            "active_role": "data_architect",
+        },
+        key="dependency-prepare",
+    )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["proposal"] is None
+    assert response.json()["data"]["preparation_actions"] == []
+    assert "data_product_change" in " ".join(response.json()["data"]["preparation_notes"])
+    assert len(journey.fulfillment_repository.list_dependencies(_TENANT, request.request_id)) == 1

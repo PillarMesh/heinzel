@@ -365,7 +365,10 @@ class GovernedConsoleDeployment:
             request_service=self.requests,
             clock=_clock,
         )
-        publication_repository, receipt, integration_contract = published_repository()
+        publication_repository, receipt, integration_contract = published_repository(
+            check_same_thread=False
+        )
+        self.publication_repository = publication_repository
         self.fulfillment = FulfillmentService(
             request_service=self.requests,
             repository=self.fulfillment_repository,
@@ -442,6 +445,7 @@ class GovernedConsoleDeployment:
             ),
             request_commands=self.requests,
             fulfillment_commands=self.fulfillment,
+            fulfillment_preparation_commands=self.fulfillment,
             semantic_reviews=self.semantic_repository,
             semantic_review_commands=self.semantic_reviews,
             runs=DerivedTenantRunReader(lifecycles=self.lifecycles, evidence=self.evidence),
@@ -603,6 +607,7 @@ class GovernedConsoleDeployment:
             self.request_repository,
             self.catalog_repository,
             self.semantic_repository,
+            self.publication_repository,
             self.lifecycles,
             self.evidence,
         ):

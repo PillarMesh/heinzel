@@ -2105,6 +2105,12 @@
       },
       "type": "array"
     },
+    "JsonTuple_PreparationAction_": {
+      "items": {
+        "$ref": "#/$defs/PreparationAction"
+      },
+      "type": "array"
+    },
     "JsonTuple_ProposalApprovalView_": {
       "items": {
         "$ref": "#/$defs/ProposalApprovalView"
@@ -2556,6 +2562,14 @@
       "title": "OwnDecisionView",
       "type": "object"
     },
+    "PreparationAction": {
+      "enum": [
+        "clarify",
+        "prepare_answer",
+        "submit_proposal"
+      ],
+      "type": "string"
+    },
     "ProcessPackageCommand": {
       "additionalProperties": false,
       "properties": {
@@ -2645,6 +2659,25 @@
       "title": "ProposalApprovalView",
       "type": "object"
     },
+    "ProposalPreparationCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "active_role"
+      ],
+      "title": "ProposalPreparationCommand",
+      "type": "object"
+    },
     "PublicId": {
       "pattern": "^[a-z][a-z0-9_-]{2,127}$",
       "type": "string"
@@ -2681,6 +2714,46 @@
       ],
       "type": "string"
     },
+    "RequestClarificationCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "$ref": "#/$defs/ActorRole"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "in_scope_summary": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "In Scope Summary",
+          "type": "string"
+        },
+        "out_of_scope_summary": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Out Of Scope Summary",
+          "type": "string"
+        },
+        "restated_request": {
+          "maxLength": 4000,
+          "minLength": 1,
+          "title": "Restated Request",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "active_role",
+        "restated_request",
+        "in_scope_summary",
+        "out_of_scope_summary"
+      ],
+      "title": "RequestClarificationCommand",
+      "type": "object"
+    },
     "RequestDetailView": {
       "additionalProperties": false,
       "properties": {
@@ -2712,6 +2785,14 @@
           "$ref": "#/$defs/JsonTuple_LifecycleEventView_",
           "default": []
         },
+        "preparation_actions": {
+          "$ref": "#/$defs/JsonTuple_PreparationAction_",
+          "default": []
+        },
+        "preparation_notes": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
         "proposal": {
           "anyOf": [
             {
@@ -2736,6 +2817,17 @@
         },
         "purpose": {
           "$ref": "#/$defs/NonEmptyText"
+        },
+        "question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "request_id": {
           "$ref": "#/$defs/PublicId"
@@ -3732,6 +3824,12 @@
     "process_package_command": {
       "$ref": "#/$defs/ProcessPackageCommand"
     },
+    "proposal_preparation_command": {
+      "$ref": "#/$defs/ProposalPreparationCommand"
+    },
+    "request_clarification_command": {
+      "$ref": "#/$defs/RequestClarificationCommand"
+    },
     "request_detail_response": {
       "$ref": "#/$defs/ConsoleEnvelope_RequestDetailView_"
     },
@@ -3789,6 +3887,8 @@
     "process_package_command",
     "decision_command",
     "admission_command",
+    "request_clarification_command",
+    "proposal_preparation_command",
     "create_request_command",
     "conversation_message_command",
     "clarified_outcome_acceptance_command",

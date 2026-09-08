@@ -1,3 +1,4 @@
+import {RequestPreparation, type RequestPreparationClient} from "./request-preparation"
 import {ProposalApprovals} from "./artifact-reference"
 import {useCallback, useEffect, useRef, useState} from "react"
 import {useParams} from "react-router-dom"
@@ -33,7 +34,8 @@ const decisionLabels = {
 } satisfies Record<Decision1, string>
 
 export interface InboxClient
-  extends CatalogEvidenceClient,
+  extends RequestPreparationClient,
+    CatalogEvidenceClient,
     ConversationPanelClient,
     DashboardPreviewClient {
   admitRequest(
@@ -248,6 +250,17 @@ function RequestDetailPanel({
         </div>
       </dl>
 
+      {detail.question ? <section className="proposal-review" aria-label="Original question"><h3>Original question</h3><p>{detail.question}</p></section> : null}
+      <RequestPreparation
+        key={`${detail.request_id}:${detail.revision}`}
+        client={client}
+        dataProvenance={dataProvenance}
+        detail={detail}
+        idempotencyKeyFactory={idempotencyKeyFactory}
+        onAuthoritativeDetail={onAuthoritativeDetail}
+        session={session}
+      />
+
       {blockingAuthority === undefined ? null : (
         <p className="decision-detail__blocked" role="status">
           Blocked on the requester. {blockingAuthority.reason} Until{" "}
@@ -412,6 +425,7 @@ export function DecisionWorkspace({
     readonly value: RequestDetailView | null
   }>({failed: false, requestId: null, value: null})
   const [detailFocusToken, setDetailFocusToken] = useState(0)
+  const [inboxRefresh, setInboxRefresh] = useState(0)
   const [queueFocus, setQueueFocus] = useState<{
     readonly requestId: string | null
     readonly token: number
@@ -469,7 +483,7 @@ export function DecisionWorkspace({
     return () => {
       active = false
     }
-  }, [client, dataProvenance, requestedRequestId])
+  }, [client, dataProvenance, requestedRequestId, inboxRefresh])
 
   useEffect(() => {
     if (selectedRequestId === null) {
@@ -510,6 +524,7 @@ export function DecisionWorkspace({
 
   const onAuthoritativeDetail = useCallback((next: RequestDetailView) => {
     setDetail({failed: false, requestId: next.request_id, value: next})
+    setInboxRefresh(value => value + 1)
   }, [])
 
   const onDashboardAvailability = useCallback(

@@ -24,6 +24,7 @@ from pillarmesh_console.contracts import (
     CreateRequestCommand,
     DecisionCommand,
     ProcessPackageCommand,
+    ProposalPreparationCommand,
     ResetCommand,
     RetryOperationCommand,
     WarehouseBindingCommand,
@@ -1465,3 +1466,15 @@ def test_only_one_exact_approval_is_shown_as_recorded(
 
     assert detail.proposal is not None
     assert detail.proposal.required_approvals[0].satisfied is (field == "valid")
+
+
+def test_preparation_without_an_owning_adapter_is_explicitly_unavailable(stack: _Stack) -> None:
+    backend = stack.backend()
+    with pytest.raises(ConsoleUnavailable) as failure:
+        backend.prepare_request_proposal(
+            _architect_context(),
+            "request-new",
+            ProposalPreparationCommand(expected_revision=1, active_role="data_architect"),
+        )
+
+    assert failure.value.code == CAPABILITY_NOT_DELIVERED
