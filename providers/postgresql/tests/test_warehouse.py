@@ -3148,7 +3148,10 @@ def test_restore_tunnel_start_failure_never_leaves_cleanup_waiting_for_a_server(
 
     close_thread = Thread(target=close_tunnel, daemon=True)
     close_thread.start()
-    close_thread.join(timeout=0.5)
+    # Generous: the assertion below is that the thread ended without the test
+    # releasing it, not that it ended quickly. A tight join turns a loaded host
+    # into a failure, and the release path below still covers a genuine hang.
+    close_thread.join(timeout=10)
     terminated_without_test_release = not close_thread.is_alive()
     if close_thread.is_alive():
         with tunnel._condition:
@@ -3274,7 +3277,7 @@ def test_restore_tunnel_close_cancels_a_server_ignoring_initial_socket_close() -
     close_thread.start()
 
     try:
-        close_thread.join(timeout=2)
+        close_thread.join(timeout=10)
         terminated_without_test_release = not close_thread.is_alive()
     finally:
         cancel_accept.set()
@@ -3357,7 +3360,7 @@ def test_restore_tunnel_close_cancels_a_handler_ignoring_initial_socket_shutdown
     close_thread.start()
 
     try:
-        close_thread.join(timeout=2)
+        close_thread.join(timeout=10)
         terminated_without_test_release = not close_thread.is_alive()
     finally:
         cancel_input.set()

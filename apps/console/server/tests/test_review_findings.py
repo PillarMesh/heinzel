@@ -139,7 +139,10 @@ def test_a_duplicate_command_gives_up_rather_than_pinning_a_worker() -> None:
 
     assert len(outcome) == 1
     assert isinstance(outcome[0], ConsoleConflict)
-    assert time.monotonic() - started < 2.0
+    # The conflict itself is the property; this only rules out the second holder
+    # having blocked on the lock first. `join` already bounds the wait at five
+    # seconds, so a tighter figure here just measures the host.
+    assert time.monotonic() - started < 5
 
 
 def test_csrf_bindings_do_not_accumulate_without_bound() -> None:

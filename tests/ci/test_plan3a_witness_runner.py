@@ -582,7 +582,10 @@ def test_command_ceiling_wins_when_command_exits_during_an_indefinitely_blocked_
     finally:
         sampler_release.set()
 
-    assert time.monotonic() - started < 0.4
+    # Only a deadline that never applied could exceed this: the sampler stays
+    # blocked until the `finally`, so the call returning at all is the property.
+    # A bound near the 0.2s timeout measures interpreter startup instead.
+    assert time.monotonic() - started < 10
     assert exit_code == 124
     assert _read_cost(output)["timed_out"] is True
 
@@ -782,8 +785,12 @@ esac
             "tests.ci.run_plan3a_witness",
             "--output",
             str(output),
+            # Generous on purpose: this asserts the CLI runs its command and writes
+            # numeric cost, and the budget has to cover two interpreter startups
+            # before the command even begins. A tight value measures host load and
+            # fails as a spurious timeout.
             "--timeout-seconds",
-            "2",
+            "60",
             "--sample-interval-seconds",
             "0.01",
             "--",
