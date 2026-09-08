@@ -35,10 +35,10 @@ evidence for a transaction.
 | Tenant isolation | `GET /api/v1/requests/{id}/conversation` for another tenant's request | `404` |
 | Transient failure | warehouse confirmation with the repository closed | `503` `downstream_unavailable` with `recovery_action: retry`, never a denial or a verdict |
 
-The terminal state this journey reaches for a fulfillment request is *every required
-approval recorded against the exact proposal*, with the request still
-`awaiting_approval`. Admission to execution is a separate owning transaction that the
-console contract exposes no command for; see `known-gaps.md`.
+The terminal state this journey reaches for a fulfillment request is `executing` after
+requester acceptance, architect approval, and the separate admission command. The
+admission and evidence receipts are verified in the owning SQLite stores. This proves
+admission, not answer delivery, grant application, or downstream execution.
 
 ## Running it
 
@@ -73,7 +73,8 @@ uv run python -m tests.acceptance.run_console_governed
 It serves `http://127.0.0.1:8000`, seeds one stakeholder question through the owning
 services, and carries it to `awaiting_approval` so the inbox has a real decision. The
 architect is the default actor; the `x-pillarmesh-actor: requester-a` header selects
-the requester surface, which is how one browser walks both sides.
+the requester surface for HTTP tests. For ordinary browsers use the fixed-session
+URLs described in [Local UI testing](testing.md); no header extension is needed.
 
 ### Against a real PostgreSQL engine
 

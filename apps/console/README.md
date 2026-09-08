@@ -31,6 +31,12 @@ npm run demo
 The demonstration is fixture-backed. Every route carries a persistent `Demo scenario - no managed
 effects` banner, and no command in it produces a managed effect.
 
+## Governed local UI testing
+
+For separate requester and architect browser sessions backed by the owning services
+and disposable SQLite state, follow [Local UI testing](../../docs/console/testing.md).
+This exercises persisted intake, conversation, review, approval, and admission.
+
 ## Production same-origin build
 
 ```sh

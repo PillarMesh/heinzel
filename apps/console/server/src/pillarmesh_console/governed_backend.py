@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import Never
 
 from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
-from pillarmesh_contract_model import digest
+from pillarmesh_contract_model import ArtifactReference, digest
 from pillarmesh_request_management import (
     ArchitectRequestView,
     ConversationEntry,
@@ -29,6 +29,8 @@ from pillarmesh_request_management import (
 from pillarmesh_request_management import RequesterRequestView as ServiceRequesterRequestView
 from pillarmesh_request_management.fulfillment_models import (
     AccessScopePreview,
+    DenialDispositionReceipt,
+    FulfillmentAdmissionReceipt,
     StakeholderAnswerDraft,
 )
 from pillarmesh_request_management.models import DataAccessRequest, StakeholderQuestion
@@ -45,12 +47,14 @@ from pillarmesh_warehouse_control import (
 
 from .auth import TrustedActorContext
 from .contracts import (
+    AccessPreviewProposalView,
     AcquisitionReceiptsView,
     AcquisitionReceiptView,
     ActorDisplayView,
     ActorRole,
     AdmissionCommand,
     AdmissionView,
+    ArtifactReferenceView,
     CapabilityState,
     CapabilityView,
     CatalogAssetView,
@@ -62,8 +66,10 @@ from .contracts import (
     CreateRequestCommand,
     DashboardView,
     DataProductView,
+    DatasetEvidenceView,
     Decision,
     DecisionCommand,
+    DisclosureDenialProposalView,
     DisplayReferenceView,
     EvidenceContextView,
     EvidenceView,
@@ -76,9 +82,11 @@ from .contracts import (
     OperationView,
     OwnDecisionView,
     ProcessPackageCommand,
+    ProposalApprovalView,
     RequestDetailView,
     RequesterRequestView,
     RequestKind,
+    RequestProposalView,
     ResetCommand,
     RetryOperationCommand,
     ReviewItemView,
@@ -92,6 +100,7 @@ from .contracts import (
     SetupStageState,
     SetupStageView,
     SetupView,
+    StakeholderAnswerProposalView,
     WarehouseBindingCommand,
     WarehouseBindingView,
     WarehouseOptionView,
@@ -1250,6 +1259,7 @@ class GovernedConsoleBackend:
             purpose=request.payload.purpose,
             revision=request.revision,
             proposal_digest=None if requirement is None else requirement.subject_digest,
+            proposal=self._proposal_view(view),
             conversation=self._conversation_view(
                 request, self._conversation_entries(context, request.request_id)
             ),
@@ -1272,6 +1282,121 @@ class GovernedConsoleBackend:
                 else ()
             ),
             admission=self._admission_view(request, proposal, view.approvals),
+        )
+
+    @staticmethod
+    def _artifact_view(reference: ArtifactReference) -> ArtifactReferenceView:
+        return ArtifactReferenceView(
+            artifact_id=reference.artifact_id, version=reference.version, digest=reference.digest
+        )
+
+    @classmethod
+    def _dataset_view(cls, reference: ArtifactReference) -> DatasetEvidenceView:
+        # The display key binds the entire reference; it is never a catalog lookup key.
+        return DatasetEvidenceView(
+            dataset_ref=f"artifact-{digest(reference)}",
+            display_name=f"{reference.artifact_id} (version {reference.version})",
+            artifact_reference=cls._artifact_view(reference),
+        )
+
+    @staticmethod
+    def _approval_views(view: ArchitectRequestView) -> tuple[ProposalApprovalView, ...]:
+        if not view.proposals:
+            return ()
+        proposal = view.proposals[-1]
+        receipts: tuple[FulfillmentAdmissionReceipt | DenialDispositionReceipt, ...] = (
+            *view.admissions,
+            *view.denials,
+        )
+        disposition = next(
+            (
+                receipt
+                for receipt in receipts
+                if receipt.tenant_id == view.request.tenant_id
+                and receipt.request_id == view.request.request_id
+                and receipt.proposal_id == proposal.proposal_id
+                and receipt.proposal_revision == proposal.revision
+                and receipt.proposal_digest == digest(proposal)
+                and receipt.resulting_request_revision <= view.request.revision
+            ),
+            None,
+        )
+        approval_revision = (
+            view.request.revision if disposition is None else disposition.source_request_revision
+        )
+        return tuple(
+            ProposalApprovalView(
+                authority_ref=requirement.authority_ref,
+                reason=requirement.reason_code,
+                satisfied=sum(
+                    1
+                    for approval in view.approvals
+                    if approval.tenant_id == view.request.tenant_id
+                    and approval.request_id == view.request.request_id
+                    and approval.request_revision == approval_revision
+                    and (disposition is None or approval.approval_id in disposition.approval_ids)
+                    and approval.proposal_id == proposal.proposal_id
+                    and approval.proposal_revision == proposal.revision
+                    and approval.proposal_digest == digest(proposal)
+                    and approval.authority_ref == requirement.authority_ref
+                    and approval.subject_digest == requirement.subject_digest
+                    and approval.decision == "approve"
+                )
+                == 1,
+            )
+            for requirement in proposal.required_approvals
+        )
+
+    @classmethod
+    def _proposal_view(cls, view: ArchitectRequestView) -> RequestProposalView | None:
+        if not view.proposals:
+            return None
+        proposal = view.proposals[-1]
+        approvals = cls._approval_views(view)
+        evidence = cls._evidence_context(view)
+        subject = proposal.subject
+        if isinstance(subject, StakeholderAnswerDraft):
+            return StakeholderAnswerProposalView(
+                kind="stakeholder_answer",
+                purpose=view.request.payload.purpose,
+                candidate=subject.answer_text,
+                metric_version="See exact metric references"
+                if subject.metric_refs
+                else "No metric cited",
+                metric_references=tuple(cls._artifact_view(item) for item in subject.metric_refs),
+                lineage_references=tuple(cls._artifact_view(item) for item in subject.lineage_refs),
+                quality_references=tuple(
+                    cls._artifact_view(item) for item in subject.material_quality_limitations
+                ),
+                as_of=subject.as_of,
+                freshness=subject.freshness_disposition,
+                datasets=evidence.datasets,
+                lineage_summary=evidence.lineage_summary,
+                authorization_summary=evidence.authorization_summary,
+                required_approvals=approvals,
+            )
+        if isinstance(subject, AccessScopePreview):
+            return AccessPreviewProposalView(
+                kind="access_preview",
+                purpose=view.request.payload.purpose,
+                data_product_ref=f"artifact-{digest(subject.data_product_ref)}",
+                data_product_reference=cls._artifact_view(subject.data_product_ref),
+                effective_object_references=tuple(
+                    cls._artifact_view(item) for item in subject.effective_object_refs
+                ),
+                access_mode=subject.access_mode,
+                requested_fields=subject.requested_fields,
+                effective_scope=subject.effective_fields,
+                exclusions=subject.excluded_scopes,
+                expires_at=subject.expires_at,
+                authority_summary=evidence.authorization_summary,
+                required_approvals=approvals,
+            )
+        return DisclosureDenialProposalView(
+            kind="disclosure_denial",
+            explanation=subject.requester_safe_explanation,
+            reason_code=subject.reason_code,
+            required_approvals=approvals,
         )
 
     @staticmethod
@@ -1323,8 +1448,8 @@ class GovernedConsoleBackend:
             ),
         )
 
-    @staticmethod
-    def _evidence_context(view: ArchitectRequestView) -> EvidenceContextView:
+    @classmethod
+    def _evidence_context(cls, view: ArchitectRequestView) -> EvidenceContextView:
         proposal = view.proposals[-1] if view.proposals else None
         freshness: FreshnessState = "unknown"
         as_of = None
@@ -1357,13 +1482,25 @@ class GovernedConsoleBackend:
                 quality_summary = "The compiled outcome is a disclosure denial."
                 lineage_summary = "A denial cites no governed lineage."
         required = 0 if proposal is None else len(proposal.required_approvals)
+        answer = (
+            proposal.subject
+            if proposal is not None and isinstance(proposal.subject, StakeholderAnswerDraft)
+            else None
+        )
         return EvidenceContextView(
+            datasets=()
+            if answer is None
+            else tuple(cls._dataset_view(item) for item in answer.governed_dataset_refs),
+            metric_references=()
+            if answer is None
+            else tuple(cls._artifact_view(item) for item in answer.metric_refs),
             as_of=as_of,
             freshness=freshness,
             quality_summary=quality_summary,
             lineage_summary=lineage_summary,
             authorization_summary=(
-                f"{len(view.approvals)} of {required} required approval(s) are recorded."
+                f"{sum(item.satisfied for item in cls._approval_views(view))} of {required} "
+                "required approval(s) are recorded for this proposal."
             ),
             evidence_refs=tuple(receipt.evidence_id for receipt in view.evidence),
         )

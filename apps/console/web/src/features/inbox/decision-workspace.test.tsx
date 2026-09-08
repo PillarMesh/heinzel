@@ -1,3 +1,4 @@
+import {validateConsoleResponse} from "../../api/schema"
 import {render, screen, waitFor, within} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import {expect, test, vi} from "vitest"
@@ -521,4 +522,28 @@ test("an admission whose outcome is unknown is reconciled, not reported as uncha
   const first = admitRequest.mock.calls[0] as unknown as [string, object, {idempotencyKey: string}]
   const second = admitRequest.mock.calls[1] as unknown as [string, object, {idempotencyKey: string}]
   expect(second[2].idempotencyKey).toBe(first[2].idempotencyKey)
+})
+
+test("artifact display keys never become catalog or dashboard lookups", async () => {
+  if (accessDetail.proposal?.kind !== "access_preview") throw new Error("Expected access fixture")
+  const reference = {artifact_id: "urn:product/Revenue", version: 2, digest: "a".repeat(64)}
+  const getCatalogAsset = vi.fn()
+  const getDashboard = vi.fn()
+  const detail: RequestDetailView = {...accessDetail,
+    proposal: {...accessDetail.proposal!, kind: "access_preview", purpose: "Approved scope",
+      data_product_ref: "artifact-display-key", data_product_reference: reference,
+      access_mode: "dashboard", requested_fields: ["total"], expires_at: "2026-01-08T00:00:00Z",
+      authority_summary: "Awaiting review",
+    },
+    evidence: {...accessDetail.evidence, evidence_refs: [], datasets: [{dataset_ref: "artifact-display-key",
+      display_name: "Revenue", artifact_reference: reference}]},
+  }
+  const envelope = validateConsoleResponse("request_detail_response", detailEnvelope(detail))
+  const client = createClient({getRequestDetail: vi.fn(async () => envelope), getCatalogAsset, getDashboard})
+
+  renderWorkspace(client, "request-access")
+
+  expect(await screen.findByRole("region", {name: "Effective access preview"})).toHaveTextContent(reference.artifact_id)
+  expect(getCatalogAsset).not.toHaveBeenCalled()
+  expect(getDashboard).not.toHaveBeenCalled()
 })

@@ -486,3 +486,18 @@ def test_a_data_owner_reads_the_queue_but_is_refused_an_item_from_it(
 
     assert queue.status_code == 200
     assert detail.status_code == 200
+
+
+def test_a_fixed_requester_browser_session_cannot_be_overridden_by_a_header(
+    tmp_path: Path,
+) -> None:
+    deployment = GovernedConsoleDeployment(tmp_path)
+    try:
+        with TestClient(deployment.build_app(actor=REQUESTER)) as client:
+            session = client.get("/api/v1/session", headers={"x-pillarmesh-actor": ARCHITECT})
+            inbox = client.get("/api/v1/inbox")
+
+        assert session.json()["data"]["active_role"] == "requester"
+        assert inbox.status_code == 404
+    finally:
+        deployment.close()

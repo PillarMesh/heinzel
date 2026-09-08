@@ -68,8 +68,9 @@ export function App({client}: AppProps) {
     void Promise.all([selectedClient.getSession(), selectedClient.getWorkspace()])
       .then(async ([sessionEnvelope, workspaceEnvelope]) => {
         const needsSetup =
-          workspaceEnvelope.data.state === "setup" ||
-          workspaceEnvelope.data.state === "pending_activation"
+          sessionEnvelope.data.active_role === "data_architect" &&
+          (workspaceEnvelope.data.state === "setup" ||
+          workspaceEnvelope.data.state === "pending_activation")
         const setupEnvelope = needsSetup ? await selectedClient.getSetup() : undefined
         if (active) {
           setState({

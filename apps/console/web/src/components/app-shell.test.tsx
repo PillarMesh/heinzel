@@ -235,3 +235,10 @@ test("the error boundary replaces untrusted view content with recovery guidance"
   expect(screen.getByRole("heading", {name: "This view could not be displayed"})).toBeVisible()
   expect(screen.queryByText("private response canary")).not.toBeInTheDocument()
 })
+
+test("requester navigation leads to My requests rather than architect-only inbox", () => {
+  render(<MemoryRouter><AppShell dataProvenance="governed_local" workspace={workspace}
+    session={{...session, roles: ["requester"], active_role: "requester"}}><h1>Requester work</h1></AppShell></MemoryRouter>)
+  expect(screen.getByRole("link", {name: "My requests"})).toHaveAttribute("href", "/requests")
+  expect(screen.queryByRole("link", {name: "Inbox"})).not.toBeInTheDocument()
+})

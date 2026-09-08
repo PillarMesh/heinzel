@@ -49,7 +49,7 @@ from pillarmesh_console.operation_handles import (
     InMemoryOperationHandleRepository,
 )
 from pillarmesh_console.request_intake import request_intake_content
-from pillarmesh_contract_model import digest
+from pillarmesh_contract_model import ArtifactReference, digest
 from pillarmesh_request_management import (
     ArchitectRequestView,
     ClarifiedOutcomeStatement,
@@ -62,7 +62,11 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
     StakeholderAnswerDraft,
 )
-from pillarmesh_request_management.fulfillment_models import ApprovalRequirement
+from pillarmesh_request_management.fulfillment_models import (
+    AccessScopePreview,
+    ApprovalRequirement,
+    DisclosureDenial,
+)
 from pillarmesh_request_management.requester_view import OwnDecisionView
 from pillarmesh_semantic_registry import OntologyReviewBundle, OntologyReviewItem
 from pillarmesh_semantic_registry.review import ReviewItemDecision
@@ -282,6 +286,8 @@ class _StaticFulfillmentViews:
         self._request = request
         self._statement = statement
         self.own_decisions: tuple[OwnDecisionView, ...] = ()
+        self.proposal = _proposal(request, statement)
+        self.approvals: tuple[FulfillmentApprovalBinding, ...] = ()
 
     def requester_view(
         self, *, tenant_id: str, request_id: str, actor_id: str
@@ -306,8 +312,8 @@ class _StaticFulfillmentViews:
         return ArchitectRequestView(
             request=self._request,
             clarified_outcomes=(self._statement,),
-            proposals=(_proposal(self._request, self._statement),),
-            approvals=(),
+            proposals=(self.proposal,),
+            approvals=self.approvals,
             admissions=(),
             dependencies=(),
             no_valid_plans=(),
@@ -1298,3 +1304,164 @@ def test_a_claimed_conversation_role_cannot_override_the_active_trusted_role(sta
 
     assert stack.requests.list_conversation(_TENANT, request.request_id) == ()
     assert stack.requests.get(_TENANT, request.request_id).revision == request.revision
+
+
+def test_governed_answer_is_reviewable_with_exact_artifact_identity(stack: _Stack) -> None:
+    request = _question(stack)
+    views = _StaticFulfillmentViews(request=request, statement=_statement(request))
+    backend = stack.backend(fulfillment=views)
+
+    detail = backend.get_request_detail(_architect_context(), request.request_id)
+
+    assert detail.proposal is not None
+    assert detail.proposal.kind == "stakeholder_answer"
+    assert detail.proposal.candidate == _answer_draft().answer_text
+
+
+def test_artifact_ids_are_preserved_without_becoming_catalog_lookup_keys(stack: _Stack) -> None:
+    request = _question(stack)
+    views = _StaticFulfillmentViews(request=request, statement=_statement(request))
+    reference = ArtifactReference(
+        artifact_id="urn:catalog/Revenue <Q1>?version=two", version=2, digest="a" * 64
+    )
+    answer = StakeholderAnswerDraft.model_validate(
+        {
+            **_answer_draft().model_dump(),
+            "governed_dataset_refs": [reference],
+            "metric_refs": [reference],
+            "material_quality_limitations": [reference],
+            "lineage_refs": [reference],
+        }
+    )
+    views.proposal = FulfillmentProposal.model_validate(
+        {
+            **views.proposal.model_dump(),
+            "subject": answer,
+            "required_approvals": [
+                ApprovalRequirement(
+                    authority_ref=_ARCHITECT_PRINCIPAL,
+                    reason_code="data_engineering_architect",
+                    subject_digest=digest(answer),
+                ),
+                views.proposal.required_approvals[1],
+            ],
+        }
+    )
+
+    detail = stack.backend(fulfillment=views).get_request_detail(
+        _architect_context(), request.request_id
+    )
+
+    assert detail.proposal is not None and detail.proposal.kind == "stakeholder_answer"
+    dataset = detail.evidence.datasets[0]
+    assert dataset.artifact_reference is not None
+    assert dataset.artifact_reference.model_dump() == reference.model_dump()
+    assert dataset.dataset_ref == f"artifact-{digest(reference)}"
+    assert detail.proposal.datasets == detail.evidence.datasets
+    assert detail.proposal.metric_references[0].model_dump() == reference.model_dump()
+    assert detail.proposal.quality_references[0].model_dump() == reference.model_dump()
+    assert detail.proposal.lineage_references[0].model_dump() == reference.model_dump()
+
+
+@pytest.mark.parametrize("kind", ["access_preview", "disclosure_denial"])
+def test_non_answer_proposals_keep_the_owning_scope_or_denial(stack: _Stack, kind: str) -> None:
+    request = _question(stack)
+    views = _StaticFulfillmentViews(request=request, statement=_statement(request))
+    reference = ArtifactReference(artifact_id="urn:product/Revenue", version=3, digest="b" * 64)
+    subject = (
+        AccessScopePreview(
+            requester_principal_ref=_REQUESTER_PRINCIPAL,
+            data_product_ref=reference,
+            access_mode="dashboard",
+            requested_fields=("total", "email"),
+            effective_object_refs=(reference,),
+            effective_fields=("total",),
+            excluded_scopes=("email",),
+            classifications=(),
+            expires_at=_FIXED_TIME,
+        )
+        if kind == "access_preview"
+        else DisclosureDenial(
+            reason_code="purpose_not_allowed",
+            requester_safe_explanation="This purpose is outside approved scope.",
+            denied_scope_digest="c" * 64,
+        )
+    )
+    views.proposal = FulfillmentProposal.model_validate(
+        {
+            **views.proposal.model_dump(),
+            "subject": subject,
+            "required_approvals": [
+                ApprovalRequirement(
+                    authority_ref=_ARCHITECT_PRINCIPAL,
+                    reason_code="data_engineering_architect",
+                    subject_digest=digest(subject),
+                )
+            ],
+        }
+    )
+
+    detail = stack.backend(fulfillment=views).get_request_detail(
+        _architect_context(), request.request_id
+    )
+
+    assert detail.proposal is not None
+    assert detail.proposal.kind == kind
+    if detail.proposal.kind == "access_preview":
+        assert detail.proposal.data_product_reference is not None
+        assert detail.proposal.data_product_reference.model_dump() == reference.model_dump()
+        assert detail.proposal.effective_scope == ("total",)
+        assert detail.proposal.exclusions == ("email",)
+        assert detail.proposal.intended_checks == ()
+    else:
+        assert detail.proposal.kind == "disclosure_denial"
+        assert detail.proposal.explanation == "This purpose is outside approved scope."
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("tenant_id", "other-tenant"),
+        ("request_id", "other-request"),
+        ("request_revision", 2),
+        ("proposal_id", "other-proposal"),
+        ("proposal_revision", 2),
+        ("proposal_digest", "0" * 64),
+        ("subject_digest", "0" * 64),
+        ("authority_ref", "other-authority"),
+        ("decision", "reject"),
+        ("duplicate", True),
+        ("valid", True),
+    ],
+)
+def test_only_one_exact_approval_is_shown_as_recorded(
+    stack: _Stack, field: str, value: object
+) -> None:
+    request = _question(stack)
+    views = _StaticFulfillmentViews(request=request, statement=_statement(request))
+    approval = FulfillmentApprovalBinding(
+        approval_id="approval-test",
+        tenant_id=request.tenant_id,
+        request_id=request.request_id,
+        request_revision=request.revision,
+        proposal_id=views.proposal.proposal_id,
+        proposal_revision=views.proposal.revision,
+        proposal_digest=digest(views.proposal),
+        subject_digest=digest(views.proposal.subject),
+        actor_id=_ARCHITECT,
+        authority_ref=_ARCHITECT_PRINCIPAL,
+        decision="approve",
+        created_at=_FIXED_TIME,
+    )
+    if field not in ("valid", "duplicate"):
+        approval = FulfillmentApprovalBinding.model_validate(
+            {**approval.model_dump(), field: value}
+        )
+    views.approvals = (approval, approval) if field == "duplicate" else (approval,)
+
+    detail = stack.backend(fulfillment=views).get_request_detail(
+        _architect_context(), request.request_id
+    )
+
+    assert detail.proposal is not None
+    assert detail.proposal.required_approvals[0].satisfied is (field == "valid")

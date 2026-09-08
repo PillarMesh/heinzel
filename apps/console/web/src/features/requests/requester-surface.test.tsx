@@ -339,13 +339,14 @@ test("posts a requester reply bound to the conversation revision and its digest"
     "request-blocked-acceptance",
     {
       expected_revision: 2,
-      conversation_digest: conversationDigest,
+      conversation_digest: conversation.conversation_digest,
       active_role: "requester",
       body: "Yes, the ISO week ending Sunday.",
     },
     {csrfToken: session.csrf_token, idempotencyKey: "idempotency-requester-fixed"},
   ])
   expect(await screen.findByText("Yes, the ISO week ending Sunday.")).toBeVisible()
+  await waitFor(() => expect(client.getRequesterRequests).toHaveBeenCalledTimes(2))
 })
 
 test("shows no proposal while the clarified outcome is unaccepted", async () => {
@@ -362,7 +363,7 @@ test("shows no proposal while the clarified outcome is unaccepted", async () => 
   ).toBeVisible()
   expect(screen.getByRole("button", {name: "Accept clarified outcome"})).toBeDisabled()
   expect(
-    screen.getByText("No proposal exists while the clarified outcome is unaccepted."),
+    screen.getByText("Review and accept the clarified scope before this request can be admitted."),
   ).toBeVisible()
   expect(screen.queryByRole("region", {name: "Proposal"})).not.toBeInTheDocument()
   expect(screen.queryByText(/answer/i)).not.toBeInTheDocument()
@@ -395,7 +396,7 @@ test("records acceptance as the requester and still withholds the answer without
     {csrfToken: session.csrf_token, idempotencyKey: "idempotency-requester-fixed"},
   ])
   expect(
-    await screen.findByText("Acceptance recorded at revision 3. PillarMesh can now build a proposal."),
+    await screen.findByText("Acceptance recorded at revision 3. Your approval of this scope is recorded."),
   ).toBeVisible()
   expect(
     screen.getByText("The answer stays withheld until a verified delivery receipt exists."),

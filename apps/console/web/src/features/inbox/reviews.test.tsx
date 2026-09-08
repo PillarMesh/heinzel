@@ -446,3 +446,18 @@ test("legacy conversation entries explicitly say their role was not recorded", (
   expect(panel).toHaveTextContent("Role not recorded")
   expect(panel).not.toHaveTextContent("Architect intervention")
 })
+
+test("governed review shows exact artifact versions without inventing catalog links", () => {
+  const reference = {artifact_id: "urn:catalog/Revenue <Q1>", version: 2, digest: "a".repeat(64)}
+  render(<StakeholderAnswerReview proposal={{...answerProposal,
+    datasets: [{dataset_ref: "artifact-reference", display_name: "Revenue", artifact_reference: reference}],
+    metric_references: [reference], quality_limitations: [], quality_references: [reference],
+    required_approvals: [{authority_ref: "role:data_owner", reason: "ownership_review", satisfied: false}],
+  }} />)
+
+  expect(screen.getAllByText(reference.artifact_id).length).toBeGreaterThan(0)
+  expect(screen.getAllByText(reference.digest).length).toBeGreaterThan(0)
+  expect(screen.getByRole("region", {name: "Required approvals"})).toHaveTextContent("Not recorded")
+  expect(screen.queryByText("No quality limitation was recorded.")).not.toBeInTheDocument()
+  expect(screen.queryByRole("link")).not.toBeInTheDocument()
+})

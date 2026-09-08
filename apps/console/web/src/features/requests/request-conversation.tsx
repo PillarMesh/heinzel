@@ -7,13 +7,13 @@ import type {
   DataProvenance,
   SessionView,
 } from "../../api/generated"
-import type {DigestText, IdempotencyKeyFactory, RequesterClient} from "./my-requests"
+import type {IdempotencyKeyFactory, RequesterClient} from "./my-requests"
 
 interface RequestConversationProps {
   readonly client: RequesterClient
   readonly dataProvenance: DataProvenance
-  readonly digestText: DigestText
   readonly idempotencyKeyFactory: IdempotencyKeyFactory
+  readonly onReplied: () => void
   readonly requestId: string
   readonly session: SessionView
 }
@@ -38,29 +38,12 @@ const originLabels: Record<MessageOrigin, string> = {
   unknown: "Role not recorded",
 }
 
-// The conversation contract carries no digest field, so the browser binds the exact projection it
-// replied to by hashing its canonical content.
-function canonicalConversation(conversation: ConversationView): string {
-  return JSON.stringify({
-    conversation: {
-      request_id: conversation.request_id,
-      revision: conversation.revision,
-      messages: (conversation.messages ?? []).map((message) => ({
-        message_id: message.message_id,
-        author_role: message.author_role,
-        body: message.body,
-        created_at: message.created_at,
-      })),
-    },
-  })
-}
-
 export function RequestConversation({
   client,
   dataProvenance,
-  digestText,
   idempotencyKeyFactory,
   requestId,
+  onReplied,
   session,
 }: RequestConversationProps) {
   const [conversation, setConversation] = useState<ConversationView | null>(null)
@@ -104,12 +87,11 @@ export function RequestConversation({
     setSending(true)
     setReplyError(null)
     try {
-      const conversationDigest = await digestText(canonicalConversation(conversation))
       const envelope = await client.appendConversationMessage(
         requestId,
         {
           expected_revision: conversation.revision,
-          conversation_digest: conversationDigest,
+          conversation_digest: conversation.conversation_digest,
           active_role: session.active_role,
           body: reply.trim(),
         },
@@ -124,6 +106,7 @@ export function RequestConversation({
       }
       setConversation(envelope.data)
       setReply("")
+      onReplied()
     } catch (error: unknown) {
       if (error instanceof ConsoleMutationOutcomeUnknown) {
         setReplyError("The reply outcome is unknown. Reload before sending it again.")

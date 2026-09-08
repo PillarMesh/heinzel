@@ -40,6 +40,7 @@ from pillarmesh_request_management import (
     RequestState,
     SQLiteFulfillmentRepository,
     SQLiteRequestRepository,
+    StakeholderAnswerDraft,
     StakeholderQuestion,
 )
 from pillarmesh_semantic_registry import SemanticFulfillmentSnapshotAdapter
@@ -715,6 +716,9 @@ def test_an_admitted_proposal_reaches_execution_through_the_owning_transaction(
     assert blocked.status_code == 409
     assert ready["admission"] == {"available": True, "blocking_reason": None}
     assert admitted.status_code == 200
+    assert all(
+        item["satisfied"] for item in admitted.json()["data"]["proposal"]["required_approvals"]
+    )
 
     reopened = SQLiteRequestRepository.open(journey.request_path)
     try:
@@ -797,6 +801,8 @@ def test_a_revision_bump_after_the_approvals_withdraws_the_offered_admission(
     assert approved["admission"] == {"available": True, "blocking_reason": None}
     assert bumped["revision"] > approved["revision"]
     assert bumped["admission"]["available"] is False
+    assert all(not item["satisfied"] for item in bumped["proposal"]["required_approvals"])
+    assert bumped["evidence"]["authorization_summary"].startswith("0 of ")
     # Refused as a conflict the architect can act on, never as a missing resource.
     assert refused.status_code == 409
     assert refused.json()["error"]["code"] == "admission_unavailable"
@@ -1078,3 +1084,22 @@ def test_conversation_roles_follow_trusted_http_authors_and_survive_database_reo
         assert tuple(entry.request_revision for entry in entries) == (2, 3)
     finally:
         reopened.close()
+
+
+def test_architect_reviews_the_owning_answer_and_artifacts_over_http(journey: _Journey) -> None:
+    journey.as_actor(_REQUESTER)
+    request_id = _submitted_question(journey, key="reviewable-answer")
+    proposal = _compile_proposal(journey, request_id)
+    assert isinstance(proposal.subject, StakeholderAnswerDraft)
+    journey.as_actor(_ARCHITECT)
+
+    response = journey.get(f"/api/v1/inbox/{request_id}")
+
+    assert response.status_code == 200
+    detail = response.json()["data"]
+    assert detail["proposal"]["candidate"] == proposal.subject.answer_text
+    assert [item["artifact_reference"] for item in detail["proposal"]["datasets"]] == [
+        reference.model_dump(mode="json") for reference in proposal.subject.governed_dataset_refs
+    ]
+    assert detail["proposal"]["required_approvals"]
+    assert all(not item["satisfied"] for item in detail["proposal"]["required_approvals"])

@@ -94,23 +94,37 @@ export type ConsoleEnvelopeRequestDetailView = ConsoleEnvelope_RequestDetailView
 export type Available = boolean
 export type Decision2 = "approve" | "reject" | "request_changes"
 export type JsonTuple_Decision_ = Decision2[]
+export type ArtifactId = string
+export type Version1 = number
 export type JsonTuple_DatasetEvidenceView_ = DatasetEvidenceView[]
 export type JsonTuple_PublicId_ = PublicId[]
 export type FreshnessState = "current" | "stale" | "unknown" | "not_applicable"
+export type JsonTuple_ArtifactReferenceView_ = ArtifactReferenceView[]
 export type JsonTuple_NonEmptyText_1 = NonEmptyText[]
 export type JsonTuple_LifecycleEventView_ = LifecycleEventView[]
-export type RequestProposalView = StakeholderAnswerProposalView | AccessPreviewProposalView
+export type RequestProposalView =
+  StakeholderAnswerProposalView | AccessPreviewProposalView | DisclosureDenialProposalView
 export type JsonTuple_DatasetEvidenceView_1 = DatasetEvidenceView[]
 export type Kind2 = "stakeholder_answer"
+export type JsonTuple_ArtifactReferenceView_1 = ArtifactReferenceView[]
+export type JsonTuple_ArtifactReferenceView_2 = ArtifactReferenceView[]
 export type JsonTuple_NonEmptyText_2 = NonEmptyText[]
+export type JsonTuple_ArtifactReferenceView_3 = ArtifactReferenceView[]
 export type Satisfied = boolean
+export type JsonTuple_ProposalApprovalView_ = ProposalApprovalView[]
+export type Satisfied1 = boolean
 export type JsonTuple_AuthorityStatusView_ = AuthorityStatusView[]
 export type JsonTuple_NonEmptyText_3 = NonEmptyText[]
+export type JsonTuple_ArtifactReferenceView_4 = ArtifactReferenceView[]
 export type JsonTuple_NonEmptyText_4 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_5 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_6 = NonEmptyText[]
 export type Kind3 = "access_preview"
+export type JsonTuple_ProposalApprovalView_1 = ProposalApprovalView[]
 export type JsonTuple_AuthorityStatusView_1 = AuthorityStatusView[]
+export type Kind4 = "disclosure_denial"
+export type JsonTuple_ProposalApprovalView_2 = ProposalApprovalView[]
+export type JsonTuple_AuthorityStatusView_2 = AuthorityStatusView[]
 export type Revision3 = number
 export type ConsoleEnvelopeRequesterRequestView = ConsoleEnvelope_RequesterRequestView_
 export type JsonTuple_OwnDecisionView_ = OwnDecisionView[]
@@ -127,7 +141,7 @@ export type JsonTuple_ConstraintView_ = ConstraintView[]
 export type JsonTuple_RecordedDecisionView_ = RecordedDecisionView[]
 export type JsonTuple_PublicId_1 = PublicId[]
 export type ReviewKind = "meaning" | "data_product" | "activation"
-export type Satisfied1 = boolean
+export type Satisfied2 = boolean
 export type JsonTuple_AuthorityRequirementView_ = AuthorityRequirementView[]
 export type Revision5 = number
 /**
@@ -158,7 +172,7 @@ export type SetupStage =
 export type Service = "warehouse" | "openmetadata" | "superset"
 export type JsonTuple_ManagedServiceView_ = ManagedServiceView[]
 export type JsonTuple_PublicId_2 = PublicId[]
-export type Version1 = number
+export type Version2 = number
 export type Revision6 = number
 export type JsonTuple_NonEmptyText_7 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_8 = NonEmptyText[]
@@ -490,12 +504,19 @@ export interface EvidenceContextView {
   evidence_refs?: JsonTuple_PublicId_
   freshness: FreshnessState
   lineage_summary: NonEmptyText
+  metric_references?: JsonTuple_ArtifactReferenceView_
   metric_versions?: JsonTuple_NonEmptyText_1
   quality_summary: NonEmptyText
 }
 export interface DatasetEvidenceView {
+  artifact_reference?: ArtifactReferenceView | null
   dataset_ref: PublicId
   display_name: NonEmptyText
+}
+export interface ArtifactReferenceView {
+  artifact_id: ArtifactId
+  digest: Digest
+  version: Version1
 }
 export interface LifecycleEventView {
   event_id: PublicId
@@ -510,22 +531,33 @@ export interface StakeholderAnswerProposalView {
   datasets?: JsonTuple_DatasetEvidenceView_1
   freshness: FreshnessState
   kind: Kind2
+  lineage_references?: JsonTuple_ArtifactReferenceView_1
   lineage_summary: NonEmptyText
+  metric_references?: JsonTuple_ArtifactReferenceView_2
   metric_version: NonEmptyText
   purpose: NonEmptyText
   quality_limitations?: JsonTuple_NonEmptyText_2
+  quality_references?: JsonTuple_ArtifactReferenceView_3
+  required_approvals?: JsonTuple_ProposalApprovalView_
   required_authorities?: JsonTuple_AuthorityStatusView_
+}
+export interface ProposalApprovalView {
+  authority_ref: NonEmptyText
+  reason: NonEmptyText
+  satisfied: Satisfied
 }
 export interface AuthorityStatusView {
   reason: NonEmptyText
   role: ActorRole
-  satisfied: Satisfied
+  satisfied: Satisfied1
 }
 export interface AccessPreviewProposalView {
   access_mode: AccessMode
   authority_summary: NonEmptyText
   data_product_ref: PublicId
+  data_product_reference?: ArtifactReferenceView | null
   denied_checks?: JsonTuple_NonEmptyText_3
+  effective_object_references?: JsonTuple_ArtifactReferenceView_4
   effective_scope?: JsonTuple_NonEmptyText_4
   exclusions?: JsonTuple_NonEmptyText_5
   expires_at: UtcDatetime
@@ -533,7 +565,15 @@ export interface AccessPreviewProposalView {
   kind: Kind3
   purpose: NonEmptyText
   requested_fields: NonEmptyJsonTuple_NonEmptyText_
+  required_approvals?: JsonTuple_ProposalApprovalView_1
   required_authorities?: JsonTuple_AuthorityStatusView_1
+}
+export interface DisclosureDenialProposalView {
+  explanation: NonEmptyText
+  kind: Kind4
+  reason_code: NonEmptyText
+  required_approvals?: JsonTuple_ProposalApprovalView_2
+  required_authorities?: JsonTuple_AuthorityStatusView_2
 }
 export interface ConsoleEnvelope_RequesterRequestView_ {
   data: RequesterRequestView
@@ -604,7 +644,7 @@ export interface RecordedDecisionView {
 export interface AuthorityRequirementView {
   reason: NonEmptyText
   role: ActorRole
-  satisfied: Satisfied1
+  satisfied: Satisfied2
   subject_digest: Digest
 }
 export interface ReviewSectionView {
@@ -693,7 +733,7 @@ export interface ProcessPackageView {
   content_digest: Digest
   package_ref: PublicId
   state: CapabilityState
-  version: Version1
+  version: Version2
 }
 export interface SourceConnectionView {
   denied_checks?: JsonTuple_NonEmptyText_7

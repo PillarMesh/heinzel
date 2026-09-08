@@ -1376,6 +1376,17 @@ backfill historical roles, and this change does not widen the roles permitted to
 
 ### 13.6 Governed answers and access fulfillment
 
+The architect review surface may project the owning proposal's answer, access scope,
+or disclosure denial after the owning authorization check. Artifact references retain
+all three identity fields: artifact ID, version, and digest. Console row keys derived
+from these references are presentation-only and must not be used as catalog or dashboard
+lookup identities. Only a published catalog mapping may provide those destinations.
+Recorded approval status must match the reviewed proposal and current request revision,
+or the exact approval IDs and source revision recorded by its admission or denial
+receipt. This display does not replace the owning service's current authority check.
+Requester projections continue to withhold unapproved candidate content.
+
+
 A stakeholder data question is operational work, not an unrestricted natural-language query against raw tables. PillarMesh resolves the requester, purpose, authorized scope, applicable process and metric versions, catalog assets, freshness, and quality state before preparing an answer. An answer must identify the governed datasets and metric definitions used, their as-of time, material quality limitations, and lineage or evidence references. If the question cannot be answered from approved assets, PillarMesh creates a dependent data-product or semantic-change request instead of inventing a result.
 
 An access request binds requester, purpose, data product, fields, classification, access mode, duration, and approving authority. PillarMesh proposes the least-privilege grant, previews its effective scope, obtains required approval, applies it through a managed role, validates intended and denied access, records evidence, and expires or revokes it according to policy. Neither an inbox conversation nor an AI recommendation grants access by itself.

@@ -155,15 +155,14 @@ export function ClarifiedOutcome({
       {outcome.accepted ? (
         <>
           <p role="status">
-            Acceptance recorded at revision {recordedRevision ?? outcome.revision}. PillarMesh can
-            now build a proposal.
+            Acceptance recorded at revision {recordedRevision ?? outcome.revision}. Your approval of this scope is recorded.
           </p>
           <p>The answer stays withheld until a verified delivery receipt exists.</p>
         </>
       ) : (
         <>
           <p className="clarified-outcome__withheld">
-            No proposal exists while the clarified outcome is unaccepted.
+            Review and accept the clarified scope before this request can be admitted.
           </p>
           <label className="digest-confirmation">
             <input

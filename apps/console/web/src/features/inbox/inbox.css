@@ -299,3 +299,7 @@
     transition: none;
   }
 }
+
+.artifact-reference {
+  overflow-wrap: anywhere;
+}

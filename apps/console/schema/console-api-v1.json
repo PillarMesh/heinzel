@@ -20,8 +20,23 @@
         "data_product_ref": {
           "$ref": "#/$defs/PublicId"
         },
+        "data_product_reference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactReferenceView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "denied_checks": {
           "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "effective_object_references": {
+          "$ref": "#/$defs/JsonTuple_ArtifactReferenceView_",
           "default": []
         },
         "effective_scope": {
@@ -49,6 +64,10 @@
         },
         "requested_fields": {
           "$ref": "#/$defs/NonEmptyJsonTuple_NonEmptyText_"
+        },
+        "required_approvals": {
+          "$ref": "#/$defs/JsonTuple_ProposalApprovalView_",
+          "default": []
         },
         "required_authorities": {
           "$ref": "#/$defs/JsonTuple_AuthorityStatusView_",
@@ -285,6 +304,30 @@
         "correlation_id"
       ],
       "title": "ApiMeta",
+      "type": "object"
+    },
+    "ArtifactReferenceView": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_id": {
+          "title": "Artifact Id",
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "artifact_id",
+        "version",
+        "digest"
+      ],
+      "title": "ArtifactReferenceView",
       "type": "object"
     },
     "AuthorityRequirementView": {
@@ -1666,6 +1709,17 @@
     "DatasetEvidenceView": {
       "additionalProperties": false,
       "properties": {
+        "artifact_reference": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ArtifactReferenceView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "dataset_ref": {
           "$ref": "#/$defs/PublicId"
         },
@@ -1750,6 +1804,37 @@
       "pattern": "^[0-9a-f]{64}$",
       "type": "string"
     },
+    "DisclosureDenialProposalView": {
+      "additionalProperties": false,
+      "properties": {
+        "explanation": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "kind": {
+          "const": "disclosure_denial",
+          "title": "Kind",
+          "type": "string"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "required_approvals": {
+          "$ref": "#/$defs/JsonTuple_ProposalApprovalView_",
+          "default": []
+        },
+        "required_authorities": {
+          "$ref": "#/$defs/JsonTuple_AuthorityStatusView_",
+          "default": []
+        }
+      },
+      "required": [
+        "kind",
+        "explanation",
+        "reason_code"
+      ],
+      "title": "DisclosureDenialProposalView",
+      "type": "object"
+    },
     "DisplayReferenceView": {
       "additionalProperties": false,
       "properties": {
@@ -1797,6 +1882,10 @@
         },
         "lineage_summary": {
           "$ref": "#/$defs/NonEmptyText"
+        },
+        "metric_references": {
+          "$ref": "#/$defs/JsonTuple_ArtifactReferenceView_",
+          "default": []
         },
         "metric_versions": {
           "$ref": "#/$defs/JsonTuple_NonEmptyText_",
@@ -1938,6 +2027,12 @@
       },
       "type": "array"
     },
+    "JsonTuple_ArtifactReferenceView_": {
+      "items": {
+        "$ref": "#/$defs/ArtifactReferenceView"
+      },
+      "type": "array"
+    },
     "JsonTuple_AuthorityRequirementView_": {
       "items": {
         "$ref": "#/$defs/AuthorityRequirementView"
@@ -2007,6 +2102,12 @@
     "JsonTuple_OwnDecisionView_": {
       "items": {
         "$ref": "#/$defs/OwnDecisionView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ProposalApprovalView_": {
+      "items": {
+        "$ref": "#/$defs/ProposalApprovalView"
       },
       "type": "array"
     },
@@ -2522,6 +2623,28 @@
       "title": "ProcessPackageView",
       "type": "object"
     },
+    "ProposalApprovalView": {
+      "additionalProperties": false,
+      "properties": {
+        "authority_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "reason": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "satisfied": {
+          "title": "Satisfied",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "authority_ref",
+        "reason",
+        "satisfied"
+      ],
+      "title": "ProposalApprovalView",
+      "type": "object"
+    },
     "PublicId": {
       "pattern": "^[a-z][a-z0-9_-]{2,127}$",
       "type": "string"
@@ -2666,6 +2789,9 @@
         },
         {
           "$ref": "#/$defs/AccessPreviewProposalView"
+        },
+        {
+          "$ref": "#/$defs/DisclosureDenialProposalView"
         }
       ]
     },
@@ -3336,8 +3462,16 @@
           "title": "Kind",
           "type": "string"
         },
+        "lineage_references": {
+          "$ref": "#/$defs/JsonTuple_ArtifactReferenceView_",
+          "default": []
+        },
         "lineage_summary": {
           "$ref": "#/$defs/NonEmptyText"
+        },
+        "metric_references": {
+          "$ref": "#/$defs/JsonTuple_ArtifactReferenceView_",
+          "default": []
         },
         "metric_version": {
           "$ref": "#/$defs/NonEmptyText"
@@ -3347,6 +3481,14 @@
         },
         "quality_limitations": {
           "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "quality_references": {
+          "$ref": "#/$defs/JsonTuple_ArtifactReferenceView_",
+          "default": []
+        },
+        "required_approvals": {
+          "$ref": "#/$defs/JsonTuple_ProposalApprovalView_",
           "default": []
         },
         "required_authorities": {

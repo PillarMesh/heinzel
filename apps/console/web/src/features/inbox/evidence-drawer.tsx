@@ -1,3 +1,4 @@
+import {ArtifactReference, ArtifactReferences} from "./artifact-reference"
 import {useEffect, useRef, useState, type ReactNode} from "react"
 
 import type {EvidenceContextView, FreshnessState} from "../../api/generated"
@@ -66,14 +67,15 @@ function EvidenceContent({
         <ul aria-label="Evidence datasets">
           {datasets.map((dataset) => (
             <li key={dataset.dataset_ref}>
-              {dataset.display_name} <code>{dataset.dataset_ref}</code>
+              {dataset.artifact_reference ? <ArtifactReference reference={dataset.artifact_reference} /> : <>{dataset.display_name} <code>{dataset.dataset_ref}</code></>}
             </li>
           ))}
         </ul>
       )}
 
-      <h3>Metric versions</h3>
-      {metricVersions.length === 0 ? (
+      <ArtifactReferences label="Metric references" references={evidence.metric_references ?? []} />
+      {(metricVersions.length > 0 || (evidence.metric_references ?? []).length === 0) && <h3>Metric versions</h3>}
+      {(metricVersions.length === 0 && (evidence.metric_references ?? []).length === 0) ? (
         <p className="inbox-empty">No metric version was recorded.</p>
       ) : (
         <ul aria-label="Metric versions">

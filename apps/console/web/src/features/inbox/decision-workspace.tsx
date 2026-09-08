@@ -1,3 +1,4 @@
+import {ProposalApprovals} from "./artifact-reference"
 import {useCallback, useEffect, useRef, useState} from "react"
 import {useParams} from "react-router-dom"
 
@@ -259,8 +260,14 @@ function RequestDetailPanel({
         <p className="inbox-empty">No proposal has been issued for this request.</p>
       ) : detail.proposal.kind === "stakeholder_answer" ? (
         <StakeholderAnswerReview proposal={detail.proposal} />
-      ) : (
+      ) : detail.proposal.kind === "access_preview" ? (
         <AccessPreviewReview proposal={detail.proposal} />
+      ) : (
+        <section aria-label="Disclosure denial proposal" className="proposal-review">
+          <h3>Proposed disclosure denial</h3><p>{detail.proposal.explanation}</p>
+          <p>Reason: {detail.proposal.reason_code}</p>
+          <ProposalApprovals approvals={detail.proposal.required_approvals ?? []} />
+        </section>
       )}
 
       {/* The client is what makes a reply possible at all; without it the panel
@@ -524,7 +531,8 @@ export function DecisionWorkspace({
   const currentDetail = detailIsCurrent && !detail.failed ? detail.value : null
   const dashboardRef =
     currentDetail?.proposal?.kind === "access_preview" &&
-    currentDetail.proposal.access_mode === "dashboard"
+    currentDetail.proposal.access_mode === "dashboard" &&
+    !currentDetail.proposal.data_product_reference
       ? currentDetail.proposal.data_product_ref
       : null
   const requiredEvidenceUnavailable =
@@ -598,8 +606,8 @@ export function DecisionWorkspace({
 
       {currentDetail === null ? null : (
         <EvidenceDrawer evidence={currentDetail.evidence} layout={effectiveLayout}>
-          <h3>Catalog records</h3>
-          {(currentDetail.evidence.datasets ?? []).map((dataset) => (
+          {(currentDetail.evidence.datasets ?? []).some((dataset) => !dataset.artifact_reference) && <h3>Catalog records</h3>}
+          {(currentDetail.evidence.datasets ?? []).filter((dataset) => !dataset.artifact_reference).map((dataset) => (
             <CatalogEvidence
               assetRef={dataset.dataset_ref}
               client={client}

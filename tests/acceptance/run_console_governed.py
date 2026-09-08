@@ -496,10 +496,14 @@ class GovernedConsoleDeployment:
             )
         return host
 
-    def build_app(self, *, origin: str | None = None, dist: Path | None = None) -> Starlette:
+    def build_app(
+        self, *, origin: str | None = None, dist: Path | None = None, actor: str | None = None
+    ) -> Starlette:
+        if actor is not None and actor not in (ARCHITECT, REQUESTER):
+            raise ValueError("local actor must be the architect or requester")
         return create_app(
             backend=self.backend,
-            context_provider=self._actor_for,
+            context_provider=self._actor_for if actor is None else lambda request: _context(actor),
             allowed_origin=origin or f"http://127.0.0.1:{_DEFAULT_PORT}",
             dist_directory=dist,
         )
@@ -526,6 +530,7 @@ class GovernedConsoleDeployment:
             REQUESTER,
             "Please use the approved governed definition.",
             expected_revision=self.requests.get(TENANT, request.request_id).revision,
+            author_role="requester",
         )
         self.fulfillment.clarify_outcome(
             tenant_id=TENANT,
@@ -621,6 +626,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dist", default=Path("apps/console/dist"), type=Path)
     parser.add_argument("--no-seed", action="store_true")
     parser.add_argument(
+        "--actor",
+        choices=(ARCHITECT, REQUESTER),
+        help="Fixed local browser identity; ignores actor headers",
+    )
+    parser.add_argument(
         "--engine",
         default="local-acceptance",
         choices=("local-acceptance", "postgresql"),
@@ -645,7 +655,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"no compiled bundle at {arguments.dist}; serving the API only")
     print(f"governed_local console on {origin} -- warehouse provider is {arguments.engine}")
     try:
-        uvicorn.run(deployment.build_app(origin=origin, dist=dist), host=host, port=arguments.port)
+        uvicorn.run(
+            deployment.build_app(origin=origin, dist=dist, actor=arguments.actor),
+            host=host,
+            port=arguments.port,
+        )
     finally:
         deployment.close()
     return 0

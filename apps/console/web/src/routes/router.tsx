@@ -104,7 +104,9 @@ export function ConsoleRoutes({
       </main>
     )
   }
-  const landingRoute = selectLandingRoute(workspaceEnvelope.data, setupEnvelope?.data)
+  const landingRoute = sessionEnvelope.data.active_role === "requester" && workspaceEnvelope.data.state !== "unavailable"
+    ? "/requests"
+    : selectLandingRoute(workspaceEnvelope.data, setupEnvelope?.data)
   const capabilities = workspaceEnvelope.data.capabilities ?? []
 
   return (

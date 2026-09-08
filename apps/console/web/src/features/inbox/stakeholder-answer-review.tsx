@@ -1,3 +1,4 @@
+import {ArtifactReference, ArtifactReferences, ProposalApprovals} from "./artifact-reference"
 import type {
   ActorRole,
   AuthorityStatusView,
@@ -80,7 +81,7 @@ export function StakeholderAnswerReview({proposal}: StakeholderAnswerReviewProps
       </dl>
 
       <h4>Quality limitations</h4>
-      {limitations.length === 0 ? (
+      {(limitations.length === 0 && (proposal.quality_references ?? []).length === 0) ? (
         <p className="inbox-empty">No quality limitation was recorded.</p>
       ) : (
         <ul aria-label="Quality limitations">
@@ -97,14 +98,19 @@ export function StakeholderAnswerReview({proposal}: StakeholderAnswerReviewProps
         <ul aria-label="Governed datasets">
           {datasets.map((dataset) => (
             <li key={dataset.dataset_ref}>
-              {dataset.display_name} <code>{dataset.dataset_ref}</code>
+              {dataset.artifact_reference ? <ArtifactReference reference={dataset.artifact_reference} /> : <>{dataset.display_name} <code>{dataset.dataset_ref}</code></>}
             </li>
           ))}
         </ul>
       )}
 
-      <h4>Required roles</h4>
-      <AuthorityList authorities={proposal.required_authorities ?? []} />
+      <ArtifactReferences label="Metric references" references={proposal.metric_references ?? []} />
+      <ArtifactReferences label="Lineage references" references={proposal.lineage_references ?? []} />
+      <ArtifactReferences label="Quality references" references={proposal.quality_references ?? []} />
+      <ProposalApprovals approvals={proposal.required_approvals ?? []} />
+      {(proposal.required_authorities ?? []).length === 0 ? null : <>
+        <h4>Required roles</h4><AuthorityList authorities={proposal.required_authorities ?? []} />
+      </>}
     </section>
   )
 }

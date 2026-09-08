@@ -1,3 +1,4 @@
+import {ArtifactReference, ArtifactReferences, ProposalApprovals} from "./artifact-reference"
 import type {
   AccessMode,
   AccessPreviewProposalView,
@@ -67,7 +68,7 @@ export function AccessPreviewReview({proposal}: AccessPreviewReviewProps) {
         <div>
           <dt>Data product</dt>
           <dd>
-            <code>{proposal.data_product_ref}</code>
+            {proposal.data_product_reference ? <ArtifactReference reference={proposal.data_product_reference} /> : <code>{proposal.data_product_ref}</code>}
           </dd>
         </div>
         <div>
@@ -122,6 +123,8 @@ export function AccessPreviewReview({proposal}: AccessPreviewReviewProps) {
       />
 
       <h4>Required roles</h4>
+      <ArtifactReferences label="Effective objects" references={proposal.effective_object_references ?? []} />
+      <ProposalApprovals approvals={proposal.required_approvals ?? []} />
       <AuthorityList authorities={proposal.required_authorities ?? []} />
     </section>
   )

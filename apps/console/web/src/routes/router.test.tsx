@@ -612,3 +612,23 @@ test("App re-reads its projections after the warehouse command settles", async (
 
   await waitFor(() => expect(getWorkspace.mock.calls.length).toBeGreaterThan(readsBefore))
 })
+
+test("a requester can open the app during setup without reading architect-only setup", async () => {
+  window.history.replaceState({}, "", "/")
+  const getSetup = vi.fn(async () => { throw new Error("Architect-only setup was requested") })
+  const client: ConsoleBootstrapClient = {
+    ...setupClient,
+    ...featureClientStubs(),
+    getSession: vi.fn(async () => ({...sessionEnvelope, data: {...sessionEnvelope.data,
+      roles: ["requester"], active_role: "requester",
+    }} satisfies ConsoleEnvelopeSessionView)),
+    getWorkspace: vi.fn(async () => workspaceEnvelope("setup")),
+    getSetup,
+  }
+
+  render(<App client={client} />)
+
+  expect(await screen.findByRole("heading", {name: "My requests"})).toBeVisible()
+  expect(getSetup).not.toHaveBeenCalled()
+  expect(window.location.pathname).toBe("/requests")
+})

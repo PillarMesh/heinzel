@@ -494,9 +494,22 @@ class RequesterRequestView(StrictModel):
     denial_explanation: NonEmptyText | None = None
 
 
+class ArtifactReferenceView(StrictModel):
+    artifact_id: str
+    version: int = Field(ge=1)
+    digest: Digest
+
+
+class ProposalApprovalView(StrictModel):
+    authority_ref: NonEmptyText
+    reason: NonEmptyText
+    satisfied: bool
+
+
 class DatasetEvidenceView(StrictModel):
     dataset_ref: PublicId
     display_name: NonEmptyText
+    artifact_reference: ArtifactReferenceView | None = None
 
 
 class AuthorityStatusView(StrictModel):
@@ -510,6 +523,9 @@ class StakeholderAnswerProposalView(StrictModel):
     purpose: NonEmptyText
     candidate: NonEmptyText
     metric_version: NonEmptyText
+    metric_references: JsonTuple[ArtifactReferenceView] = Field(default=())
+    lineage_references: JsonTuple[ArtifactReferenceView] = Field(default=())
+    quality_references: JsonTuple[ArtifactReferenceView] = Field(default=())
     as_of: UtcDatetime
     freshness: FreshnessState
     quality_limitations: JsonTuple[NonEmptyText] = Field(default=())
@@ -517,12 +533,23 @@ class StakeholderAnswerProposalView(StrictModel):
     lineage_summary: NonEmptyText
     authorization_summary: NonEmptyText
     required_authorities: JsonTuple[AuthorityStatusView] = Field(default=())
+    required_approvals: JsonTuple[ProposalApprovalView] = Field(default=())
+
+
+class DisclosureDenialProposalView(StrictModel):
+    kind: Literal["disclosure_denial"]
+    explanation: NonEmptyText
+    reason_code: NonEmptyText
+    required_authorities: JsonTuple[AuthorityStatusView] = Field(default=())
+    required_approvals: JsonTuple[ProposalApprovalView] = Field(default=())
 
 
 class AccessPreviewProposalView(StrictModel):
     kind: Literal["access_preview"]
     purpose: NonEmptyText
     data_product_ref: PublicId
+    data_product_reference: ArtifactReferenceView | None = None
+    effective_object_references: JsonTuple[ArtifactReferenceView] = Field(default=())
     access_mode: AccessMode
     requested_fields: NonEmptyJsonTuple[NonEmptyText]
     effective_scope: JsonTuple[NonEmptyText] = Field(default=())
@@ -532,10 +559,12 @@ class AccessPreviewProposalView(StrictModel):
     denied_checks: JsonTuple[NonEmptyText] = Field(default=())
     authority_summary: NonEmptyText
     required_authorities: JsonTuple[AuthorityStatusView] = Field(default=())
+    required_approvals: JsonTuple[ProposalApprovalView] = Field(default=())
 
 
 type RequestProposalView = Annotated[
-    StakeholderAnswerProposalView | AccessPreviewProposalView, Field(discriminator="kind")
+    StakeholderAnswerProposalView | AccessPreviewProposalView | DisclosureDenialProposalView,
+    Field(discriminator="kind"),
 ]
 
 
@@ -549,6 +578,7 @@ class LifecycleEventView(StrictModel):
 class EvidenceContextView(StrictModel):
     datasets: JsonTuple[DatasetEvidenceView] = Field(default=())
     metric_versions: JsonTuple[NonEmptyText] = Field(default=())
+    metric_references: JsonTuple[ArtifactReferenceView] = Field(default=())
     as_of: UtcDatetime | None = None
     freshness: FreshnessState
     quality_summary: NonEmptyText

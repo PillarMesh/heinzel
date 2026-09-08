@@ -208,14 +208,19 @@ way that never invents authority, and each needs a contract change to close.
    durable serialization; reads do not rewrite historical bytes. Recorded roles do not
    grant permissions or approval authority. `author_label` remains the owning actor
    identifier because there is no display-name directory.
-6. **`RequestDetailView.proposal` is never populated.** The console vocabulary for a
-   proposal (`metric_version`, `datasets`, and similar) has no mapping from the
-   owning `ArtifactReference` values, and guessing one would put unverified strings in
-   front of a decision. The console publishes `proposal_digest` — the exact subject the
-   architect's authority must sign — plus counts in `evidence`, and leaves `proposal`
-   absent.
-7. **`EvidenceContextView.datasets` is always empty** for the same reason: an
-   `ArtifactReference` is not a `PublicId` display reference.
+6. **Closed: governed proposals are reviewable.** The architect projection publishes the
+   owning answer text, access scope, or disclosure denial. Versioned artifact references
+   retain the exact artifact ID, version, and digest. Approval status matches the exact
+   request revision, proposal identity/version/digest, authority, subject digest, and
+   approval decision. After admission or denial, its owning receipt supplies the source
+   revision and exact approval IDs. Unrelated historical approvals are not counted. This is recorded
+   approval status, not a replacement for the service's current authority checks.
+7. **Closed: governed evidence includes cited datasets and metrics.** Dataset display keys
+   use `artifact-` plus the canonical digest of the complete reference. They identify UI
+   rows only. The accompanying `artifact_reference` is the source identity; it is never
+   sent to catalog or dashboard lookup endpoints. Catalog display names and URLs remain
+   unavailable until an owning catalog mapping exists. Existing fixture catalog references
+   retain their established display and lookup behavior.
 8. **`ClarifiedOutcomeView.revision` is the request's live revision**, not the revision
    the statement was drafted at. The acceptance command is compared against the live
    request revision by the fulfillment service, so publishing the drafting revision

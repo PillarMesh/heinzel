@@ -116,13 +116,13 @@ export function AppShell({
           <span>{session.active_role.replaceAll("_", " ")}</span>
         </div>
         <nav aria-label="Product" className="product-navigation">
-          {productNavigation.map((item) => (
+          {(session.active_role === "requester" ? [{label: "My requests", to: "/requests"}] : productNavigation).map((item) => (
             <NavLink className="product-navigation__link" key={item.to} to={item.to}>
               {item.label}
             </NavLink>
           ))}
         </nav>
-        <aside aria-label="Governance spine" className="governance-spine">
+        {session.active_role === "requester" ? null : <aside aria-label="Governance spine" className="governance-spine">
           <p className="governance-spine__title">Governance spine</p>
           <ol>
             {(workspace.capabilities ?? []).map((capability) => (
@@ -135,7 +135,7 @@ export function AppShell({
               </li>
             ))}
           </ol>
-        </aside>
+        </aside>}
       </header>
       <div className="app-shell__surface">
         <ModeBanner dataProvenance={dataProvenance} />

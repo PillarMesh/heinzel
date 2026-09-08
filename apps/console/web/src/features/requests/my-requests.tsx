@@ -156,6 +156,7 @@ export function MyRequests({
           <OwnDecisions request={selected} />
         </section>
         <ClarifiedOutcome
+          key={`${selected.request_id}:${selected.revision}`}
           client={client}
           dataProvenance={dataProvenance}
           idempotencyKeyFactory={idempotencyKeyFactory}
@@ -164,9 +165,9 @@ export function MyRequests({
           session={session}
         />
         <RequestConversation
+          onReplied={reload}
           client={client}
           dataProvenance={dataProvenance}
-          digestText={digestText}
           idempotencyKeyFactory={idempotencyKeyFactory}
           requestId={selected.request_id}
           session={session}
