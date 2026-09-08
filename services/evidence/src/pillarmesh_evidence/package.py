@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 from collections.abc import Mapping
@@ -463,6 +464,36 @@ def _read_package_files(path: Path) -> dict[str, bytes]:
     return result
 
 
+# A payload path inside a package under verification is caller-controlled: `_safe_relative_path`
+# only rejects traversal, so a crafted package can carry a filename that itself contains a canary.
+# Diagnostics may therefore name a path only when it matches the inventory the exporter builds.
+_DIAGNOSTIC_PATH = re.compile(
+    r"^(?:package\.json"
+    r"|trace/events\.json"
+    r"|verification/result\.json"
+    r"|operations/(?:resources|limitations)\.json"
+    r"|artifacts/[a-z_]{1,64}/[0-9a-f]{64}\.json)$"
+)
+
+
+def _scan_payloads(payloads: Mapping[str, bytes], scan_input: ScanInput) -> None:
+    # Reporting the rule, offset and payload turns a fail-closed scan into a diagnosable one; the
+    # matched bytes stay out of the message because they are the sensitive value being hunted.
+    for relative_path in sorted(payloads):
+        findings = scan_bytes(relative_path, payloads[relative_path], scan_input)
+        if not findings:
+            continue
+        finding = findings[0]
+        safe_name = _DIAGNOSTIC_PATH.fullmatch(relative_path) and not scan_bytes(
+            relative_path, relative_path.encode("utf-8"), scan_input
+        )
+        named = relative_path if safe_name else "an unnamed payload"
+        raise PackageError(
+            "sensitive material scan failed: "
+            f"rule {finding.rule_id} at byte {finding.byte_offset} of {named}"
+        )
+
+
 def _verify_core(
     path: Path,
     verifier: GraphVerifier,
@@ -493,14 +524,14 @@ def _verify_core(
         payload = files.get(relative_path)
         if payload is None or _sha256(payload) != expected_digest:
             raise PackageError("package payload hash validation failed")
-    scanned_paths = tuple(sorted(files))
-    if not require_result:
-        scanned_paths = tuple(item for item in scanned_paths if item != "verification/result.json")
-    if any(
-        scan_bytes(relative_path, files[relative_path], scan_input)
-        for relative_path in scanned_paths
-    ):
-        raise PackageError("sensitive material scan failed")
+    _scan_payloads(
+        {
+            relative_path: payload
+            for relative_path, payload in files.items()
+            if require_result or relative_path != "verification/result.json"
+        },
+        scan_input,
+    )
     resources_payload = files.get("operations/resources.json")
     limitations_payload = files.get("operations/limitations.json")
     if resources_payload is None or limitations_payload is None:
@@ -601,11 +632,7 @@ def export_package(
         payloads["trace/events.json"] = canonical_bytes(trace)
         payloads["operations/resources.json"] = canonical_bytes(metadata.resources)
         payloads["operations/limitations.json"] = canonical_bytes(metadata.limitations)
-        if any(
-            scan_bytes(relative_path, payload, scan_input)
-            for relative_path, payload in payloads.items()
-        ):
-            raise PackageError("sensitive material scan failed")
+        _scan_payloads(payloads, scan_input)
         edges = _validate_artifact_graph(entries, payloads, checked_verifier)
         for relative_path, payload in payloads.items():
             _write_payload(temporary, relative_path, payload)
@@ -636,11 +663,7 @@ def export_package(
         result_payload = canonical_bytes(result)
         _write_payload(temporary, "verification/result.json", result_payload)
         _verify_core(temporary, checked_verifier, scan_input, require_result=True)
-        if any(
-            scan_bytes(relative_path, payload, scan_input)
-            for relative_path, payload in _read_package_files(temporary).items()
-        ):
-            raise PackageError("sensitive material scan failed")
+        _scan_payloads(_read_package_files(temporary), scan_input)
         if destination.exists():
             raise PackageError("package destination already exists")
         package_result = PackageResult(

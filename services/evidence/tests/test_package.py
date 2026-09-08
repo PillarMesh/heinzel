@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from pillarmesh_contract_model import FIXED_PROJECTION, IntegrationContract, canonical_bytes, digest
 from pillarmesh_contract_service import ActivationSummary, ContractService
 from pillarmesh_evidence import (
@@ -31,6 +32,13 @@ from pillarmesh_provider_sdk import (
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 RUN_ID = "run-package-001"
+# A generated signing key re-rolls the signature and every digest derived from it, so the exported
+# bytes differ on every run. The export scans those bytes for sensitive material, and a scanned
+# needle that is also a hexadecimal string -- an acceptance key, say -- then matches inside a
+# digest on a random run. Seeding the key keeps the package byte-identical, so any such collision
+# is a permanent, reproducible failure rather than a rare one.
+SIGNING_SEED = bytes(range(32))
+UNTRUSTED_SIGNING_SEED = bytes(range(32, 64))
 
 
 class Observable:
@@ -181,7 +189,7 @@ def _save_artifact(store: SQLiteStore, kind: str, value: object) -> str:
 
 def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInput]:
     source, destination = _observations()
-    signer = GraphSigner.generate("package-key")
+    signer = GraphSigner("package-key", Ed25519PrivateKey.from_private_bytes(SIGNING_SEED))
     store = SQLiteStore.open(tmp_path / "state.sqlite3")
     service = ContractService(
         store=store,
@@ -467,6 +475,72 @@ def test_export_is_byte_deterministic_and_independently_verifiable(tmp_path: Pat
         "verified_by",
     }
     assert verify_package(first.path, verifier, scan_input) == first
+
+
+def test_export_carries_no_run_specific_entropy_into_scanned_payloads(tmp_path: Path) -> None:
+    first_root = tmp_path / "first-run"
+    second_root = tmp_path / "second-run"
+    first_root.mkdir()
+    second_root.mkdir()
+    first_store, first_verifier, first_scan_input = complete_store(first_root)
+    second_store, second_verifier, second_scan_input = complete_store(second_root)
+
+    first = export_package(
+        first_store, RUN_ID, first_root / "package", _metadata(), first_scan_input, first_verifier
+    )
+    second = export_package(
+        second_store,
+        RUN_ID,
+        second_root / "package",
+        _metadata(),
+        second_scan_input,
+        second_verifier,
+    )
+
+    assert _package_files(first.path) == _package_files(second.path)
+
+
+def test_scan_failure_names_the_rule_offset_and_payload_that_fired(tmp_path: Path) -> None:
+    store, verifier, _scan_input = complete_store(tmp_path)
+    canary = "local operator can replace"
+    offset = canonical_bytes(_metadata().limitations).index(canary.encode("utf-8"))
+
+    with pytest.raises(PackageError) as failure:
+        export_package(
+            store,
+            RUN_ID,
+            tmp_path / "package",
+            _metadata(),
+            ScanInput(credential_canaries=(canary,)),
+            verifier,
+        )
+
+    assert str(failure.value) == (
+        "sensitive material scan failed: rule credential_canary_exact "
+        f"at byte {offset} of operations/limitations.json"
+    )
+
+
+@pytest.mark.parametrize("artifact_shaped", (False, True))
+def test_scan_failure_never_echoes_a_canary_carried_by_a_package_payload_name(
+    tmp_path: Path,
+    artifact_shaped: bool,
+) -> None:
+    store, verifier, scan_input = complete_store(tmp_path)
+    package = export_package(store, RUN_ID, tmp_path / "package", _metadata(), scan_input, verifier)
+    canary = "secret_canary" if artifact_shaped else scan_input.credential_canaries[0]
+    scan_input = ScanInput(credential_canaries=(canary,))
+    relative_path = f"artifacts/{canary}/{'a' * 64}.json" if artifact_shaped else f"{canary}.json"
+    payload_path = package.path / relative_path
+    payload_path.parent.mkdir(parents=True, exist_ok=True)
+    payload_path.write_bytes(f'["{canary}"]'.encode())
+    _rehash_package(package.path)
+
+    with pytest.raises(PackageError) as failure:
+        verify_package(package.path, verifier, scan_input)
+
+    assert "credential_canary_exact" in str(failure.value)
+    assert canary not in str(failure.value)
 
 
 def _remove_artifact(path: Path) -> None:
@@ -850,7 +924,9 @@ def test_verifier_rejects_qualified_commit_ledger_identity(tmp_path: Path) -> No
 def test_export_rejects_wrong_signing_key_without_leaving_output(tmp_path: Path) -> None:
     store, _verifier, scan_input = complete_store(tmp_path)
     destination = tmp_path / "package"
-    wrong_signer = GraphSigner.generate("package-key")
+    wrong_signer = GraphSigner(
+        "package-key", Ed25519PrivateKey.from_private_bytes(UNTRUSTED_SIGNING_SEED)
+    )
     wrong_verifier = GraphVerifier({"package-key": wrong_signer.public_key})
 
     with pytest.raises(PackageError):

@@ -31,7 +31,9 @@ evidence.
 The exporter scans artifacts, trace, operations metadata, package index, and final verification
 result for all credential canaries, the synthetic row-value canary, raw acceptance key and common
 encodings, connection-string schemes, private-key markers, and local path prefixes. A finding
-fails export and leaves no completed package. Independent verification requires the same canaries
+fails export and leaves no completed package. Failure diagnostics identify the scan rule and byte
+offset without including matched bytes. A payload path is named only when its shape is recognized
+and the path itself passes the sensitive-value scan. Independent verification requires the same canaries
 from the secret-injection session and resolves every artifact parent and event-chain link.
 
 Retention is exact:
