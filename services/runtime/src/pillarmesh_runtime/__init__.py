@@ -7,6 +7,7 @@ from .acquisition import (
     ActivatedAcquisitionContract,
     BindingResolver,
     ProviderResolver,
+    ReferenceFactory,
 )
 from .acquisition_errors import (
     AcquisitionAuthorizationError,
@@ -29,6 +30,7 @@ from .contract_composition import (
 )
 from .faults import FaultHook, noop_fault_hook
 from .models import RunResult
+from .references import opaque_reference_factory
 from .retry import retry_bounded
 from .runtime import Runtime, RuntimeDestination, RuntimeSource, SegmentEncoder
 
@@ -55,6 +57,7 @@ __all__ = [
     "ContractActivationLifecycle",
     "FaultHook",
     "ProviderResolver",
+    "ReferenceFactory",
     "RunResult",
     "Runtime",
     "RuntimeDestination",
@@ -63,6 +66,7 @@ __all__ = [
     "SourceBindingReader",
     "compose_activated_acquisition_contract",
     "noop_fault_hook",
+    "opaque_reference_factory",
     "retry_bounded",
     "source_binding_resolver",
 ]

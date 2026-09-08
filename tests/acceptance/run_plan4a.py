@@ -18,7 +18,7 @@ from pillarmesh_connection_broker import (
     SourceConnectionBindingState,
 )
 from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_evidence import AcquisitionEvidenceReceipt
+from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
 from pillarmesh_provider_postgresql import (
     PostgreSQLAcquisitionProvider,
     PostgreSQLAcquisitionSettings,
@@ -40,12 +40,16 @@ from pillarmesh_provider_sdk import (
 )
 from pillarmesh_runtime import (
     AcquisitionCeilingExceeded,
+    AcquisitionDeclaredActivation,
     AcquisitionDriftError,
     AcquisitionOwnershipError,
     AcquisitionPreparationResult,
     AcquisitionRunner,
     AcquisitionStaleRevision,
     ActivatedAcquisitionContract,
+    ReferenceFactory,
+    compose_activated_acquisition_contract,
+    opaque_reference_factory,
 )
 from pillarmesh_state import (
     AcquisitionStateNotFoundError,
@@ -426,30 +430,13 @@ class _CursorCipher:
         return ciphertext.removeprefix(prefix)[::-1]
 
 
-class _ReferenceFactory:
-    def __init__(self) -> None:
-        self._next_value = 0
-
-    def __call__(self, kind: str) -> str:
-        self._next_value += 1
-        return f"{kind}:opaque:{self._next_value:04d}"
-
-
-class _EvidenceWriter:
-    def __init__(self) -> None:
-        self.receipts: list[AcquisitionEvidenceReceipt] = []
-
-    def append(self, receipt: AcquisitionEvidenceReceipt) -> None:
-        self.receipts.append(receipt)
-
-
 class _StrictAcknowledgementConsumer:
     def __init__(
         self,
         artifact_store: LocalAcquisitionArtifactStore,
         *,
         clock: _MutableClock,
-        reference_factory: _ReferenceFactory,
+        reference_factory: ReferenceFactory,
     ) -> None:
         self._artifact_store = artifact_store
         self._clock = clock
@@ -560,6 +547,20 @@ class _MutableClock:
 
 
 @dataclass(frozen=True, slots=True)
+class _ContractActivation:
+    """What contract-service asserts about this contract, in its own shape.
+
+    The composition takes the lifecycle structurally, so the harness states the three
+    fields rather than standing up a contract-service instance for a value it already
+    knows.
+    """
+
+    tenant_id: str
+    contract_digest: str
+    lifecycle_state: str = "activated"
+
+
+@dataclass(frozen=True, slots=True)
 class _TenantAuthority:
     database: _FakePostgreSQLDatabase
     provider: PostgreSQLAcquisitionProvider
@@ -580,7 +581,10 @@ class OfflinePlan4AHarness:
         self.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self.work_dir, 0o700)
         self.clock = _MutableClock(_START)
-        self.references = _ReferenceFactory()
+        # The product's own allocator and evidence store, rather than a counter and a
+        # list: this journey is the only place the acquisition runtime is driven end
+        # to end offline, so a double here leaves the durable path unexercised.
+        self.references = opaque_reference_factory()
         self.artifact_root = self.work_dir / "artifacts"
         self.artifact_store = LocalAcquisitionArtifactStore(self.artifact_root)
         self.state_path = self.work_dir / "acquisition-state.sqlite"
@@ -589,7 +593,9 @@ class OfflinePlan4AHarness:
             cipher=_CursorCipher(),
             reference_factory=self.references,
         )
-        self.evidence = _EvidenceWriter()
+        self.evidence_path = self.work_dir / "acquisition-evidence.sqlite"
+        self.evidence_store = SQLiteStore.open(self.evidence_path)
+        self.evidence = SQLiteAcquisitionEvidenceWriter(self.evidence_store)
         self.consumer = _StrictAcknowledgementConsumer(
             self.artifact_store,
             clock=self.clock,
@@ -648,22 +654,20 @@ class OfflinePlan4AHarness:
             created_at=self.clock(),
             updated_at=self.clock(),
         )
-        contract = ActivatedAcquisitionContract(
-            tenant_id=tenant_id,
-            contract_ref=_CONTRACT_REF,
-            contract_digest=_CONTRACT_DIGEST,
-            source_binding_ref=_BINDING_REF,
-            source_binding_revision=1,
-            credential_revision=1,
-            acknowledgement_consumer_ref=_CONSUMER_REF,
-            capability_profile_digest=_CAPABILITY_DIGEST,
-            source_observation_ref=_OBSERVATION_REF,
-            source_observation_digest=digest(observation),
-            lifecycle_state="activated",
-            acquisition_modes=("incremental", "reconciliation", "snapshot"),
-            object_schemas=schemas,
-            record_ceiling=100,
-            encoded_byte_ceiling=1_000_000,
+        # Composed from what the owning services assert rather than hand-built, so the
+        # journey exercises the composition the product uses. The declared half is the
+        # five fields no service publishes.
+        contract = compose_activated_acquisition_contract(
+            lifecycle=_ContractActivation(tenant_id=tenant_id, contract_digest=_CONTRACT_DIGEST),
+            binding=binding,
+            observation=observation,
+            declared=AcquisitionDeclaredActivation(
+                contract_ref=_CONTRACT_REF,
+                acknowledgement_consumer_ref=_CONSUMER_REF,
+                object_schemas=schemas,
+                record_ceiling=100,
+                encoded_byte_ceiling=1_000_000,
+            ),
         )
         authority = _TenantAuthority(database, provider, observation, binding, contract)
         self.authorities[tenant_id] = authority
@@ -966,7 +970,15 @@ def execute_plan4a_journey(work_dir: Path) -> Plan4AJourney:
         "tenant-a", _CONTRACT_DIGEST, _BINDING_REF
     )
     cursor_private_at_rest = plaintext_cursor not in state_payload
-    public_evidence_payload = canonical_bytes(tuple(harness.evidence.receipts))
+    # Read back from the store rather than from what was written, so the payload
+    # proves what a reader would actually get.
+    public_evidence_payload = canonical_bytes(
+        tuple(
+            receipt
+            for tenant_id in sorted(harness.authorities)
+            for receipt in harness.evidence_store.list_acquisition_receipts(tenant_id)
+        )
+    )
     evidence_is_private = all(canary not in public_evidence_payload for canary in private_canaries)
 
     report = Plan4AAcceptanceReport(
