@@ -994,6 +994,7 @@ class GovernedConsoleBackend:
                 context.actor_id,
                 command.body,
                 expected_revision=command.expected_revision,
+                author_role=context.active_role,
             )
         )
         return self._conversation_view(
@@ -1166,11 +1167,7 @@ class GovernedConsoleBackend:
             ConversationMessageView(
                 message_id=entry.entry_id,
                 author_label=entry.actor_id,
-                # Request-management records an actor, not a role. This distinguishes
-                # the requester from everyone else and carries no service authority.
-                author_role=(
-                    "requester" if entry.actor_id == request.requester_id else "data_architect"
-                ),
+                author_role=entry.author_role,
                 body=entry.body,
                 created_at=entry.created_at,
             )

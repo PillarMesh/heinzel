@@ -1047,3 +1047,34 @@ def test_a_tampered_intake_is_refused_before_any_durable_request_is_created(
         assert reopened.peek_next_sequence(_TENANT) == 1
     finally:
         reopened.close()
+
+
+def test_conversation_roles_follow_trusted_http_authors_and_survive_database_reopen(
+    journey: _Journey,
+) -> None:
+    journey.as_actor(_REQUESTER)
+    request_id = _submitted_question(journey, key="role-request-intake")
+    for actor, role in ((_REQUESTER, "requester"), (_ARCHITECT, "data_architect")):
+        journey.as_actor(actor)
+        conversation = journey.get(f"/api/v1/requests/{request_id}/conversation").json()["data"]
+        response = journey.post(
+            f"/api/v1/requests/{request_id}/conversation",
+            {
+                "expected_revision": conversation["revision"],
+                "conversation_digest": conversation["conversation_digest"],
+                "active_role": role,
+                "body": "A contribution with recorded provenance.",
+            },
+            key=f"role-reply-{role}",
+        )
+        assert response.status_code == 200
+        assert response.json()["data"]["messages"][-1]["author_role"] == role
+
+    reopened = SQLiteRequestRepository.open(journey.request_path)
+    try:
+        entries = reopened.list_conversation(_TENANT, request_id)
+        assert tuple(entry.author_role for entry in entries) == ("requester", "data_architect")
+        assert tuple(entry.actor_id for entry in entries) == (_REQUESTER, _ARCHITECT)
+        assert tuple(entry.request_revision for entry in entries) == (2, 3)
+    finally:
+        reopened.close()

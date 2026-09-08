@@ -18,13 +18,13 @@ interface RequestConversationProps {
   readonly session: SessionView
 }
 
-type MessageOrigin = "pillarmesh" | "requester" | "architect"
+type MessageOrigin = "pillarmesh" | "requester" | "architect" | "data_owner" | "policy_approver" | "budget_approver" | "unknown"
 
 function messageOrigin(message: ConversationMessageView): MessageOrigin {
-  if (message.author_role === "pillarmesh") {
-    return "pillarmesh"
+  if (message.author_role === null) {
+    return "unknown"
   }
-  return message.author_role === "requester" ? "requester" : "architect"
+  return message.author_role === "data_architect" ? "architect" : message.author_role
 }
 
 // The label carries the distinction on its own, so colour is never the only signal.
@@ -32,6 +32,10 @@ const originLabels: Record<MessageOrigin, string> = {
   pillarmesh: "PillarMesh question",
   requester: "Your reply",
   architect: "Architect intervention",
+  data_owner: "Data owner note",
+  policy_approver: "Policy approver note",
+  budget_approver: "Budget approver note",
+  unknown: "Role not recorded",
 }
 
 // The conversation contract carries no digest field, so the browser binds the exact projection it

@@ -452,3 +452,23 @@ test("treats a request that is not the requester's own as one that does not exis
   expect(client.getClarifiedOutcome).not.toHaveBeenCalled()
   expect(screen.queryByText(/request-someone-else/)).not.toBeInTheDocument()
 })
+
+test.each([
+  ["data_owner", "Data owner note"],
+  ["policy_approver", "Policy approver note"],
+  ["budget_approver", "Budget approver note"],
+  [null, "Role not recorded"],
+] as const)("displays the recorded %s role without calling it an architect", async (author_role, label) => {
+  client.getConversation.mockResolvedValue({
+    ...conversationEnvelope,
+    data: {...conversation, messages: [{
+      message_id: "message-role", author_label: "Recorded actor", author_role,
+      body: "Recorded contribution", created_at: "2026-09-01T09:00:00Z",
+    }]},
+  } satisfies ConsoleEnvelopeConversationView)
+  renderSurface("request-blocked-acceptance")
+
+  const thread = await screen.findByRole("list", {name: "Clarification conversation"})
+  expect(thread).toHaveTextContent(label)
+  expect(thread).not.toHaveTextContent("Architect intervention")
+})

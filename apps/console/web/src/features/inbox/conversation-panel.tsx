@@ -16,7 +16,7 @@ const authorLabels = {
   data_owner: "Data owner note",
   policy_approver: "Policy approver note",
   budget_approver: "Budget approver note",
-} satisfies Record<AuthorRole, string>
+} satisfies Record<NonNullable<AuthorRole>, string>
 
 export interface ConversationPanelClient {
   appendConversationMessage(
@@ -111,10 +111,10 @@ export function ConversationPanel({
       <ol aria-label="Conversation messages" className="conversation-panel__messages">
         {messages.map((message) => (
           <li
-            className={`conversation-message conversation-message--${message.author_role}`}
+            className={`conversation-message conversation-message--${message.author_role ?? "unknown"}`}
             key={message.message_id}
           >
-            <span className="conversation-message__kind">{authorLabels[message.author_role]}</span>
+            <span className="conversation-message__kind">{message.author_role === null ? "Role not recorded" : authorLabels[message.author_role]}</span>
             <span className="conversation-message__author">{message.author_label}</span>
             <p>{message.body}</p>
             <time dateTime={message.created_at}>{message.created_at}</time>

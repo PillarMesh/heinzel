@@ -435,3 +435,14 @@ test("a refused reply reports the server's own reason and keeps the message", as
   ).toBeVisible()
   expect(compose).toHaveValue("Following up.")
 })
+
+test("legacy conversation entries explicitly say their role was not recorded", () => {
+  render(<ConversationPanel conversation={{...conversation, messages: [{
+    message_id: "message-legacy", author_role: null, author_label: "Legacy actor",
+    body: "Historical contribution", created_at: "2026-01-01T00:10:00Z",
+  }]}} session={session} />)
+
+  const panel = screen.getByRole("region", {name: "Clarification conversation"})
+  expect(panel).toHaveTextContent("Role not recorded")
+  expect(panel).not.toHaveTextContent("Architect intervention")
+})

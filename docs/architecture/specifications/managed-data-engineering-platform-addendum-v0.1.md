@@ -1361,6 +1361,19 @@ It may not activate new semantic meaning, widen access, accept policy conflicts,
 
 PillarMesh asks business-meaning questions directly to the requester while allowing the data engineer to observe, intervene, or take over. Technical, policy, ownership, and access questions route to the named responsible role. The engineer must not become a manual message relay.
 
+Request-management records a conversation entry's author role as historical provenance
+in the same transaction as its actor, body, and advanced request revision. Authenticated
+adapters supply their trusted active role; a browser claim cannot override it. The
+closed vocabulary is requester, data architect, data owner, policy approver, budget
+approver, and PillarMesh for system-authored entries. Recording a role neither grants
+permission nor replaces the required approval or authorization checks.
+
+Older entries and internal callers without role provenance remain readable with an
+unrecorded role. Console responses expose this as null and display “Role not recorded,”
+without inferring from actor identity or today's role membership. An absent role is
+omitted from durable serialization to preserve existing bytes and digests. Reads never
+backfill historical roles, and this change does not widen the roles permitted to post.
+
 ### 13.6 Governed answers and access fulfillment
 
 A stakeholder data question is operational work, not an unrestricted natural-language query against raw tables. PillarMesh resolves the requester, purpose, authorized scope, applicable process and metric versions, catalog assets, freshness, and quality state before preparing an answer. An answer must identify the governed datasets and metric definitions used, their as-of time, material quality limitations, and lineage or evidence references. If the question cannot be answered from approved assets, PillarMesh creates a dependent data-product or semantic-change request instead of inventing a result.

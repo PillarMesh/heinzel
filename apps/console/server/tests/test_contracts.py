@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 from datetime import UTC, date, datetime
-from typing import get_origin
+from typing import get_args, get_origin
 
 import pytest
 from pillarmesh_console import contracts
@@ -29,6 +29,7 @@ from pillarmesh_console.contracts import (
     StrictModel,
     WarehouseBindingCommand,
 )
+from pillarmesh_request_management import ConversationAuthorRole
 from pydantic import TypeAdapter, ValidationError
 
 
@@ -684,5 +685,36 @@ def test_request_proposal_branch_models_require_kind_on_the_wire() -> None:
                 "freshness": "current",
                 "lineage_summary": "Orders to revenue",
                 "authorization_summary": "Authorized for aggregate revenue",
+            }
+        )
+
+
+def test_conversation_role_vocabulary_matches_the_owning_entry_contract() -> None:
+    owning_roles = set(get_args(ConversationAuthorRole.__value__))
+    projected_roles = set(get_args(contracts.ActorRole.__value__)) | {"pillarmesh"}
+    assert owning_roles == projected_roles
+    assert (
+        contracts.ConversationMessageView.model_validate(
+            {
+                "message_id": "message-legacy",
+                "author_label": "Recorded actor",
+                "author_role": None,
+                "body": "Legacy entry",
+                "created_at": "2026-09-08T00:00:00Z",
+            }
+        ).author_role
+        is None
+    )
+
+
+def test_conversation_commands_cannot_supply_a_separate_author_role() -> None:
+    with pytest.raises(ValidationError):
+        ConversationMessageCommand.model_validate(
+            {
+                "expected_revision": 1,
+                "conversation_digest": "a" * 64,
+                "active_role": "requester",
+                "author_role": "data_owner",
+                "body": "Claimed role",
             }
         )

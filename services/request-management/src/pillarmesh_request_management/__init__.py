@@ -50,6 +50,7 @@ from .fulfillment_repository import FulfillmentRepository, SQLiteFulfillmentRepo
 from .fulfillment_service import FulfillmentOutcomeResult, FulfillmentService
 from .intake import RequestDigestMismatch, RequestIntakeContent
 from .models import (
+    ConversationAuthorRole,
     ConversationEntry,
     DataAccessRequest,
     DataProductChangeRequest,
@@ -79,6 +80,7 @@ __all__ = [
     "ArchitectRequestView",
     "AuthorityRoleResolver",
     "ClarifiedOutcomeStatement",
+    "ConversationAuthorRole",
     "ConversationEntry",
     "DataAccessRequest",
     "DataProductChangeRequest",

@@ -101,7 +101,15 @@ class InboxRequest(ArtifactModel):
         return value.astimezone(UTC)
 
 
+type ConversationAuthorRole = Literal[
+    "requester", "data_architect", "data_owner", "policy_approver", "budget_approver", "pillarmesh"
+]
+
+
 class ConversationEntry(ArtifactModel):
+    author_role: ConversationAuthorRole | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     entry_id: str
     request_id: str
     request_revision: int = Field(ge=1)

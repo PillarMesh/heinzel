@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -7,6 +9,7 @@ from typing import Protocol, Self
 from pillarmesh_contract_model import canonical_bytes, digest
 
 from .models import (
+    ConversationAuthorRole,
     ConversationEntry,
     DecisionBinding,
     DecisionKind,
@@ -43,6 +46,8 @@ class RequestRepository(Protocol):
         actor_id: str,
         body: str,
         created_at: datetime,
+        *,
+        author_role: ConversationAuthorRole | None = None,
     ) -> ConversationEntry: ...
 
     def record_decision(
@@ -257,6 +262,8 @@ class SQLiteRequestRepository:
         actor_id: str,
         body: str,
         created_at: datetime,
+        *,
+        author_role: ConversationAuthorRole | None = None,
     ) -> ConversationEntry:
         try:
             self._connection.execute("BEGIN IMMEDIATE")
@@ -264,6 +271,7 @@ class SQLiteRequestRepository:
             if request.revision != expected_revision:
                 raise StaleRevisionError("request revision was not advanced")
             entry = ConversationEntry(
+                author_role=author_role,
                 entry_id="pending",
                 request_id=request.request_id,
                 request_revision=request.revision + 1,

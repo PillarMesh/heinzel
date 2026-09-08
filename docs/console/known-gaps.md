@@ -198,11 +198,16 @@ way that never invents authority, and each needs a contract change to close.
    provides content integrity, not authorization or deduplication: separate service
    submissions still allocate separate request identities. Retry authority is unchanged.
 
-5. **`ConversationMessageView.author_role` has no owning source.** Request-management
-   records an actor, not a role. The console labels the requester's own entries
-   `requester` and every other entry `data_architect`. This is a presentation
-   classification and carries no service authority. `author_label` is the owning
-   actor identifier, because no display-name directory exists.
+5. **Closed: conversation author roles are stored by request-management.** The console
+   passes the authenticated context's active role to the owning append transaction,
+   alongside the actor, message, and advanced request revision. The browser cannot
+   supply a separate author role, and its active-role claim must match the trusted
+   context. Reads publish the stored historical role without classifying actors.
+   Legacy entries and internal callers that do not record a role expose `null`, shown
+   as “Role not recorded” in both conversation views. Absent roles remain absent from
+   durable serialization; reads do not rewrite historical bytes. Recorded roles do not
+   grant permissions or approval authority. `author_label` remains the owning actor
+   identifier because there is no display-name directory.
 6. **`RequestDetailView.proposal` is never populated.** The console vocabulary for a
    proposal (`metric_version`, `datasets`, and similar) has no mapping from the
    owning `ArtifactReference` values, and guessing one would put unverified strings in

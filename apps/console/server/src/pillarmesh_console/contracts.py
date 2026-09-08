@@ -449,7 +449,7 @@ class InboxView(StrictModel):
 class ConversationMessageView(StrictModel):
     message_id: PublicId
     author_label: NonEmptyText
-    author_role: ActorRole | Literal["pillarmesh"]
+    author_role: ActorRole | Literal["pillarmesh"] | None
     body: NonEmptyText
     created_at: UtcDatetime
 

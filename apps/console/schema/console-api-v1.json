@@ -1452,6 +1452,9 @@
             {
               "const": "pillarmesh",
               "type": "string"
+            },
+            {
+              "type": "null"
             }
           ],
           "title": "Author Role"

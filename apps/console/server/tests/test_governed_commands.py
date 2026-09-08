@@ -18,6 +18,7 @@ from typing import Literal, Never
 import pytest
 from pillarmesh_console.auth import InFlightCommandKeys, TrustedActorContext
 from pillarmesh_console.contracts import (
+    ActorRole,
     ClarifiedOutcomeAcceptanceCommand,
     ConversationMessageCommand,
     CreateRequestCommand,
@@ -1230,3 +1231,70 @@ def test_request_intake_rejects_a_mismatched_digest_without_writing(
     assert failure.value.code == "request_digest_mismatch"
     assert failure.value.field == "request_digest"
     assert stack.requests.list_inbox(_TENANT) == ()
+
+
+@pytest.mark.parametrize("role", ["requester", "data_architect", "data_owner", "policy_approver"])
+def test_conversation_roles_are_recorded_from_trusted_context_and_projected_verbatim(
+    stack: _Stack,
+    role: ActorRole,
+) -> None:
+    request = _question(stack)
+    context = TrustedActorContext(
+        tenant_id=_TENANT,
+        actor_id=_REQUESTER,
+        roles=("requester", "data_architect", "data_owner", "policy_approver"),
+        active_role=role,
+        session_id="session-multiple-roles",
+    )
+    backend = stack.backend()
+    conversation = backend.get_conversation(context, request.request_id)
+    command = ConversationMessageCommand(
+        expected_revision=conversation.revision,
+        conversation_digest=conversation.conversation_digest,
+        active_role=context.active_role,
+        body="A recorded contribution.",
+    )
+
+    updated = backend.append_conversation_message(context, request.request_id, command)
+    entry = stack.requests.list_conversation(_TENANT, request.request_id)[0]
+
+    assert entry.author_role == context.active_role
+    assert updated.messages[0].author_role == entry.author_role
+    reread = backend.get_conversation(_requester_context(), request.request_id)
+    assert reread.messages[0].author_role == role
+
+
+def test_legacy_conversation_roles_are_not_inferred_from_actor_identity(stack: _Stack) -> None:
+    request = _question(stack)
+    stack.requests.append_conversation(
+        _TENANT, request.request_id, _REQUESTER, "Legacy reply.", expected_revision=1
+    )
+
+    conversation = stack.backend().get_conversation(_requester_context(), request.request_id)
+
+    assert conversation.messages[0].author_role is None
+
+
+def test_a_claimed_conversation_role_cannot_override_the_active_trusted_role(stack: _Stack) -> None:
+    request = _question(stack)
+    context = TrustedActorContext(
+        tenant_id=_TENANT,
+        actor_id=_REQUESTER,
+        roles=("requester", "data_architect"),
+        active_role="requester",
+        session_id="session-multiple-roles",
+    )
+    backend = stack.backend()
+    conversation = backend.get_conversation(context, request.request_id)
+    command = ConversationMessageCommand(
+        expected_revision=conversation.revision,
+        conversation_digest=conversation.conversation_digest,
+        active_role="data_architect",
+        body="Claiming an inactive role.",
+    )
+
+    with pytest.raises(ConsoleNotFound):
+        backend.append_conversation_message(context, request.request_id, command)
+
+    assert stack.requests.list_conversation(_TENANT, request.request_id) == ()
+    assert stack.requests.get(_TENANT, request.request_id).revision == request.revision

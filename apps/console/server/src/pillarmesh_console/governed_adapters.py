@@ -25,6 +25,7 @@ from pillarmesh_contract_service import AcquisitionContractLifecycleRepository
 from pillarmesh_evidence import AcquisitionEvidenceReceipt, RunRecord
 from pillarmesh_request_management import (
     ArchitectRequestView,
+    ConversationAuthorRole,
     ConversationEntry,
     FulfillmentApprovalBinding,
     FulfillmentAuthorityError,
@@ -435,6 +436,7 @@ class RequestIntakeCommands(Protocol):
         body: str,
         *,
         expected_revision: int,
+        author_role: ConversationAuthorRole | None = None,
     ) -> ConversationEntry: ...
 
     def list_conversation(

@@ -8,6 +8,7 @@ from pillarmesh_contract_model import digest
 
 from .intake import RequestIntakeContent
 from .models import (
+    ConversationAuthorRole,
     ConversationEntry,
     DataAccessRequest,
     DataProductChangeRequest,
@@ -266,6 +267,7 @@ class RequestManagementService:
         body: str,
         *,
         expected_revision: int,
+        author_role: ConversationAuthorRole | None = None,
     ) -> ConversationEntry:
         request = self.get(tenant_id, request_id)
         self._assert_current_revision(request, expected_revision)
@@ -277,6 +279,7 @@ class RequestManagementService:
                 actor_id,
                 body,
                 self._now(),
+                author_role=author_role,
             )
         except StaleRevisionError as error:
             raise ValueError("request revision is stale") from error
