@@ -249,7 +249,7 @@ def test_models_are_frozen_and_reject_unknown_fields() -> None:
     )
 
     with pytest.raises(ValidationError, match="frozen"):
-        operation.state = "running"  # type: ignore[misc]
+        operation.state = "running"
 
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         OperationView.model_validate(
@@ -586,7 +586,7 @@ def test_requester_projection_cannot_accept_reviewer_or_proposal_details() -> No
 
 
 def test_request_input_union_requires_exact_kind_tags() -> None:
-    adapter = TypeAdapter(RequestInput)
+    adapter: TypeAdapter[RequestInput] = TypeAdapter(RequestInput)
     stakeholder = {
         "kind": "stakeholder_question",
         "purpose": "Understand revenue",
@@ -632,7 +632,7 @@ def test_request_input_branch_models_require_kind_on_the_wire() -> None:
 
 
 def test_request_proposal_union_requires_exact_kind_tags() -> None:
-    adapter = TypeAdapter(RequestProposalView)
+    adapter: TypeAdapter[RequestProposalView] = TypeAdapter(RequestProposalView)
     answer = {
         "kind": "stakeholder_answer",
         "purpose": "Understand revenue",

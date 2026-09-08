@@ -6,6 +6,7 @@ from contextlib import contextmanager
 import pytest
 from pillarmesh_console import create_app
 from pillarmesh_console.auth import TrustedActorContext
+from pillarmesh_console.contracts import ActorRole
 from pillarmesh_console.fixture_backend import FixtureConsoleBackend
 from pillarmesh_console.fixture_data import build_fixture_seed
 from starlette.testclient import TestClient
@@ -17,7 +18,7 @@ def _context(
     *,
     actor_id: str = "actor-architect",
     tenant_id: str = "tenant-primary",
-    active_role: str = "data_architect",
+    active_role: ActorRole = "data_architect",
 ) -> TrustedActorContext:
     return TrustedActorContext(
         tenant_id=tenant_id,

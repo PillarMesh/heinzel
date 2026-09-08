@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Never
 
 import pytest
 from pillarmesh_console import fixture_backend, fixture_data
 from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.contracts import ActorRole
+from pillarmesh_console.contracts import ActorRole, ResetCommand, WorkspaceView
 from pillarmesh_console.errors import ConsoleNotFound, ConsoleUnavailable
 from pillarmesh_console.governed_adapters import (
+    DataProductReferenceReader,
+    FulfillmentViewReader,
     GovernedWorkspaceIdentity,
     PolicyPermittedDataProductReader,
+    RequestInboxReader,
+    TenantAcquisitionReceiptReader,
+    TenantRunReader,
+    WarehouseBindingReader,
     WarehouseOperationIdentity,
+    WarehouseOperationReader,
 )
 from pillarmesh_console.governed_backend import (
     CAPABILITY_NOT_DELIVERED,
@@ -23,12 +29,22 @@ from pillarmesh_console.governed_backend import (
 from pillarmesh_console.operation_handles import (
     InMemoryOperationHandleRepository,
     OperationHandleRecord,
+    OperationHandleRepository,
     mint_console_handle,
 )
-from pillarmesh_contract_model import digest
+from pillarmesh_contract_model import ArtifactReference, digest
+from pillarmesh_evidence import (
+    AcquisitionEvidenceOutcome,
+    AcquisitionEvidenceReceipt,
+    AcquisitionPublicReasonCode,
+    RunRecord,
+    RunState,
+)
 from pillarmesh_request_management import (
+    ApprovalRequirement,
     ArchitectRequestView,
     ClarifiedOutcomeStatement,
+    FulfillmentPolicySnapshot,
     FulfillmentProposal,
     InboxRequest,
     RequesterRequestView,
@@ -196,11 +212,11 @@ def _proposal_with_canary(request_id: str) -> FulfillmentProposal:
         policy_snapshot_digest="d" * 64,
         subject=subject,
         required_approvals=(
-            {
-                "authority_ref": "principal:requester",
-                "reason_code": "clarified_outcome_acceptance",
-                "subject_digest": digest(_clarified_outcome(request_id)),
-            },
+            ApprovalRequirement(
+                authority_ref="principal:requester",
+                reason_code="clarified_outcome_acceptance",
+                subject_digest=digest(_clarified_outcome(request_id)),
+            ),
         ),
         created_at=_FIXED_TIME,
     )
@@ -253,12 +269,35 @@ class _RequesterOnlyFulfillmentReader:
         raise AssertionError("a requester projection must never read the architect projection")
 
 
-def _backend(**overrides: object) -> GovernedConsoleBackend:
-    defaults: dict[str, object] = {
-        "identity": _IDENTITY,
-        "operation_handles": InMemoryOperationHandleRepository(),
-    }
-    return GovernedConsoleBackend(**(defaults | overrides))  # type: ignore[arg-type]
+def _backend(
+    *,
+    operation_handles: OperationHandleRepository | None = None,
+    warehouse_bindings: WarehouseBindingReader | None = None,
+    warehouse_operations: WarehouseOperationReader | None = None,
+    requests: RequestInboxReader | None = None,
+    fulfillment: FulfillmentViewReader | None = None,
+    runs: TenantRunReader | None = None,
+    acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
+    data_products: DataProductReferenceReader | None = None,
+) -> GovernedConsoleBackend:
+    """Inject doubles under the backend's own parameter types.
+
+    This took `**overrides: object` and silenced the constructor with
+    `type: ignore[arg-type]`, which suppressed exactly the protocol conformance
+    check that would have caught a reader whose signature the owning service does
+    not accept -- the defect this directory is checked for in the first place.
+    """
+    return GovernedConsoleBackend(
+        identity=_IDENTITY,
+        operation_handles=operation_handles or InMemoryOperationHandleRepository(),
+        warehouse_bindings=warehouse_bindings,
+        warehouse_operations=warehouse_operations,
+        requests=requests,
+        fulfillment=fulfillment,
+        runs=runs,
+        acquisition_receipts=acquisition_receipts,
+        data_products=data_products,
+    )
 
 
 def _forbid_fixture_data(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -522,6 +561,7 @@ def test_requester_projection_excludes_unapproved_proposal_text() -> None:
         [view.model_dump(mode="json") for view in requests] + [outcome.model_dump(mode="json")]
     )
 
+    assert isinstance(proposal.subject, StakeholderAnswerDraft)
     assert _PROPOSAL_TEXT_CANARY in proposal.subject.answer_text
     assert _PROPOSAL_TEXT_CANARY not in serialized
     assert outcome.statement_digest == digest(_clarified_outcome(request.request_id))
@@ -555,9 +595,7 @@ def test_governed_commands_are_not_delivered_until_they_are_wired(
     assert failure.value.code == CAPABILITY_NOT_DELIVERED
 
 
-def fixture_reset_command() -> object:
-    from pillarmesh_console.contracts import ResetCommand
-
+def fixture_reset_command() -> ResetCommand:
     return ResetCommand(
         expected_revision=1,
         setup_digest="e" * 64,
@@ -588,18 +626,16 @@ def test_the_warehouse_options_present_an_engine_name_rather_than_its_enum_value
 class _StubRunReader:
     """A tenant run reader that records the tenant it was asked about."""
 
-    def __init__(self, runs: dict[str, tuple[object, ...]]) -> None:
+    def __init__(self, runs: dict[str, tuple[RunRecord, ...]]) -> None:
         self._runs = runs
         self.asked: list[str] = []
 
-    def list_runs(self, tenant_id: str) -> tuple[object, ...]:
+    def list_runs(self, tenant_id: str) -> tuple[RunRecord, ...]:
         self.asked.append(tenant_id)
         return self._runs.get(tenant_id, ())
 
 
-def _run(run_id: str, contract_digest: str, state: str) -> object:
-    from pillarmesh_evidence import RunRecord
-
+def _run(run_id: str, contract_digest: str, state: RunState) -> RunRecord:
     return RunRecord(
         run_id=run_id,
         activation_key=f"activation-{run_id}",
@@ -657,18 +693,16 @@ def test_a_tenant_with_no_runs_reads_an_empty_listing_rather_than_a_failure() ->
 
 
 class _StubDataProductReader:
-    def __init__(self, references: dict[str, tuple[object, ...]]) -> None:
+    def __init__(self, references: dict[str, tuple[ArtifactReference, ...]]) -> None:
         self._references = references
         self.asked: list[str] = []
 
-    def permitted_references(self, tenant_id: str) -> tuple[object, ...]:
+    def permitted_references(self, tenant_id: str) -> tuple[ArtifactReference, ...]:
         self.asked.append(tenant_id)
         return self._references.get(tenant_id, ())
 
 
-def _reference(artifact_id: str, version: int = 1) -> object:
-    from pillarmesh_contract_model import ArtifactReference
-
+def _reference(artifact_id: str, version: int = 1) -> ArtifactReference:
     return ArtifactReference(artifact_id=artifact_id, version=version, digest="c" * 64)
 
 
@@ -728,10 +762,10 @@ def test_the_run_capability_is_ready_only_when_both_owning_reads_are_wired() -> 
         runs=_StubRunReader({}), data_products=_StubDataProductReader({})
     ).get_workspace(_architect_context())
 
-    def state(view: object) -> str:
+    def state(view: WorkspaceView) -> str:
         return next(
             capability.state
-            for capability in view.capabilities  # type: ignore[attr-defined]
+            for capability in view.capabilities
             if capability.capability_id == "data-product-runs"
         )
 
@@ -740,28 +774,32 @@ def test_the_run_capability_is_ready_only_when_both_owning_reads_are_wired() -> 
 
 
 class _RealShapedFulfillmentRepository:
-    """Stubs that mirror the OWNING repository's signatures exactly.
+    """Mirrors the OWNING repository, in signature and in what it returns.
 
     The previous stub took `list_proposals(tenant_id)`. The real repository takes
     `(tenant_id, request_id)` and raises `KeyError` for a policy snapshot it cannot
-    read, so the tests agreed with a reader that could never work against it.
+    read, so the tests agreed with a reader that could never work against it. The
+    types below are the repository's own, so a double this permissive cannot come
+    back: `tuple[object, ...]` would satisfy any reader at all.
     """
 
     def __init__(
         self,
         *,
-        proposals: dict[str, tuple[object, ...]],
-        snapshots: dict[str, object],
+        proposals: dict[str, tuple[FulfillmentProposal, ...]],
+        snapshots: dict[str, FulfillmentPolicySnapshot],
     ) -> None:
         self._proposals = proposals
         self._snapshots = snapshots
         self.requested: list[tuple[str, str]] = []
 
-    def list_proposals(self, tenant_id: str, request_id: str) -> tuple[object, ...]:
+    def list_proposals(self, tenant_id: str, request_id: str) -> tuple[FulfillmentProposal, ...]:
         self.requested.append((tenant_id, request_id))
         return self._proposals.get(request_id, ())
 
-    def load_policy_snapshot(self, tenant_id: str, snapshot_digest: str) -> object:
+    def load_policy_snapshot(
+        self, tenant_id: str, snapshot_digest: str
+    ) -> FulfillmentPolicySnapshot:
         if snapshot_digest not in self._snapshots:
             raise KeyError("policy snapshot is unavailable to the tenant")
         return self._snapshots[snapshot_digest]
@@ -769,18 +807,74 @@ class _RealShapedFulfillmentRepository:
 
 class _StubRequestLister:
     def __init__(self, request_ids: tuple[str, ...]) -> None:
-        self._request_ids = request_ids
+        self._requests = tuple(
+            _inbox_request(identifier, "actor-requester") for identifier in request_ids
+        )
 
-    def list_inbox(self, tenant_id: str) -> tuple[object, ...]:
-        return tuple(SimpleNamespace(request_id=identifier) for identifier in self._request_ids)
+    def list_inbox(self, tenant_id: str) -> tuple[InboxRequest, ...]:
+        return self._requests if tenant_id == _TENANT else ()
+
+    def get(self, tenant_id: str, request_id: str) -> InboxRequest:
+        for request in self._requests:
+            if request.tenant_id == tenant_id and request.request_id == request_id:
+                return request
+        raise KeyError(request_id)
 
 
-def _policy(*references: object) -> object:
-    return SimpleNamespace(permitted_data_product_refs=tuple(references))
+def _policy(*references: ArtifactReference) -> FulfillmentPolicySnapshot:
+    """The real snapshot, not a namespace carrying one attribute.
+
+    A double that only had `permitted_data_product_refs` agreed with any reader
+    that asked for it, including one calling a signature the owning repository
+    does not accept.
+    """
+    return FulfillmentPolicySnapshot(
+        snapshot_id="pol-00000000000000000001-0123456789abcdef01234567",
+        tenant_id=_TENANT,
+        requester_id="actor-requester",
+        requester_principal_ref="principal:requester",
+        purpose_digest="b" * 64,
+        approved_policy_refs=(_reference("policy-governed-read"),),
+        entitlement_observation_refs=(_reference("entitlement-observation"),),
+        classification_rule_refs=(),
+        permitted_data_product_refs=references,
+        permitted_access_modes=("query",),
+        maximum_expiry=None,
+        policy_authority_classifications=(),
+        observed_at=_FIXED_TIME,
+        valid_until=_FIXED_TIME + timedelta(hours=1),
+    )
 
 
-def _proposal(policy_snapshot_digest: str) -> object:
-    return SimpleNamespace(policy_snapshot_digest=policy_snapshot_digest)
+def _proposal(policy_snapshot_digest: str) -> FulfillmentProposal:
+    return FulfillmentProposal(
+        proposal_id="prp-00000000000000000002-0123456789abcdef01234567",
+        tenant_id=_TENANT,
+        request_id="req-00000000000000000001-0123456789abcdef01234567",
+        request_revision=3,
+        revision=1,
+        clarified_outcome_digest="a" * 64,
+        grounding_snapshot_digest="c" * 64,
+        policy_snapshot_digest=policy_snapshot_digest,
+        subject=StakeholderAnswerDraft(
+            answer_text="Net revenue rose.",
+            governed_dataset_refs=(),
+            metric_refs=(),
+            as_of=_FIXED_TIME,
+            freshness_disposition="unknown",
+            material_quality_limitations=(),
+            lineage_refs=(),
+            disclosure_classifications=(),
+        ),
+        required_approvals=(
+            ApprovalRequirement(
+                authority_ref="principal:requester",
+                reason_code="clarified_outcome_acceptance",
+                subject_digest="a" * 64,
+            ),
+        ),
+        created_at=_FIXED_TIME,
+    )
 
 
 def test_permitted_references_walk_every_request_of_the_tenant() -> None:
@@ -838,11 +932,11 @@ class _StubAcquisitionReceiptReader:
     signature mismatch reach a live run instead of this test.
     """
 
-    def __init__(self, receipts: dict[str, tuple[object, ...]]) -> None:
+    def __init__(self, receipts: dict[str, tuple[AcquisitionEvidenceReceipt, ...]]) -> None:
         self._receipts = receipts
         self.asked: list[str] = []
 
-    def list_acquisition_receipts(self, tenant_id: str) -> tuple[object, ...]:
+    def list_acquisition_receipts(self, tenant_id: str) -> tuple[AcquisitionEvidenceReceipt, ...]:
         self.asked.append(tenant_id)
         return self._receipts.get(tenant_id, ())
 
@@ -850,12 +944,10 @@ class _StubAcquisitionReceiptReader:
 def _receipt(
     evidence_id: str = "evidence-ref:prepared-1",
     *,
-    outcome: str = "prepared",
-    reason_codes: tuple[str, ...] = (),
+    outcome: AcquisitionEvidenceOutcome = "prepared",
+    reason_codes: tuple[AcquisitionPublicReasonCode, ...] = (),
     logical_object_refs: tuple[str, ...] = ("orders",),
-) -> object:
-    from pillarmesh_evidence import AcquisitionEvidenceReceipt
-
+) -> AcquisitionEvidenceReceipt:
     prepared = outcome in ("prepared", "acknowledged")
     return AcquisitionEvidenceReceipt(
         evidence_id=evidence_id,
@@ -974,10 +1066,10 @@ def test_the_acquisition_evidence_capability_follows_the_wiring() -> None:
         _architect_context()
     )
 
-    def state(view: object, capability_id: str) -> str:
+    def state(view: WorkspaceView, capability_id: str) -> str:
         return next(
             capability.state
-            for capability in view.capabilities  # type: ignore[attr-defined]
+            for capability in view.capabilities
             if capability.capability_id == capability_id
         )
 

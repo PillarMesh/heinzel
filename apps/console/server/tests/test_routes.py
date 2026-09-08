@@ -9,7 +9,12 @@ import pytest
 from pillarmesh_console import create_app
 from pillarmesh_console.auth import TrustedActorContext
 from pillarmesh_console.backend import AuthorizedLink, PreviewContent
-from pillarmesh_console.contracts import OperationState, OperationView, WarehouseBindingCommand
+from pillarmesh_console.contracts import (
+    ActorRole,
+    OperationState,
+    OperationView,
+    WarehouseBindingCommand,
+)
 from pillarmesh_console.fixture_backend import FixtureConsoleBackend
 from pillarmesh_console.fixture_data import build_fixture_seed
 from starlette.testclient import TestClient
@@ -28,7 +33,7 @@ def _context(
     *,
     actor_id: str = "actor-architect",
     tenant_id: str = "tenant-primary",
-    active_role: str = "data_architect",
+    active_role: ActorRole = "data_architect",
 ) -> TrustedActorContext:
     return TrustedActorContext(
         tenant_id=tenant_id,
@@ -79,8 +84,12 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
     app = create_app(backend=FixtureConsoleBackend(), context_provider=lambda _: _context())
 
     route_contract = {
-        (route.path, method)
+        (path, method)
         for route in app.routes
+        # Starlette types `routes` as `BaseRoute`, which carries neither attribute;
+        # only the mounted `Route` instances contribute to the contract.
+        for path in (getattr(route, "path", None),)
+        if isinstance(path, str)
         for method in getattr(route, "methods", set())
         if method in {"GET", "POST"}
     }

@@ -122,6 +122,8 @@ def test_every_generated_object_schema_rejects_unknown_fields() -> None:
 
 def test_schema_exposes_every_modeled_response_and_command() -> None:
     properties = console_api_schema()["properties"]
+    # The schema is read back as JSON, so the value is `object` until narrowed.
+    assert isinstance(properties, dict)
 
     assert set(properties) == {
         "session_response",

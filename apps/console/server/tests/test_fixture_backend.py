@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
+from typing import TypedDict
 
 import pytest
 from pillarmesh_console.auth import TrustedActorContext
@@ -21,6 +22,19 @@ from pillarmesh_console.fixture_data import build_fixture_seed
 
 _SETUP_DIGEST = build_fixture_seed().setup.setup_digest
 _BLOCKED_REQUEST_DIGEST = "b" * 64
+
+
+class _ContextOverride(TypedDict, total=False):
+    """The `_context` keywords a parametrized case may override.
+
+    `dict[str, object]` erased the role vocabulary, so a case naming a role the
+    console does not define would have read as a legitimate authority rejection.
+    """
+
+    actor_id: str
+    tenant_id: str
+    active_role: ActorRole
+    roles: tuple[ActorRole, ...] | None
 
 
 def _context(
@@ -103,8 +117,8 @@ def test_postgresql_confirmation_is_accepted_and_exact_replay_returns_same_handl
     first = backend.confirm_warehouse_binding(_context(), command)
     replay = backend.confirm_warehouse_binding(_context(), command)
 
+    # `== "accepted"` already excludes every other state, "succeeded" included.
     assert first.state == "accepted"
-    assert first.state != "succeeded"
     assert replay == first
     assert replay.operation_id == first.operation_id
     assert replay.evidence_ref is None
@@ -346,7 +360,7 @@ def test_consumed_reset_token_is_bound_to_the_original_principal() -> None:
     ),
 )
 def test_reset_rejects_stale_or_untrusted_authority_without_changing_state(
-    command_update: dict[str, object], context_update: dict[str, object]
+    command_update: dict[str, object], context_update: _ContextOverride
 ) -> None:
     backend = FixtureConsoleBackend()
     backend.confirm_warehouse_binding(_context(), _warehouse_command())
