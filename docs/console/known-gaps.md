@@ -21,26 +21,6 @@ The console reports each of these as a `not_delivered` capability on
 | `POST /api/v1/inbox/{id}/admission` | `FulfillmentService.admit` |
 | `POST /api/v1/reviews/{id}/decisions` | `SemanticReviewService.decide_item` |
 
-## Governed reads are not yet role-gated the way the demo is
-
-`FixtureConsoleBackend` authorizes every read against an explicit role set.
-`GovernedConsoleBackend` authorizes only `get_request_detail`, `get_runs` and
-`get_acquisition_receipts`, so for the remaining reads governed-local mode is more
-permissive than the demo that stands in for it.
-
-Confirmed against the governed deployment, with the requester actor header:
-`GET /api/v1/inbox` and `GET /api/v1/setup` both answer `200`, while the fixture
-backend restricts the first to `("data_architect", "data_owner", "policy_approver",
-"budget_approver")` and the second to `("data_architect",)`. `get_review`,
-`get_conversation` and `get_clarified_outcome` carry the same asymmetry.
-`get_data_product`, `get_evidence`, `get_operation` and `get_preview` do not: the
-fixture role sets there admit every role anyway.
-
-This predates the acquisition work and is not fixed by it. Closing it means choosing
-the governed role set for each read, which is a decision about who may see an
-architect's decision queue rather than a mechanical change, and it needs its own
-tests.
-
 ## Capabilities that remain undelivered
 
 ### Business process package submission (`process-package`)
@@ -255,3 +235,40 @@ them.
    command over HTTP failed as `downstream_unavailable`. The repository now takes either
    a `database_path` or a `connection` — exactly one — and closes only the connection it
    opened itself.
+3. **Governed reads were not role-gated the way the demo is.** `FixtureConsoleBackend`
+   authorizes every read against an explicit role set; `GovernedConsoleBackend`
+   authorized only `get_request_detail`, `get_runs` and `get_acquisition_receipts`, so
+   governed-local mode was more permissive than the demo standing in for it. Measured
+   over HTTP against the governed deployment: with the requester actor header,
+   `GET /api/v1/setup` and `GET /api/v1/inbox` both answered `200`, and
+   `GET /api/v1/requests/mine` answered the architect `200` with an empty list. The six
+   reads that differed — `get_setup`, `get_inbox`, `get_review`,
+   `get_requester_requests`, `get_conversation` and `get_clarified_outcome` — now
+   authorize against the role set the fixture backend declares for the same read:
+
+   | Read | Role set |
+   | --- | --- |
+   | `get_setup` | `data_architect` |
+   | `get_inbox`, `get_review` | `data_architect`, `data_owner`, `policy_approver`, `budget_approver` |
+   | `get_conversation` | `requester`, `data_architect`, `data_owner`, `policy_approver` |
+   | `get_clarified_outcome` | `requester`, `data_architect` |
+   | `get_requester_requests` | `requester` |
+
+   The requester keeps the three reads that are their own surface, so the fix is not
+   "architect only" everywhere. Each check runs *before* the read's delivery check, so an
+   unauthorized actor cannot learn from a `not_delivered` answer which capabilities this
+   deployment has wired.
+
+   The rest were left ungated for two different reasons, which an earlier draft of this
+   entry ran together. `get_data_product`, `get_evidence` and `get_operation` need no gate
+   because the fixture role sets there admit every role. `get_preview`, `get_catalog_asset`
+   and `get_dashboard` restrict to three roles in the demo, but the governed reads raise
+   `not_delivered` unconditionally, so there is no answer to gate; they need a role set the
+   day they serve one.
+
+   One asymmetry remains, in the other direction. `get_request_detail` authorizes
+   `data_architect` alone while the demo admits the three approving authorities as well, so
+   a `data_owner` can list the decision queue and is refused when opening an item from it.
+   That fails closed, so it is left as it stands rather than widened here: relaxing an
+   authorization is a decision about who may read an architect's decision, not a
+   consistency edit.

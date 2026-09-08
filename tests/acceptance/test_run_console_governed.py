@@ -430,3 +430,59 @@ def test_a_requester_cannot_read_acquisition_or_run_evidence(
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
+
+
+@pytest.mark.parametrize("path", ("/api/v1/setup", "/api/v1/inbox"))
+def test_a_requester_cannot_read_the_architect_surface(
+    deployment: GovernedConsoleDeployment, path: str
+) -> None:
+    """The architect's setup and decision queue are not a requester's to read.
+
+    `FixtureConsoleBackend` restricts `get_setup` to `("data_architect",)` and
+    `get_inbox` to the architect plus the three approving authorities. Both routes
+    answered a requester with `200` in governed mode, which showed them the tenant's
+    warehouse binding and every open decision the demo refuses them.
+    """
+    with TestClient(deployment.build_app()) as client:
+        response = client.get(path, headers={"x-pillarmesh-actor": REQUESTER})
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+def test_the_architect_cannot_read_a_requesters_own_request_list(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """`GET /api/v1/requests/mine` is the requester's own surface, as in the demo.
+
+    It answered the architect with an empty list rather than refusing the role, which
+    reports "you have no requests" to an actor who may never have one.
+    """
+    with TestClient(deployment.build_app()) as client:
+        response = client.get("/api/v1/requests/mine", headers={"x-pillarmesh-actor": ARCHITECT})
+
+    assert response.status_code == 404
+    assert response.json()["error"]["code"] == "not_found"
+
+
+def test_a_data_owner_reads_the_queue_but_is_refused_an_item_from_it(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """The one asymmetry left, pinned so it stays deliberate rather than drifting.
+
+    `get_request_detail` admits `data_architect` alone while the demo admits the three
+    approving authorities too, so a `data_owner` can list the queue and is refused when
+    opening an item. That is stricter than the demo rather than more permissive, so it
+    fails closed; widening it decides who may read an architect's decision, which is not
+    a consistency edit to make in passing.
+    """
+    seeded = deployment.seed()
+
+    with TestClient(deployment.build_app()) as client:
+        queue = client.get("/api/v1/inbox", headers={"x-pillarmesh-actor": ARCHITECT})
+        detail = client.get(
+            f"/api/v1/inbox/{seeded.request_id}", headers={"x-pillarmesh-actor": ARCHITECT}
+        )
+
+    assert queue.status_code == 200
+    assert detail.status_code == 200

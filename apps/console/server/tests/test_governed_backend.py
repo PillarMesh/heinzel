@@ -9,6 +9,7 @@ from typing import Never
 import pytest
 from pillarmesh_console import fixture_backend, fixture_data
 from pillarmesh_console.auth import TrustedActorContext
+from pillarmesh_console.contracts import ActorRole
 from pillarmesh_console.errors import ConsoleNotFound, ConsoleUnavailable
 from pillarmesh_console.governed_adapters import (
     GovernedWorkspaceIdentity,
@@ -283,36 +284,58 @@ def test_governed_module_does_not_import_the_fixture_backend() -> None:
 
 
 @pytest.mark.parametrize(
-    "read",
+    ("read", "context"),
     [
-        pytest.param(lambda backend, context: backend.get_setup(context), id="setup"),
-        pytest.param(lambda backend, context: backend.get_inbox(context), id="inbox"),
-        pytest.param(lambda backend, context: backend.get_runs(context), id="runs"),
+        pytest.param(
+            lambda backend, context: backend.get_setup(context),
+            _architect_context(),
+            id="setup",
+        ),
+        pytest.param(
+            lambda backend, context: backend.get_inbox(context),
+            _architect_context(),
+            id="inbox",
+        ),
+        pytest.param(
+            lambda backend, context: backend.get_runs(context),
+            _architect_context(),
+            id="runs",
+        ),
         pytest.param(
             lambda backend, context: backend.get_review(context, "review-000000000000000000000001"),
+            _architect_context(),
             id="review",
         ),
         pytest.param(
-            lambda backend, context: backend.get_conversation(context, "req-1"), id="conversation"
+            lambda backend, context: backend.get_conversation(context, "req-1"),
+            _architect_context(),
+            id="conversation",
         ),
         pytest.param(
             lambda backend, context: backend.get_request_detail(context, "req-1"),
+            _architect_context(),
             id="request-detail",
         ),
         pytest.param(
             lambda backend, context: backend.get_data_product(context, "product-revenue"),
+            _architect_context(),
             id="data-product",
         ),
         pytest.param(
             lambda backend, context: backend.get_dashboard(context, "dashboard-revenue"),
+            _architect_context(),
             id="dashboard",
         ),
         pytest.param(
             lambda backend, context: backend.get_catalog_asset(context, "asset-revenue"),
+            _architect_context(),
             id="catalog-asset",
         ),
+        # Only a requester may read their own requests, so the not-delivered branch
+        # this test reaches is behind that gate.
         pytest.param(
             lambda backend, context: backend.get_requester_requests(context),
+            _requester_context(),
             id="requester-requests",
         ),
     ],
@@ -320,12 +343,13 @@ def test_governed_module_does_not_import_the_fixture_backend() -> None:
 def test_missing_downstream_implementation_is_not_delivered_without_fixture_fallback(
     monkeypatch: pytest.MonkeyPatch,
     read: object,
+    context: TrustedActorContext,
 ) -> None:
     _forbid_fixture_data(monkeypatch)
     backend = _backend()
 
     with pytest.raises(ConsoleUnavailable) as failure:
-        read(backend, _architect_context())  # type: ignore[operator]
+        read(backend, context)  # type: ignore[operator]
 
     assert failure.value.code == CAPABILITY_NOT_DELIVERED
 
@@ -1033,3 +1057,151 @@ def test_the_governed_reads_enforce_the_role_set_the_fixture_backend_declares() 
 
     assert backend.get_acquisition_receipts(_architect_context()).receipts != ()
     assert backend.get_runs(_architect_context()).runs != ()
+
+
+def _role_context(role: ActorRole) -> TrustedActorContext:
+    return TrustedActorContext(
+        tenant_id=_TENANT,
+        actor_id=f"actor-{role}",
+        roles=(role,),
+        active_role=role,
+        session_id=f"session-{role}",
+    )
+
+
+_ALL_ROLES: tuple[ActorRole, ...] = (
+    "requester",
+    "data_architect",
+    "data_owner",
+    "policy_approver",
+    "budget_approver",
+)
+
+# The role set each read is gated on, mirroring what `FixtureConsoleBackend` declares
+# for the same read. Governed mode standing in for the demo must not answer an actor
+# the demo refuses.
+_GATED_READS: tuple[tuple[str, object, tuple[ActorRole, ...]], ...] = (
+    ("setup", lambda backend, context: backend.get_setup(context), ("data_architect",)),
+    (
+        "inbox",
+        lambda backend, context: backend.get_inbox(context),
+        ("data_architect", "data_owner", "policy_approver", "budget_approver"),
+    ),
+    (
+        "review",
+        lambda backend, context: backend.get_review(context, "review-000000000000000000000001"),
+        ("data_architect", "data_owner", "policy_approver", "budget_approver"),
+    ),
+    (
+        "requester-requests",
+        lambda backend, context: backend.get_requester_requests(context),
+        ("requester",),
+    ),
+    (
+        "conversation",
+        lambda backend, context: backend.get_conversation(context, "req-1"),
+        ("requester", "data_architect", "data_owner", "policy_approver"),
+    ),
+    (
+        "clarified-outcome",
+        lambda backend, context: backend.get_clarified_outcome(context, "req-1"),
+        ("requester", "data_architect"),
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    ("read", "allowed_roles", "role"),
+    [
+        pytest.param(read, allowed, role, id=f"{name}-{role}")
+        for name, read, allowed in _GATED_READS
+        for role in _ALL_ROLES
+    ],
+)
+def test_each_governed_read_refuses_exactly_the_roles_the_fixture_backend_refuses(
+    read: object,
+    allowed_roles: tuple[ActorRole, ...],
+    role: ActorRole,
+) -> None:
+    """A role the demo refuses must not be answered by the real product.
+
+    The backend is left unwired, so a permitted role reaches `not_delivered` while a
+    refused one must still see `ConsoleNotFound`. That difference is what proves the
+    authorization runs *before* the delivery check: an unauthorized actor must not be
+    able to learn which capabilities this deployment has wired.
+    """
+    backend = _backend()
+    context = _role_context(role)
+
+    if role in allowed_roles:
+        with pytest.raises(ConsoleUnavailable) as delivery:
+            read(backend, context)  # type: ignore[operator]
+        assert delivery.value.code == CAPABILITY_NOT_DELIVERED
+    else:
+        with pytest.raises(ConsoleNotFound):
+            read(backend, context)  # type: ignore[operator]
+
+
+def test_every_governed_read_is_gated_or_deliberately_ungated() -> None:
+    """The enumeration, not the six checks, is what keeps this closed.
+
+    Applying an authorization helper to six reads is proved by six tests; that the
+    helper reaches *every* read is not, and a read added later inherits nothing. This
+    fails when a new `get_*` appears without a role set, so leaving one open becomes a
+    decision recorded here rather than an omission nobody notices.
+
+    A read is excused only if it is declared `-> Never`, which is how this backend says
+    it serves nothing at all. A read that merely *has* a `not_delivered` branch is not
+    excused: it answers whenever its reader is wired, and that answer needs a role.
+    """
+    import ast
+
+    source = (
+        Path(__file__).resolve().parents[1] / "src" / "pillarmesh_console" / "governed_backend.py"
+    ).read_text(encoding="utf-8")
+    backend = next(
+        node
+        for node in ast.parse(source).body
+        if isinstance(node, ast.ClassDef) and node.name == "GovernedConsoleBackend"
+    )
+
+    def serves_nothing(node: ast.FunctionDef) -> bool:
+        """True when the read refuses unconditionally, by annotation or by body."""
+        if isinstance(node.returns, ast.Name) and node.returns.id == "Never":
+            return True
+        statements = [
+            statement
+            for statement in node.body
+            if not (isinstance(statement, ast.Expr) and isinstance(statement.value, ast.Constant))
+        ]
+        return (
+            len(statements) == 1
+            and isinstance(statements[0], ast.Raise)
+            and isinstance(statements[0].exc, ast.Call)
+            and isinstance(statements[0].exc.func, ast.Name)
+            and statements[0].exc.func.id == "_not_delivered"
+        )
+
+    ungated: set[str] = set()
+    for node in backend.body:
+        if not isinstance(node, ast.FunctionDef) or not node.name.startswith("get_"):
+            continue
+        if serves_nothing(node):
+            continue
+        called = {
+            child.func.attr
+            for child in ast.walk(node)
+            if isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute)
+        }
+        if "_authorize" not in called:
+            ungated.add(node.name)
+
+    assert ungated == {
+        # The demo authorizes these against `context.roles` or every role, so gating
+        # them here would refuse an actor the demo admits.
+        "get_session",
+        "get_workspace",
+        "get_data_product",
+        "get_evidence",
+        "get_operation",
+    }

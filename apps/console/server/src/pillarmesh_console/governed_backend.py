@@ -482,6 +482,7 @@ class GovernedConsoleBackend:
         )
 
     def get_setup(self, context: TrustedActorContext) -> SetupView:
+        self._authorize(context, ("data_architect",))
         binding = self._require_warehouse_binding_reader(context)
         catalog_reader = self._catalog_bindings
         catalog_binding = (
@@ -539,6 +540,10 @@ class GovernedConsoleBackend:
         )
 
     def get_review(self, context: TrustedActorContext, review_id: str) -> ReviewView:
+        self._authorize(
+            context,
+            ("data_architect", "data_owner", "policy_approver", "budget_approver"),
+        )
         reader = self._semantic_reviews
         if reader is None:
             raise _not_delivered("semantic-registry review wiring")
@@ -546,6 +551,10 @@ class GovernedConsoleBackend:
         return self._review_view(context, bundle)
 
     def get_inbox(self, context: TrustedActorContext) -> InboxView:
+        self._authorize(
+            context,
+            ("data_architect", "data_owner", "policy_approver", "budget_approver"),
+        )
         requests = self._require_requests(context)
         items = tuple(
             item for item in (self._inbox_item(request) for request in requests) if item is not None
@@ -562,6 +571,7 @@ class GovernedConsoleBackend:
     def get_requester_requests(
         self, context: TrustedActorContext
     ) -> tuple[RequesterRequestView, ...]:
+        self._authorize(context, ("requester",))
         requests = self._require_requests(context)
         self._require_fulfillment()
         return tuple(
@@ -571,12 +581,17 @@ class GovernedConsoleBackend:
         )
 
     def get_conversation(self, context: TrustedActorContext, request_id: str) -> ConversationView:
+        self._authorize(
+            context,
+            ("requester", "data_architect", "data_owner", "policy_approver"),
+        )
         request = self._visible_request(context, request_id)
         return self._conversation_view(request, self._conversation_entries(context, request_id))
 
     def get_clarified_outcome(
         self, context: TrustedActorContext, request_id: str
     ) -> ClarifiedOutcomeView:
+        self._authorize(context, ("requester", "data_architect"))
         requests = self._require_requests(context)
         self._require_fulfillment()
         for request in requests:
