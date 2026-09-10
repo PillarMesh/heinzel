@@ -280,6 +280,28 @@ def test_unknown_publication_returns_closed_resolution_failure() -> None:
     assert result.reason_codes == ("publication_not_found",)
 
 
+def test_every_adapter_refusal_carries_requester_safe_copy_without_internal_detail() -> None:
+    repository, receipt, integration_contract = published_repository()
+    authorities = (
+        authority("publication-unknown", integration_contract),
+        authority(receipt.publication_id, integration_contract, tenant_id="tenant-b"),
+    )
+
+    for refused_authority in authorities:
+        adapter = SemanticFulfillmentSnapshotAdapter(
+            publication_repository=repository,
+            authority_resolver=StaticAuthorityResolver(refused_authority),
+            clock=lambda: NOW,
+        )
+        result = adapter.resolve(tenant_id="tenant-a", request=request())
+
+        assert not isinstance(result, tuple)
+        explanation = result.requester_safe_explanation
+        assert explanation is not None
+        assert all(code not in explanation for code in result.reason_codes)
+        assert all(change not in explanation for change in result.smallest_changes)
+
+
 def test_cross_tenant_authority_is_refused_before_publication_lookup() -> None:
     repository, receipt, integration_contract = published_repository()
     adapter = SemanticFulfillmentSnapshotAdapter(

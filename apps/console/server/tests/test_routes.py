@@ -105,9 +105,11 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/requests/mine", "GET"),
         ("/api/v1/requests/{request_id}/conversation", "GET"),
         ("/api/v1/requests/{request_id}/clarified-outcome", "GET"),
+        ("/api/v1/data-products", "GET"),
         ("/api/v1/data-products/{data_product_id}", "GET"),
         ("/api/v1/runs", "GET"),
         ("/api/v1/acquisition-receipts", "GET"),
+        ("/api/v1/catalog", "GET"),
         ("/api/v1/catalog/{asset_ref}", "GET"),
         ("/api/v1/dashboards/{dashboard_ref}", "GET"),
         ("/api/v1/evidence/{evidence_ref}", "GET"),
@@ -125,8 +127,15 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/requests", "POST"),
         ("/api/v1/requests/{request_id}/conversation", "POST"),
         ("/api/v1/requests/{request_id}/clarified-outcome/acceptance", "POST"),
+        ("/api/v1/requests/{request_id}/withdrawal", "POST"),
         ("/api/v1/operations/{operation_id}/retry", "POST"),
         ("/api/v1/demo/reset", "POST"),
+        # The not-found boundary for every other API path. It serves no resource: it keeps the
+        # browser shell from answering an unknown API path with 200 HTML.
+        ("/api", "GET"),
+        ("/api", "POST"),
+        ("/api/{path:path}", "GET"),
+        ("/api/{path:path}", "POST"),
     }
 
 
@@ -140,9 +149,11 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/inbox/request-answer", "kind", "stakeholder_question"),
         ("/api/v1/requests/request-answer/conversation", "revision", 2),
         ("/api/v1/data-products/product-revenue", "version", 1),
+        ("/api/v1/data-products", "products", None),
         ("/api/v1/runs", "runs", None),
         ("/api/v1/acquisition-receipts", "receipts", None),
         ("/api/v1/catalog/asset-revenue", "asset_ref", "asset-revenue"),
+        ("/api/v1/catalog", "assets", None),
         ("/api/v1/dashboards/dashboard-revenue", "state", "not_delivered"),
     ),
 )

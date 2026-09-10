@@ -6,11 +6,14 @@ from pathlib import Path
 from typing import Never
 
 import pytest
+from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
 from pillarmesh_console import fixture_backend, fixture_data
 from pillarmesh_console.auth import TrustedActorContext
 from pillarmesh_console.contracts import ActorRole, ResetCommand, WorkspaceView
 from pillarmesh_console.errors import ConsoleNotFound, ConsoleUnavailable
 from pillarmesh_console.governed_adapters import (
+    CatalogBindingReader,
+    CatalogSearchHealthReader,
     DataProductReferenceReader,
     FulfillmentViewReader,
     GovernedWorkspaceIdentity,
@@ -113,6 +116,30 @@ def _binding(state: WarehouseBindingState = WarehouseBindingState.READY) -> Ware
     )
 
 
+class _CatalogReader:
+    def current_binding(self, tenant_id: str) -> CatalogBinding | None:
+        if tenant_id != _TENANT:
+            return None
+        return CatalogBinding(
+            binding_id="cat-0123456789abcdef01234567",
+            tenant_id=_TENANT,
+            capability_profile_digest="a" * 64,
+            lifecycle_state=CatalogBindingState.READY,
+            revision=2,
+            created_at=_FIXED_TIME,
+            updated_at=_FIXED_TIME,
+            provisioned_at=_FIXED_TIME,
+        )
+
+
+class _SearchHealth:
+    def __init__(self, ready: bool) -> None:
+        self._ready = ready
+
+    def search_ready(self, tenant_id: str) -> bool:
+        return self._ready and tenant_id == _TENANT
+
+
 def _private_operation(
     *,
     status: WarehouseOperationStatus = WarehouseOperationStatus.RUNNING,
@@ -167,6 +194,28 @@ def _inbox_request(request_id: str, requester_id: str) -> InboxRequest:
                 "request_type": "stakeholder_question",
                 "purpose": "Quarterly board reporting",
                 "question": "What was net revenue last quarter?",
+            },
+            "state": RequestState.PROPOSED,
+            "revision": 3,
+            "submitted_at": _FIXED_TIME,
+            "updated_at": _FIXED_TIME,
+        }
+    )
+
+
+def _data_access_request(request_id: str, requester_id: str) -> InboxRequest:
+    return InboxRequest.model_validate(
+        {
+            "request_id": request_id,
+            "tenant_id": _TENANT,
+            "requester_id": requester_id,
+            "payload": {
+                "request_type": "data_access",
+                "purpose": "Prepare a quarterly finance dashboard",
+                "data_product_id": "data-product-finance",
+                "requested_fields": ["net_revenue"],
+                "access_mode": "dashboard",
+                "expires_at": "2026-10-01T00:00:00Z",
             },
             "state": RequestState.PROPOSED,
             "revision": 3,
@@ -240,8 +289,11 @@ class _RequesterOnlyFulfillmentReader:
     """Stands in for `FulfillmentReadService` and fails if the console reaches for the
     architect projection while composing a requester view."""
 
-    def __init__(self, request: InboxRequest) -> None:
+    def __init__(
+        self, request: InboxRequest, *, no_valid_plan_explanation: str | None = None
+    ) -> None:
         self._request = request
+        self._no_valid_plan_explanation = no_valid_plan_explanation
 
     def requester_view(
         self, *, tenant_id: str, request_id: str, actor_id: str
@@ -261,6 +313,7 @@ class _RequesterOnlyFulfillmentReader:
             ),
             fulfillment_status="in_review",
             denial_explanation=None,
+            no_valid_plan_explanation=self._no_valid_plan_explanation,
         )
 
     def architect_view(
@@ -273,6 +326,8 @@ def _backend(
     *,
     operation_handles: OperationHandleRepository | None = None,
     warehouse_bindings: WarehouseBindingReader | None = None,
+    catalog_bindings: CatalogBindingReader | None = None,
+    catalog_search_health: CatalogSearchHealthReader | None = None,
     warehouse_operations: WarehouseOperationReader | None = None,
     requests: RequestInboxReader | None = None,
     fulfillment: FulfillmentViewReader | None = None,
@@ -291,6 +346,8 @@ def _backend(
         identity=_IDENTITY,
         operation_handles=operation_handles or InMemoryOperationHandleRepository(),
         warehouse_bindings=warehouse_bindings,
+        catalog_bindings=catalog_bindings,
+        catalog_search_health=catalog_search_health,
         warehouse_operations=warehouse_operations,
         requests=requests,
         fulfillment=fulfillment,
@@ -298,6 +355,22 @@ def _backend(
         acquisition_receipts=acquisition_receipts,
         data_products=data_products,
     )
+
+
+def test_catalog_readiness_degrades_when_search_is_unhealthy() -> None:
+    backend = _backend(
+        catalog_bindings=_CatalogReader(),
+        catalog_search_health=_SearchHealth(False),
+    )
+
+    catalog = next(
+        capability
+        for capability in backend.get_workspace(_architect_context()).capabilities
+        if capability.capability_id == "catalog-binding"
+    )
+
+    assert catalog.state == "degraded"
+    assert "search" in catalog.detail.lower()
 
 
 def _forbid_fixture_data(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -565,6 +638,39 @@ def test_requester_projection_excludes_unapproved_proposal_text() -> None:
     assert _PROPOSAL_TEXT_CANARY in proposal.subject.answer_text
     assert _PROPOSAL_TEXT_CANARY not in serialized
     assert outcome.statement_digest == digest(_clarified_outcome(request.request_id))
+    assert requests[0].question == "What was net revenue last quarter?"
+
+
+def test_requester_projection_includes_only_the_safe_no_valid_plan_explanation() -> None:
+    request = _inbox_request("req-00000000000000000001", "actor-requester").model_copy(
+        update={"state": RequestState.NO_VALID_PLAN}
+    )
+    safe_explanation = (
+        "This local environment has no authoritative source configured for that question."
+    )
+    backend = _backend(
+        requests=_StaticRequestReader((request,)),
+        fulfillment=_RequesterOnlyFulfillmentReader(
+            request, no_valid_plan_explanation=safe_explanation
+        ),
+    )
+
+    projected = backend.get_requester_requests(_requester_context())[0]
+
+    assert projected.no_valid_plan_explanation == safe_explanation
+    assert projected.question == "What was net revenue last quarter?"
+
+
+def test_requester_projection_does_not_invent_a_question_for_data_access() -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    backend = _backend(
+        requests=_StaticRequestReader((request,)),
+        fulfillment=_RequesterOnlyFulfillmentReader(request),
+    )
+
+    projected = backend.get_requester_requests(_requester_context())[0]
+
+    assert projected.question is None
 
 
 def test_requester_projection_excludes_another_requesters_request() -> None:
@@ -721,6 +827,26 @@ def test_a_data_product_projects_only_the_reference_an_owning_service_asserts() 
     assert view.data_product_id == "product-revenue"
     assert view.version == 3
     assert view.artifact_digest == "c" * 64
+
+
+def test_data_product_listing_deduplicates_versions_and_links_the_newest() -> None:
+    reader = _StubDataProductReader(
+        {
+            _TENANT: (
+                _reference("product-revenue", version=1),
+                _reference("product-customer", version=2),
+                _reference("product-revenue", version=3),
+            )
+        }
+    )
+    backend = _backend(data_products=reader)
+
+    listing = backend.get_data_products(_architect_context())
+
+    assert [(product.data_product_id, product.version) for product in listing.products] == [
+        ("product-customer", 2),
+        ("product-revenue", 3),
+    ]
 
 
 def test_a_data_product_outside_the_tenant_s_permitted_references_is_not_found() -> None:
@@ -1293,7 +1419,20 @@ def test_every_governed_read_is_gated_or_deliberately_ungated() -> None:
         # them here would refuse an actor the demo admits.
         "get_session",
         "get_workspace",
-        "get_data_product",
         "get_evidence",
         "get_operation",
     }
+
+
+def test_distinct_terminal_outcomes_keep_distinct_console_states() -> None:
+    """A delivered answer and a refusal must never share one lifecycle label."""
+    from pillarmesh_console.governed_backend import _REQUEST_STATES
+    from pillarmesh_request_management import RequestState
+
+    assert _REQUEST_STATES[RequestState.DELIVERED] == "delivered"
+    assert _REQUEST_STATES[RequestState.MONITORING] == "delivered"
+    assert _REQUEST_STATES[RequestState.NO_VALID_PLAN] == "no_valid_plan"
+    assert _REQUEST_STATES[RequestState.CANCELLED] == "cancelled"
+    assert _REQUEST_STATES[RequestState.FAILED] == "failed"
+    assert _REQUEST_STATES[RequestState.RETIRED] == "closed"
+    assert set(_REQUEST_STATES) == set(RequestState)

@@ -12,6 +12,7 @@ from pillarmesh_request_management import (
     RequestState,
     ResolutionFailure,
 )
+from pydantic import ValidationError
 
 _SUPPORT = runpy.run_path(str(Path(__file__).with_name("test_answer_fulfillment.py")))
 NOW = _SUPPORT["NOW"]
@@ -350,6 +351,7 @@ def test_failed_policy_reresolution_records_no_valid_plan() -> None:
         reason_codes=("policy_authority_unavailable",),
         constraint_refs=(),
         smallest_changes=("Restore approved policy authority.",),
+        requester_safe_explanation="The current policy authority is unavailable.",
     )
     fulfillment._snapshot_resolver = StaticSnapshotResolver(failure)
     fulfillment._clock = lambda: NOW + timedelta(hours=2)
@@ -362,7 +364,45 @@ def test_failed_policy_reresolution_records_no_valid_plan() -> None:
     )
 
     assert result.reason_codes == ("policy_authority_unavailable",)
+    assert result.requester_safe_explanation == "The current policy authority is unavailable."
     assert requests.get("tenant-a", proposal.request_id).state is RequestState.NO_VALID_PLAN
+
+
+def test_snapshot_resolution_failure_preserves_requester_safe_explanation() -> None:
+    fulfillment, requests, repository = service()
+    investigating, _ = submit_and_clarify(fulfillment, requests)
+    safe_explanation = (
+        "This local environment has no authoritative source configured for that question."
+    )
+    fulfillment._snapshot_resolver = StaticSnapshotResolver(
+        ResolutionFailure(
+            reason_codes=("local_scenario_not_supported",),
+            constraint_refs=(),
+            smallest_changes=("Configure an authoritative source.",),
+            requester_safe_explanation=safe_explanation,
+        )
+    )
+
+    result = fulfillment.propose_answer(
+        tenant_id="tenant-a",
+        request_id=investigating.request_id,
+        actor_id="architect-a",
+        expected_revision=investigating.revision,
+    )
+
+    assert result.requester_safe_explanation == safe_explanation
+    assert repository.list_no_valid_plans("tenant-a", investigating.request_id) == (result,)
+    assert requests.get("tenant-a", investigating.request_id).state is RequestState.NO_VALID_PLAN
+
+
+def test_resolution_failure_rejects_oversized_requester_safe_explanation() -> None:
+    with pytest.raises(ValidationError, match="at most 1000 characters"):
+        ResolutionFailure(
+            reason_codes=("local_scenario_not_supported",),
+            constraint_refs=(),
+            smallest_changes=("Configure an authoritative source.",),
+            requester_safe_explanation="x" * 1001,
+        )
 
 
 def test_plan_two_decision_is_refused_throughout_the_approval_window() -> None:

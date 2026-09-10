@@ -3447,6 +3447,12 @@ def test_publication_references_use_governed_descriptions_and_round_trip_readbac
     assert lineage_payload["edge"]["lineageDetails"]["description"] == _description_with_metadata(
         "validation", {"producer_ref": "producer-a"}
     )
+    # OpenMetadata 1.13.3 persists glossary-term entity edges but logs its own
+    # "Unsupported Entity Type ... for column lineage" message. PillarMesh sends
+    # no column-lineage payload, and independently verifies both the exact edge and
+    # graph before treating the operation as successful.
+    assert "columnsLineage" not in lineage_payload["edge"]["lineageDetails"]
+    assert "sqlQuery" not in lineage_payload["edge"]["lineageDetails"]
     source_snapshot = client.get_object(tenant_key="tenant-a", identity=source.stable_identity)
     assert source_snapshot.normalized_payload["provenance_ref"] == "provenance-a"
     assert (

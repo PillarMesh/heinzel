@@ -8,6 +8,11 @@ import type {
 import {AppShell} from "../components/app-shell"
 import {CapabilitySummaryPage} from "../components/capability-summary-page"
 import {RunsPage, type RunsClient} from "../features/runs/runs-page"
+import {CatalogPage, type CatalogClient} from "../features/catalog/catalog-page"
+import {
+  DataProductsPage,
+  type DataProductsClient,
+} from "../features/data-products/data-products-page"
 import {
   AcquisitionReceiptsPage,
   type AcquisitionReceiptsClient,
@@ -31,7 +36,9 @@ interface ConsoleRoutesProps {
     InboxClient &
     RequesterClient &
     RunsClient &
-    AcquisitionReceiptsClient
+    AcquisitionReceiptsClient &
+    CatalogClient &
+    DataProductsClient
   readonly setupEnvelope: ConsoleEnvelopeSetupView | undefined
   readonly workspaceEnvelope: ConsoleEnvelopeWorkspaceView
 }
@@ -44,11 +51,17 @@ interface ReviewWorkbenchRouteProps {
 
 interface RequesterRouteProps {
   readonly client: RequesterClient
+  readonly dataAccessAvailable: boolean
   readonly dataProvenance: ConsoleEnvelopeWorkspaceView["meta"]["data_provenance"]
   readonly sessionEnvelope: ConsoleEnvelopeSessionView
 }
 
-function MyRequestRoute({client, dataProvenance, sessionEnvelope}: RequesterRouteProps) {
+function MyRequestRoute({
+  client,
+  dataAccessAvailable,
+  dataProvenance,
+  sessionEnvelope,
+}: RequesterRouteProps) {
   const {requestId} = useParams()
   if (requestId === undefined) {
     return <RecoveryPage kind="projection" />
@@ -56,10 +69,29 @@ function MyRequestRoute({client, dataProvenance, sessionEnvelope}: RequesterRout
   return (
     <MyRequests
       client={client}
+      dataAccessAvailable={dataAccessAvailable}
       dataProvenance={dataProvenance}
       requestedRequestRef={requestId}
       session={sessionEnvelope.data}
     />
+  )
+}
+
+function CatalogAssetRoute({client}: {readonly client: CatalogClient}) {
+  const {assetRef} = useParams()
+  return assetRef === undefined ? (
+    <RecoveryPage kind="projection" />
+  ) : (
+    <CatalogPage assetRef={assetRef} client={client} />
+  )
+}
+
+function DataProductRoute({client}: {readonly client: DataProductsClient}) {
+  const {dataProductId} = useParams()
+  return dataProductId === undefined ? (
+    <RecoveryPage kind="projection" />
+  ) : (
+    <DataProductsPage client={client} dataProductId={dataProductId} />
   )
 }
 
@@ -108,6 +140,11 @@ export function ConsoleRoutes({
     ? "/requests"
     : selectLandingRoute(workspaceEnvelope.data, setupEnvelope?.data)
   const capabilities = workspaceEnvelope.data.capabilities ?? []
+  // Intake is offered only when the workspace says the server will accept it.
+  const dataAccessAvailable = capabilities.some(
+    (capability) =>
+      capability.capability_id === "data-access-intake" && capability.state === "ready",
+  )
 
   return (
     <AppShell
@@ -179,6 +216,7 @@ export function ConsoleRoutes({
           element={
             <MyRequests
               client={setupClient}
+              dataAccessAvailable={dataAccessAvailable}
               dataProvenance={workspaceEnvelope.meta.data_provenance}
               session={sessionEnvelope.data}
             />
@@ -189,24 +227,27 @@ export function ConsoleRoutes({
           element={
             <MyRequestRoute
               client={setupClient}
+              dataAccessAvailable={dataAccessAvailable}
               dataProvenance={workspaceEnvelope.meta.data_provenance}
               sessionEnvelope={sessionEnvelope}
             />
           }
           path="/requests/:requestId"
         />
+        <Route element={<DataProductsPage client={setupClient} />} path="/data-products" />
         <Route
-          element={<CapabilitySummaryPage capabilities={capabilities} kind="data-products" />}
-          path="/data-products"
+          element={<DataProductRoute client={setupClient} />}
+          path="/data-products/:dataProductId"
         />
         <Route element={<RunsPage client={setupClient} />} path="/runs" />
         <Route
           element={<AcquisitionReceiptsPage client={setupClient} />}
           path="/acquisition-receipts"
         />
+        <Route element={<CatalogPage client={setupClient} />} path="/catalog" />
         <Route
-          element={<CapabilitySummaryPage capabilities={capabilities} kind="catalog" />}
-          path="/catalog"
+          element={<CatalogAssetRoute client={setupClient} />}
+          path="/catalog/:assetRef"
         />
         <Route
           element={<CapabilitySummaryPage capabilities={capabilities} kind="dashboards" />}

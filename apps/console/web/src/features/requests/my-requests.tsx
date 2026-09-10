@@ -11,6 +11,7 @@ import type {
   CreateRequestCommand,
   DataProvenance,
   RequesterRequestView,
+  RequestWithdrawalCommand,
   SessionView,
 } from "../../api/generated"
 import {ClarifiedOutcome} from "./clarified-outcome"
@@ -40,6 +41,11 @@ export interface RequesterClient {
   getClarifiedOutcome(requestId: string): Promise<ConsoleEnvelopeClarifiedOutcomeView>
   getConversation(requestId: string): Promise<ConsoleEnvelopeConversationView>
   getRequesterRequests(): Promise<ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView>
+  withdrawRequest(
+    requestId: string,
+    command: RequestWithdrawalCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeRequesterRequestView>
 }
 
 export type IdempotencyKeyFactory = () => string
@@ -47,6 +53,8 @@ export type DigestText = (value: string) => Promise<string>
 
 interface MyRequestsProps {
   readonly client: RequesterClient
+  /** Whether the workspace publishes data-access intake as ready; the server enforces it too. */
+  readonly dataAccessAvailable: boolean
   readonly dataProvenance: DataProvenance
   readonly digestText?: DigestText
   readonly idempotencyKeyFactory?: IdempotencyKeyFactory
@@ -70,6 +78,20 @@ function stateLabel(request: RequesterRequestView): string {
   return request.state.replaceAll("_", " ")
 }
 
+const terminalStates: ReadonlySet<RequesterRequestView["state"]> = new Set([
+  "denied",
+  "delivered",
+  "no_valid_plan",
+  "cancelled",
+  "failed",
+  "closed",
+])
+
+// A terminal request admits no requester decision or reply, whatever explanation it carries.
+function isTerminal(request: RequesterRequestView): boolean {
+  return terminalStates.has(request.state)
+}
+
 function OwnDecisions({request}: {readonly request: RequesterRequestView}) {
   const decisions = request.own_decisions ?? []
   if (decisions.length === 0) {
@@ -87,8 +109,128 @@ function OwnDecisions({request}: {readonly request: RequesterRequestView}) {
   )
 }
 
+function DeliveredAnswer({request}: {readonly request: RequesterRequestView}) {
+  const delivery = request.delivered_answer
+  if (delivery === null || delivery === undefined) {
+    return null
+  }
+  const references = [
+    ...(delivery.datasets ?? []).map((reference) => ({kind: "Dataset", reference})),
+    ...(delivery.metrics ?? []).map((reference) => ({kind: "Metric", reference})),
+    ...(delivery.lineage ?? []).map((reference) => ({kind: "Lineage", reference})),
+    ...(delivery.quality_limitations ?? []).map((reference) => ({
+      kind: "Quality limitation",
+      reference,
+    })),
+  ]
+  return (
+    <section aria-labelledby="delivered-answer-title" className="delivered-answer">
+      <p className="eyebrow">Governed delivery</p>
+      <h2 id="delivered-answer-title">Delivered answer</h2>
+      <p className="delivered-answer__text">{delivery.answer_text}</p>
+      <p className="delivered-answer__context">
+        As of {delivery.as_of} · freshness {delivery.freshness.replaceAll("_", " ")}
+      </p>
+      <p className="delivered-answer__context">
+        Checked against the workspace's recorded warehouse binding and catalog publication.
+      </p>
+      {references.length === 0 ? null : (
+        <ul aria-label="Governed answer references" className="delivered-answer__references">
+          {references.map(({kind, reference}) => (
+            <li key={`${kind}:${reference.digest}`}>
+              {kind}: {deliveryReferenceLabel(kind, reference.artifact_id)} (version{" "}
+              {reference.version})
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+// Withdrawal is offered only before any work is admitted; the owning service refuses it after.
+const withdrawableStates: ReadonlySet<RequesterRequestView["state"]> = new Set([
+  "submitted",
+  "clarifying",
+  "investigating",
+  "proposed",
+  "awaiting_approval",
+])
+
+interface WithdrawRequestProps {
+  readonly client: RequesterClient
+  readonly idempotencyKeyFactory: IdempotencyKeyFactory
+  readonly onWithdrawn: () => void
+  readonly request: RequesterRequestView
+  readonly session: SessionView
+}
+
+function WithdrawRequest({
+  client,
+  idempotencyKeyFactory,
+  onWithdrawn,
+  request,
+  session,
+}: WithdrawRequestProps) {
+  const [confirming, setConfirming] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+
+  if (!withdrawableStates.has(request.state)) {
+    return null
+  }
+
+  async function withdraw(): Promise<void> {
+    setSubmitting(true)
+    setFailure(null)
+    try {
+      await client.withdrawRequest(
+        request.request_id,
+        {expected_revision: request.revision, active_role: "requester"},
+        {csrfToken: session.csrf_token, idempotencyKey: idempotencyKeyFactory()},
+      )
+      onWithdrawn()
+    } catch {
+      setFailure("The request could not be withdrawn. Reload it and try again.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="request-summary__withdrawal">
+      {confirming ? (
+        <>
+          <p>Withdrawing closes this request. PillarMesh will not prepare or deliver an answer.</p>
+          <button disabled={submitting} onClick={() => void withdraw()} type="button">
+            {submitting ? "Withdrawing…" : "Confirm withdrawal"}
+          </button>
+          <button disabled={submitting} onClick={() => setConfirming(false)} type="button">
+            Keep request
+          </button>
+        </>
+      ) : (
+        <button onClick={() => setConfirming(true)} type="button">
+          Withdraw request
+        </button>
+      )}
+      {failure === null ? null : <p role="alert">{failure}</p>}
+    </div>
+  )
+}
+
+function deliveryReferenceLabel(kind: string, artifactId: string): string {
+  if (kind === "Lineage") return "Governed lineage"
+  if (kind === "Quality limitation") return "Governed quality observation"
+  const withoutTechnicalPrefix = artifactId.replace(/^(product|metric)-/, "")
+  return withoutTechnicalPrefix
+    .replaceAll(/[-_]+/g, " ")
+    .replace(/^./, (first) => first.toUpperCase())
+}
+
 export function MyRequests({
   client,
+  dataAccessAvailable,
   dataProvenance,
   digestText = sha256Text,
   idempotencyKeyFactory = defaultIdempotencyKey,
@@ -98,6 +240,7 @@ export function MyRequests({
   const [requests, setRequests] = useState<readonly RequesterRequestView[] | null>(null)
   const [failed, setFailed] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
+  const [revisingRequest, setRevisingRequest] = useState(false)
   const reload = useCallback(() => setReloadToken((token) => token + 1), [])
 
   useEffect(() => {
@@ -139,12 +282,39 @@ export function MyRequests({
     if (selected === undefined) {
       return <p role="alert">The requested resource is unavailable.</p>
     }
+    const revisedRequestDraft =
+      selected.state === "no_valid_plan" &&
+      selected.kind === "stakeholder_question" &&
+      selected.question !== null &&
+      selected.question !== undefined &&
+      selected.no_valid_plan_explanation !== null &&
+      selected.no_valid_plan_explanation !== undefined
+        ? {
+            kind: "stakeholder_question" as const,
+            title: selected.title,
+            purpose: selected.requested_outcome,
+            question: selected.question,
+          }
+        : null
+    const terminal = isTerminal(selected)
+    const unexplainedClosure =
+      terminal &&
+      (selected.denial_explanation === null || selected.denial_explanation === undefined) &&
+      (selected.no_valid_plan_explanation === null ||
+        selected.no_valid_plan_explanation === undefined) &&
+      (selected.delivered_answer === null || selected.delivered_answer === undefined)
     return (
       <div className="requester-surface">
         <section aria-labelledby="request-title" className="request-summary">
           <p className="eyebrow">Your request</p>
           <h1 id="request-title">{selected.title}</h1>
           <p className="request-summary__outcome">{selected.requested_outcome}</p>
+          {selected.question === null || selected.question === undefined ? null : (
+            <div className="request-summary__question">
+              <p className="eyebrow">Original question</p>
+              <p>{selected.question}</p>
+            </div>
+          )}
           <p className="request-summary__state">
             Lifecycle state: <strong>{stateLabel(selected)}</strong> · revision{" "}
             {selected.revision} · updated {selected.updated_at}
@@ -153,25 +323,74 @@ export function MyRequests({
           selected.denial_explanation === undefined ? null : (
             <p className="request-summary__denial">{selected.denial_explanation}</p>
           )}
+          {selected.no_valid_plan_explanation === null ||
+          selected.no_valid_plan_explanation === undefined ? null : (
+            <p className="request-summary__no-valid-plan">
+              {selected.no_valid_plan_explanation}
+            </p>
+          )}
+          {unexplainedClosure ? (
+            <p className="request-summary__closed">
+              This request is closed. No further action is needed from you.
+            </p>
+          ) : null}
           <OwnDecisions request={selected} />
+          <WithdrawRequest
+            client={client}
+            idempotencyKeyFactory={idempotencyKeyFactory}
+            onWithdrawn={reload}
+            request={selected}
+            session={session}
+          />
+          {revisedRequestDraft !== null && !revisingRequest ? (
+            <button
+              className="request-summary__recovery"
+              onClick={() => setRevisingRequest(true)}
+              type="button"
+            >
+              Start revised request
+            </button>
+          ) : null}
         </section>
-        <ClarifiedOutcome
-          key={`${selected.request_id}:${selected.revision}`}
-          client={client}
-          dataProvenance={dataProvenance}
-          idempotencyKeyFactory={idempotencyKeyFactory}
-          onDecided={reload}
-          requestId={selected.request_id}
-          session={session}
-        />
-        <RequestConversation
-          onReplied={reload}
-          client={client}
-          dataProvenance={dataProvenance}
-          idempotencyKeyFactory={idempotencyKeyFactory}
-          requestId={selected.request_id}
-          session={session}
-        />
+        <DeliveredAnswer request={selected} />
+        {revisedRequestDraft !== null && revisingRequest ? (
+          <RequestIntake
+            client={client}
+            dataAccessAvailable={dataAccessAvailable}
+            digestText={digestText}
+            idempotencyKeyFactory={idempotencyKeyFactory}
+            initialDraft={revisedRequestDraft}
+            onCreated={reload}
+            session={session}
+          />
+        ) : null}
+        {terminal ? null : (
+          <>
+            {selected.clarified_outcome === null || selected.clarified_outcome === undefined ? (
+              // The list projection already says no outcome exists, so asking for one would only
+              // produce an expected not-found response.
+              <p>No clarified outcome has been prepared for this request yet.</p>
+            ) : (
+              <ClarifiedOutcome
+                key={`${selected.request_id}:${selected.revision}`}
+                client={client}
+                dataProvenance={dataProvenance}
+                idempotencyKeyFactory={idempotencyKeyFactory}
+                onDecided={reload}
+                requestId={selected.request_id}
+                session={session}
+              />
+            )}
+            <RequestConversation
+              onReplied={reload}
+              client={client}
+              dataProvenance={dataProvenance}
+              idempotencyKeyFactory={idempotencyKeyFactory}
+              requestId={selected.request_id}
+              session={session}
+            />
+          </>
+        )}
       </div>
     )
   }
@@ -193,7 +412,8 @@ export function MyRequests({
                   Lifecycle state: <strong>{stateLabel(request)}</strong> · updated{" "}
                   {request.updated_at}
                 </p>
-                {request.clarified_outcome === null ||
+                {isTerminal(request) ||
+                request.clarified_outcome === null ||
                 request.clarified_outcome === undefined ? null : (
                   <p className="request-list__acceptance">
                     {request.clarified_outcome.accepted
@@ -214,6 +434,7 @@ export function MyRequests({
       </section>
       <RequestIntake
         client={client}
+        dataAccessAvailable={dataAccessAvailable}
         digestText={digestText}
         idempotencyKeyFactory={idempotencyKeyFactory}
         onCreated={reload}

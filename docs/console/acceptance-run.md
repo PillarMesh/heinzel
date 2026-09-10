@@ -86,6 +86,14 @@ container:
 uv run python -m tests.acceptance.run_console_governed --engine postgresql
 ```
 
+To use an existing live catalog publication store instead of the bundled acceptance
+publication, add `--publication-database /absolute/path/to/publication.sqlite3`. The
+console selects the newest publication made through the workspace's catalog binding. It
+refuses to start when the store has no publication for the tenant, and when the store's
+publications were made through a different catalog binding. A fresh state directory mints
+its own binding, so record the store's binding id for the tenant under `"catalog"` in the
+directory's `bindings.json` first; the refusal names both binding ids.
+
 Recorded run, 2026-09-02: the console command returned `state: succeeded`, `phase:
 ready` in 48 seconds. `docker ps` showed `postgres:18.6-bookworm` healthy; the engine
 held all seven principal classes of addendum section 18 as real roles

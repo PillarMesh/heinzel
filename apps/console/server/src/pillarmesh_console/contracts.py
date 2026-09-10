@@ -78,6 +78,7 @@ type AcquisitionReasonCodeView = Literal[
 ]
 type ReviewKind = Literal["meaning", "data_product", "activation"]
 type RequestKind = Literal["stakeholder_question", "data_access"]
+# Terminal outcomes stay distinct: a requester must be able to tell an answer from a refusal.
 type RequestState = Literal[
     "submitted",
     "clarifying",
@@ -86,6 +87,10 @@ type RequestState = Literal[
     "awaiting_approval",
     "execution_ready",
     "denied",
+    "delivered",
+    "no_valid_plan",
+    "cancelled",
+    "failed",
     "closed",
 ]
 type Decision = Literal["approve", "reject", "request_changes"]
@@ -491,7 +496,12 @@ class RequesterRequestView(StrictModel):
     updated_at: UtcDatetime
     own_decisions: JsonTuple[OwnDecisionView] = Field(default=())
     clarified_outcome: ClarifiedOutcomeView | None = None
+    question: NonEmptyText | None = None
     denial_explanation: NonEmptyText | None = None
+    no_valid_plan_explanation: NonEmptyText | None = None
+    delivered_answer: DeliveredAnswerView | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class ArtifactReferenceView(StrictModel):
@@ -500,10 +510,24 @@ class ArtifactReferenceView(StrictModel):
     digest: Digest
 
 
+class DeliveredAnswerView(StrictModel):
+    answer_text: NonEmptyText
+    as_of: UtcDatetime
+    freshness: FreshnessState
+    datasets: JsonTuple[ArtifactReferenceView] = Field(default=())
+    metrics: JsonTuple[ArtifactReferenceView] = Field(default=())
+    lineage: JsonTuple[ArtifactReferenceView] = Field(default=())
+    quality_limitations: JsonTuple[ArtifactReferenceView] = Field(default=())
+    delivery_ref: PublicId
+
+
 class ProposalApprovalView(StrictModel):
     authority_ref: NonEmptyText
     reason: NonEmptyText
     satisfied: bool
+    # What a reviewer reads. The reference stays authoritative; the label is presentation only and
+    # is absent when the deployment cannot name the authority.
+    authority_label: NonEmptyText | None = None
 
 
 class DatasetEvidenceView(StrictModel):
@@ -604,6 +628,10 @@ class AdmissionView(StrictModel):
 
     available: bool
     blocking_reason: NonEmptyText | None = None
+    # True when the proposal was already admitted but its delivery did not complete. The same
+    # command then retries the delivery instead of admitting a second time. Omitted when false,
+    # so every admission projection that predates it is unchanged on the wire.
+    pending_delivery: bool = Field(default=False, exclude_if=lambda value: value is False)
 
 
 type PreparationAction = Literal["clarify", "prepare_answer", "submit_proposal"]
@@ -741,6 +769,10 @@ class DataProductView(StrictModel):
     version: int = Field(ge=1)
 
 
+class DataProductsView(StrictModel):
+    products: JsonTuple[DataProductView] = Field(default=())
+
+
 class RunView(StrictModel):
     """A run as the evidence store witnessed it.
 
@@ -807,6 +839,10 @@ class CatalogAssetView(StrictModel):
     classifications: JsonTuple[NonEmptyText] = Field(default=())
     lineage_summary: NonEmptyText
     link_ref: PublicId | None = None
+
+
+class CatalogAssetsView(StrictModel):
+    assets: JsonTuple[CatalogAssetView] = Field(default=())
 
 
 class DashboardView(StrictModel):
@@ -932,6 +968,13 @@ class ClarifiedOutcomeAcceptanceCommand(StrictModel):
     decision: Literal["approve", "request_changes"]
 
 
+class RequestWithdrawalCommand(StrictModel):
+    """A requester withdraws their own request before any work has been admitted for it."""
+
+    expected_revision: int = Field(ge=1)
+    active_role: Literal["requester"]
+
+
 class RetryOperationCommand(StrictModel):
     expected_revision: int = Field(ge=1)
     operation_digest: Digest
@@ -969,7 +1012,9 @@ class ConsoleApiSchema(StrictModel):
     requester_request_response: ConsoleEnvelope[RequesterRequestView]
     conversation_response: ConsoleEnvelope[ConversationView]
     clarified_outcome_response: ConsoleEnvelope[ClarifiedOutcomeView]
+    data_products_response: ConsoleEnvelope[DataProductsView]
     data_product_response: ConsoleEnvelope[DataProductView]
+    catalog_assets_response: ConsoleEnvelope[CatalogAssetsView]
     runs_response: ConsoleEnvelope[RunsView]
     acquisition_receipts_response: ConsoleEnvelope[AcquisitionReceiptsView]
     catalog_asset_response: ConsoleEnvelope[CatalogAssetView]
@@ -986,5 +1031,6 @@ class ConsoleApiSchema(StrictModel):
     create_request_command: CreateRequestCommand
     conversation_message_command: ConversationMessageCommand
     clarified_outcome_acceptance_command: ClarifiedOutcomeAcceptanceCommand
+    request_withdrawal_command: RequestWithdrawalCommand
     retry_operation_command: RetryOperationCommand
     reset_command: ResetCommand

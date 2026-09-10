@@ -11,7 +11,7 @@ from starlette.exceptions import HTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-from starlette.routing import BaseRoute, Mount, Route
+from starlette.routing import BaseRoute, Match, Mount, Route
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Scope
 
@@ -131,7 +131,27 @@ def create_app(
         allowed_origin=selected_origin,
     )
     routes: list[BaseRoute] = [Route("/healthz", endpoint=_health, methods=["GET"])]
-    routes.extend(build_routes(dependencies))
+    api_routes = build_routes(dependencies)
+    routes.extend(api_routes)
+
+    async def unknown_api_path(request: Request) -> Response:
+        # A known API path asked with the wrong method is still a method error, and names the
+        # methods the path does allow, exactly as the router would have without this route.
+        allowed = {
+            method
+            for route in api_routes
+            if isinstance(route, Route) and route.matches(request.scope)[0] is Match.PARTIAL
+            for method in route.methods or ()
+        }
+        if allowed:
+            raise HTTPException(status_code=405, headers={"Allow": ", ".join(sorted(allowed))})
+        # Anything else under /api is absent. Without this the browser shell would answer it
+        # with 200 HTML, and an API client or monitor would read a missing endpoint as success.
+        raise ConsoleNotFound()
+
+    unknown_api_methods = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+    routes.append(Route("/api", endpoint=unknown_api_path, methods=unknown_api_methods))
+    routes.append(Route("/api/{path:path}", endpoint=unknown_api_path, methods=unknown_api_methods))
     configured_dist = dist_directory or os.environ.get("PILLARMESH_CONSOLE_DIST")
     if configured_dist is not None:
         resolved_dist = Path(configured_dist).resolve()

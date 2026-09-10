@@ -1152,16 +1152,6 @@ def test_search_rebuild_runs_the_pinned_openmetadata_cli_to_terminal_completion(
             "project-a",
             "--file",
             str(tmp_path / "compose.yaml"),
-            "stop",
-            "ingestion",
-        ],
-        [
-            "docker",
-            "compose",
-            "--project-name",
-            "project-a",
-            "--file",
-            str(tmp_path / "compose.yaml"),
             "exec",
             "-T",
             "openmetadata-server",
@@ -1169,16 +1159,6 @@ def test_search_rebuild_runs_the_pinned_openmetadata_cli_to_terminal_completion(
             "reindex",
             "--force",
             "--entities=glossary,glossaryTerm,classification,tag,user",
-        ],
-        [
-            "docker",
-            "compose",
-            "--project-name",
-            "project-a",
-            "--file",
-            str(tmp_path / "compose.yaml"),
-            "start",
-            "ingestion",
         ],
     ]
 
@@ -1233,7 +1213,8 @@ def test_search_rebuild_fails_closed_after_bounded_retries(
         )
 
     assert attempts == 2
-    assert commands[-1][-2:] == ["start", "ingestion"]
+    assert "reindex" in commands[-1]
+    assert all("ingestion" not in command for command in commands)
 
 
 def test_compose_controller_plans_and_discovers_only_exact_project_resources(

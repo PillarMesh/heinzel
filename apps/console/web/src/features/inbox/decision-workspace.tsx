@@ -334,7 +334,22 @@ function RequestDetailPanel({
       {detail.admission === null || detail.admission === undefined ? null : (
         <div className="decision-detail__admission">
           <h3>Admission to execution</h3>
-          {detail.admission.available ? (
+          {detail.admission.available && detail.admission.pending_delivery === true ? (
+            <>
+              <p>
+                This answer was admitted, but its delivery has not completed. Retry delivery once
+                the cause is resolved; the admission is not recorded a second time.
+              </p>
+              <button
+                className="primary-action"
+                disabled={admitting || proposalDigest === null || proposalDigest === undefined}
+                onClick={() => void admitProposal()}
+                type="button"
+              >
+                {admitting ? "Retrying delivery…" : "Retry delivery"}
+              </button>
+            </>
+          ) : detail.admission.available ? (
             <>
               <p>
                 Every required approval is recorded against this proposal. Admission is the

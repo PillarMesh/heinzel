@@ -461,3 +461,18 @@ test("governed review shows exact artifact versions without inventing catalog li
   expect(screen.queryByText("No quality limitation was recorded.")).not.toBeInTheDocument()
   expect(screen.queryByRole("link")).not.toBeInTheDocument()
 })
+
+test("required approvals name the approving authority rather than its internal reference", () => {
+  render(<StakeholderAnswerReview proposal={{...answerProposal,
+    required_approvals: [
+      {authority_ref: "principal:requester-a", authority_label: "Requester", reason: "clarified_outcome_acceptance", satisfied: true},
+      {authority_ref: "role:data_engineering_architect", authority_label: "Data engineering architect", reason: "architect_review", satisfied: false},
+    ],
+  }} />)
+
+  const approvals = screen.getByRole("region", {name: "Required approvals"})
+  expect(approvals).toHaveTextContent("Requester · clarified outcome acceptance · Recorded")
+  expect(approvals).toHaveTextContent("Data engineering architect · architect review · Not recorded")
+  expect(approvals).not.toHaveTextContent("principal:requester-a")
+  expect(approvals).not.toHaveTextContent("role:data_engineering_architect")
+})

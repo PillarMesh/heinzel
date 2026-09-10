@@ -34,7 +34,7 @@ from pillarmesh_request_management.fulfillment_models import (
     StakeholderAnswerDraft,
 )
 from pillarmesh_request_management.models import DataAccessRequest, StakeholderQuestion
-from pillarmesh_semantic_registry import OntologyReviewBundle
+from pillarmesh_semantic_registry import CatalogPublicationRepository, OntologyReviewBundle
 from pillarmesh_semantic_registry.review import ReviewItemDecision
 from pillarmesh_warehouse_control import (
     EngineKind,
@@ -57,6 +57,7 @@ from .contracts import (
     ArtifactReferenceView,
     CapabilityState,
     CapabilityView,
+    CatalogAssetsView,
     CatalogAssetView,
     ClarifiedOutcomeAcceptanceCommand,
     ClarifiedOutcomeView,
@@ -65,10 +66,12 @@ from .contracts import (
     ConversationView,
     CreateRequestCommand,
     DashboardView,
+    DataProductsView,
     DataProductView,
     DatasetEvidenceView,
     Decision,
     DecisionCommand,
+    DeliveredAnswerView,
     DisclosureDenialProposalView,
     DisplayReferenceView,
     EvidenceContextView,
@@ -90,6 +93,7 @@ from .contracts import (
     RequesterRequestView,
     RequestKind,
     RequestProposalView,
+    RequestWithdrawalCommand,
     ResetCommand,
     RetryOperationCommand,
     ReviewItemView,
@@ -123,8 +127,10 @@ from .errors import (
 )
 from .governed_adapters import (
     CatalogBindingReader,
+    CatalogSearchHealthReader,
     DataProductReferenceReader,
     FulfillmentDecisionCommands,
+    FulfillmentExecutionCommands,
     FulfillmentPreparationCommands,
     FulfillmentViewReader,
     GovernedWorkspaceIdentity,
@@ -138,6 +144,7 @@ from .governed_adapters import (
     WarehouseConfirmation,
     WarehouseLifecycleCommands,
     WarehouseOperationReader,
+    WorkspaceActorDirectory,
     WorkspacePrincipalDirectory,
     classify_downstream_failure,
     console_error_for,
@@ -173,12 +180,12 @@ _REQUEST_STATES: dict[RequestState, ConsoleRequestState] = {
     RequestState.AWAITING_APPROVAL: "awaiting_approval",
     RequestState.EXECUTING: "execution_ready",
     RequestState.VERIFYING: "execution_ready",
-    RequestState.DELIVERED: "closed",
-    RequestState.MONITORING: "closed",
+    RequestState.DELIVERED: "delivered",
+    RequestState.MONITORING: "delivered",
     RequestState.REJECTED: "denied",
-    RequestState.NO_VALID_PLAN: "closed",
-    RequestState.CANCELLED: "closed",
-    RequestState.FAILED: "closed",
+    RequestState.NO_VALID_PLAN: "no_valid_plan",
+    RequestState.CANCELLED: "cancelled",
+    RequestState.FAILED: "failed",
     RequestState.RETIRED: "closed",
 }
 _BLOCKED_REASONS: dict[RequestState, str] = {
@@ -186,6 +193,17 @@ _BLOCKED_REASONS: dict[RequestState, str] = {
     RequestState.REJECTED: "The request was denied by the owning authority.",
     RequestState.FAILED: "The request failed before it reached a delivered outcome.",
 }
+# A requester may withdraw only before any work is admitted. Request-management itself would
+# cancel an executing or delivered request, so the console holds the narrower line.
+_WITHDRAWABLE_STATES: frozenset[RequestState] = frozenset(
+    {
+        RequestState.SUBMITTED,
+        RequestState.CLARIFYING,
+        RequestState.INVESTIGATING,
+        RequestState.PROPOSED,
+        RequestState.AWAITING_APPROVAL,
+    }
+)
 _BINDING_STATES: dict[WarehouseBindingState, CapabilityState] = {
     WarehouseBindingState.DRAFT: "blocked",
     WarehouseBindingState.PROVISIONING: "blocked",
@@ -239,6 +257,17 @@ def _not_delivered(dependency: str) -> ConsoleUnavailable:
     )
 
 
+def _catalog_classification_label(
+    reference: str,
+    *,
+    contract_digest: str,
+    semantic_names: dict[str, str],
+) -> str:
+    if reference == contract_digest:
+        return "Governed by approved contract"
+    return semantic_names.get(reference, "Governed classification")
+
+
 @dataclass(frozen=True, slots=True)
 class _Capability:
     capability_id: str
@@ -262,12 +291,6 @@ _UNDELIVERED_CAPABILITIES: tuple[_Capability, ...] = (
         label="Analyst dashboards",
         dependency="the governed Superset embedding surface",
         detail="Dashboard embedding remains an outstanding analyst-surface obligation.",
-    ),
-    _Capability(
-        capability_id="catalog-asset-preview",
-        label="Catalog asset preview",
-        dependency="a catalog asset read interface over published references",
-        detail="Publication receipts name references but carry no reviewable asset detail.",
     ),
     _Capability(
         capability_id="source-acquisition",
@@ -318,16 +341,21 @@ class GovernedConsoleBackend:
         warehouse_bindings: WarehouseBindingReader | None = None,
         warehouse_operations: WarehouseOperationReader | None = None,
         catalog_bindings: CatalogBindingReader | None = None,
+        catalog_search_health: CatalogSearchHealthReader | None = None,
+        catalog_publications: CatalogPublicationRepository | None = None,
         semantic_reviews: SemanticReviewReader | None = None,
         requests: RequestInboxReader | None = None,
         fulfillment: FulfillmentViewReader | None = None,
         runs: TenantRunReader | None = None,
         acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
         data_products: DataProductReferenceReader | None = None,
+        data_access_intake_available: bool = True,
+        actors: WorkspaceActorDirectory | None = None,
         principals: WorkspacePrincipalDirectory | None = None,
         warehouse_commands: WarehouseLifecycleCommands | None = None,
         request_commands: RequestIntakeCommands | None = None,
         fulfillment_commands: FulfillmentDecisionCommands | None = None,
+        fulfillment_execution_commands: FulfillmentExecutionCommands | None = None,
         fulfillment_preparation_commands: FulfillmentPreparationCommands | None = None,
         semantic_review_commands: SemanticReviewCommands | None = None,
         reset_tokens: Callable[[], str] = lambda: secrets.token_urlsafe(32),
@@ -337,16 +365,21 @@ class GovernedConsoleBackend:
         self._warehouse_bindings = warehouse_bindings
         self._warehouse_operations = warehouse_operations
         self._catalog_bindings = catalog_bindings
+        self._catalog_search_health = catalog_search_health
+        self._catalog_publications = catalog_publications
         self._semantic_reviews = semantic_reviews
         self._requests = requests
         self._fulfillment = fulfillment
         self._runs = runs
         self._acquisition_receipts = acquisition_receipts
         self._data_products = data_products
+        self._data_access_intake_available = data_access_intake_available
+        self._actors = actors
         self._principals = principals
         self._warehouse_commands = warehouse_commands
         self._request_commands = request_commands
         self._fulfillment_commands = fulfillment_commands
+        self._fulfillment_execution_commands = fulfillment_execution_commands
         self._fulfillment_preparation_commands = fulfillment_preparation_commands
         self._semantic_review_commands = semantic_review_commands
         self._reset_tokens = reset_tokens
@@ -357,7 +390,9 @@ class GovernedConsoleBackend:
 
     def get_session(self, context: TrustedActorContext, csrf_token: str) -> SessionView:
         return SessionView(
-            actor=ActorDisplayView(display_name=context.actor_id),
+            actor=ActorDisplayView(
+                display_name=self._actor_label(context.tenant_id, context.actor_id)
+            ),
             roles=context.roles,
             active_role=context.active_role,
             tenant=DisplayReferenceView(
@@ -469,6 +504,42 @@ class GovernedConsoleBackend:
                     None
                     if self._acquisition_receipts is not None
                     else "a durable acquisition evidence store"
+                ),
+            ),
+            CapabilityView(
+                capability_id="catalog-asset-preview",
+                label="Catalog asset preview",
+                state="ready" if self._catalog_publications is not None else "not_delivered",
+                detail=(
+                    "Published catalog assets can be listed and opened with their "
+                    "governed meaning, ownership, classification, and lineage summary."
+                    if self._catalog_publications is not None
+                    else "No catalog asset read interface is wired."
+                ),
+                dependency=(
+                    None
+                    if self._catalog_publications is not None
+                    else "a catalog asset read interface over published references"
+                ),
+            ),
+            CapabilityView(
+                capability_id="data-access-intake",
+                label="Data access requests",
+                state=(
+                    "ready"
+                    if self._data_access_intake_available and self._request_commands is not None
+                    else "not_delivered"
+                ),
+                detail=(
+                    "Data access requests are accepted into request-management."
+                    if self._data_access_intake_available and self._request_commands is not None
+                    else "Data access requests are not accepted: grant application, expiry, "
+                    "and revocation are not delivered."
+                ),
+                dependency=(
+                    None
+                    if self._data_access_intake_available and self._request_commands is not None
+                    else "an owning service that applies, expires, and revokes access grants"
                 ),
             ),
         ]
@@ -622,6 +693,7 @@ class GovernedConsoleBackend:
     def get_data_product(
         self, context: TrustedActorContext, data_product_id: str
     ) -> DataProductView:
+        self._authorize(context, context.roles)
         if self._data_products is None:
             raise _not_delivered("a tenant-scoped data product read interface")
         permitted = [
@@ -638,6 +710,26 @@ class GovernedConsoleBackend:
             data_product_id=newest.artifact_id,
             artifact_digest=newest.digest,
             version=newest.version,
+        )
+
+    def get_data_products(self, context: TrustedActorContext) -> DataProductsView:
+        self._authorize(context, context.roles)
+        if self._data_products is None:
+            raise _not_delivered("a tenant-scoped data product read interface")
+        newest_by_id: dict[str, ArtifactReference] = {}
+        for reference in self._data_products.permitted_references(context.tenant_id):
+            current = newest_by_id.get(reference.artifact_id)
+            if current is None or reference.version > current.version:
+                newest_by_id[reference.artifact_id] = reference
+        return DataProductsView(
+            products=tuple(
+                DataProductView(
+                    data_product_id=reference.artifact_id,
+                    artifact_digest=reference.digest,
+                    version=reference.version,
+                )
+                for reference in sorted(newest_by_id.values(), key=lambda item: item.artifact_id)
+            )
         )
 
     def get_runs(self, context: TrustedActorContext) -> RunsView:
@@ -682,7 +774,97 @@ class GovernedConsoleBackend:
         )
 
     def get_catalog_asset(self, context: TrustedActorContext, asset_ref: str) -> CatalogAssetView:
-        raise _not_delivered("a catalog asset read interface over published references")
+        self._authorize(context, ("requester", "data_architect", "data_owner"))
+        assets = self.get_catalog_assets(context).assets
+        asset = next((item for item in assets if item.asset_ref == asset_ref), None)
+        if asset is None:
+            raise ConsoleNotFound()
+        return asset
+
+    def get_catalog_assets(self, context: TrustedActorContext) -> CatalogAssetsView:
+        self._authorize(context, ("requester", "data_architect", "data_owner"))
+        publications = self._catalog_publications
+        if publications is None:
+            raise _not_delivered("a catalog asset read interface over published references")
+        assets_by_identity: dict[str, CatalogAssetView] = {}
+        for receipt in publications.list_publications(tenant_id=context.tenant_id):
+            intent, _, _ = publications.load_publication(
+                tenant_id=context.tenant_id, publication_id=receipt.publication_id
+            )
+            observations = publications.load_observations(
+                tenant_id=context.tenant_id, operation_id=intent.operation_id
+            )
+            semantic_version, _ = publications.load_inputs(
+                tenant_id=context.tenant_id, operation_id=intent.operation_id
+            )
+            semantic_classification_names = {
+                classification.object_id: classification.name
+                for classification in semantic_version.classifications
+            }
+            glossary_by_identity = {
+                observation.logical_identity: observation
+                for observation in observations
+                if observation.object_kind == "glossary_term"
+            }
+            for identity, semantic_object in zip(
+                intent.semantic_identities, intent.semantic_objects, strict=True
+            ):
+                if identity in assets_by_identity:
+                    continue
+                glossary = glossary_by_identity.get(identity)
+                owner = (
+                    glossary.normalized_payload.get("owner_ref")
+                    if glossary is not None
+                    else intent.contract_reference.artifact_id
+                )
+                if not isinstance(owner, str):
+                    raise ValueError("persisted catalog glossary owner is invalid")
+                classifications = tuple(
+                    sorted(
+                        {
+                            _catalog_classification_label(
+                                classification,
+                                contract_digest=intent.contract_digest,
+                                semantic_names=semantic_classification_names,
+                            )
+                            for item in observations
+                            if item.object_kind == "classification"
+                            and item.normalized_payload.get("subject_ref") == identity
+                            and isinstance(
+                                classification := item.normalized_payload.get("classification_ref"),
+                                str,
+                            )
+                        }
+                    )
+                )
+                lineage_count = sum(
+                    1
+                    for item in observations
+                    if item.object_kind == "lineage"
+                    and identity
+                    in (
+                        item.normalized_payload.get("from_ref"),
+                        item.normalized_payload.get("to_ref"),
+                    )
+                )
+                asset_digest = digest({"tenant_id": context.tenant_id, "identity": identity})
+                asset_ref = f"asset-{asset_digest[:24]}"
+                assets_by_identity[identity] = CatalogAssetView(
+                    asset_ref=asset_ref,
+                    display_name=semantic_object.name,
+                    definition=semantic_object.definition,
+                    owner=owner,
+                    classifications=classifications,
+                    lineage_summary=(
+                        "No governed lineage relationships are published."
+                        if lineage_count == 0
+                        else f"{lineage_count} governed lineage relationship"
+                        f"{'s' if lineage_count != 1 else ''} published."
+                    ),
+                )
+        return CatalogAssetsView(
+            assets=tuple(sorted(assets_by_identity.values(), key=lambda item: item.display_name))
+        )
 
     def get_dashboard(self, context: TrustedActorContext, dashboard_ref: str) -> DashboardView:
         raise _not_delivered("the governed Superset embedding surface")
@@ -1014,14 +1196,32 @@ class GovernedConsoleBackend:
                 ),
                 recovery_action="reload",
             )
-        self._guarded(
-            lambda: commands.admit(
-                tenant_id=context.tenant_id,
-                request_id=request_id,
-                actor_id=context.actor_id,
-                expected_revision=command.expected_revision,
+        if request.state is not RequestState.EXECUTING:
+            # An executing request was admitted already and only its delivery is pending, so
+            # the same command retries delivery rather than recording a second admission.
+            self._guarded(
+                lambda: commands.admit(
+                    tenant_id=context.tenant_id,
+                    request_id=request_id,
+                    actor_id=context.actor_id,
+                    expected_revision=command.expected_revision,
+                )
             )
-        )
+        admitted = self._visible_request(context, request_id)
+        if (
+            admitted.state is RequestState.EXECUTING
+            and isinstance(admitted.payload, StakeholderQuestion)
+            and self._fulfillment_execution_commands is not None
+        ):
+            execution_commands = self._fulfillment_execution_commands
+            self._guarded(
+                lambda: execution_commands.execute_answer(
+                    tenant_id=context.tenant_id,
+                    request_id=request_id,
+                    actor_id="pillarmesh-runtime",
+                    expected_revision=admitted.revision,
+                )
+            )
         # Re-project rather than describe the receipt: admission may have superseded
         # the proposal or produced `No Valid Plan` instead, and the request's own
         # state is what says which.
@@ -1046,6 +1246,15 @@ class GovernedConsoleBackend:
                 )
             )
         else:
+            if not self._data_access_intake_available:
+                raise ConsoleUnavailable(
+                    code=CAPABILITY_NOT_DELIVERED,
+                    safe_message=(
+                        "Data access requests are not available in this workspace yet because "
+                        "grant application, expiry, and revocation are not delivered."
+                    ),
+                    recovery_action="none",
+                )
             created = self._guarded(
                 lambda: commands.submit_access_request(
                     tenant_id=context.tenant_id,
@@ -1070,6 +1279,11 @@ class GovernedConsoleBackend:
             requested_outcome=created.payload.purpose,
             revision=created.revision,
             updated_at=created.updated_at,
+            question=(
+                created.payload.question
+                if isinstance(created.payload, StakeholderQuestion)
+                else None
+            ),
         )
 
     def append_conversation_message(
@@ -1128,6 +1342,51 @@ class GovernedConsoleBackend:
             )
         )
         return self.get_clarified_outcome(context, request_id)
+
+    def withdraw_request(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: RequestWithdrawalCommand,
+    ) -> RequesterRequestView:
+        self._authorize(context, ("requester",))
+        self._require_command_role(context, command.active_role)
+        commands = self._require_fulfillment_commands()
+        request = next(
+            (
+                item
+                for item in self._require_requests(context)
+                if item.request_id == request_id and item.requester_id == context.actor_id
+            ),
+            None,
+        )
+        if request is None:
+            raise ConsoleNotFound()
+        if request.state is RequestState.CANCELLED:
+            # Withdrawing is idempotent: a retry after a committed cancellation reports the
+            # withdrawn request rather than a failure the requester cannot act on.
+            return self._requester_request(context, request)
+        if request.state not in _WITHDRAWABLE_STATES:
+            # Request-management would cancel an executing or delivered request; the console
+            # refuses first, because withdrawing work already admitted is not the requester's call.
+            raise ConsoleConflict(
+                code="withdrawal_unavailable",
+                safe_message="This request has already reached an outcome and cannot be withdrawn.",
+                recovery_action="none",
+            )
+        self._require_current_revision(command.expected_revision, request.revision)
+        self._guarded(
+            lambda: commands.cancel(
+                tenant_id=context.tenant_id,
+                request_id=request_id,
+                actor_id=context.actor_id,
+                expected_revision=command.expected_revision,
+            )
+        )
+        withdrawn = next(
+            item for item in self._require_requests(context) if item.request_id == request_id
+        )
+        return self._requester_request(context, withdrawn)
 
     def retry_operation(
         self,
@@ -1266,7 +1525,7 @@ class GovernedConsoleBackend:
         messages = tuple(
             ConversationMessageView(
                 message_id=entry.entry_id,
-                author_label=entry.actor_id,
+                author_label=self._actor_label(request.tenant_id, entry.actor_id),
                 author_role=entry.author_role,
                 body=entry.body,
                 created_at=entry.created_at,
@@ -1281,6 +1540,36 @@ class GovernedConsoleBackend:
             ),
             messages=messages,
         )
+
+    def _actor_label(self, tenant_id: str, actor_id: str) -> str:
+        directory = self._actors
+        if directory is None:
+            return actor_id
+        return directory.display_name(tenant_id=tenant_id, actor_id=actor_id) or actor_id
+
+    def _authority_label(self, view: ArchitectRequestView, authority_ref: str) -> str | None:
+        """A reviewer-readable name for an approving authority, or None when none is known.
+
+        The requester's own principal is named through the deployment's actor directory. A role
+        authority names its role. Any other principal stays unnamed rather than guessed, and the
+        reference itself is always projected alongside for the owning service's check.
+        """
+        tenant_id = view.request.tenant_id
+        requester_id = view.request.requester_id
+        principals = self._principals
+        if (
+            principals is not None
+            and self._actors is not None
+            and principals.principal_ref(
+                tenant_id=tenant_id, actor_id=requester_id, role="requester"
+            )
+            == authority_ref
+        ):
+            return self._actors.display_name(tenant_id=tenant_id, actor_id=requester_id)
+        role_prefix = "role:"
+        if authority_ref.startswith(role_prefix) and len(authority_ref) > len(role_prefix):
+            return authority_ref[len(role_prefix) :].replace("_", " ").capitalize()
+        return None
 
     def _architect_view(
         self, context: TrustedActorContext, request_id: str
@@ -1350,7 +1639,9 @@ class GovernedConsoleBackend:
             purpose=request.payload.purpose,
             revision=request.revision,
             proposal_digest=None if requirement is None else requirement.subject_digest,
-            proposal=self._proposal_view(view),
+            proposal=self._proposal_view(
+                view, lambda authority_ref: self._authority_label(view, authority_ref)
+            ),
             conversation=self._conversation_view(
                 request, self._conversation_entries(context, request.request_id)
             ),
@@ -1374,7 +1665,12 @@ class GovernedConsoleBackend:
                 and not decided
                 else ()
             ),
-            admission=self._admission_view(request, proposal, view.approvals),
+            admission=self._admission_view(
+                request,
+                proposal,
+                view.approvals,
+                delivery_retry_available=self._fulfillment_execution_commands is not None,
+            ),
             preparation_actions=self._preparation_actions(request, view),
             preparation_notes=self._preparation_notes(view),
             question=(
@@ -1413,7 +1709,10 @@ class GovernedConsoleBackend:
         )
 
     @staticmethod
-    def _approval_views(view: ArchitectRequestView) -> tuple[ProposalApprovalView, ...]:
+    def _approval_views(
+        view: ArchitectRequestView,
+        label_for: Callable[[str], str | None] = lambda _: None,
+    ) -> tuple[ProposalApprovalView, ...]:
         if not view.proposals:
             return ()
         proposal = view.proposals[-1]
@@ -1440,6 +1739,7 @@ class GovernedConsoleBackend:
         return tuple(
             ProposalApprovalView(
                 authority_ref=requirement.authority_ref,
+                authority_label=label_for(requirement.authority_ref),
                 reason=requirement.reason_code,
                 satisfied=sum(
                     1
@@ -1461,11 +1761,15 @@ class GovernedConsoleBackend:
         )
 
     @classmethod
-    def _proposal_view(cls, view: ArchitectRequestView) -> RequestProposalView | None:
+    def _proposal_view(
+        cls,
+        view: ArchitectRequestView,
+        label_for: Callable[[str], str | None] = lambda _: None,
+    ) -> RequestProposalView | None:
         if not view.proposals:
             return None
         proposal = view.proposals[-1]
-        approvals = cls._approval_views(view)
+        approvals = cls._approval_views(view, label_for)
         evidence = cls._evidence_context(view)
         subject = proposal.subject
         if isinstance(subject, StakeholderAnswerDraft):
@@ -1517,6 +1821,7 @@ class GovernedConsoleBackend:
         request: InboxRequest,
         proposal: FulfillmentProposal | None,
         approvals: tuple[FulfillmentApprovalBinding, ...],
+        delivery_retry_available: bool = False,
     ) -> AdmissionView | None:
         """Whether the fulfillment service would accept an admission now.
 
@@ -1532,6 +1837,16 @@ class GovernedConsoleBackend:
         judgement, and duplicating it here would make the console a second authority
         over someone else's transaction.
         """
+        if (
+            request.state is RequestState.EXECUTING
+            and proposal is not None
+            and isinstance(proposal.subject, StakeholderAnswerDraft)
+            and delivery_retry_available
+        ):
+            # Admission committed but delivery did not. Without this the request sat in
+            # `executing` with no action at all: admission refuses a request past approval, and
+            # nothing else reaches the delivery step again.
+            return AdmissionView(available=True, pending_delivery=True)
         if request.state is not RequestState.AWAITING_APPROVAL or proposal is None:
             return None
         proposal_digest = digest(proposal)
@@ -1700,10 +2015,17 @@ class GovernedConsoleBackend:
             return "degraded", "The catalog control service is temporarily unreadable."
         if binding is None:
             return "blocked", "This workspace has not confirmed a catalog binding."
-        return (
-            "ready" if binding.lifecycle_state is CatalogBindingState.READY else "blocked",
-            f"The managed catalog binding is {binding.lifecycle_state.value}.",
-        )
+        if binding.lifecycle_state is not CatalogBindingState.READY:
+            return "blocked", f"The managed catalog binding is {binding.lifecycle_state.value}."
+        if self._catalog_search_health is None:
+            return "degraded", "The managed catalog is ready, but search health is not configured."
+        try:
+            search_ready = self._catalog_search_health.search_ready(context.tenant_id)
+        except Exception:
+            return "degraded", "The managed catalog search service is temporarily unreadable."
+        if not search_ready:
+            return "degraded", "The managed catalog is ready, but search is unhealthy."
+        return "ready", "The managed catalog binding and search projection are ready."
 
     def _request_capability(self, context: TrustedActorContext) -> tuple[CapabilityState, str]:
         if self._requests is None or self._fulfillment is None:
@@ -1849,7 +2171,37 @@ class GovernedConsoleBackend:
                 if decision.decision in _DECISIONS
             ),
             clarified_outcome=self._outcome_view(request, view),
+            question=(
+                request.payload.question
+                if isinstance(request.payload, StakeholderQuestion)
+                else None
+            ),
             denial_explanation=view.denial_explanation,
+            no_valid_plan_explanation=view.no_valid_plan_explanation,
+            delivered_answer=(
+                None
+                if view.delivered_answer is None or view.delivery_id is None
+                else DeliveredAnswerView(
+                    answer_text=view.delivered_answer.answer_text,
+                    as_of=view.delivered_answer.as_of,
+                    freshness=view.delivered_answer.freshness_disposition,
+                    datasets=tuple(
+                        self._artifact_view(item)
+                        for item in view.delivered_answer.governed_dataset_refs
+                    ),
+                    metrics=tuple(
+                        self._artifact_view(item) for item in view.delivered_answer.metric_refs
+                    ),
+                    lineage=tuple(
+                        self._artifact_view(item) for item in view.delivered_answer.lineage_refs
+                    ),
+                    quality_limitations=tuple(
+                        self._artifact_view(item)
+                        for item in view.delivered_answer.material_quality_limitations
+                    ),
+                    delivery_ref=view.delivery_id,
+                )
+            ),
         )
 
     def _clarified_outcome(

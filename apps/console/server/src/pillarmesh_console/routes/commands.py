@@ -26,6 +26,7 @@ from ..contracts import (
     RequestClarificationCommand,
     RequestDetailView,
     RequesterRequestView,
+    RequestWithdrawalCommand,
     ResetCommand,
     RetryOperationCommand,
     ReviewView,
@@ -255,6 +256,19 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
         )
         return envelope_response(request, dependencies, result, _REQUESTER_REQUEST_RESPONSE)
 
+    async def withdraw_request(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        request_id = path_parameter(request, "request_id")
+        command = await _parse_command(request, RequestWithdrawalCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.withdraw_request(context, request_id, command),
+        )
+        return envelope_response(request, dependencies, result, _REQUESTER_REQUEST_RESPONSE)
+
     async def append_message(request: Request) -> Response:
         context = trusted_context(request, dependencies)
         key = _validate_command_request(request, dependencies, context)
@@ -332,6 +346,7 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
             accept_outcome,
             methods=["POST"],
         ),
+        Route("/api/v1/requests/{request_id}/withdrawal", withdraw_request, methods=["POST"]),
         Route("/api/v1/operations/{operation_id}/retry", retry_operation, methods=["POST"]),
     ]
     if dependencies.backend.fixture_mode:

@@ -445,41 +445,29 @@ class DockerComposeController:
         _run_restore_step("terminal readiness", self._run_readiness)
 
     def rebuild_search_index(self, *, project_name: str, environment: Mapping[str, str]) -> None:
-        # Ingestion is independent of glossary indexing and otherwise raises the emulator's
-        # peak memory enough to make the restore proof host-dependent.
-        self._compose(project_name, "stop", "ingestion", environment=environment)
-        rebuild_failure: BaseException | None = None
-        try:
-            for _ in range(_SEARCH_REBUILD_ATTEMPTS):
-                try:
-                    self._process.exec(
-                        project_name=project_name,
-                        arguments=(
-                            "exec",
-                            "-T",
-                            "openmetadata-server",
-                            "./bootstrap/openmetadata-ops.sh",
-                            "reindex",
-                            "--force",
-                            "--entities=" + _RESTORED_SEARCH_ENTITIES,
-                        ),
-                        environment=self._compose_environment(environment),
-                    )
-                except ComposeCommandError:
-                    continue
-                else:
-                    break
+        # Ingestion is opt-in and independent of glossary indexing. Keeping the
+        # reindex operation within the core services avoids starting an unconfigured,
+        # memory-heavy Airflow process during restore.
+        for _ in range(_SEARCH_REBUILD_ATTEMPTS):
+            try:
+                self._process.exec(
+                    project_name=project_name,
+                    arguments=(
+                        "exec",
+                        "-T",
+                        "openmetadata-server",
+                        "./bootstrap/openmetadata-ops.sh",
+                        "reindex",
+                        "--force",
+                        "--entities=" + _RESTORED_SEARCH_ENTITIES,
+                    ),
+                    environment=self._compose_environment(environment),
+                )
+            except ComposeCommandError:
+                continue
             else:
-                raise RuntimeError("OpenMetadata search index rebuild failed")
-        except BaseException as error:
-            rebuild_failure = error
-        try:
-            self._compose(project_name, "start", "ingestion", environment=environment)
-        except Exception:
-            if rebuild_failure is None:
-                raise
-        if rebuild_failure is not None:
-            raise rebuild_failure
+                return
+        raise RuntimeError("OpenMetadata search index rebuild failed")
 
     def verify_pinned_images(self, *, project_name: str, environment: Mapping[str, str]) -> str:
         containers = tuple(

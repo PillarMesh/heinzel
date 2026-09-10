@@ -57,8 +57,8 @@ approval scenario. Stop each server with Ctrl-C when finished.
    and verify the recorded requester approval. The requester must never see the
    unapproved candidate. No seeded request is needed for this journey.
 4. Confirm the reviewed digest and approve. Then separately admit to execution. Verify
-   the request displays **execution ready** (owning state `executing`); admission is not
-   answer delivery. Avoid posting a new conversation message between approval and
+   the request displays **Delivered answer** (owning state `delivered`) with its catalog,
+   semantic, contract, product, and warehouse references. Avoid posting a new conversation message between approval and
    admission: messages advance the request revision and invalidate approvals, and the
    UI must withdraw admission.
 5. Reload both sessions to check persistence. Try narrow and medium browser widths and
@@ -67,18 +67,49 @@ approval scenario. Stop each server with Ctrl-C when finished.
 
 ## Limits to record
 
-- Access request intake is supported, but access proposal preparation is not composed
-  in this harness. Its buttons remain unavailable.
+- Data access request intake is unavailable until grant application, expiry, and
+  revocation are composed.
 - Missing governed data produces an explicit dependency. No Valid Plan includes the
   owning refusal reasons and required changes; neither outcome invents an answer.
 - Source acquisition needs a composed runtime and approved live binding.
 - Process document upload, analyst dashboards, catalog asset previews, and operation
   retry remain unavailable in governed mode.
-- Answer delivery, grant application/expiry/revocation, and downstream transformation
-  effects are not proved by admission or by this harness.
-- The scenario clock is fixed so its semantic observations remain reproducible; displayed
-  timestamps are scenario time. Semantic facts are local test data; the browser must
-  perform new writes to demonstrate that the supported command path works.
+- Grant application, expiry/revocation, and downstream transformation effects remain
+  outside this semantic-definition journey.
+- Interactive transactions use wall-clock UTC. Semantic facts come from the selected
+  approved publication; the default publication is local test data unless
+  `--publication-database` selects a live publication store.
+
+## Test an unsupported local question
+
+The local harness resolves a stakeholder question when it names exactly one term in the
+workspace's current approved semantic publication. A question with no matching term, or
+an ambiguous match, terminates in the owning `No Valid Plan` state. The requester sees
+the original question and the safe explanation, while the architect sees the internal
+reason and smallest required change.
+
+Use a fresh state directory and the requester and architect commands above. Submit title
+`Test`, purpose `This is a test request`, and question `What is the current MRR` at
+<http://127.0.0.1:8131/requests>. At <http://127.0.0.1:8130/inbox>, record clarification
+and select **Prepare answer proposal**. Confirm the architect sees
+`published_semantic_term_not_found`, then return to the requester detail and use **Start revised
+request**. Opening that form must not create anything. Edit the question and submit it;
+the UI confirms `Revised request submitted` and offers a labeled **View request** link. The
+confirmation intentionally omits the internal request identifier, revision, and owning state.
+Automated coverage compares the two link destinations for distinct identities and verifies
+revision 1 at the owning repository boundary.
+
+The acceptance test also queries the owning request repository after the action. It requires
+state `NO_VALID_PLAN`, a resulting revision of at least 2, zero proposals, and zero calls to
+the answer candidate provider. Browser status text alone does not prove the terminal state.
+Run both boundaries with:
+
+```sh
+uv run pytest services/runtime/tests/test_acquisition.py \
+  tests/acceptance/test_run_console_governed.py -q
+cd apps/console
+npm run test:e2e:governed
+```
 
 See [known gaps](known-gaps.md) and [HTTP acceptance](acceptance-run.md) for the owning
 boundaries and the database verification procedure.

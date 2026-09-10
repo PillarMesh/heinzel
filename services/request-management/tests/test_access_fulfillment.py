@@ -12,6 +12,7 @@ from pillarmesh_request_management import (
     InboxRequest,
     RequestManagementService,
     RequestState,
+    ResolutionFailure,
     SQLiteFulfillmentRepository,
     SQLiteRequestRepository,
     StakeholderAnswerDraft,
@@ -188,6 +189,28 @@ def test_unentitled_access_creates_denial_without_dependency() -> None:
 
     assert proposal.subject.subject_kind == "disclosure_denial"
     assert repository.list_dependencies("tenant-a", investigating.request_id) == ()
+
+
+def test_access_snapshot_failure_preserves_requester_safe_explanation() -> None:
+    fulfillment, requests, repository, investigating = setup()
+    safe_explanation = "The authoritative access context is unavailable."
+    fulfillment._snapshot_resolver.value = ResolutionFailure(
+        reason_codes=("authority_unavailable",),
+        constraint_refs=(),
+        smallest_changes=("Restore the approved authority observation.",),
+        requester_safe_explanation=safe_explanation,
+    )
+
+    result = fulfillment.propose_access(
+        tenant_id="tenant-a",
+        request_id=investigating.request_id,
+        actor_id="architect-a",
+        expected_revision=investigating.revision,
+    )
+
+    assert result.requester_safe_explanation == safe_explanation
+    assert repository.list_no_valid_plans("tenant-a", investigating.request_id) == (result,)
+    assert requests.get("tenant-a", investigating.request_id).state is RequestState.NO_VALID_PLAN
 
 
 def test_approved_denial_records_requester_safe_disposition() -> None:

@@ -12,11 +12,13 @@ from .fulfillment_models import (
     DenialDispositionReceipt,
     FulfillmentAdmissionReceipt,
     FulfillmentApprovalBinding,
+    FulfillmentDeliveryReceipt,
     FulfillmentEvidenceReceipt,
     FulfillmentProposal,
     FulfillmentSubject,
     RequestDependency,
     RequestNoValidPlan,
+    StakeholderAnswerDraft,
 )
 from .fulfillment_protocols import AuthorityRoleResolver
 from .fulfillment_repository import FulfillmentRepository
@@ -41,6 +43,9 @@ class RequesterRequestView(ArtifactModel):
         "investigating", "in_review", "ready_for_execution", "denied", "closed"
     ]
     denial_explanation: str | None
+    no_valid_plan_explanation: str | None
+    delivered_answer: StakeholderAnswerDraft | None = None
+    delivery_id: str | None = None
 
 
 class ReviewerRequestView(ArtifactModel):
@@ -63,6 +68,7 @@ class ArchitectRequestView(ArtifactModel):
     proposals: tuple[FulfillmentProposal, ...]
     approvals: tuple[FulfillmentApprovalBinding, ...]
     admissions: tuple[FulfillmentAdmissionReceipt, ...]
+    deliveries: tuple[FulfillmentDeliveryReceipt, ...] = ()
     dependencies: tuple[RequestDependency, ...]
     no_valid_plans: tuple[RequestNoValidPlan, ...]
     denials: tuple[DenialDispositionReceipt, ...]
@@ -117,6 +123,24 @@ class FulfillmentReadService:
             if request.state is RequestState.REJECTED and denials
             else None
         )
+        no_valid_plans = self._repository.list_no_valid_plans(tenant_id, request_id)
+        current_refusal = no_valid_plans[-1] if no_valid_plans else None
+        no_valid_plan_explanation = (
+            current_refusal.requester_safe_explanation
+            if request.state is RequestState.NO_VALID_PLAN
+            and current_refusal is not None
+            and current_refusal.resulting_request_revision == request.revision
+            else None
+        )
+        deliveries = self._repository.list_deliveries(tenant_id, request_id)
+        current_delivery = deliveries[-1] if deliveries else None
+        delivered_answer = (
+            current_delivery.answer
+            if request.state is RequestState.DELIVERED
+            and current_delivery is not None
+            and current_delivery.resulting_request_revision == request.revision
+            else None
+        )
         return RequesterRequestView(
             request_id=request.request_id,
             state=request.state,
@@ -125,6 +149,9 @@ class FulfillmentReadService:
             own_decisions=tuple(sorted(own_decisions, key=lambda item: item.created_at)),
             fulfillment_status=self._requester_status(request),
             denial_explanation=denial_explanation,
+            no_valid_plan_explanation=no_valid_plan_explanation,
+            delivered_answer=delivered_answer,
+            delivery_id=current_delivery.delivery_id if current_delivery is not None else None,
         )
 
     def reviewer_view(
@@ -203,6 +230,7 @@ class FulfillmentReadService:
             proposals=self._repository.list_proposals(tenant_id, request_id),
             approvals=self._repository.list_approvals(tenant_id, request_id),
             admissions=self._repository.list_admissions(tenant_id, request_id),
+            deliveries=self._repository.list_deliveries(tenant_id, request_id),
             dependencies=self._repository.list_dependencies(tenant_id, request_id),
             no_valid_plans=self._repository.list_no_valid_plans(tenant_id, request_id),
             denials=self._repository.list_denials(tenant_id, request_id),
@@ -221,6 +249,8 @@ class FulfillmentReadService:
     ) -> Literal["investigating", "in_review", "ready_for_execution", "denied", "closed"]:
         if request.state is RequestState.EXECUTING:
             return "ready_for_execution"
+        if request.state is RequestState.DELIVERED:
+            return "closed"
         if request.state is RequestState.REJECTED:
             return "denied"
         if request.state in (RequestState.PROPOSED, RequestState.AWAITING_APPROVAL):

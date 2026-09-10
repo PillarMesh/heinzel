@@ -364,9 +364,18 @@ def _sorted_references(
     return tuple(sorted(references, key=lambda item: (item.artifact_id, item.version, item.digest)))
 
 
+# Reason codes and smallest changes name internal configuration, so they stay with the architect.
+# A requester still deserves to know why their request closed, in words that reveal none of it.
+_REQUESTER_SAFE_REFUSAL = (
+    "PillarMesh could not prepare a governed answer for this request with the workspace's "
+    "current approved configuration."
+)
+
+
 def _failure(reason_code: str, smallest_change: str) -> ResolutionFailure:
     return ResolutionFailure(
         reason_codes=(reason_code,),
         constraint_refs=(),
         smallest_changes=(smallest_change,),
+        requester_safe_explanation=_REQUESTER_SAFE_REFUSAL,
     )

@@ -34,7 +34,9 @@ _REQUESTER_REQUEST_FIELDS = {
     "updated_at",
     "own_decisions",
     "clarified_outcome",
+    "question",
     "denial_explanation",
+    "no_valid_plan_explanation",
 }
 
 # Reviewer-only vocabulary from RequestDetailView and its proposal models. A requester projection
@@ -217,7 +219,9 @@ def test_a_created_request_returns_its_authoritative_revision_and_submitted_stat
     assert created["revision"] == 1
     assert created["state"] == "submitted"
     assert created["kind"] == "stakeholder_question"
+    assert created["question"] == "Why did net revenue move last week?"
     assert created["clarified_outcome"] is None
+    assert created["no_valid_plan_explanation"] is None
 
 
 def test_a_created_request_rejects_an_active_role_other_than_requester() -> None:
@@ -328,6 +332,100 @@ def test_requesting_changes_leaves_the_outcome_unaccepted_and_the_request_clarif
         item for item in followed.json()["data"] if item["request_id"] == _BLOCKED_REQUEST_ID
     )
     assert changed_request["state"] == "clarifying"
+
+
+def test_a_requester_withdraws_their_own_open_request() -> None:
+    with _client() as client:
+        response = client.post(
+            f"/api/v1/requests/{_BLOCKED_REQUEST_ID}/withdrawal",
+            json={"expected_revision": 2, "active_role": "requester"},
+            headers=_command_headers(client, "idempotency-withdrawal"),
+        )
+        followed = client.get("/api/v1/requests/mine")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["state"] == "cancelled"
+    assert response.json()["data"]["revision"] == 3
+    withdrawn = next(
+        item for item in followed.json()["data"] if item["request_id"] == _BLOCKED_REQUEST_ID
+    )
+    assert withdrawn["state"] == "cancelled"
+
+
+def test_withdrawing_an_already_withdrawn_request_returns_it_unchanged() -> None:
+    """A retried withdrawal must not report failure for a request that was withdrawn."""
+    with _client() as client:
+        first = client.post(
+            f"/api/v1/requests/{_BLOCKED_REQUEST_ID}/withdrawal",
+            json={"expected_revision": 2, "active_role": "requester"},
+            headers=_command_headers(client, "idempotency-withdrawal-first"),
+        )
+        retried = client.post(
+            f"/api/v1/requests/{_BLOCKED_REQUEST_ID}/withdrawal",
+            json={"expected_revision": 3, "active_role": "requester"},
+            headers=_command_headers(client, "idempotency-withdrawal-second"),
+        )
+
+    assert first.status_code == 200
+    assert retried.status_code == 200
+    assert retried.json()["data"]["state"] == "cancelled"
+    assert retried.json()["data"]["revision"] == first.json()["data"]["revision"]
+
+
+def test_a_withdrawal_against_a_stale_revision_is_refused() -> None:
+    with _client() as client:
+        response = client.post(
+            f"/api/v1/requests/{_BLOCKED_REQUEST_ID}/withdrawal",
+            json={"expected_revision": 1, "active_role": "requester"},
+            headers=_command_headers(client, "idempotency-withdrawal-stale"),
+        )
+        followed = client.get("/api/v1/requests/mine")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "stale_revision"
+    unchanged = next(
+        item for item in followed.json()["data"] if item["request_id"] == _BLOCKED_REQUEST_ID
+    )
+    assert unchanged["state"] == "clarifying"
+
+
+def test_a_withdrawn_request_accepts_no_clarified_outcome_decision() -> None:
+    """A withdrawn request must not come back to life through a stale acceptance."""
+    with _client() as client:
+        withdrawn = client.post(
+            f"/api/v1/requests/{_BLOCKED_REQUEST_ID}/withdrawal",
+            json={"expected_revision": 2, "active_role": "requester"},
+            headers=_command_headers(client, "idempotency-withdrawal-then-accept"),
+        )
+        acceptance = client.post(
+            f"/api/v1/requests/{_BLOCKED_REQUEST_ID}/clarified-outcome/acceptance",
+            json={
+                "expected_revision": 2,
+                "clarified_outcome_digest": BLOCKED_REQUEST_DIGEST,
+                "active_role": "requester",
+                "decision": "approve",
+            },
+            headers=_command_headers(client, "idempotency-accept-after-withdrawal"),
+        )
+        followed = client.get("/api/v1/requests/mine")
+
+    assert withdrawn.status_code == 200
+    assert acceptance.status_code == 409
+    still_withdrawn = next(
+        item for item in followed.json()["data"] if item["request_id"] == _BLOCKED_REQUEST_ID
+    )
+    assert still_withdrawn["state"] == "cancelled"
+
+
+def test_only_the_owning_requester_can_withdraw_a_request() -> None:
+    with _client(context=_context(actor_id="actor-other-requester")) as client:
+        response = client.post(
+            f"/api/v1/requests/{_BLOCKED_REQUEST_ID}/withdrawal",
+            json={"expected_revision": 2, "active_role": "requester"},
+            headers=_command_headers(client, "idempotency-withdrawal-other"),
+        )
+
+    assert response.status_code == 404
 
 
 def test_a_mismatched_intake_digest_returns_an_input_error_without_creating_a_request() -> None:

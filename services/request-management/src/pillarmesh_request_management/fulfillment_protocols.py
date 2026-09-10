@@ -8,8 +8,10 @@ from pydantic import Field
 from .fulfillment_models import (
     AccessScopePreview,
     FreshnessDisposition,
+    FulfillmentAdmissionReceipt,
     FulfillmentGroundingSnapshot,
     FulfillmentPolicySnapshot,
+    FulfillmentProposal,
     StakeholderAnswerDraft,
 )
 from .models import InboxRequest
@@ -19,6 +21,7 @@ class ResolutionFailure(ArtifactModel):
     reason_codes: tuple[str, ...] = Field(min_length=1)
     constraint_refs: tuple[ArtifactReference, ...]
     smallest_changes: tuple[str, ...] = Field(min_length=1)
+    requester_safe_explanation: str | None = Field(default=None, min_length=1, max_length=1000)
 
 
 class AuthorityRoleResolver(Protocol):
@@ -47,6 +50,17 @@ class AnswerCandidateProvider(Protocol):
         request: InboxRequest,
         grounding: FulfillmentGroundingSnapshot,
     ) -> StakeholderAnswerDraft: ...
+
+
+class AnswerExecutionProvider(Protocol):
+    def execute(
+        self,
+        *,
+        request: InboxRequest,
+        proposal: FulfillmentProposal,
+        admission: FulfillmentAdmissionReceipt,
+        grounding: FulfillmentGroundingSnapshot,
+    ) -> tuple[StakeholderAnswerDraft, tuple[ArtifactReference, ...]]: ...
 
 
 class AccessCandidateProvider(Protocol):

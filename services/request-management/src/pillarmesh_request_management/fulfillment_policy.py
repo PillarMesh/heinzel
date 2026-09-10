@@ -43,6 +43,7 @@ class NoValidPlanCompilation(ArtifactModel):
     reason_codes: tuple[str, ...] = Field(min_length=1)
     constraint_refs: tuple[ArtifactReference, ...]
     smallest_changes: tuple[str, ...] = Field(min_length=1)
+    requester_safe_explanation: str | None = Field(default=None, min_length=1, max_length=1000)
 
 
 type ProposalCompilationResult = Annotated[

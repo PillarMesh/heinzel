@@ -15,7 +15,7 @@ type DependencyKind = Literal["semantic_change", "data_product_change"]
 type FreshnessDisposition = Literal["current", "stale", "unknown", "not_applicable"]
 type FulfillmentDecision = Literal["approve", "reject", "request_changes"]
 type FulfillmentOutcome = Literal[
-    "execution_ready", "denial", "dependency", "no_valid_plan", "cancelled"
+    "execution_ready", "delivered", "denial", "dependency", "no_valid_plan", "cancelled"
 ]
 
 
@@ -400,6 +400,32 @@ class FulfillmentAdmissionReceipt(ArtifactModel):
         return _timezone_aware_utc(value, "admitted_at")
 
 
+class FulfillmentDeliveryReceipt(ArtifactModel):
+    schema_version: Literal["1"] = "1"
+    delivery_id: str = Field(min_length=1)
+    tenant_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    source_request_revision: int = Field(ge=1)
+    resulting_request_revision: int = Field(ge=3)
+    admission_id: str = Field(min_length=1)
+    proposal_id: str = Field(min_length=1)
+    proposal_revision: int = Field(ge=1)
+    proposal_digest: str = Field(pattern=_DIGEST_PATTERN)
+    answer: StakeholderAnswerDraft
+    verification_refs: tuple[ArtifactReference, ...] = Field(min_length=1)
+    delivered_at: datetime
+
+    @field_validator("delivered_at")
+    @classmethod
+    def requires_timezone_aware_utc(cls, value: datetime) -> datetime:
+        return _timezone_aware_utc(value, "delivered_at")
+
+    @model_validator(mode="after")
+    def has_unique_verification_references(self) -> Self:
+        _require_unique(self.verification_refs, "verification_refs")
+        return self
+
+
 class DenialDispositionReceipt(ArtifactModel):
     disposition_id: str = Field(min_length=1)
     tenant_id: str = Field(min_length=1)
@@ -453,6 +479,7 @@ class RequestNoValidPlan(ArtifactModel):
     reason_codes: tuple[str, ...] = Field(min_length=1)
     constraint_refs: tuple[ArtifactReference, ...]
     smallest_changes: tuple[str, ...] = Field(min_length=1)
+    requester_safe_explanation: str | None = Field(default=None, min_length=1, max_length=1000)
     grounding_snapshot_digest: str | None = Field(default=None, pattern=_DIGEST_PATTERN)
     policy_snapshot_digest: str | None = Field(default=None, pattern=_DIGEST_PATTERN)
     created_at: datetime
@@ -489,7 +516,7 @@ class FulfillmentEvidenceReceipt(ArtifactModel):
         has_proposal = self.proposal_id is not None and self.proposal_revision is not None
         if (self.proposal_id is None) != (self.proposal_revision is None):
             raise ValueError("proposal identity must be complete")
-        if self.outcome in ("execution_ready", "denial") and not has_proposal:
+        if self.outcome in ("execution_ready", "delivered", "denial") and not has_proposal:
             raise ValueError("proposal outcome requires a proposal identity")
         if self.outcome == "dependency" and self.dependency_id is None:
             raise ValueError("dependency outcome requires a dependency identity")

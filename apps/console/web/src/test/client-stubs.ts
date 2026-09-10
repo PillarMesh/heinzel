@@ -5,6 +5,8 @@ import type {InboxClient} from "../features/inbox/decision-workspace"
 import type {RequesterClient} from "../features/requests/my-requests"
 import type {RunsClient} from "../features/runs/runs-page"
 import type {AcquisitionReceiptsClient} from "../features/acquisition/acquisition-receipts-page"
+import type {CatalogClient} from "../features/catalog/catalog-page"
+import type {DataProductsClient} from "../features/data-products/data-products-page"
 
 /**
  * Stubs for the feature protocols a test does not itself exercise.
@@ -26,7 +28,12 @@ function stubMeta(provenance: ApiMeta["data_provenance"]): ApiMeta {
 
 export function featureClientStubs(
   provenance: ApiMeta["data_provenance"] = "demo_fixture",
-): InboxClient & RequesterClient & RunsClient & AcquisitionReceiptsClient {
+): InboxClient &
+  RequesterClient &
+  RunsClient &
+  AcquisitionReceiptsClient &
+  CatalogClient &
+  DataProductsClient {
   const meta = stubMeta(provenance)
   return {
     acceptClarifiedOutcome: unexpected("acceptClarifiedOutcome"),
@@ -37,13 +44,22 @@ export function featureClientStubs(
     prepareRequestProposal: unexpected("prepareRequestProposal"),
     submitRequestProposal: unexpected("submitRequestProposal"),
     getCatalogAsset: vi.fn(async () => ({meta, data: null})),
+    getCatalogAssets: vi.fn(async () => ({meta, data: {assets: []}})),
     getClarifiedOutcome: unexpected("getClarifiedOutcome"),
     getConversation: unexpected("getConversation"),
     getDashboard: vi.fn(async () => ({meta, data: null})),
+    getDataProduct: vi.fn(async () => ({meta, data: null})),
+    getDataProducts: vi.fn(async () => ({meta, data: {products: []}})),
     getInbox: vi.fn(async () => ({meta, data: {items: [], selected_request_id: null}})),
     getRequestDetail: unexpected("getRequestDetail"),
     getRequesterRequests: vi.fn(async () => ({meta, data: []})),
     getRuns: vi.fn(async () => ({meta, data: {runs: []}})),
     getAcquisitionReceipts: vi.fn(async () => ({meta, data: {receipts: []}})),
-  } as unknown as InboxClient & RequesterClient & RunsClient & AcquisitionReceiptsClient
+    withdrawRequest: unexpected("withdrawRequest"),
+  } as unknown as InboxClient &
+    RequesterClient &
+    RunsClient &
+    AcquisitionReceiptsClient &
+    CatalogClient &
+    DataProductsClient
 }

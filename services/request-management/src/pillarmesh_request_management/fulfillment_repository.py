@@ -12,12 +12,14 @@ from .fulfillment_models import (
     DisclosureDenial,
     FulfillmentAdmissionReceipt,
     FulfillmentApprovalBinding,
+    FulfillmentDeliveryReceipt,
     FulfillmentEvidenceReceipt,
     FulfillmentGroundingSnapshot,
     FulfillmentPolicySnapshot,
     FulfillmentProposal,
     RequestDependency,
     RequestNoValidPlan,
+    StakeholderAnswerDraft,
 )
 from .models import (
     DataProductChangeRequest,
@@ -68,6 +70,10 @@ class FulfillmentRepository(Protocol):
     def list_admissions(
         self, tenant_id: str, request_id: str
     ) -> tuple[FulfillmentAdmissionReceipt, ...]: ...
+
+    def list_deliveries(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[FulfillmentDeliveryReceipt, ...]: ...
 
     def list_dependencies(
         self, tenant_id: str, parent_request_id: str
@@ -121,6 +127,15 @@ class FulfillmentRepository(Protocol):
         expected_revision: int,
         current_policy: FulfillmentPolicySnapshot | None = None,
     ) -> FulfillmentAdmissionReceipt: ...
+
+    def record_delivery(
+        self,
+        *,
+        delivery: FulfillmentDeliveryReceipt,
+        evidence: FulfillmentEvidenceReceipt,
+        actor_id: str,
+        expected_revision: int,
+    ) -> FulfillmentDeliveryReceipt: ...
 
     def store_no_valid_plan(
         self,
@@ -518,6 +533,95 @@ class SQLiteFulfillmentRepository:
             self._insert_evidence(stored_evidence)
             return stored_admission
 
+    def record_delivery(
+        self,
+        *,
+        delivery: FulfillmentDeliveryReceipt,
+        evidence: FulfillmentEvidenceReceipt,
+        actor_id: str,
+        expected_revision: int,
+    ) -> FulfillmentDeliveryReceipt:
+        with _transaction(self._connection):
+            request = self._requests.load_owned_request(delivery.tenant_id, delivery.request_id)
+            if request.revision != expected_revision:
+                raise StaleRevisionError("delivery request revision is stale")
+            if request.state is not RequestState.EXECUTING:
+                raise ValueError("delivery requires an executing request")
+            admissions = self.list_admissions(delivery.tenant_id, delivery.request_id)
+            if not admissions:
+                raise ValueError("delivery requires an admission")
+            admission = admissions[-1]
+            proposal = self._load_latest_proposal(delivery.tenant_id, delivery.request_id)
+            if (
+                delivery.source_request_revision != expected_revision
+                or delivery.resulting_request_revision != expected_revision + 2
+                or delivery.admission_id != admission.admission_id
+                or delivery.proposal_id != proposal.proposal_id
+                or delivery.proposal_revision != proposal.revision
+                or delivery.proposal_digest != digest(proposal)
+                or not isinstance(proposal.subject, StakeholderAnswerDraft)
+                or delivery.answer != proposal.subject
+            ):
+                raise ValueError("delivery does not bind the admitted answer")
+            if (
+                evidence.tenant_id != delivery.tenant_id
+                or evidence.request_id != delivery.request_id
+                or evidence.request_revision != delivery.resulting_request_revision
+                or evidence.outcome != "delivered"
+                or evidence.proposal_id != delivery.proposal_id
+                or evidence.proposal_revision != delivery.proposal_revision
+                or evidence.resulting_state is not RequestState.DELIVERED
+            ):
+                raise ValueError("delivery evidence does not match the outcome")
+
+            delivery_sequence = self._requests.allocate_artifact_sequence_in_transaction(
+                delivery.tenant_id, "fulfillment_delivery"
+            )
+            stored_delivery = delivery.model_copy(
+                update={
+                    "delivery_id": self._artifact_id(
+                        "fulfillment_delivery", delivery.tenant_id, delivery_sequence
+                    )
+                }
+            )
+            stored_evidence = self._allocate_evidence(evidence)
+            verifying = self._requests.transition_in_transaction(
+                tenant_id=delivery.tenant_id,
+                request_id=delivery.request_id,
+                expected_revision=expected_revision,
+                actor_id=actor_id,
+                to_state=RequestState.VERIFYING,
+                created_at=delivery.delivered_at,
+            )
+            delivered = self._requests.transition_in_transaction(
+                tenant_id=delivery.tenant_id,
+                request_id=delivery.request_id,
+                expected_revision=verifying.revision,
+                actor_id=actor_id,
+                to_state=RequestState.DELIVERED,
+                created_at=delivery.delivered_at,
+            )
+            if delivered.revision != delivery.resulting_request_revision:
+                raise StaleRevisionError("delivery resulting revision is stale")
+            self._connection.execute(
+                "INSERT INTO fulfillment_deliveries "
+                "(delivery_id, tenant_id, request_id, source_request_revision, "
+                "resulting_request_revision, admission_id, recorded_at, payload) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    stored_delivery.delivery_id,
+                    stored_delivery.tenant_id,
+                    stored_delivery.request_id,
+                    stored_delivery.source_request_revision,
+                    stored_delivery.resulting_request_revision,
+                    stored_delivery.admission_id,
+                    stored_delivery.delivered_at.isoformat(),
+                    canonical_bytes(stored_delivery),
+                ),
+            )
+            self._insert_evidence(stored_evidence)
+            return stored_delivery
+
     def store_no_valid_plan(
         self,
         *,
@@ -826,6 +930,19 @@ class SQLiteFulfillmentRepository:
             _validate_persisted_artifact(FulfillmentAdmissionReceipt, row[0]) for row in rows
         )
 
+    def list_deliveries(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[FulfillmentDeliveryReceipt, ...]:
+        self._requests.load_owned_request(tenant_id, request_id)
+        rows = self._connection.execute(
+            "SELECT payload FROM fulfillment_deliveries "
+            "WHERE tenant_id = ? AND request_id = ? ORDER BY recorded_at, delivery_id",
+            (tenant_id, request_id),
+        ).fetchall()
+        return tuple(
+            _validate_persisted_artifact(FulfillmentDeliveryReceipt, row[0]) for row in rows
+        )
+
     def list_evidence(
         self, tenant_id: str, request_id: str
     ) -> tuple[FulfillmentEvidenceReceipt, ...]:
@@ -967,6 +1084,20 @@ class SQLiteFulfillmentRepository:
             "recorded_at TEXT NOT NULL, "
             "payload BLOB NOT NULL, "
             "UNIQUE (tenant_id, request_id, source_request_revision)"
+            ")"
+        )
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS fulfillment_deliveries ("
+            "delivery_id TEXT PRIMARY KEY, "
+            "tenant_id TEXT NOT NULL, "
+            "request_id TEXT NOT NULL, "
+            "source_request_revision INTEGER NOT NULL, "
+            "resulting_request_revision INTEGER NOT NULL, "
+            "admission_id TEXT NOT NULL, "
+            "recorded_at TEXT NOT NULL, "
+            "payload BLOB NOT NULL, "
+            "UNIQUE (tenant_id, request_id, source_request_revision), "
+            "UNIQUE (tenant_id, admission_id)"
             ")"
         )
         self._connection.execute(
@@ -1307,6 +1438,7 @@ class SQLiteFulfillmentRepository:
             "fulfillment_admission": "adm",
             "fulfillment_approval": "apr",
             "fulfillment_evidence": "evd",
+            "fulfillment_delivery": "dlv",
             "fulfillment_proposal": "prp",
             "grounding_snapshot": "grd",
             "policy_snapshot": "pol",

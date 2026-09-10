@@ -22,6 +22,10 @@ const requestStates = [
   "awaiting_approval",
   "execution_ready",
   "denied",
+  "delivered",
+  "no_valid_plan",
+  "cancelled",
+  "failed",
   "closed",
 ] as const satisfies readonly RequestState[]
 

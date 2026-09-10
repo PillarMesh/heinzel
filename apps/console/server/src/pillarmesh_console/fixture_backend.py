@@ -19,6 +19,7 @@ from .contracts import (
     ActorRole,
     AdmissionCommand,
     AdmissionView,
+    CatalogAssetsView,
     CatalogAssetView,
     ClarifiedOutcomeAcceptanceCommand,
     ClarifiedOutcomeView,
@@ -27,6 +28,7 @@ from .contracts import (
     ConversationView,
     CreateRequestCommand,
     DashboardView,
+    DataProductsView,
     DataProductView,
     DecisionCommand,
     DisplayReferenceView,
@@ -45,6 +47,7 @@ from .contracts import (
     RequestDetailView,
     RequesterRequestView,
     RequestProposalView,
+    RequestWithdrawalCommand,
     ResetCommand,
     RetryOperationCommand,
     ReviewView,
@@ -69,6 +72,11 @@ from .fixture_data import (
 from .governed_adapters import console_error_for
 from .request_intake import request_intake_content
 
+# A requester may withdraw only before any work is admitted for the request.
+_WITHDRAWABLE_STATES = frozenset(
+    {"submitted", "clarifying", "investigating", "proposed", "awaiting_approval"}
+)
+
 
 @dataclass(frozen=True, slots=True)
 class _DomainCommandIdentity:
@@ -86,6 +94,7 @@ type _FixtureCommand = (
     | CreateRequestCommand
     | ConversationMessageCommand
     | ClarifiedOutcomeAcceptanceCommand
+    | RequestWithdrawalCommand
     | RetryOperationCommand
     | ResetCommand
 )
@@ -495,6 +504,15 @@ class FixtureConsoleBackend:
             raise ConsoleNotFound()
         return data_product
 
+    def get_data_products(self, context: TrustedActorContext) -> DataProductsView:
+        self._authorize(context, context.roles)
+        return DataProductsView(
+            products=tuple(
+                self._seed.data_products[product_id]
+                for product_id in sorted(self._seed.data_products)
+            )
+        )
+
     def get_runs(self, context: TrustedActorContext) -> RunsView:
         self._authorize(context, ("data_architect", "data_owner"))
         return self._seed.runs
@@ -509,6 +527,15 @@ class FixtureConsoleBackend:
         if asset is None:
             raise ConsoleNotFound()
         return asset
+
+    def get_catalog_assets(self, context: TrustedActorContext) -> CatalogAssetsView:
+        self._authorize(context, ("requester", "data_architect", "data_owner"))
+        return CatalogAssetsView(
+            assets=tuple(
+                self._seed.catalog_assets[asset_ref]
+                for asset_ref in sorted(self._seed.catalog_assets)
+            )
+        )
 
     def get_dashboard(self, context: TrustedActorContext, dashboard_ref: str) -> DashboardView:
         self._authorize(context, ("requester", "data_architect", "data_owner"))
@@ -981,6 +1008,11 @@ class FixtureConsoleBackend:
                 requested_outcome=command.request.purpose,
                 revision=1,
                 updated_at=created_at,
+                question=(
+                    command.request.question
+                    if command.request.kind == "stakeholder_question"
+                    else None
+                ),
             )
             conversation = ConversationView(
                 request_id=request_id,
@@ -1113,6 +1145,13 @@ class FixtureConsoleBackend:
             replay = self._replay_result(identity, command, ClarifiedOutcomeView)
             if replay is not None:
                 return replay
+            # Withdrawal advances the request but not the outcome, so the outcome revision alone
+            # would let a stale acceptance bring a closed request back to life.
+            if requester.state not in _WITHDRAWABLE_STATES:
+                self._conflict(
+                    "request_closed",
+                    "This request is closed and accepts no further decision.",
+                )
             if command.expected_revision != outcome.revision:
                 self._conflict(
                     "stale_revision",
@@ -1173,6 +1212,66 @@ class FixtureConsoleBackend:
             )
             self._commit(next_state)
             return updated
+
+    def withdraw_request(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: RequestWithdrawalCommand,
+    ) -> RequesterRequestView:
+        self._authorize(context, ("requester",))
+        self._require_command_role(context, command.active_role)
+        identity = self._command_identity(
+            resource_id=f"withdrawal:{request_id}",
+            expected_revision=command.expected_revision,
+            digest=hashlib.sha256(f"withdrawal:{request_id}".encode()).hexdigest(),
+        )
+        with self._lock:
+            requester = self._state.requester_requests.get(request_id)
+            detail = self._state.request_details.get(request_id)
+            self._authorize_request_owner(context, request_id)
+            if requester is None or detail is None:
+                raise ConsoleNotFound()
+            replay = self._replay_result(identity, command, RequesterRequestView)
+            if replay is not None:
+                return replay
+            # Withdrawing is idempotent: a retry after success reports the withdrawn request
+            # rather than a failure the requester cannot act on.
+            if requester.state == "cancelled":
+                return requester
+            if requester.state not in _WITHDRAWABLE_STATES:
+                self._conflict(
+                    "withdrawal_unavailable",
+                    "This request has already reached an outcome and cannot be withdrawn.",
+                )
+            if command.expected_revision != requester.revision:
+                self._conflict("stale_revision", "The request changed; reload before withdrawing.")
+            next_revision = max(detail.revision, requester.revision) + 1
+            withdrawn = RequesterRequestView.model_validate(
+                requester.model_dump()
+                | {"state": "cancelled", "revision": next_revision, "updated_at": self._clock()}
+            )
+            withdrawn_detail = RequestDetailView.model_validate(
+                detail.model_dump()
+                | {
+                    "state": "cancelled",
+                    "revision": next_revision,
+                    "available_actions": (),
+                    "preparation_actions": (),
+                }
+            )
+            next_state = replace(
+                self._state,
+                requester_requests=_with_entry(
+                    self._state.requester_requests, request_id, withdrawn
+                ),
+                request_details=_with_entry(
+                    self._state.request_details, request_id, withdrawn_detail
+                ),
+                domain_replays=self._replays_with(identity, command, withdrawn),
+            )
+            self._commit(next_state)
+            return withdrawn
 
     def retry_operation(
         self,

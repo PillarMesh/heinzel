@@ -51,6 +51,38 @@ def test_an_unknown_browser_route_falls_back_to_the_application_shell(tmp_path: 
         assert '<div id="root">' in deep_route.text
 
 
+@pytest.mark.parametrize("method", ["GET", "POST"])
+def test_an_unknown_api_path_is_a_json_not_found_rather_than_the_application_shell(
+    tmp_path: Path, method: str
+) -> None:
+    """An API client must never read the browser shell as a successful response."""
+    with TestClient(create_app(dist_directory=_build_dist(tmp_path))) as client:
+        response = client.request(method, "/api/v1/does-not-exist")
+
+        assert response.status_code == 404
+        assert response.headers["content-type"].startswith("application/json")
+        assert response.json()["error"]["code"] == "not_found"
+        assert '<div id="root">' not in response.text
+
+
+def test_the_bare_api_prefix_is_not_the_application_shell(tmp_path: Path) -> None:
+    with TestClient(create_app(dist_directory=_build_dist(tmp_path))) as client:
+        response = client.get("/api")
+
+        assert response.status_code == 404
+        assert response.json()["error"]["code"] == "not_found"
+
+
+def test_a_known_api_path_asked_with_the_wrong_method_names_the_allowed_methods(
+    tmp_path: Path,
+) -> None:
+    with TestClient(create_app(dist_directory=_build_dist(tmp_path))) as client:
+        response = client.delete("/api/v1/requests/mine")
+
+        assert response.status_code == 405
+        assert set(response.headers["allow"].replace(" ", "").split(",")) == {"GET", "HEAD"}
+
+
 def test_no_static_mount_exists_without_a_configured_build(tmp_path: Path) -> None:
     with TestClient(create_app()) as client:
         page = client.get("/")

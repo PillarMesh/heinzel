@@ -629,6 +629,23 @@ def test_lost_publication_response_replay_creates_one_receipt_and_no_duplicate_i
     assert service.publish(**arguments) == receipt
 
 
+def test_repository_lists_only_the_tenants_publications_newest_first() -> None:
+    from pillarmesh_semantic_registry.publication import SQLiteCatalogPublicationRepository
+
+    repository = SQLiteCatalogPublicationRepository(":memory:")
+    provider = _PublicationProvider()
+    semantic_version = _semantic_version()
+    service = _service(provider, repository=repository)
+    receipt = service.publish(
+        binding=_binding(),
+        semantic_version=semantic_version,
+        contract=_contract(semantic_version),
+    )
+
+    assert repository.list_publications(tenant_id="tenant-a") == (receipt,)
+    assert repository.list_publications(tenant_id="tenant-b") == ()
+
+
 def test_publish_rejects_a_provider_readback_that_changes_between_independent_full_reads() -> None:
     provider = _PublicationProvider()
     provider.diverge_after_first_read = True

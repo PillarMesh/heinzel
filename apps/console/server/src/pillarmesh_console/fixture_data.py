@@ -360,6 +360,11 @@ def build_fixture_seed() -> FixtureSeed:
             revision=detail.revision,
             updated_at=FIXED_TIME,
             clarified_outcome=clarified_outcomes.get(request_id),
+            question=(
+                "What changed in weekly net revenue?"
+                if detail.kind == "stakeholder_question"
+                else None
+            ),
         )
         for request_id, detail in request_details.items()
     )
@@ -444,6 +449,12 @@ def build_fixture_seed() -> FixtureSeed:
                 state="not_delivered",
                 detail="No real downstream system is connected in fixture mode.",
                 dependency="Governed runtime wiring",
+            ),
+            CapabilityView(
+                capability_id="data-access-intake",
+                label="Data access requests",
+                state="ready",
+                detail="Synthetic data access requests can be submitted and reviewed.",
             ),
         ),
     )

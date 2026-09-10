@@ -249,6 +249,11 @@
             }
           ],
           "default": null
+        },
+        "pending_delivery": {
+          "default": false,
+          "title": "Pending Delivery",
+          "type": "boolean"
         }
       },
       "required": [
@@ -467,6 +472,17 @@
       "title": "CatalogAssetView",
       "type": "object"
     },
+    "CatalogAssetsView": {
+      "additionalProperties": false,
+      "properties": {
+        "assets": {
+          "$ref": "#/$defs/JsonTuple_CatalogAssetView_",
+          "default": []
+        }
+      },
+      "title": "CatalogAssetsView",
+      "type": "object"
+    },
     "ClarifiedOutcomeAcceptanceCommand": {
       "additionalProperties": false,
       "properties": {
@@ -645,6 +661,57 @@
         "data"
       ],
       "title": "ConsoleEnvelope[CatalogAssetView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_CatalogAssetsView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/CatalogAssetsView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[CatalogAssetsView]",
       "type": "object"
     },
     "ConsoleEnvelope_ClarifiedOutcomeView_": {
@@ -849,6 +916,57 @@
         "data"
       ],
       "title": "ConsoleEnvelope[DataProductView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_DataProductsView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/DataProductsView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[DataProductsView]",
       "type": "object"
     },
     "ConsoleEnvelope_EvidenceView_": {
@@ -1699,6 +1817,17 @@
       "title": "DataProductView",
       "type": "object"
     },
+    "DataProductsView": {
+      "additionalProperties": false,
+      "properties": {
+        "products": {
+          "$ref": "#/$defs/JsonTuple_DataProductView_",
+          "default": []
+        }
+      },
+      "title": "DataProductsView",
+      "type": "object"
+    },
     "DataProvenance": {
       "enum": [
         "demo_fixture",
@@ -1798,6 +1927,47 @@
         "decision"
       ],
       "title": "DecisionCommand",
+      "type": "object"
+    },
+    "DeliveredAnswerView": {
+      "additionalProperties": false,
+      "properties": {
+        "answer_text": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "as_of": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "datasets": {
+          "$ref": "#/$defs/JsonTuple_ArtifactReferenceView_",
+          "default": []
+        },
+        "delivery_ref": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "freshness": {
+          "$ref": "#/$defs/FreshnessState"
+        },
+        "lineage": {
+          "$ref": "#/$defs/JsonTuple_ArtifactReferenceView_",
+          "default": []
+        },
+        "metrics": {
+          "$ref": "#/$defs/JsonTuple_ArtifactReferenceView_",
+          "default": []
+        },
+        "quality_limitations": {
+          "$ref": "#/$defs/JsonTuple_ArtifactReferenceView_",
+          "default": []
+        }
+      },
+      "required": [
+        "answer_text",
+        "as_of",
+        "freshness",
+        "delivery_ref"
+      ],
+      "title": "DeliveredAnswerView",
       "type": "object"
     },
     "Digest": {
@@ -2051,6 +2221,12 @@
       },
       "type": "array"
     },
+    "JsonTuple_CatalogAssetView_": {
+      "items": {
+        "$ref": "#/$defs/CatalogAssetView"
+      },
+      "type": "array"
+    },
     "JsonTuple_ConstraintView_": {
       "items": {
         "$ref": "#/$defs/ConstraintView"
@@ -2060,6 +2236,12 @@
     "JsonTuple_ConversationMessageView_": {
       "items": {
         "$ref": "#/$defs/ConversationMessageView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_DataProductView_": {
+      "items": {
+        "$ref": "#/$defs/DataProductView"
       },
       "type": "array"
     },
@@ -2640,6 +2822,17 @@
     "ProposalApprovalView": {
       "additionalProperties": false,
       "properties": {
+        "authority_label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "authority_ref": {
           "$ref": "#/$defs/NonEmptyText"
         },
@@ -2896,9 +3089,35 @@
         "awaiting_approval",
         "execution_ready",
         "denied",
+        "delivered",
+        "no_valid_plan",
+        "cancelled",
+        "failed",
         "closed"
       ],
       "type": "string"
+    },
+    "RequestWithdrawalCommand": {
+      "additionalProperties": false,
+      "description": "A requester withdraws their own request before any work has been admitted for it.",
+      "properties": {
+        "active_role": {
+          "const": "requester",
+          "title": "Active Role",
+          "type": "string"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "active_role"
+      ],
+      "title": "RequestWithdrawalCommand",
+      "type": "object"
     },
     "RequesterRequestView": {
       "additionalProperties": false,
@@ -2907,6 +3126,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/ClarifiedOutcomeView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "delivered_answer": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeliveredAnswerView"
             },
             {
               "type": "null"
@@ -2928,9 +3158,31 @@
         "kind": {
           "$ref": "#/$defs/RequestKind"
         },
+        "no_valid_plan_explanation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "own_decisions": {
           "$ref": "#/$defs/JsonTuple_OwnDecisionView_",
           "default": []
+        },
+        "question": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "request_id": {
           "$ref": "#/$defs/PublicId"
@@ -3785,6 +4037,9 @@
     "catalog_asset_response": {
       "$ref": "#/$defs/ConsoleEnvelope_CatalogAssetView_"
     },
+    "catalog_assets_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_CatalogAssetsView_"
+    },
     "clarified_outcome_acceptance_command": {
       "$ref": "#/$defs/ClarifiedOutcomeAcceptanceCommand"
     },
@@ -3805,6 +4060,9 @@
     },
     "data_product_response": {
       "$ref": "#/$defs/ConsoleEnvelope_DataProductView_"
+    },
+    "data_products_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_DataProductsView_"
     },
     "decision_command": {
       "$ref": "#/$defs/DecisionCommand"
@@ -3832,6 +4090,9 @@
     },
     "request_detail_response": {
       "$ref": "#/$defs/ConsoleEnvelope_RequestDetailView_"
+    },
+    "request_withdrawal_command": {
+      "$ref": "#/$defs/RequestWithdrawalCommand"
     },
     "requester_request_response": {
       "$ref": "#/$defs/ConsoleEnvelope_RequesterRequestView_"
@@ -3875,7 +4136,9 @@
     "requester_request_response",
     "conversation_response",
     "clarified_outcome_response",
+    "data_products_response",
     "data_product_response",
+    "catalog_assets_response",
     "runs_response",
     "acquisition_receipts_response",
     "catalog_asset_response",
@@ -3892,6 +4155,7 @@
     "create_request_command",
     "conversation_message_command",
     "clarified_outcome_acceptance_command",
+    "request_withdrawal_command",
     "retry_operation_command",
     "reset_command"
   ],

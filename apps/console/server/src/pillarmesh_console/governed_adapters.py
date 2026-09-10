@@ -148,6 +148,25 @@ class InMemoryWorkspaceBindingDirectory:
         return self._catalog.get(tenant_id)
 
 
+class WorkspaceActorDirectory(Protocol):
+    """Resolves deployment-owned presentation names without changing authority."""
+
+    def display_name(self, *, tenant_id: str, actor_id: str) -> str | None: ...
+
+
+class InMemoryWorkspaceActorDirectory:
+    def __init__(self) -> None:
+        self._display_names: dict[tuple[str, str], str] = {}
+
+    def bind_actor(self, *, tenant_id: str, actor_id: str, display_name: str) -> None:
+        if not display_name.strip():
+            raise ValueError("actor display name must not be blank")
+        self._display_names[(tenant_id, actor_id)] = display_name
+
+    def display_name(self, *, tenant_id: str, actor_id: str) -> str | None:
+        return self._display_names.get((tenant_id, actor_id))
+
+
 class WarehouseBindingReader(Protocol):
     def current_binding(self, tenant_id: str) -> WarehouseBinding | None: ...
 
@@ -160,6 +179,12 @@ class WarehouseOperationReader(Protocol):
 
 class CatalogBindingReader(Protocol):
     def current_binding(self, tenant_id: str) -> CatalogBinding | None: ...
+
+
+class CatalogSearchHealthReader(Protocol):
+    """Reports whether the catalog's search projection can serve this tenant."""
+
+    def search_ready(self, tenant_id: str) -> bool: ...
 
 
 class SemanticReviewReader(Protocol):
@@ -498,6 +523,26 @@ class FulfillmentDecisionCommands(Protocol):
     ) -> FulfillmentApprovalBinding: ...
 
     def admit(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> object: ...
+
+    def cancel(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> object: ...
+
+
+class FulfillmentExecutionCommands(Protocol):
+    def execute_answer(
         self,
         *,
         tenant_id: str,

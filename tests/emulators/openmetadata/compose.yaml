@@ -2,6 +2,8 @@ services:
   mysql:
     image: docker.getcollate.io/openmetadata/db@sha256:8a77669a2e64769dbb3ba4684fd527cc4a68e54879b199a6a8f1e74fa14da557
     platform: linux/amd64
+    mem_limit: 768m
+    restart: unless-stopped
     command: --sort_buffer_size=10M
     environment:
       MYSQL_ROOT_PASSWORD: ${PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD:?required}
@@ -17,12 +19,18 @@ services:
     image: docker.elastic.co/elasticsearch/elasticsearch@sha256:4f6bdcb742e892539c6ac49b0dd3e4e182e90218546e8c6a22db378c344acb60
     environment:
       discovery.type: single-node
-      ES_JAVA_OPTS: -Xms1024m -Xmx1024m
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
       xpack.security.enabled: "false"
     volumes:
       - elasticsearch-data:/usr/share/elasticsearch/data
+    ports:
+      - 127.0.0.1:9200:9200
+    mem_limit: 1024m
+    restart: unless-stopped
     healthcheck:
-      test: curl -fsS http://localhost:9200/_cluster/health
+      test: >-
+        curl -fsS http://localhost:9200/_cluster/health
+        | grep -Eq '"status"[[:space:]]*:[[:space:]]*"(green|yellow)"'
       interval: 15s
       timeout: 10s
       retries: 10
@@ -67,6 +75,7 @@ services:
       OM_DATABASE: openmetadata_db
       PIPELINE_SERVICE_CLIENT_ENABLED: "false"
       SEARCH_TYPE: elasticsearch
+      JAVA_OPTS: -Xms512m -Xmx1024m
     depends_on:
       mysql:
         condition: service_healthy
@@ -78,6 +87,8 @@ services:
   openmetadata-server:
     image: docker.getcollate.io/openmetadata/server@sha256:6c878281973d9e2c366e9da4f256a744acf67b1e53195fab67c3191e504e4169
     platform: linux/amd64
+    mem_limit: 1536m
+    restart: unless-stopped
     environment: *openmetadata-environment
     ports:
       - 127.0.0.1:8585:8585
@@ -98,6 +109,8 @@ services:
   ingestion:
     image: docker.getcollate.io/openmetadata/ingestion@sha256:fe5effad9dbce98852b2f588905a4a8926c3c03de97fcceac8fe8e3ec927d717
     platform: linux/amd64
+    profiles: ["ingestion"]
+    mem_limit: 1536m
     environment:
       AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth,airflow.api.auth.backend.session
       AIRFLOW__CORE__EXECUTOR: LocalExecutor

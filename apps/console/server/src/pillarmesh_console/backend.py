@@ -7,6 +7,7 @@ from .auth import TrustedActorContext
 from .contracts import (
     AcquisitionReceiptsView,
     AdmissionCommand,
+    CatalogAssetsView,
     CatalogAssetView,
     ClarifiedOutcomeAcceptanceCommand,
     ClarifiedOutcomeView,
@@ -14,6 +15,7 @@ from .contracts import (
     ConversationView,
     CreateRequestCommand,
     DashboardView,
+    DataProductsView,
     DataProductView,
     DecisionCommand,
     EvidenceView,
@@ -24,6 +26,7 @@ from .contracts import (
     RequestClarificationCommand,
     RequestDetailView,
     RequesterRequestView,
+    RequestWithdrawalCommand,
     ResetCommand,
     RetryOperationCommand,
     ReviewView,
@@ -80,6 +83,8 @@ class ConsoleBackend(Protocol):
         self, context: TrustedActorContext, data_product_id: str
     ) -> DataProductView: ...
 
+    def get_data_products(self, context: TrustedActorContext) -> DataProductsView: ...
+
     def get_runs(self, context: TrustedActorContext) -> RunsView: ...
 
     def get_acquisition_receipts(self, context: TrustedActorContext) -> AcquisitionReceiptsView: ...
@@ -87,6 +92,8 @@ class ConsoleBackend(Protocol):
     def get_catalog_asset(
         self, context: TrustedActorContext, asset_ref: str
     ) -> CatalogAssetView: ...
+
+    def get_catalog_assets(self, context: TrustedActorContext) -> CatalogAssetsView: ...
 
     def get_dashboard(self, context: TrustedActorContext, dashboard_ref: str) -> DashboardView: ...
 
@@ -143,6 +150,13 @@ class ConsoleBackend(Protocol):
         request_id: str,
         command: ClarifiedOutcomeAcceptanceCommand,
     ) -> ClarifiedOutcomeView: ...
+
+    def withdraw_request(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: RequestWithdrawalCommand,
+    ) -> RequesterRequestView: ...
 
     def retry_operation(
         self,

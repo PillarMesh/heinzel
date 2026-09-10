@@ -524,6 +524,30 @@ test("an admission whose outcome is unknown is reconciled, not reported as uncha
   expect(second[2].idempotencyKey).toBe(first[2].idempotencyKey)
 })
 
+test("an admitted answer whose delivery did not complete offers a delivery retry", async () => {
+  const user = userEvent.setup()
+  const admitRequest = vi.fn(async () =>
+    detailEnvelope({...answerDetail, state: "delivered", admission: null}),
+  )
+  const client = createClient({
+    admitRequest,
+    getRequestDetail: vi.fn(async () =>
+      detailEnvelope({
+        ...answerDetail,
+        state: "execution_ready",
+        admission: {available: true, blocking_reason: null, pending_delivery: true},
+      }),
+    ),
+  })
+  renderWorkspace(client, answerDetail.request_id)
+
+  expect(await screen.findByText(/admitted, but its delivery has not completed/i)).toBeVisible()
+  expect(screen.queryByRole("button", {name: "Admit to execution"})).toBeNull()
+  await user.click(screen.getByRole("button", {name: "Retry delivery"}))
+
+  expect(admitRequest).toHaveBeenCalledTimes(1)
+})
+
 test("artifact display keys never become catalog or dashboard lookups", async () => {
   if (accessDetail.proposal?.kind !== "access_preview") throw new Error("Expected access fixture")
   const reference = {artifact_id: "urn:product/Revenue", version: 2, digest: "a".repeat(64)}

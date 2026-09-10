@@ -9,11 +9,13 @@ from starlette.routing import Route
 
 from ..contracts import (
     AcquisitionReceiptsView,
+    CatalogAssetsView,
     CatalogAssetView,
     ClarifiedOutcomeView,
     ConsoleEnvelope,
     ConversationView,
     DashboardView,
+    DataProductsView,
     DataProductView,
     EvidenceView,
     InboxView,
@@ -46,9 +48,11 @@ _REQUESTER_REQUESTS_RESPONSE = TypeAdapter(ConsoleEnvelope[JsonTuple[RequesterRe
 _CONVERSATION_RESPONSE = TypeAdapter(ConsoleEnvelope[ConversationView])
 _CLARIFIED_OUTCOME_RESPONSE = TypeAdapter(ConsoleEnvelope[ClarifiedOutcomeView])
 _DATA_PRODUCT_RESPONSE = TypeAdapter(ConsoleEnvelope[DataProductView])
+_DATA_PRODUCTS_RESPONSE = TypeAdapter(ConsoleEnvelope[DataProductsView])
 _RUNS_RESPONSE = TypeAdapter(ConsoleEnvelope[RunsView])
 _ACQUISITION_RECEIPTS_RESPONSE = TypeAdapter(ConsoleEnvelope[AcquisitionReceiptsView])
 _CATALOG_ASSET_RESPONSE = TypeAdapter(ConsoleEnvelope[CatalogAssetView])
+_CATALOG_ASSETS_RESPONSE = TypeAdapter(ConsoleEnvelope[CatalogAssetsView])
 _DASHBOARD_RESPONSE = TypeAdapter(ConsoleEnvelope[DashboardView])
 _EVIDENCE_RESPONSE = TypeAdapter(ConsoleEnvelope[EvidenceView])
 _OPERATION_RESPONSE = TypeAdapter(ConsoleEnvelope[OperationView])
@@ -146,6 +150,15 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
             _DATA_PRODUCT_RESPONSE,
         )
 
+    async def data_products(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        return envelope_response(
+            request,
+            dependencies,
+            dependencies.backend.get_data_products(context),
+            _DATA_PRODUCTS_RESPONSE,
+        )
+
     async def runs(request: Request) -> Response:
         context = trusted_context(request, dependencies)
         return envelope_response(
@@ -169,6 +182,15 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
             dependencies,
             dependencies.backend.get_catalog_asset(context, asset_ref),
             _CATALOG_ASSET_RESPONSE,
+        )
+
+    async def catalog_assets(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        return envelope_response(
+            request,
+            dependencies,
+            dependencies.backend.get_catalog_assets(context),
+            _CATALOG_ASSETS_RESPONSE,
         )
 
     async def dashboard(request: Request) -> Response:
@@ -253,9 +275,11 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
             clarified_outcome,
             methods=["GET"],
         ),
+        Route("/api/v1/data-products", data_products, methods=["GET"]),
         Route("/api/v1/data-products/{data_product_id}", data_product, methods=["GET"]),
         Route("/api/v1/runs", runs, methods=["GET"]),
         Route("/api/v1/acquisition-receipts", acquisition_receipts, methods=["GET"]),
+        Route("/api/v1/catalog", catalog_assets, methods=["GET"]),
         Route("/api/v1/catalog/{asset_ref}", catalog_asset, methods=["GET"]),
         Route("/api/v1/dashboards/{dashboard_ref}", dashboard, methods=["GET"]),
         Route("/api/v1/evidence/{evidence_ref}", evidence, methods=["GET"]),

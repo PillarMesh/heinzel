@@ -66,6 +66,11 @@ uv lock --check
 It uses OpenMetadata release 1.13.3 and the release-compatible database, search, and
 ingestion images pinned by digest:
 
+The core local stack budgets and supervises MySQL, Elasticsearch, and the OpenMetadata
+server. Ingestion is an opt-in Compose profile because no source-acquisition workflow
+is composed yet. Elasticsearch health requires a green or yellow cluster and is exposed
+only on loopback so the console can include live search health in catalog readiness.
+
 | Component | Image digest in the repository |
 | --- | --- |
 | MySQL-compatible OpenMetadata database | `docker.getcollate.io/openmetadata/db@sha256:8a77669a2e64769dbb3ba4684fd527cc4a68e54879b199a6a8f1e74fa14da557` |
@@ -73,10 +78,18 @@ ingestion images pinned by digest:
 | OpenMetadata server | `docker.getcollate.io/openmetadata/server@sha256:6c878281973d9e2c366e9da4f256a744acf67b1e53195fab67c3191e504e4169` |
 | OpenMetadata ingestion | `docker.getcollate.io/openmetadata/ingestion@sha256:fe5effad9dbce98852b2f588905a4a8926c3c03de97fcceac8fe8e3ec927d717` |
 
-The Compose file binds only `127.0.0.1:8585` and `127.0.0.1:8586`. Do not change
+The Compose file binds only `127.0.0.1:8585`, `127.0.0.1:8586`, and
+`127.0.0.1:9200`. Do not change
 those bindings, image digests, search settings, or database versions for an acceptance
 run. A tag, a different Elasticsearch major, or a public port is a different and
 unverified environment.
+
+OpenMetadata 1.13.3 persists and reads glossary-term entity lineage correctly, but logs
+`Unsupported Entity Type glossaryTerm for column lineage` for that successful request.
+PillarMesh does not send `columnsLineage` or `sqlQuery`; the provider independently
+verifies the exact edge and graph before recording success. The compatibility test in
+`providers/openmetadata/tests/test_client.py` pins this classification so operators can
+distinguish the upstream log defect from a failed PillarMesh lineage write.
 
 Pulling the exact images is optional when they are already present, but if performed
 it must use the exact references above:

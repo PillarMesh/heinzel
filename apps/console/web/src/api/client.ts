@@ -3,10 +3,12 @@ import type {
   ClarifiedOutcomeAcceptanceCommand,
   ConsoleApiSchema,
   ConsoleEnvelopeCatalogAssetView,
+  ConsoleEnvelopeCatalogAssetsView,
   ConsoleEnvelopeClarifiedOutcomeView,
   ConsoleEnvelopeConversationView,
   ConsoleEnvelopeDashboardView,
   ConsoleEnvelopeDataProductView,
+  ConsoleEnvelopeDataProductsView,
   ConsoleEnvelopeEvidenceView,
   ConsoleEnvelopeInboxView,
   ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView,
@@ -27,6 +29,7 @@ import type {
   DecisionCommand,
   ProcessPackageCommand,
   RecoveryAction,
+  RequestWithdrawalCommand,
   ResetCommand,
   RetryOperationCommand,
   WarehouseBindingCommand,
@@ -395,6 +398,10 @@ export class ConsoleApiClient {
     )
   }
 
+  getDataProducts(): Promise<ConsoleEnvelopeDataProductsView> {
+    return this.#request("/api/v1/data-products", "data_products_response")
+  }
+
   getRuns(): Promise<ConsoleEnvelopeRunsView> {
     return this.#request("/api/v1/runs", "runs_response")
   }
@@ -408,6 +415,10 @@ export class ConsoleApiClient {
       `/api/v1/catalog/${encodePathSegment(assetRef)}`,
       "catalog_asset_response",
     )
+  }
+
+  getCatalogAssets(): Promise<ConsoleEnvelopeCatalogAssetsView> {
+    return this.#request("/api/v1/catalog", "catalog_assets_response")
   }
 
   getDashboard(dashboardRef: string): Promise<ConsoleEnvelopeDashboardView> {
@@ -573,6 +584,21 @@ export class ConsoleApiClient {
       await this.#mutation(
         `/api/v1/requests/${encodePathSegment(requestId)}/clarified-outcome/acceptance`,
         "clarified_outcome_response",
+        command,
+        context,
+      )
+    ).envelope
+  }
+
+  async withdrawRequest(
+    requestId: string,
+    command: RequestWithdrawalCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeRequesterRequestView> {
+    return (
+      await this.#mutation(
+        `/api/v1/requests/${encodePathSegment(requestId)}/withdrawal`,
+        "requester_request_response",
         command,
         context,
       )

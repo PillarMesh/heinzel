@@ -27,7 +27,17 @@ def _compose_environment() -> dict[str, str]:
 
 def _render_compose_config(environment: dict[str, str]) -> dict[str, object]:
     result = subprocess.run(
-        ["docker", "compose", "--file", str(COMPOSE_FILE), "config", "--format", "json"],
+        [
+            "docker",
+            "compose",
+            "--file",
+            str(COMPOSE_FILE),
+            "--profile",
+            "ingestion",
+            "config",
+            "--format",
+            "json",
+        ],
         cwd=ROOT,
         env=os.environ | environment,
         capture_output=True,
@@ -95,6 +105,53 @@ def test_elasticsearch_does_not_force_a_foreign_processor_architecture(
     assert isinstance(elasticsearch, dict)
 
     assert "platform" not in elasticsearch
+
+
+def test_core_catalog_services_have_memory_budgets_and_restart_supervision(
+    compose_config: dict[str, object],
+) -> None:
+    services = compose_config["services"]
+    assert isinstance(services, dict)
+
+    for service_name in ("mysql", "elasticsearch", "openmetadata-server"):
+        service = services[service_name]
+        assert isinstance(service, dict)
+        assert service["restart"] == "unless-stopped"
+        assert int(service["mem_limit"]) >= 512 * 1024 * 1024
+
+
+def test_search_health_requires_a_non_red_cluster_and_is_loopback_observable(
+    compose_config: dict[str, object],
+) -> None:
+    services = compose_config["services"]
+    assert isinstance(services, dict)
+    elasticsearch = services["elasticsearch"]
+    assert isinstance(elasticsearch, dict)
+
+    healthcheck = elasticsearch["healthcheck"]
+    assert isinstance(healthcheck, dict)
+    assert "green|yellow" in " ".join(healthcheck["test"])
+    assert elasticsearch["ports"] == [
+        {
+            "mode": "ingress",
+            "target": 9200,
+            "published": "9200",
+            "protocol": "tcp",
+            "host_ip": "127.0.0.1",
+        }
+    ]
+
+
+def test_ingestion_is_opt_in_until_source_acquisition_is_composed(
+    compose_config: dict[str, object],
+) -> None:
+    services = compose_config["services"]
+    assert isinstance(services, dict)
+    ingestion = services["ingestion"]
+    assert isinstance(ingestion, dict)
+
+    assert ingestion["profiles"] == ["ingestion"]
+    assert int(ingestion["mem_limit"]) >= 1024 * 1024 * 1024
 
 
 def test_database_credential_rotation_uses_shared_mysql_socket_and_gates_consumers() -> None:

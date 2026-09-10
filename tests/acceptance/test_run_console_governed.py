@@ -1,23 +1,93 @@
 from __future__ import annotations
 
 import os
+import runpy
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pillarmesh_request_management import SQLiteRequestRepository
+from pillarmesh_console.contracts import (
+    AdmissionCommand,
+    CreateRequestCommand,
+    ProposalPreparationCommand,
+    RequestClarificationCommand,
+    WarehouseBindingCommand,
+)
+from pillarmesh_console.errors import ConsoleUnavailable
+from pillarmesh_console.governed_backend import _catalog_classification_label
+from pillarmesh_console.request_intake import request_intake_content
+from pillarmesh_contract_model import ArtifactReference, digest
+from pillarmesh_request_management import RequestState, SQLiteRequestRepository
 from starlette.testclient import TestClient
 
+import tests.acceptance.console_postgresql_engine as postgresql_engine
 from tests.acceptance.run_console_governed import (
     ARCHITECT,
+    ARCHITECT_PRINCIPAL,
     REQUESTER,
+    REQUESTER_PRINCIPAL,
     TENANT,
     GovernedConsoleDeployment,
+    _context,
+    _PublishedAuthorityResolver,
     default_state_directory,
 )
+from tests.acceptance.run_plan3b import ScenarioAnswerProvider
 
 _NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
+
+
+class _RecordingAnswerProvider(ScenarioAnswerProvider):
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def propose(self, **kwargs):
+        self.calls += 1
+        return super().propose(**kwargs)
+
+
+def _prepare_question(
+    deployment: GovernedConsoleDeployment,
+    *,
+    purpose: str,
+    question: str,
+):
+    command = CreateRequestCommand.model_validate(
+        {
+            "expected_revision": 1,
+            "request_digest": "0" * 64,
+            "active_role": "requester",
+            "title": "Test",
+            "request": {
+                "kind": "stakeholder_question",
+                "purpose": purpose,
+                "question": question,
+            },
+        }
+    )
+    command = command.model_copy(update={"request_digest": digest(request_intake_content(command))})
+    created = deployment.backend.create_request(_context(REQUESTER), command)
+    clarified = deployment.backend.clarify_request(
+        _context(ARCHITECT),
+        created.request_id,
+        RequestClarificationCommand(
+            expected_revision=created.revision,
+            active_role="data_architect",
+            restated_request="Report current monthly recurring revenue.",
+            in_scope_summary="The current governed MRR metric only.",
+            out_of_scope_summary="Customer-level subscription records.",
+        ),
+    )
+    prepared = deployment.backend.prepare_request_proposal(
+        _context(ARCHITECT),
+        created.request_id,
+        ProposalPreparationCommand(
+            expected_revision=clarified.revision,
+            active_role="data_architect",
+        ),
+    )
+    return created.request_id, prepared
 
 
 @pytest.fixture
@@ -27,6 +97,434 @@ def deployment(tmp_path: Path):
         yield running
     finally:
         running.close()
+
+
+def test_the_deployment_composes_the_supplied_answer_provider(tmp_path: Path) -> None:
+    provider = _RecordingAnswerProvider()
+    running = GovernedConsoleDeployment(tmp_path, answer_candidate_provider=provider)
+    try:
+        running.seed()
+    finally:
+        running.close()
+
+    assert provider.calls == 1
+
+
+def test_published_semantic_term_resolves_without_an_exact_scenario_string(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    _, prepared = _prepare_question(
+        deployment,
+        purpose="Prepare the finance glossary review.",
+        question="Please explain net revenue for the board.",
+    )
+
+    assert prepared.proposal is not None
+    assert prepared.proposal.kind == "stakeholder_answer"
+    assert prepared.proposal.candidate == "Net revenue is gross revenue less approved refunds."
+
+
+def test_published_authority_uses_the_active_publication_contract(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    request_id, _ = _prepare_question(
+        deployment,
+        purpose="Prepare the finance glossary review.",
+        question="Please explain net revenue for the board.",
+    )
+    receipt = deployment.publication_repository.list_publications(tenant_id=TENANT)[0]
+    intent, _, _ = deployment.publication_repository.load_publication(
+        tenant_id=TENANT, publication_id=receipt.publication_id
+    )
+    semantic_version, integration_contract = deployment.publication_repository.load_inputs(
+        tenant_id=TENANT, operation_id=intent.operation_id
+    )
+    resolver = _PublishedAuthorityResolver(
+        publications=deployment.publication_repository,
+        publication_id=receipt.publication_id,
+        clock=lambda: _NOW,
+    )
+
+    authority = resolver.resolve(
+        tenant_id=TENANT,
+        request=deployment.requests.get(TENANT, request_id),
+    )
+
+    assert authority.classification_rule_refs == tuple(
+        ArtifactReference(
+            artifact_id=classification.object_id,
+            version=semantic_version.version,
+            digest=digest(classification),
+        )
+        for classification in semantic_version.classifications
+    )
+    assert authority.policy_authority_classifications == tuple(
+        classification.object_id for classification in semantic_version.classifications
+    )
+    assert authority.permitted_data_product_refs == (
+        ArtifactReference(
+            artifact_id=integration_contract.destination_product.product_name,
+            version=integration_contract.version,
+            digest=digest(integration_contract.destination_product),
+        ),
+    )
+
+
+def test_published_catalog_objects_are_listed_and_openable(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    listing = deployment.backend.get_catalog_assets(_context(ARCHITECT))
+
+    assert listing.assets
+    selected = listing.assets[0]
+    assert selected.display_name
+    assert deployment.backend.get_catalog_asset(_context(ARCHITECT), selected.asset_ref) == selected
+
+    workspace = deployment.backend.get_workspace(_context(ARCHITECT))
+    preview = next(
+        capability
+        for capability in workspace.capabilities
+        if capability.capability_id == "catalog-asset-preview"
+    )
+    assert preview.state == "ready"
+    assert preview.dependency is None
+
+
+def test_the_catalog_lists_only_the_publication_questions_are_answered_from(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    from datetime import timedelta
+
+    from tests.acceptance.run_plan3b import _SEMANTIC_SUPPORT as support
+
+    # A newer publication recorded after the deployment chose its active one. Listing it would
+    # advertise a term that preparation refuses, because answers come from the active publication.
+    version = support["semantic_version"]().model_copy(
+        update={
+            "semantic_version_id": "semantic-revenue-superseding",
+            "entities": (
+                support["SemanticObject"](
+                    object_id="invoice-line",
+                    name="Invoice line",
+                    definition="One line of an issued customer invoice.",
+                    source_refs=("process-revenue",),
+                ),
+            ),
+        }
+    )
+    integration_contract = support["contract"](version)
+    intent = support["publication_intent"](
+        binding=support["CatalogBinding"](
+            binding_id="catalog-a",
+            tenant_id=TENANT,
+            capability_profile_digest=support["DIGEST"],
+            lifecycle_state=support["CatalogBindingState"].READY,
+            revision=1,
+            created_at=support["NOW"],
+            updated_at=support["NOW"],
+            provisioned_at=support["NOW"],
+        ),
+        semantic_version=version,
+        contract=integration_contract,
+    )
+    repository = deployment.publication_repository
+    repository.store_intent(intent=intent, semantic_version=version, contract=integration_contract)
+    observation = support["CatalogObjectSnapshot"](
+        tenant_key=TENANT,
+        stable_identity="private-provider-object-superseding",
+        logical_identity="private-logical-object-superseding",
+        object_kind="namespace",
+        normalized_payload={},
+        normalized_digest=digest({}),
+    )
+    repository.store_receipt(
+        intent=intent,
+        receipt=support["CatalogPublicationReceipt"](
+            publication_id="publication-revenue-superseding",
+            tenant_id=TENANT,
+            intent_digest=digest(intent),
+            provider_version="private-provider-version",
+            published_refs=(support["reference"](version.semantic_version_id, payload=version),),
+            round_trip_observation_digest=digest((observation,)),
+            published_at=support["NOW"] + timedelta(days=1),
+        ),
+        references=(
+            support["CatalogObjectRef"](
+                tenant_key=TENANT,
+                stable_identity=observation.stable_identity,
+                normalized_digest=support["DIGEST"],
+            ),
+        ),
+        observations=(observation,),
+    )
+
+    names = {
+        asset.display_name
+        for asset in deployment.backend.get_catalog_assets(_context(ARCHITECT)).assets
+    }
+
+    assert "Invoice" in names
+    assert "Invoice line" not in names
+
+
+def test_catalog_contract_digest_is_projected_as_a_user_facing_classification() -> None:
+    contract_digest = "a" * 64
+
+    assert (
+        _catalog_classification_label(
+            contract_digest,
+            contract_digest=contract_digest,
+            semantic_names={},
+        )
+        == "Governed by approved contract"
+    )
+
+
+def test_postgresql_tls_material_uses_the_host_clock(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The deterministic scenario clock must not expire live engine credentials."""
+    observed_at: list[datetime] = []
+    generate = postgresql_engine.run_operation_secrets
+
+    def record_clock(*, clock):
+        observed_at.append(clock())
+        return generate(clock=clock)
+
+    monkeypatch.setattr(postgresql_engine, "run_operation_secrets", record_clock)
+    before = datetime.now(UTC)
+    running = GovernedConsoleDeployment(tmp_path, engine="postgresql")
+    after = datetime.now(UTC)
+    running.close()
+
+    assert len(observed_at) == 1
+    assert before <= observed_at[0] <= after
+
+
+def test_interactive_transactions_use_the_wall_clock(tmp_path: Path) -> None:
+    before = datetime.now(UTC)
+    running = GovernedConsoleDeployment(tmp_path)
+    try:
+        request = running.requests.submit_question(
+            tenant_id=TENANT,
+            requester_id=REQUESTER,
+            purpose="semantic definition",
+            question="What does net revenue mean?",
+        )
+    finally:
+        running.close()
+    after = datetime.now(UTC)
+
+    assert before <= request.updated_at <= after
+
+
+def test_governed_runtime_refuses_unfulfillable_data_access_intake(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    command = CreateRequestCommand.model_validate(
+        {
+            "expected_revision": 1,
+            "request_digest": "0" * 64,
+            "active_role": "requester",
+            "title": "Revenue export",
+            "request": {
+                "kind": "data_access",
+                "purpose": "Prepare the quarterly review.",
+                "data_product_ref": "product-revenue",
+                "requested_fields": ["net_revenue"],
+                "access_mode": "export",
+                "expires_at": "2026-10-01T00:00:00Z",
+            },
+        }
+    )
+    command = command.model_copy(update={"request_digest": digest(request_intake_content(command))})
+
+    with pytest.raises(ConsoleUnavailable, match="Data access requests are not available"):
+        deployment.backend.create_request(_context(REQUESTER), command)
+
+
+def test_interactive_actor_identifiers_are_projected_as_display_names(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    seeded = deployment.seed()
+
+    with TestClient(deployment.build_app()) as client:
+        architect = client.get("/api/v1/session").json()["data"]
+        requester = client.get("/api/v1/session", headers={"x-pillarmesh-actor": REQUESTER}).json()[
+            "data"
+        ]
+        conversation = client.get(
+            f"/api/v1/requests/{seeded.request_id}/conversation",
+            headers={"x-pillarmesh-actor": REQUESTER},
+        ).json()["data"]
+
+    assert architect["actor"]["display_name"] == "Data architect"
+    assert requester["actor"]["display_name"] == "Requester"
+    assert conversation["messages"][0]["author_label"] == "Requester"
+
+
+def test_unsupported_local_mrr_question_stops_before_candidate_generation(tmp_path: Path) -> None:
+    provider = _RecordingAnswerProvider()
+    running = GovernedConsoleDeployment(tmp_path, answer_candidate_provider=provider)
+    try:
+        request_id, prepared = _prepare_question(
+            running,
+            purpose="This is a test request",
+            question="What is the current MRR",
+        )
+
+        assert running.requests.get(TENANT, request_id).state is RequestState.NO_VALID_PLAN
+        assert running.fulfillment_repository.list_proposals(TENANT, request_id) == ()
+        refusal = running.fulfillment_repository.list_no_valid_plans(TENANT, request_id)[-1]
+        assert refusal.reason_codes == ("published_semantic_term_not_found",)
+        assert refusal.requester_safe_explanation == (
+            "The current governed catalog does not contain one unambiguous term for this question."
+        )
+        assert prepared.preparation_notes == (
+            "No Valid Plan: published_semantic_term_not_found.",
+            "Required change: Ask about one term in the workspace's current approved semantic "
+            "publication.",
+        )
+        requester_view = running.backend.get_requester_requests(_context(REQUESTER))[0]
+        serialized = requester_view.model_dump_json()
+        assert requester_view.state == "no_valid_plan"
+        assert requester_view.question == "What is the current MRR"
+        assert requester_view.no_valid_plan_explanation == (
+            "The current governed catalog does not contain one unambiguous term for this question."
+        )
+        assert "Ask about one term" not in serialized
+        assert "published_semantic_term_not_found" not in serialized
+        assert provider.calls == 0
+    finally:
+        running.close()
+
+
+def test_question_without_a_published_semantic_term_is_refused(tmp_path: Path) -> None:
+    provider = _RecordingAnswerProvider()
+    running = GovernedConsoleDeployment(tmp_path, answer_candidate_provider=provider)
+    try:
+        request_id, _ = _prepare_question(
+            running,
+            purpose="semantic definition",
+            question="What is the current MRR?",
+        )
+
+        assert running.requests.get(TENANT, request_id).state is RequestState.NO_VALID_PLAN
+        assert running.fulfillment_repository.list_proposals(TENANT, request_id) == ()
+        assert provider.calls == 0
+    finally:
+        running.close()
+
+
+def test_a_term_embedded_inside_another_word_does_not_answer_the_question(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    # "invoiced" contains the published term "Invoice" as a substring, but asks something else.
+    request_id, _ = _prepare_question(
+        deployment,
+        purpose="Prepare the finance glossary review.",
+        question="What is the invoiced total?",
+    )
+
+    assert deployment.requests.get(TENANT, request_id).state is RequestState.NO_VALID_PLAN
+    assert deployment.fulfillment_repository.list_proposals(TENANT, request_id) == ()
+    refusal = deployment.fulfillment_repository.list_no_valid_plans(TENANT, request_id)[-1]
+    assert refusal.reason_codes == ("published_semantic_term_not_found",)
+
+
+def test_a_question_naming_two_published_terms_is_refused_as_ambiguous(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    request_id, prepared = _prepare_question(
+        deployment,
+        purpose="Prepare the finance glossary review.",
+        question="How does net revenue relate to an invoice?",
+    )
+
+    refusal = deployment.fulfillment_repository.list_no_valid_plans(TENANT, request_id)[-1]
+    assert refusal.reason_codes == ("published_semantic_term_ambiguous",)
+    assert refusal.requester_safe_explanation == (
+        "This question names more than one term in the current governed catalog. "
+        "Ask about one term at a time."
+    )
+    assert prepared.preparation_notes == (
+        "No Valid Plan: published_semantic_term_ambiguous.",
+        "Required change: Ask about exactly one term in the workspace's current approved "
+        "semantic publication.",
+    )
+
+
+def test_the_longest_published_term_wins_over_a_term_it_contains() -> None:
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from pillarmesh_request_management import InboxRequest
+    from pillarmesh_request_management.models import StakeholderQuestion
+
+    from tests.acceptance.run_console_governed import _semantic_match
+
+    customer = SimpleNamespace(object_id="customer", name="Customer")
+    audited = SimpleNamespace(
+        object_id="customer-audit-20260910081713", name="Customer audit 20260910081713"
+    )
+    intent = SimpleNamespace(semantic_objects=(customer, audited))
+    publications = cast(Any, SimpleNamespace(load_publication=lambda **_: (intent, None, None)))
+
+    def ask(question: str) -> object:
+        return _semantic_match(
+            publications=publications,
+            tenant_id=TENANT,
+            publication_id="publication-a",
+            request=InboxRequest(
+                request_id="request-a",
+                tenant_id=TENANT,
+                requester_id=REQUESTER,
+                payload=StakeholderQuestion(purpose="glossary", question=question),
+                state=RequestState.INVESTIGATING,
+                revision=2,
+                submitted_at=_NOW,
+                updated_at=_NOW,
+            ),
+        )
+
+    assert ask("What does Customer audit 20260910081713 mean?") is audited
+    assert ask("What does Customer mean?") is customer
+    assert ask("What does customer_audit_20260910081713 mean?") is audited
+
+
+def test_a_term_is_not_found_inside_a_word_that_contains_non_ascii_letters() -> None:
+    from types import SimpleNamespace
+    from typing import Any, cast
+
+    from pillarmesh_request_management import InboxRequest
+    from pillarmesh_request_management.models import StakeholderQuestion
+
+    from tests.acceptance.run_console_governed import _semantic_match
+
+    # "Umsätze" must read as one word; splitting at "ä" would make it name the term "Tze".
+    tze = SimpleNamespace(object_id="tze", name="Tze")
+    intent = SimpleNamespace(semantic_objects=(tze,))
+    publications = cast(Any, SimpleNamespace(load_publication=lambda **_: (intent, None, None)))
+
+    def ask(question: str) -> object:
+        return _semantic_match(
+            publications=publications,
+            tenant_id=TENANT,
+            publication_id="publication-a",
+            request=InboxRequest(
+                request_id="request-a",
+                tenant_id=TENANT,
+                requester_id=REQUESTER,
+                payload=StakeholderQuestion(purpose="glossary", question=question),
+                state=RequestState.INVESTIGATING,
+                revision=2,
+                submitted_at=_NOW,
+                updated_at=_NOW,
+            ),
+        )
+
+    assert ask("Was bedeuten die Umsätze?") is None
+    assert ask("Was bedeutet Tze?") is tze
 
 
 def test_the_deployment_serves_governed_reads_rather_than_fixtures(
@@ -55,6 +553,234 @@ def test_the_seeded_decision_reaches_the_architect_inbox(
     assert detail.status_code == 200
     assert detail.json()["data"]["state"] == "awaiting_approval"
     assert detail.json()["data"]["proposal_digest"] == seeded.proposal_digest
+    approvals = detail.json()["data"]["proposal"]["required_approvals"]
+    assert {approval["authority_ref"]: approval["authority_label"] for approval in approvals} == {
+        REQUESTER_PRINCIPAL: "Requester",
+        ARCHITECT_PRINCIPAL: "Data engineering architect",
+    }
+
+
+def _withdraw(client: TestClient, request_id: str, expected_revision: int, key: str):
+    requester = {"x-pillarmesh-actor": REQUESTER}
+    token = client.get("/api/v1/session", headers=requester).json()["data"]["csrf_token"]
+    return client.post(
+        f"/api/v1/requests/{request_id}/withdrawal",
+        json={"expected_revision": expected_revision, "active_role": "requester"},
+        headers=requester
+        | {"Origin": "http://127.0.0.1:8000", "X-CSRF-Token": token, "Idempotency-Key": key},
+    )
+
+
+def test_a_requester_withdraws_an_open_request_through_the_owning_service(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    seeded = deployment.seed()
+    revision = deployment.requests.get(TENANT, seeded.request_id).revision
+
+    with TestClient(deployment.build_app()) as client:
+        response = _withdraw(client, seeded.request_id, revision, "withdraw-open")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["state"] == "cancelled"
+    assert deployment.requests.get(TENANT, seeded.request_id).state is RequestState.CANCELLED
+
+
+def test_a_request_that_reached_an_outcome_cannot_be_withdrawn(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    request_id, prepared = _prepare_question(
+        deployment,
+        purpose="Prepare the finance glossary review.",
+        question="What is the current MRR?",
+    )
+
+    with TestClient(deployment.build_app()) as client:
+        response = _withdraw(client, request_id, prepared.revision, "withdraw-terminal")
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "withdrawal_unavailable"
+    assert deployment.requests.get(TENANT, request_id).state is RequestState.NO_VALID_PLAN
+
+
+def test_a_retried_withdrawal_reports_the_request_it_already_withdrew(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    seeded = deployment.seed()
+    revision = deployment.requests.get(TENANT, seeded.request_id).revision
+
+    with TestClient(deployment.build_app()) as client:
+        first = _withdraw(client, seeded.request_id, revision, "withdraw-first")
+        # A network retry resends the command the browser built, at the revision it read.
+        retried = _withdraw(client, seeded.request_id, revision, "withdraw-retry")
+
+    assert first.status_code == 200
+    assert retried.status_code == 200
+    assert retried.json()["data"]["state"] == "cancelled"
+    assert retried.json()["data"]["revision"] == first.json()["data"]["revision"]
+
+
+def test_a_withdrawal_against_a_stale_revision_changes_nothing(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    seeded = deployment.seed()
+    revision = deployment.requests.get(TENANT, seeded.request_id).revision
+
+    with TestClient(deployment.build_app()) as client:
+        response = _withdraw(client, seeded.request_id, revision - 1, "withdraw-stale")
+
+    assert response.status_code == 409
+    unchanged = deployment.requests.get(TENANT, seeded.request_id)
+    assert unchanged.state is RequestState.AWAITING_APPROVAL
+
+
+def test_admission_executes_and_delivers_the_admitted_answer(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    setup = deployment.backend.get_setup(_context(ARCHITECT))
+    deployment.backend.confirm_warehouse_binding(
+        _context(ARCHITECT),
+        WarehouseBindingCommand(
+            expected_revision=setup.revision,
+            reviewed_digest=setup.setup_digest,
+            active_role="data_architect",
+            engine="postgresql",
+            region="us-west-2",
+            capacity="mvp-fixed",
+        ),
+    )
+    seeded = deployment.seed()
+    proposal = deployment.fulfillment_repository.list_proposals(TENANT, seeded.request_id)[-1]
+    request = deployment.requests.get(TENANT, seeded.request_id)
+    actors = {
+        REQUESTER_PRINCIPAL: REQUESTER,
+        ARCHITECT_PRINCIPAL: ARCHITECT,
+    }
+    for requirement in proposal.required_approvals:
+        deployment.fulfillment.record_approval(
+            tenant_id=TENANT,
+            request_id=seeded.request_id,
+            actor_id=actors[requirement.authority_ref],
+            authority_ref=requirement.authority_ref,
+            subject_digest=requirement.subject_digest,
+            decision="approve",
+            expected_revision=request.revision,
+        )
+    detail = deployment.backend.admit_request(
+        _context(ARCHITECT),
+        seeded.request_id,
+        AdmissionCommand(
+            expected_revision=request.revision,
+            reviewed_digest=seeded.proposal_digest,
+            active_role="data_architect",
+        ),
+    )
+    requester = deployment.backend.get_requester_requests(_context(REQUESTER))[0]
+
+    assert detail.state == "delivered"
+    assert requester.state == "delivered"
+    assert requester.delivered_answer is not None
+    assert requester.delivered_answer.answer_text == (
+        "Net revenue is gross revenue less approved refunds."
+    )
+    assert requester.delivered_answer.delivery_ref.startswith("dlv-")
+
+
+def test_a_delivery_that_fails_after_admission_can_be_retried(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    from pillarmesh_console.errors import ConsoleConflict
+
+    seeded = deployment.seed()
+    proposal = deployment.fulfillment_repository.list_proposals(TENANT, seeded.request_id)[-1]
+    request = deployment.requests.get(TENANT, seeded.request_id)
+    actors = {REQUESTER_PRINCIPAL: REQUESTER, ARCHITECT_PRINCIPAL: ARCHITECT}
+    for requirement in proposal.required_approvals:
+        deployment.fulfillment.record_approval(
+            tenant_id=TENANT,
+            request_id=seeded.request_id,
+            actor_id=actors[requirement.authority_ref],
+            authority_ref=requirement.authority_ref,
+            subject_digest=requirement.subject_digest,
+            decision="approve",
+            expected_revision=request.revision,
+        )
+
+    # No warehouse binding is confirmed yet, so the answer cannot be checked for delivery.
+    with pytest.raises(ConsoleConflict):
+        deployment.backend.admit_request(
+            _context(ARCHITECT),
+            seeded.request_id,
+            AdmissionCommand(
+                expected_revision=request.revision,
+                reviewed_digest=seeded.proposal_digest,
+                active_role="data_architect",
+            ),
+        )
+    stranded = deployment.backend.get_request_detail(_context(ARCHITECT), seeded.request_id)
+
+    assert stranded.state == "execution_ready"
+    assert stranded.admission is not None
+    assert stranded.admission.available
+    assert stranded.admission.pending_delivery
+
+    setup = deployment.backend.get_setup(_context(ARCHITECT))
+    deployment.backend.confirm_warehouse_binding(
+        _context(ARCHITECT),
+        WarehouseBindingCommand(
+            expected_revision=setup.revision,
+            reviewed_digest=setup.setup_digest,
+            active_role="data_architect",
+            engine="postgresql",
+            region="us-west-2",
+            capacity="mvp-fixed",
+        ),
+    )
+    retried = deployment.backend.admit_request(
+        _context(ARCHITECT),
+        seeded.request_id,
+        AdmissionCommand(
+            expected_revision=stranded.revision,
+            reviewed_digest=stranded.proposal_digest,
+            active_role="data_architect",
+        ),
+    )
+
+    assert retried.state == "delivered"
+    assert deployment.requests.get(TENANT, seeded.request_id).state is RequestState.DELIVERED
+
+
+def test_data_access_intake_availability_is_published_as_a_capability(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    from pillarmesh_console.fixture_data import build_fixture_seed
+
+    governed = {
+        capability.capability_id: capability
+        for capability in deployment.backend.get_workspace(_context(REQUESTER)).capabilities
+    }
+    fixture = {
+        capability.capability_id: capability
+        for capability in build_fixture_seed().workspace.capabilities
+    }
+
+    # The browser gates intake on this capability, so it must say what the server will accept.
+    assert governed["data-access-intake"].state == "not_delivered"
+    assert fixture["data-access-intake"].state == "ready"
+
+
+def test_a_publication_store_from_another_catalog_binding_names_the_mismatch(
+    tmp_path: Path,
+) -> None:
+    from tests.acceptance.run_plan3b import published_repository
+
+    repository, _, _ = published_repository(check_same_thread=False)
+
+    # The fixture publication was made through catalog binding "catalog-a"; a fresh state
+    # directory mints its own binding, so the store cannot be served as this workspace's.
+    with pytest.raises(ValueError, match="catalog-a") as refused:
+        GovernedConsoleDeployment(tmp_path, publication_repository=repository)
+
+    assert "bindings.json" in str(refused.value)
 
 
 def test_the_seeded_request_is_owned_by_the_request_service_on_disk(
@@ -85,7 +811,7 @@ def test_the_actor_header_selects_the_requester_surface(
         requester = client.get("/api/v1/session", headers={"x-pillarmesh-actor": REQUESTER})
         unknown = client.get("/api/v1/session", headers={"x-pillarmesh-actor": "nobody"})
 
-    assert architect.json()["data"]["actor"]["display_name"] == ARCHITECT
+    assert architect.json()["data"]["actor"]["display_name"] == "Data architect"
     assert requester.json()["data"]["active_role"] == "requester"
     assert unknown.json()["data"]["active_role"] == "data_architect"
 
@@ -152,6 +878,20 @@ def test_restarting_reuses_the_bindings_the_previous_run_created(tmp_path: Path)
         assert second.bindings.warehouse_binding_id(TENANT) == "whb-recorded-by-a-command"
     finally:
         second.close()
+
+
+def test_running_deployments_observe_bindings_recorded_by_each_other(tmp_path: Path) -> None:
+    first = GovernedConsoleDeployment(tmp_path)
+    second = GovernedConsoleDeployment(tmp_path)
+    try:
+        first.bindings.bind_warehouse(
+            tenant_id=TENANT, binding_id="whb-recorded-by-another-process"
+        )
+
+        assert second.bindings.warehouse_binding_id(TENANT) == "whb-recorded-by-another-process"
+    finally:
+        second.close()
+        first.close()
 
 
 def test_seeding_twice_does_not_leave_two_indistinguishable_decisions(
@@ -345,12 +1085,16 @@ def test_a_receipt_the_acquisition_runtime_recorded_reaches_the_console(
     """
     from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter
 
-    from services.runtime.tests.test_acquisition import _intent, _runner
+    runtime_support = runpy.run_path(
+        str(Path(__file__).parents[2] / "services/runtime/tests/test_acquisition.py")
+    )
+    acquisition_intent = runtime_support["_intent"]
+    acquisition_runner = runtime_support["_runner"]
 
-    runner, observation, *_rest = _runner(
+    runner, observation, *_rest = acquisition_runner(
         evidence_delegate=SQLiteAcquisitionEvidenceWriter(deployment.evidence)
     )
-    result = runner.prepare(_intent(observation, tenant_id=TENANT))
+    result = runner.prepare(acquisition_intent(observation, tenant_id=TENANT))
 
     with TestClient(deployment.build_app()) as client:
         body = client.get("/api/v1/acquisition-receipts").json()["data"]["receipts"]

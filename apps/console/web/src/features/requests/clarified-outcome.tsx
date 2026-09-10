@@ -157,7 +157,7 @@ export function ClarifiedOutcome({
           <p role="status">
             Acceptance recorded at revision {recordedRevision ?? outcome.revision}. Your approval of this scope is recorded.
           </p>
-          <p>The answer stays withheld until a verified delivery receipt exists.</p>
+          <p>The answer stays withheld until a delivery receipt exists.</p>
         </>
       ) : (
         <>

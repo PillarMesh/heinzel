@@ -47,6 +47,25 @@ const capabilities: NonNullable<WorkspaceView["capabilities"]> = [
     detail: "Fixture mode cannot issue authoritative evidence.",
     dependency: "Governed evidence service wiring",
   },
+  {
+    capability_id: "warehouse-binding",
+    label: "Managed warehouse",
+    state: "ready",
+    detail: "The managed warehouse binding is ready.",
+  },
+  {
+    capability_id: "acquisition-evidence",
+    label: "Acquisition evidence",
+    state: "ready",
+    detail: "Receipts the acquisition runtime recorded are listed.",
+  },
+  {
+    capability_id: "analyst-dashboard",
+    label: "Analyst dashboards",
+    state: "not_delivered",
+    detail: "Dashboard embedding remains an outstanding analyst-surface obligation.",
+    dependency: "the governed Superset embedding surface",
+  },
 ]
 
 function workspaceEnvelope(state: WorkspaceView["state"]): ConsoleEnvelopeWorkspaceView {
@@ -250,19 +269,46 @@ describe("ConsoleRoutes", () => {
     expect(screen.getByText("Demo scenario - no managed effects")).toBeVisible()
   })
 
+  test("renders dashboards with only the capability that concerns dashboards", () => {
+    renderRoutes("/dashboards")
+
+    expect(screen.getByRole("heading", {name: "Dashboards"})).toBeVisible()
+    expect(
+      screen.getByText("Review managed dashboard capability and delivery boundaries."),
+    ).toBeVisible()
+    const ledger = screen.getByRole("list", {name: "Dashboards capability states"})
+    expect(ledger).toHaveTextContent("Analyst dashboards")
+    expect(ledger).toHaveTextContent("Not delivered")
+    expect(ledger).not.toHaveTextContent("Managed warehouse")
+    expect(ledger).not.toHaveTextContent("Fixture journey")
+  })
+
+  test("renders evidence with only evidence capabilities and where each record is kept", () => {
+    renderRoutes("/evidence")
+
+    expect(screen.getByRole("heading", {name: "Evidence"})).toBeVisible()
+    const ledger = screen.getByRole("list", {name: "Evidence capability states"})
+    expect(ledger).toHaveTextContent("Governed evidence")
+    expect(ledger).toHaveTextContent("Acquisition evidence")
+    expect(ledger).not.toHaveTextContent("Managed warehouse")
+    expect(ledger).not.toHaveTextContent("Analyst dashboards")
+    expect(screen.getByRole("link", {name: "decision queue"})).toHaveAttribute("href", "/inbox")
+    expect(screen.getByRole("link", {name: "acquisition receipts"})).toHaveAttribute(
+      "href",
+      "/acquisition-receipts",
+    )
+    expect(
+      screen.queryByText("Fixture projections never represent authoritative managed evidence."),
+    ).not.toBeInTheDocument()
+  })
+
   test.each([
-    ["/data-products", "Data products", "Review versioned products and their governed state."],
-    ["/catalog", "Catalog", "Inspect published meaning, ownership, and lineage."],
-    ["/dashboards", "Dashboards", "Review managed dashboard capability and delivery boundaries."],
-    ["/evidence", "Evidence", "Trace decisions and outcomes to immutable evidence references."],
-  ])("renders %s as a substantive typed capability summary", (path, heading, summary) => {
+    ["/data-products", "No data products are currently permitted."],
+    ["/catalog", "No catalog assets have been published."],
+  ])("renders %s from its owning listing", async (path, emptyMessage) => {
     renderRoutes(path)
 
-    expect(screen.getByRole("heading", {name: heading})).toBeVisible()
-    expect(screen.getByText(summary)).toBeVisible()
-    expect(screen.getByRole("list", {name: `${heading} capability states`})).toBeVisible()
-    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0)
-    expect(screen.getAllByText("Not delivered").length).toBeGreaterThan(0)
+    expect(await screen.findByText(emptyMessage)).toBeVisible()
   })
 
   test("reaches the acquisition receipt listing from its own route", async () => {

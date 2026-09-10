@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 
-from pillarmesh_contract_model import ArtifactModel, digest
+from pillarmesh_contract_model import ArtifactModel, ArtifactReference, digest
 
 from .fulfillment_errors import (
     FulfillmentAuthorityError,
@@ -23,6 +23,7 @@ from .fulfillment_models import (
     FulfillmentAdmissionReceipt,
     FulfillmentApprovalBinding,
     FulfillmentDecision,
+    FulfillmentDeliveryReceipt,
     FulfillmentEvidenceReceipt,
     FulfillmentGroundingSnapshot,
     FulfillmentPolicySnapshot,
@@ -41,6 +42,7 @@ from .fulfillment_policy import (
 from .fulfillment_protocols import (
     AccessCandidateProvider,
     AnswerCandidateProvider,
+    AnswerExecutionProvider,
     AuthorityRoleResolver,
     DataProductOwnerResolver,
     FulfillmentSnapshotResolver,
@@ -86,6 +88,8 @@ def _guard_public_operations[Service: type](service_class: Service) -> Service:
         "revise_proposal",
         "record_approval",
         "admit",
+        "execute_answer",
+        "deliver_answer",
         "cancel",
         "dispose_denial",
     )
@@ -103,6 +107,7 @@ class FulfillmentService:
         repository: FulfillmentRepository,
         snapshot_resolver: FulfillmentSnapshotResolver,
         answer_candidate_provider: AnswerCandidateProvider,
+        answer_execution_provider: AnswerExecutionProvider | None = None,
         policy_compiler: FulfillmentPolicyCompiler,
         clock: Callable[[], datetime],
         access_candidate_provider: AccessCandidateProvider | None = None,
@@ -113,6 +118,7 @@ class FulfillmentService:
         self._repository = repository
         self._snapshot_resolver = snapshot_resolver
         self._answer_candidate_provider = answer_candidate_provider
+        self._answer_execution_provider = answer_execution_provider
         self._policy_compiler = policy_compiler
         self._clock = clock
         self._access_candidate_provider = access_candidate_provider
@@ -186,6 +192,7 @@ class FulfillmentService:
                     reason_codes=resolution.reason_codes,
                     constraint_refs=resolution.constraint_refs,
                     smallest_changes=resolution.smallest_changes,
+                    requester_safe_explanation=resolution.requester_safe_explanation,
                 ),
                 actor_id=actor_id,
                 grounding_snapshot_digest=None,
@@ -278,6 +285,7 @@ class FulfillmentService:
                     reason_codes=resolution.reason_codes,
                     constraint_refs=resolution.constraint_refs,
                     smallest_changes=resolution.smallest_changes,
+                    requester_safe_explanation=resolution.requester_safe_explanation,
                 ),
                 actor_id=actor_id,
                 grounding_snapshot_digest=None,
@@ -445,6 +453,7 @@ class FulfillmentService:
                         reason_codes=resolution.reason_codes,
                         constraint_refs=resolution.constraint_refs,
                         smallest_changes=resolution.smallest_changes,
+                        requester_safe_explanation=resolution.requester_safe_explanation,
                     ),
                     actor_id=actor_id,
                     grounding_snapshot_digest=None,
@@ -545,6 +554,147 @@ class FulfillmentService:
                 actor_id=actor_id,
                 expected_revision=expected_revision,
                 current_policy=current_policy,
+            )
+        except StaleRevisionError:
+            raise FulfillmentStaleRevision("fulfillment request revision is stale") from None
+
+    def execute_answer(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> FulfillmentDeliveryReceipt:
+        recorded = self._recorded_delivery(tenant_id, request_id, expected_revision)
+        if recorded is not None:
+            return recorded
+        request = self._load_current(tenant_id, request_id, expected_revision)
+        if request.state is not RequestState.EXECUTING:
+            raise FulfillmentIntegrityError("answer execution requires an executing request")
+        proposals = self._repository.list_proposals(tenant_id, request_id)
+        admissions = self._repository.list_admissions(tenant_id, request_id)
+        if not proposals or not admissions:
+            raise FulfillmentIntegrityError("answer execution requires an admitted proposal")
+        proposal = proposals[-1]
+        admission = admissions[-1]
+        grounding = self._repository.load_grounding_snapshot(
+            tenant_id, proposal.grounding_snapshot_digest
+        )
+        provider = self._answer_execution_provider
+        if provider is None:
+            raise FulfillmentGroundingError("answer execution boundary is not configured")
+        try:
+            executed_answer, verification_refs = provider.execute(
+                request=request,
+                proposal=proposal,
+                admission=admission,
+                grounding=grounding,
+            )
+        except FulfillmentError:
+            raise
+        except Exception:
+            raise FulfillmentGroundingError("answer execution could not be verified") from None
+        if not isinstance(executed_answer, StakeholderAnswerDraft) or not isinstance(
+            verification_refs, tuple
+        ):
+            raise FulfillmentGroundingError("answer execution could not be verified")
+        return self.deliver_answer(
+            tenant_id=tenant_id,
+            request_id=request_id,
+            actor_id=actor_id,
+            expected_revision=expected_revision,
+            executed_answer=executed_answer,
+            verification_refs=verification_refs,
+        )
+
+    def _recorded_delivery(
+        self, tenant_id: str, request_id: str, expected_revision: int
+    ) -> FulfillmentDeliveryReceipt | None:
+        """The delivery an earlier attempt from this revision already recorded, if any.
+
+        Delivery advances the request two revisions, so a retry still carrying the revision
+        its caller read before delivering would otherwise be refused as stale for a request
+        that was delivered.
+        """
+        try:
+            request = self._request_service.get(tenant_id, request_id)
+        except KeyError:
+            raise FulfillmentOwnershipError(
+                "fulfillment request is not owned by this tenant"
+            ) from None
+        if request.state is not RequestState.DELIVERED:
+            return None
+        return next(
+            (
+                delivery
+                for delivery in reversed(self._repository.list_deliveries(tenant_id, request_id))
+                if delivery.source_request_revision == expected_revision
+            ),
+            None,
+        )
+
+    def deliver_answer(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+        executed_answer: StakeholderAnswerDraft,
+        verification_refs: tuple[ArtifactReference, ...],
+    ) -> FulfillmentDeliveryReceipt:
+        recorded = self._recorded_delivery(tenant_id, request_id, expected_revision)
+        if recorded is not None:
+            return recorded
+        request = self._load_current(tenant_id, request_id, expected_revision)
+        if request.state is not RequestState.EXECUTING:
+            raise FulfillmentIntegrityError("answer delivery requires an executing request")
+        proposals = self._repository.list_proposals(tenant_id, request_id)
+        admissions = self._repository.list_admissions(tenant_id, request_id)
+        if not proposals or not admissions:
+            raise FulfillmentIntegrityError("answer delivery requires an admitted proposal")
+        proposal = proposals[-1]
+        admission = admissions[-1]
+        if not isinstance(proposal.subject, StakeholderAnswerDraft):
+            raise FulfillmentGroundingError("answer delivery requires a stakeholder answer")
+        if executed_answer != proposal.subject:
+            raise FulfillmentIntegrityError("executed answer differs from the approved proposal")
+        now = self._now()
+        delivery = FulfillmentDeliveryReceipt(
+            delivery_id="pending",
+            tenant_id=tenant_id,
+            request_id=request_id,
+            source_request_revision=expected_revision,
+            resulting_request_revision=expected_revision + 2,
+            admission_id=admission.admission_id,
+            proposal_id=proposal.proposal_id,
+            proposal_revision=proposal.revision,
+            proposal_digest=digest(proposal),
+            answer=executed_answer,
+            verification_refs=verification_refs,
+            delivered_at=now,
+        )
+        evidence = FulfillmentEvidenceReceipt(
+            evidence_id="pending",
+            tenant_id=tenant_id,
+            request_id=request_id,
+            request_revision=expected_revision + 2,
+            outcome="delivered",
+            proposal_id=proposal.proposal_id,
+            proposal_revision=proposal.revision,
+            authority_refs=tuple(item.authority_ref for item in proposal.required_approvals),
+            approval_ids=admission.approval_ids,
+            reason_codes=(),
+            resulting_state=RequestState.DELIVERED,
+            created_at=now,
+        )
+        try:
+            return self._repository.record_delivery(
+                delivery=delivery,
+                evidence=evidence,
+                actor_id=actor_id,
+                expected_revision=expected_revision,
             )
         except StaleRevisionError:
             raise FulfillmentStaleRevision("fulfillment request revision is stale") from None
@@ -779,6 +929,7 @@ class FulfillmentService:
             reason_codes=compilation.reason_codes,
             constraint_refs=compilation.constraint_refs,
             smallest_changes=compilation.smallest_changes,
+            requester_safe_explanation=compilation.requester_safe_explanation,
             grounding_snapshot_digest=grounding_snapshot_digest,
             policy_snapshot_digest=policy_snapshot_digest,
             created_at=now,

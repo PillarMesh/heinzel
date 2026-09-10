@@ -5,18 +5,20 @@ why. Every entry names the owning transaction or contract field that is missing.
 is closed only by an owning service publishing the transaction, never by the console
 approximating it.
 
-The console reports each of these as a `not_delivered` capability on
-`GET /api/v1/workspace`, and the corresponding route fails closed with the error code
-`capability_not_delivered`. No governed failure ever falls back to fixture content.
+Each open capability gap is reported as `not_delivered` on `GET /api/v1/workspace`,
+and its corresponding route fails closed with the error code
+`capability_not_delivered`. Closed entries remain here as the implementation record.
+No governed failure ever falls back to fixture content.
 
 ## Commands that are wired
 
 | Console command | Owning transaction |
 | --- | --- |
 | `POST /api/v1/setup/warehouse-binding` | `WarehouseControlService.create_draft` then `WarehouseLifecycleOrchestrator.provision` |
-| `POST /api/v1/requests` | `RequestManagementService.submit_question` / `submit_access_request` |
+| `POST /api/v1/requests` | `RequestManagementService.submit_question`; data-access intake is gated |
 | `POST /api/v1/requests/{id}/conversation` | `RequestManagementService.append_conversation` |
 | `POST /api/v1/requests/{id}/clarified-outcome/acceptance` | `FulfillmentService.record_approval` under the requester principal |
+| `POST /api/v1/requests/{id}/withdrawal` | `FulfillmentService.cancel`, admitted only before execution (see wiring defect 3) |
 | `POST /api/v1/inbox/{id}/clarification` | `FulfillmentService.clarify_outcome` |
 | `POST /api/v1/inbox/{id}/proposal` | `FulfillmentService.propose_answer` |
 | `POST /api/v1/inbox/{id}/proposal/submission` | `FulfillmentService.submit_proposal` |
@@ -59,23 +61,20 @@ issues server-side managed-service links yet.
 
 ### Stakeholder answer text delivery
 
-Admission is now wired: `POST /api/v1/inbox/{id}/admission` calls
+**Closed.** `POST /api/v1/inbox/{id}/admission` calls
 `FulfillmentService.admit`, which promotes an approved proposal to execution and writes
-the admission and evidence receipts, so a console-driven journey reaches `executing`
-rather than stopping at *every required approval recorded*.
-
-What remains undelivered is the answer **text**. `RequesterRequestView` carries the
-request state, the clarified outcomes, the requester's own decisions and a denial
-explanation - it has no field for the proposed answer. After admission the requester
-sees `ready_for_execution`, not the answer itself. Publishing the text would need an
-owning field to publish; composing one in the console would make it the author of a
-governed artifact.
+the admission and evidence receipts. The execution provider verifies the active warehouse
+binding and exact catalog publication, then request-management atomically records
+`verifying`, `delivered`, delivery evidence, and the approved answer. The requester sees
+that answer and its governed references. Questions resolve against one unambiguous term
+in the active approved semantic publication; unsupported questions still terminate as
+`No Valid Plan` before candidate generation.
 
 ### Access proposal preparation
 
-The local harness composes answer preparation only. Access candidate generation and
-its owner resolver are not wired, so access preparation is not offered. Intake and
-review of an already-owned access proposal remain separate supported boundaries.
+Access candidate generation, grant application, expiry, and revocation are not composed.
+Governed-local intake labels data access unavailable and the server rejects a crafted
+submission, so no request can enter an unprocessable submitted state.
 
 ### Access grant application, expiry and revocation
 
@@ -160,7 +159,11 @@ records the decisions and the measured cost.
 
 ### Catalog asset preview (`catalog-asset-preview`)
 
-Publication receipts name references but carry no reviewable asset detail.
+**Closed.** Tenant-scoped catalog list and detail reads project the approved semantic
+objects from approved publications on the workspace's active catalog binding, newest
+first. The catalog page lists and opens those records with exact definitions, owners,
+governed classification status, and lineage summaries. Data products likewise have
+list and detail routes over the owning policy references.
 
 ### Demo reset
 
@@ -215,8 +218,9 @@ way that never invents authority, and each needs a contract change to close.
    Legacy entries and internal callers that do not record a role expose `null`, shown
    as “Role not recorded” in both conversation views. Absent roles remain absent from
    durable serialization; reads do not rewrite historical bytes. Recorded roles do not
-   grant permissions or approval authority. `author_label` remains the owning actor
-   identifier because there is no display-name directory.
+   grant permissions or approval authority. The deployment-owned actor directory now
+   projects presentation names for known actors and falls back to the owning actor
+   identifier for historical entries it cannot resolve.
 6. **Closed: governed proposals are reviewable.** The architect projection publishes the
    owning answer text, access scope, or disclosure denial. Versioned artifact references
    retain the exact artifact ID, version, and digest. Approval status matches the exact
@@ -250,6 +254,15 @@ way that never invents authority, and each needs a contract change to close.
    authority reference it holds, because enumerating principals would itself be a
    disclosure. `InMemoryWorkspacePrincipalDirectory` therefore holds the deployment's
    mapping, and the owning service still performs the authority check.
+
+3. **Request-management would cancel work already admitted.** `FulfillmentService.cancel`
+   refuses only `rejected`, `no_valid_plan`, `cancelled`, `failed` and `retired` requests, so
+   it would cancel an `executing`, `verifying` or `delivered` one. The console admits a
+   requester withdrawal only from `submitted`, `clarifying`, `investigating`, `proposed` or
+   `awaiting_approval`, and refuses the rest with `withdrawal_unavailable`. Whether the owning
+   service should hold that line itself is its decision; until it does, a direct caller of
+   `cancel` is not bound by it. A request stranded in `executing` by the retired local scenario
+   therefore still has no disposition path.
 
 ## Composition defects that have since been closed
 

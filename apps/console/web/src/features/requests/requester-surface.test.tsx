@@ -55,7 +55,39 @@ const ownRequest: RequesterRequestView = {
     },
   ],
   clarified_outcome: clarifiedOutcome,
+  question: "Why did net revenue move last week?",
   denial_explanation: null,
+  no_valid_plan_explanation: null,
+}
+
+const refusedRequest: RequesterRequestView = {
+  ...ownRequest,
+  request_id: "request-no-valid-plan",
+  state: "no_valid_plan",
+  title: "Test",
+  requested_outcome: "This is a test request",
+  question: "What is the current MRR",
+  revision: 2,
+  clarified_outcome: null,
+  own_decisions: [],
+  no_valid_plan_explanation:
+    "This local environment has no authoritative source configured for that question.",
+}
+
+const deliveredRequest: RequesterRequestView = {
+  ...ownRequest,
+  state: "delivered",
+  revision: 7,
+  delivered_answer: {
+    answer_text: "Net revenue is gross revenue less approved refunds.",
+    as_of: "2026-09-10T16:30:00Z",
+    freshness: "not_applicable",
+    datasets: [{artifact_id: "product-revenue", version: 2, digest: "d".repeat(64)}],
+    metrics: [{artifact_id: "metric-net-revenue", version: 2, digest: "e".repeat(64)}],
+    lineage: [{artifact_id: `lineage-${"f".repeat(24)}`, version: 1, digest: "f".repeat(64)}],
+    quality_limitations: [],
+    delivery_ref: "dlv-00000000000000000001-proof",
+  },
 }
 
 const requestsEnvelope: ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView = {
@@ -123,6 +155,7 @@ const client = {
   getClarifiedOutcome: vi.fn(),
   getConversation: vi.fn(),
   getRequesterRequests: vi.fn(),
+  withdrawRequest: vi.fn(),
   // Reviewer projections this surface must never reach for.
   getEvidence: vi.fn(),
   getInbox: vi.fn(),
@@ -133,11 +166,16 @@ const digestText = vi.fn(async (value: string) =>
   value.includes("conversation") ? conversationDigest : requestDigest,
 )
 
-function renderSurface(requestedRequestRef?: string) {
+function renderSurface(
+  requestedRequestRef?: string,
+  dataProvenance: "demo_fixture" | "governed_local" = "demo_fixture",
+  dataAccessAvailable = true,
+) {
   return render(
     <MyRequests
       client={client}
-      dataProvenance="demo_fixture"
+      dataAccessAvailable={dataAccessAvailable}
+      dataProvenance={dataProvenance}
       digestText={digestText}
       idempotencyKeyFactory={() => "idempotency-requester-fixed"}
       requestedRequestRef={requestedRequestRef}
@@ -151,6 +189,30 @@ beforeEach(() => {
   client.getRequesterRequests.mockResolvedValue(requestsEnvelope)
   client.getConversation.mockResolvedValue(conversationEnvelope)
   client.getClarifiedOutcome.mockResolvedValue(outcomeEnvelope)
+})
+
+test("labels data access unavailable when the governed runtime cannot fulfill it", async () => {
+  client.getRequesterRequests.mockResolvedValue({
+    ...requestsEnvelope,
+    meta: {...requestsEnvelope.meta, data_provenance: "governed_local"},
+  })
+
+  renderSurface(undefined, "governed_local", false)
+
+  expect(await screen.findByRole("radio", {name: "Data access request"})).toBeDisabled()
+  expect(screen.getByText(/data access requests are not available/i)).toBeInTheDocument()
+})
+
+test("offers data access in a governed workspace whose capability says intake is available", async () => {
+  client.getRequesterRequests.mockResolvedValue({
+    ...requestsEnvelope,
+    meta: {...requestsEnvelope.meta, data_provenance: "governed_local"},
+  })
+
+  renderSurface(undefined, "governed_local", true)
+
+  expect(await screen.findByRole("radio", {name: "Data access request"})).toBeEnabled()
+  expect(screen.queryByText(/data access requests are not available/i)).not.toBeInTheDocument()
 })
 
 test("requires an explicit request type before any typed payload field is offered", async () => {
@@ -226,9 +288,15 @@ test("submits a stakeholder question without any browser-supplied requester iden
     csrfToken: session.csrf_token,
     idempotencyKey: "idempotency-requester-fixed",
   })
-  expect(await screen.findByRole("status")).toHaveTextContent(
-    "Request request-0001 recorded at revision 1 in state submitted.",
+  const submitted = await screen.findByRole("status")
+  expect(submitted).toHaveTextContent("Request submitted. View request")
+  expect(within(submitted).getByRole("link", {name: "View request"})).toHaveAttribute(
+    "href",
+    "/requests/request-0001",
   )
+  expect(submitted).not.toHaveTextContent("request-0001")
+  expect(submitted).not.toHaveTextContent("revision")
+  expect(submitted).not.toHaveTextContent("submitted state")
 })
 
 test("submits a data access request carrying every field its payload model requires", async () => {
@@ -286,6 +354,126 @@ test("follows only the requester's own requests and no reviewer or evidence proj
   expect(screen.queryByText(/evidence/i)).not.toBeInTheDocument()
   expect(screen.queryByText(/other request/i)).not.toBeInTheDocument()
   expect(screen.queryByText(/hidden|withheld from you|not shown/i)).not.toBeInTheDocument()
+})
+
+test("shows the original question and requester-safe no-valid-plan explanation", async () => {
+  client.getRequesterRequests.mockResolvedValue({...requestsEnvelope, data: [refusedRequest]})
+
+  renderSurface("request-no-valid-plan")
+
+  expect(await screen.findByText("What is the current MRR")).toBeVisible()
+  expect(screen.getByText("no valid plan")).toBeVisible()
+  expect(
+    screen.getByText(
+      "This local environment has no authoritative source configured for that question.",
+    ),
+  ).toBeVisible()
+  expect(screen.queryByText(/configure an authoritative source/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/local_scenario_not_supported/i)).not.toBeInTheDocument()
+  expect(client.getClarifiedOutcome).not.toHaveBeenCalled()
+  expect(client.getConversation).not.toHaveBeenCalled()
+  expect(screen.queryByRole("button", {name: "Accept clarified outcome"})).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", {name: "Send reply"})).not.toBeInTheDocument()
+})
+
+test("shows a verified delivered answer and its governed references", async () => {
+  client.getRequesterRequests.mockResolvedValue({...requestsEnvelope, data: [deliveredRequest]})
+
+  renderSurface(deliveredRequest.request_id)
+
+  expect(
+    await screen.findByRole("heading", {name: "Delivered answer"}),
+  ).toBeVisible()
+  expect(screen.getByText("delivered")).toBeVisible()
+  // The delivery step checks recorded state, not the live warehouse or catalog, so the page must
+  // say what was checked rather than claim a verification that did not happen.
+  expect(screen.queryByText(/verified/i)).not.toBeInTheDocument()
+  expect(
+    screen.getByText(
+      "Checked against the workspace's recorded warehouse binding and catalog publication.",
+    ),
+  ).toBeVisible()
+  expect(screen.queryByRole("button", {name: "Send reply"})).not.toBeInTheDocument()
+  expect(client.getConversation).not.toHaveBeenCalled()
+  expect(
+    screen.getByText("Net revenue is gross revenue less approved refunds."),
+  ).toBeVisible()
+  expect(screen.getByText(/Dataset: Revenue.*version 2/i)).toBeVisible()
+  expect(screen.getByText(/Metric: Net revenue.*version 2/i)).toBeVisible()
+  expect(screen.getByText(/Lineage: Governed lineage.*version 1/i)).toBeVisible()
+  expect(screen.queryByText(/product-revenue|metric-net-revenue|lineage-f+/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/withheld/i)).not.toBeInTheDocument()
+})
+
+test("starts a distinct revised request from the refused question without mutating on open", async () => {
+  const user = userEvent.setup()
+  client.getRequesterRequests.mockResolvedValue({...requestsEnvelope, data: [refusedRequest]})
+  client.createRequest.mockResolvedValue({
+    ...createdEnvelope,
+    data: {
+      ...createdEnvelope.data,
+      request_id: "request-0002",
+      title: "Test",
+      requested_outcome: "This is a test request",
+      question: "What was MRR for the last closed month?",
+    },
+  })
+  renderSurface("request-no-valid-plan")
+
+  await user.click(await screen.findByRole("button", {name: "Start revised request"}))
+
+  expect(screen.getByRole("radio", {name: "Stakeholder question"})).toBeChecked()
+  expect(screen.getByRole("textbox", {name: "Request title"})).toHaveValue("Test")
+  expect(screen.getByRole("textbox", {name: "Purpose"})).toHaveValue(
+    "This is a test request",
+  )
+  const question = screen.getByRole("textbox", {name: "Question"})
+  expect(question).toHaveValue("What is the current MRR")
+  expect(client.createRequest).not.toHaveBeenCalled()
+
+  await user.clear(question)
+  await user.type(question, "What was MRR for the last closed month?")
+  await user.click(screen.getByRole("button", {name: "Submit request"}))
+
+  await waitFor(() => expect(client.createRequest).toHaveBeenCalledTimes(1))
+  expect(client.createRequest.mock.calls[0]![0].request).toEqual({
+    kind: "stakeholder_question",
+    purpose: "This is a test request",
+    question: "What was MRR for the last closed month?",
+  })
+  expect(digestText).toHaveBeenCalledWith(
+    '{"payload":{"purpose":"This is a test request","question":"What was MRR for the last closed month?","request_type":"stakeholder_question"},"title":"Test"}',
+  )
+  const submitted = await screen.findByText(/Revised request submitted/)
+  expect(submitted).toHaveTextContent("Revised request submitted. View request")
+  expect(within(submitted).getByRole("link", {name: "View request"})).toHaveAttribute(
+    "href",
+    "/requests/request-0002",
+  )
+  expect(submitted).not.toHaveTextContent("request-0002")
+  expect(submitted).not.toHaveTextContent("revision")
+  expect(
+    screen.getByText(
+      "This local environment has no authoritative source configured for that question.",
+    ),
+  ).toBeVisible()
+})
+
+test("does not label a data access request as a question", async () => {
+  const dataAccessRequest: RequesterRequestView = {
+    ...ownRequest,
+    request_id: "request-access",
+    kind: "data_access",
+    title: "Revenue dashboard access",
+    question: null,
+  }
+  client.getRequesterRequests.mockResolvedValue({...requestsEnvelope, data: [dataAccessRequest]})
+
+  renderSurface("request-access")
+
+  expect(await screen.findByRole("heading", {name: "Revenue dashboard access"})).toBeVisible()
+  expect(screen.queryByText("Original question")).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", {name: "Start revised request"})).not.toBeInTheDocument()
 })
 
 test("labels the PillarMesh question, the requester reply, and the architect intervention", async () => {
@@ -399,7 +587,7 @@ test("records acceptance as the requester and still withholds the answer without
     await screen.findByText("Acceptance recorded at revision 3. Your approval of this scope is recorded."),
   ).toBeVisible()
   expect(
-    screen.getByText("The answer stays withheld until a verified delivery receipt exists."),
+    screen.getByText("The answer stays withheld until a delivery receipt exists."),
   ).toBeVisible()
   expect(screen.queryByRole("region", {name: "Proposal"})).not.toBeInTheDocument()
 })
@@ -472,4 +660,89 @@ test.each([
   const thread = await screen.findByRole("list", {name: "Clarification conversation"})
   expect(thread).toHaveTextContent(label)
   expect(thread).not.toHaveTextContent("Architect intervention")
+})
+
+const closedUnexplainedRequest: RequesterRequestView = {
+  ...ownRequest,
+  request_id: "request-closed-unexplained",
+  state: "closed",
+  revision: 3,
+  own_decisions: [],
+  clarified_outcome: {...clarifiedOutcome, request_id: "request-closed-unexplained"},
+  no_valid_plan_explanation: null,
+}
+
+test("offers no decision or reply controls on a closed request that carries no explanation", async () => {
+  client.getRequesterRequests.mockResolvedValue({
+    ...requestsEnvelope,
+    data: [closedUnexplainedRequest],
+  })
+
+  renderSurface("request-closed-unexplained")
+
+  expect(await screen.findByRole("heading", {name: "Weekly net revenue movement"})).toBeInTheDocument()
+  expect(screen.getByText("This request is closed. No further action is needed from you.")).toBeInTheDocument()
+  expect(screen.queryByRole("button", {name: "Accept clarified outcome"})).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", {name: "Request changes"})).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", {name: "Send reply"})).not.toBeInTheDocument()
+  expect(client.getClarifiedOutcome).not.toHaveBeenCalled()
+  expect(client.getConversation).not.toHaveBeenCalled()
+})
+
+test("does not say acceptance is outstanding on a closed request", async () => {
+  client.getRequesterRequests.mockResolvedValue({
+    ...requestsEnvelope,
+    data: [closedUnexplainedRequest],
+  })
+
+  renderSurface()
+
+  const list = await screen.findByRole("list", {name: "My requests"})
+  expect(list).not.toHaveTextContent("outstanding")
+})
+
+test("does not read a clarified outcome the request list reports as absent", async () => {
+  client.getRequesterRequests.mockResolvedValue({
+    ...requestsEnvelope,
+    data: [{...ownRequest, state: "submitted", revision: 1, clarified_outcome: null}],
+  })
+
+  renderSurface("request-blocked-acceptance")
+
+  expect(
+    await screen.findByText("No clarified outcome has been prepared for this request yet."),
+  ).toBeInTheDocument()
+  expect(client.getClarifiedOutcome).not.toHaveBeenCalled()
+})
+
+test("withdraws an open request only after the requester confirms it", async () => {
+  const user = userEvent.setup()
+  client.withdrawRequest.mockResolvedValue({
+    meta: {correlation_id: "correlation-withdrawn", data_provenance: "demo_fixture"},
+    data: {...ownRequest, state: "cancelled", revision: 3},
+  })
+
+  renderSurface("request-blocked-acceptance")
+
+  await user.click(await screen.findByRole("button", {name: "Withdraw request"}))
+  expect(client.withdrawRequest).not.toHaveBeenCalled()
+  await user.click(screen.getByRole("button", {name: "Confirm withdrawal"}))
+
+  await waitFor(() => expect(client.withdrawRequest).toHaveBeenCalledTimes(1))
+  const [requestId, command, context] = client.withdrawRequest.mock.calls[0]!
+  expect(requestId).toBe("request-blocked-acceptance")
+  expect(command).toEqual({expected_revision: 2, active_role: "requester"})
+  expect(context).toEqual({
+    csrfToken: session.csrf_token,
+    idempotencyKey: "idempotency-requester-fixed",
+  })
+})
+
+test("offers no withdrawal on a request that has already reached an outcome", async () => {
+  client.getRequesterRequests.mockResolvedValue({...requestsEnvelope, data: [refusedRequest]})
+
+  renderSurface("request-no-valid-plan")
+
+  expect(await screen.findByText("What is the current MRR")).toBeVisible()
+  expect(screen.queryByRole("button", {name: "Withdraw request"})).not.toBeInTheDocument()
 })

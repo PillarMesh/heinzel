@@ -1680,13 +1680,16 @@ RequestNoValidPlan
   reason_codes
   constraint_refs
   smallest_changes
+  requester_safe_explanation
   grounding_snapshot_digest
   policy_snapshot_digest
   created_at
 ```
 
 Conflicting, stale mandatory, unverifiable, malformed, cross-tenant, or unadmitted authority is a
-durable fail-closed outcome with sanitized attributable constraints.
+durable fail-closed outcome with sanitized attributable constraints. `requester_safe_explanation`
+is optional, bounded to 1,000 characters, and is the only refusal detail this artifact permits a
+requester-facing projection to disclose.
 
 #### FulfillmentEvidenceReceipt
 

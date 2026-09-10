@@ -23,10 +23,19 @@ interface IntakeAttempt {
   readonly context: MutationRequestContext
 }
 
+export interface StakeholderQuestionDraft {
+  readonly kind: "stakeholder_question"
+  readonly title: string
+  readonly purpose: string
+  readonly question: string
+}
+
 interface RequestIntakeProps {
   readonly client: RequesterClient
+  readonly dataAccessAvailable: boolean
   readonly digestText: DigestText
   readonly idempotencyKeyFactory: IdempotencyKeyFactory
+  readonly initialDraft?: StakeholderQuestionDraft
   readonly onCreated: () => void
   readonly session: SessionView
 }
@@ -44,15 +53,17 @@ function splitFields(value: string): string[] {
 
 export function RequestIntake({
   client,
+  dataAccessAvailable,
   digestText,
   idempotencyKeyFactory,
+  initialDraft,
   onCreated,
   session,
 }: RequestIntakeProps) {
-  const [kind, setKind] = useState<RequestKind | null>(null)
-  const [title, setTitle] = useState("")
-  const [purpose, setPurpose] = useState("")
-  const [question, setQuestion] = useState("")
+  const [kind, setKind] = useState<RequestKind | null>(initialDraft?.kind ?? null)
+  const [title, setTitle] = useState(initialDraft?.title ?? "")
+  const [purpose, setPurpose] = useState(initialDraft?.purpose ?? "")
+  const [question, setQuestion] = useState(initialDraft?.question ?? "")
   const [dataProductRef, setDataProductRef] = useState("")
   const [requestedFields, setRequestedFields] = useState("")
   const [accessMode, setAccessMode] = useState<AccessMode>("query")
@@ -171,6 +182,7 @@ export function RequestIntake({
         <label>
           <input
             checked={kind === "data_access"}
+            disabled={!dataAccessAvailable}
             name="request-kind"
             onChange={() => setKind("data_access")}
             type="radio"
@@ -179,6 +191,11 @@ export function RequestIntake({
           <span>Data access request</span>
         </label>
       </fieldset>
+      {dataAccessAvailable ? null : (
+        <p className="request-intake__guidance">
+          Data access requests are not available in this workspace yet.
+        </p>
+      )}
 
       {kind === null ? (
         <p className="request-intake__guidance">
@@ -270,8 +287,8 @@ export function RequestIntake({
       </button>
       {created === null ? null : (
         <p role="status">
-          Request {created.request_id} recorded at revision {created.revision} in state{" "}
-          {created.state}.
+          {initialDraft === undefined ? "Request submitted." : "Revised request submitted."}{" "}
+          <a href={`/requests/${created.request_id}`}>View request</a>.
         </p>
       )}
     </section>

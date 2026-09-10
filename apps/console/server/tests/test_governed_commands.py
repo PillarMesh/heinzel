@@ -303,6 +303,7 @@ class _StaticFulfillmentViews:
             own_decisions=self.own_decisions,
             fulfillment_status="in_review",
             denial_explanation=None,
+            no_valid_plan_explanation=None,
         )
 
     def architect_view(

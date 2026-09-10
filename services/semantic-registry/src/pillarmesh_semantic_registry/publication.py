@@ -90,6 +90,8 @@ class CatalogPublicationProvider(Protocol):
 
 
 class CatalogPublicationRepository(Protocol):
+    def close(self) -> None: ...
+
     def store_intent(
         self,
         *,
@@ -107,6 +109,8 @@ class CatalogPublicationRepository(Protocol):
     def load_receipt(
         self, *, tenant_id: str, operation_id: str
     ) -> CatalogPublicationReceipt | None: ...
+
+    def list_publications(self, *, tenant_id: str) -> tuple[CatalogPublicationReceipt, ...]: ...
 
     def store_receipt(
         self,
@@ -259,6 +263,21 @@ class SQLiteCatalogPublicationRepository:
             (tenant_id, operation_id),
         ).fetchone()
         return None if row is None else CatalogPublicationReceipt.model_validate_json(row[0])
+
+    def list_publications(self, *, tenant_id: str) -> tuple[CatalogPublicationReceipt, ...]:
+        rows = self._connection.execute(
+            "SELECT payload FROM catalog_publication_receipts WHERE tenant_id = ? "
+            "ORDER BY publication_id DESC",
+            (tenant_id,),
+        ).fetchall()
+        publications = tuple(CatalogPublicationReceipt.model_validate_json(row[0]) for row in rows)
+        return tuple(
+            sorted(
+                publications,
+                key=lambda publication: (publication.published_at, publication.publication_id),
+                reverse=True,
+            )
+        )
 
     def store_receipt(
         self,

@@ -27,9 +27,19 @@ const summaryContent = {
   evidence: {
     title: "Evidence",
     summary: "Trace decisions and outcomes to immutable evidence references.",
-    guidance: "Fixture projections never represent authoritative managed evidence.",
+    guidance: "Evidence is recorded with the work it proves.",
   },
 } satisfies Record<CapabilitySummaryKind, {title: string; summary: string; guidance: string}>
+
+// A summary page shows the capabilities that concern it, not the whole workspace register: a page
+// titled Evidence that lists the warehouse binding tells the reader nothing about evidence.
+const relevantCapabilities = {
+  "data-products": ["data-product-runs"],
+  runs: ["data-product-runs", "source-acquisition", "operation-retry"],
+  catalog: ["catalog-binding", "catalog-asset-preview"],
+  dashboards: ["analyst-dashboard"],
+  evidence: ["governed-evidence", "request-fulfillment", "acquisition-evidence"],
+} satisfies Record<CapabilitySummaryKind, readonly string[]>
 
 interface CapabilitySummaryPageProps {
   readonly capabilities: readonly CapabilityView[]
@@ -38,6 +48,8 @@ interface CapabilitySummaryPageProps {
 
 export function CapabilitySummaryPage({capabilities, kind}: CapabilitySummaryPageProps) {
   const content = summaryContent[kind]
+  const relevant: readonly string[] = relevantCapabilities[kind]
+  const shown = capabilities.filter((capability) => relevant.includes(capability.capability_id))
 
   return (
     <section aria-labelledby={`${kind}-title`} className="summary-page">
@@ -45,8 +57,20 @@ export function CapabilitySummaryPage({capabilities, kind}: CapabilitySummaryPag
       <h1 id={`${kind}-title`}>{content.title}</h1>
       <p className="summary-page__lead">{content.summary}</p>
       <p className="summary-page__guidance">{content.guidance}</p>
+      {kind === "evidence" ? (
+        <p className="summary-page__guidance">
+          Open a request from the <a href="/inbox">decision queue</a> and choose Show evidence
+          for its decision record, or review <a href="/acquisition-receipts">acquisition receipts</a>{" "}
+          for the work an acquisition performed.
+        </p>
+      ) : null}
+      {shown.length === 0 ? (
+        <p className="summary-page__guidance">
+          This workspace reports no capability for {content.title.toLowerCase()}.
+        </p>
+      ) : null}
       <ul aria-label={`${content.title} capability states`} className="capability-ledger">
-        {capabilities.map((capability) => (
+        {shown.map((capability) => (
           <li className="capability-ledger__item" key={capability.capability_id}>
             <div>
               <h2>{capability.label}</h2>

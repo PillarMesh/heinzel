@@ -39,6 +39,8 @@ export type ExpectedRevision = number
 export type ReviewedDigest = string
 export type ConsoleEnvelopeCatalogAssetView = ConsoleEnvelope_CatalogAssetView_
 export type JsonTuple_NonEmptyText_ = NonEmptyText[]
+export type ConsoleEnvelopeCatalogAssetsView = ConsoleEnvelope_CatalogAssetsView_
+export type JsonTuple_CatalogAssetView_ = CatalogAssetView[]
 export type ActiveRole = "requester"
 export type Digest = string
 export type Decision = "approve" | "request_changes"
@@ -61,6 +63,8 @@ export type ConsoleEnvelopeDashboardView = ConsoleEnvelope_DashboardView_
 export type CapabilityState = "ready" | "blocked" | "degraded" | "not_delivered"
 export type ConsoleEnvelopeDataProductView = ConsoleEnvelope_DataProductView_
 export type Version = number
+export type ConsoleEnvelopeDataProductsView = ConsoleEnvelope_DataProductsView_
+export type JsonTuple_DataProductView_ = DataProductView[]
 export type Decision1 = "approve" | "reject" | "request_changes"
 export type ExpectedRevision4 = number
 export type ReviewedDigest1 = string
@@ -78,6 +82,10 @@ export type RequestState =
   | "awaiting_approval"
   | "execution_ready"
   | "denied"
+  | "delivered"
+  | "no_valid_plan"
+  | "cancelled"
+  | "failed"
   | "closed"
 export type JsonTuple_InboxItemView_ = InboxItemView[]
 export type ConsoleEnvelopeOperationView = ConsoleEnvelope_OperationView_
@@ -97,6 +105,7 @@ export type OutOfScopeSummary = string
 export type RestatedRequest = string
 export type ConsoleEnvelopeRequestDetailView = ConsoleEnvelope_RequestDetailView_
 export type Available = boolean
+export type PendingDelivery = boolean
 export type Decision2 = "approve" | "reject" | "request_changes"
 export type JsonTuple_Decision_ = Decision2[]
 export type ArtifactId = string
@@ -134,15 +143,21 @@ export type Kind4 = "disclosure_denial"
 export type JsonTuple_ProposalApprovalView_2 = ProposalApprovalView[]
 export type JsonTuple_AuthorityStatusView_2 = AuthorityStatusView[]
 export type Revision3 = number
+export type ActiveRole2 = "requester"
+export type ExpectedRevision8 = number
 export type ConsoleEnvelopeRequesterRequestView = ConsoleEnvelope_RequesterRequestView_
+export type JsonTuple_ArtifactReferenceView_5 = ArtifactReferenceView[]
+export type JsonTuple_ArtifactReferenceView_6 = ArtifactReferenceView[]
+export type JsonTuple_ArtifactReferenceView_7 = ArtifactReferenceView[]
+export type JsonTuple_ArtifactReferenceView_8 = ArtifactReferenceView[]
 export type JsonTuple_OwnDecisionView_ = OwnDecisionView[]
 export type Revision4 = number
 export type ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView =
   ConsoleEnvelope_JsonTuple_RequesterRequestView__
 export type JsonTuple_RequesterRequestView_ = RequesterRequestView[]
-export type ActiveRole2 = "data_architect"
-export type ExpectedRevision8 = number
+export type ActiveRole3 = "data_architect"
 export type ExpectedRevision9 = number
+export type ExpectedRevision10 = number
 export type ConsoleEnvelopeReviewView = ConsoleEnvelope_ReviewView_
 export type CanDecide = boolean
 export type JsonTuple_ConstraintView_ = ConstraintView[]
@@ -197,7 +212,7 @@ export type Immutable = true
  * @minItems 1
  */
 export type NonEmptyJsonTuple_WarehouseOptionView_ = [WarehouseOptionView, ...WarehouseOptionView[]]
-export type ExpectedRevision10 = number
+export type ExpectedRevision11 = number
 export type ConsoleEnvelopeWorkspaceView = ConsoleEnvelope_WorkspaceView_
 export type JsonTuple_CapabilityView_ = CapabilityView[]
 export type WorkspaceState = "setup" | "pending_activation" | "active" | "unavailable"
@@ -206,6 +221,7 @@ export interface ConsoleApiSchema {
   acquisition_receipts_response: ConsoleEnvelopeAcquisitionReceiptsView
   admission_command: AdmissionCommand
   catalog_asset_response: ConsoleEnvelopeCatalogAssetView
+  catalog_assets_response: ConsoleEnvelopeCatalogAssetsView
   clarified_outcome_acceptance_command: ClarifiedOutcomeAcceptanceCommand
   clarified_outcome_response: ConsoleEnvelopeClarifiedOutcomeView
   conversation_message_command: ConversationMessageCommand
@@ -213,6 +229,7 @@ export interface ConsoleApiSchema {
   create_request_command: CreateRequestCommand
   dashboard_response: ConsoleEnvelopeDashboardView
   data_product_response: ConsoleEnvelopeDataProductView
+  data_products_response: ConsoleEnvelopeDataProductsView
   decision_command: DecisionCommand
   error_response: ConsoleErrorEnvelope
   evidence_response: ConsoleEnvelopeEvidenceView
@@ -222,6 +239,7 @@ export interface ConsoleApiSchema {
   proposal_preparation_command: ProposalPreparationCommand
   request_clarification_command: RequestClarificationCommand
   request_detail_response: ConsoleEnvelopeRequestDetailView
+  request_withdrawal_command: RequestWithdrawalCommand
   requester_request_response: ConsoleEnvelopeRequesterRequestView
   requester_requests_response: ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView
   reset_command: ResetCommand
@@ -296,6 +314,13 @@ export interface CatalogAssetView {
   lineage_summary: NonEmptyText
   link_ref?: PublicId | null
   owner: NonEmptyText
+}
+export interface ConsoleEnvelope_CatalogAssetsView_ {
+  data: CatalogAssetsView
+  meta: ApiMeta
+}
+export interface CatalogAssetsView {
+  assets?: JsonTuple_CatalogAssetView_
 }
 export interface ClarifiedOutcomeAcceptanceCommand {
   active_role: ActiveRole
@@ -391,6 +416,13 @@ export interface DataProductView {
   artifact_digest: Digest
   data_product_id: PublicId
   version: Version
+}
+export interface ConsoleEnvelope_DataProductsView_ {
+  data: DataProductsView
+  meta: ApiMeta
+}
+export interface DataProductsView {
+  products?: JsonTuple_DataProductView_
 }
 /**
  * One decision, against the exact revision and content the browser displayed.
@@ -520,6 +552,7 @@ export interface RequestDetailView {
 export interface AdmissionView {
   available: Available
   blocking_reason?: NonEmptyText | null
+  pending_delivery?: PendingDelivery
 }
 export interface EvidenceContextView {
   as_of?: UtcDatetime | null
@@ -566,6 +599,7 @@ export interface StakeholderAnswerProposalView {
   required_authorities?: JsonTuple_AuthorityStatusView_
 }
 export interface ProposalApprovalView {
+  authority_label?: NonEmptyText | null
   authority_ref: NonEmptyText
   reason: NonEmptyText
   satisfied: Satisfied
@@ -599,21 +633,41 @@ export interface DisclosureDenialProposalView {
   required_approvals?: JsonTuple_ProposalApprovalView_2
   required_authorities?: JsonTuple_AuthorityStatusView_2
 }
+/**
+ * A requester withdraws their own request before any work has been admitted for it.
+ */
+export interface RequestWithdrawalCommand {
+  active_role: ActiveRole2
+  expected_revision: ExpectedRevision8
+}
 export interface ConsoleEnvelope_RequesterRequestView_ {
   data: RequesterRequestView
   meta: ApiMeta
 }
 export interface RequesterRequestView {
   clarified_outcome?: ClarifiedOutcomeView | null
+  delivered_answer?: DeliveredAnswerView | null
   denial_explanation?: NonEmptyText | null
   kind: RequestKind
+  no_valid_plan_explanation?: NonEmptyText | null
   own_decisions?: JsonTuple_OwnDecisionView_
+  question?: NonEmptyText | null
   request_id: PublicId
   requested_outcome: NonEmptyText
   revision: Revision4
   state: RequestState
   title: NonEmptyText
   updated_at: UtcDatetime
+}
+export interface DeliveredAnswerView {
+  answer_text: NonEmptyText
+  as_of: UtcDatetime
+  datasets?: JsonTuple_ArtifactReferenceView_5
+  delivery_ref: PublicId
+  freshness: FreshnessState
+  lineage?: JsonTuple_ArtifactReferenceView_6
+  metrics?: JsonTuple_ArtifactReferenceView_7
+  quality_limitations?: JsonTuple_ArtifactReferenceView_8
 }
 export interface OwnDecisionView {
   created_at: UtcDatetime
@@ -625,14 +679,14 @@ export interface ConsoleEnvelope_JsonTuple_RequesterRequestView__ {
   meta: ApiMeta
 }
 export interface ResetCommand {
-  active_role: ActiveRole2
-  expected_revision: ExpectedRevision8
+  active_role: ActiveRole3
+  expected_revision: ExpectedRevision9
   reset_token: OpaqueToken
   setup_digest: Digest
 }
 export interface RetryOperationCommand {
   active_role: ActorRole
-  expected_revision: ExpectedRevision9
+  expected_revision: ExpectedRevision10
   operation_digest: Digest
   retry_token: OpaqueToken
 }
@@ -791,7 +845,7 @@ export interface WarehouseBindingCommand {
   active_role: ActorRole
   capacity: NonEmptyText
   engine: WarehouseEngine
-  expected_revision: ExpectedRevision10
+  expected_revision: ExpectedRevision11
   region: NonEmptyText
   reviewed_digest: Digest
 }
