@@ -10,6 +10,31 @@
 
 **Amendments:**
 
+- 2026-09-11 — Governed answers now come from warehouse facts. A live product audit found that
+  stakeholder answers repeated an approved definition string and never queried the warehouse, while
+  the console reported them as delivered. The following sections are new:
+  - 3.5: governed answers and agent access, and the unchanged managed-warehouse boundary.
+  - 9.5: a read-only context graph for impact analysis.
+  - 12.4: governed query execution compiled from approved metric versions.
+  - 13.8: the governed answer contract. It covers an approved answer scope policy that
+    pre-authorizes in-scope questions, AI interpretation that proposes typed intents but never
+    SQL or authority, and execution and delivery evidence.
+  - 13.9: an agent interface over the same request boundary.
+  - 17.1: post-MVP scouts that monitor and brief.
+
+  Two planned items are not yet implemented: section 18.1 defines an eighth principal class,
+  `answer_runtime`, and section 13.8 defines an `investigating → executing` transition for policy
+  admission. Each joins its pinned list or table in the change that implements it. Sections 3.4,
+  4.2, 4.3, 5, 13.1, 13.4, 13.6, 13.7, 17, 18, 19, 20, 21, and 22 are updated to match.
+
+  Section 13.7 now requires a factual `StakeholderAnswerDraft.answer_text` to describe the
+  computation and never state a value. Plan 3B artifact fields, matrices, and the admission
+  predicate are unchanged.
+
+  The same change amends ADR-0004, processing-model design section 5, and the repository-layout
+  rows for context exposure, knowledge graph, request management, and runtime. The
+  managed-warehouse boundary of ADR-0003 is unchanged: a read-only overlay over a customer-managed
+  warehouse is deferred and requires a new product-boundary decision.
 - 2026-08-28 — Section 6.4 now defines the fail-closed response to version drift after a
   warehouse becomes `ready` and distinguishes Plan 3A local lifecycle proof from the future
   continuously-ready production revalidation loop. Closes correction 11 of the Plan 3A design
@@ -102,6 +127,49 @@ The initial product is not a fit for a customer that:
 - No unrestricted user SQL mutation or agent write authority.
 - No automatic semantic migration or warehouse-engine switch.
 - No claim of universal exactly-once behavior where a provider lacks the necessary primitive.
+- No free-form SQL run by PillarMesh to answer a stakeholder, whether AI generated it or it was
+  relayed from a question. A person holding an approved access grant runs their own SQL only
+  through the customer SQL principal (section 18.1).
+
+### 3.5 Governed answers and agent access
+
+Stakeholders, and the AI agents they use, ask plain-language questions and receive answers computed
+from the tenant's warehouse facts. A governed answer is never a restated definition presented as a
+fact, and never an unverified model output. Every factual answer comes from a governed query:
+
+- the compiler builds it from an approved metric version and data-product version;
+- it reads only approved `consumption` objects, pinned to one product generation, through a
+  dedicated read-only principal; and
+- it is delivered with its metric version, data generation, as-of time, freshness, quality
+  limitations, lineage, and the digest of the exact statement that ran (sections 12.4 and 13.8).
+
+A definition question ("what does net revenue mean?") may be answered from the approved semantic
+version without a query. That answer is labelled as a definition and never answers a question that
+asks for a value.
+
+Plain language is a source language, not an execution language (EDC v0.3 section 6.1). AI may
+interpret a question into a candidate typed intent and draft the narrative around an executed
+result. It never authors the SQL that runs, never selects unapproved meaning, and never grants
+disclosure or access authority.
+
+A question inside a tenant-approved answer scope policy is answered without per-question architect
+approval. Other questions do not execute on the policy's authority:
+
+- a materially ambiguous question returns to the requester for clarification;
+- a question outside the policy scope, or with freshness, quality, or cost outside its limits,
+  becomes a per-question proposal in the architect inbox; and
+- a question with unresolvable authority, or that needs a construct the compiler does not admit,
+  ends in `No Valid Plan` (section 13.8).
+
+People and agents reach this capability through one governed request boundary: the native UI, the
+API, and an agent interface (section 13.9). An agent acts only as a delegated human principal and
+never holds approval authority. Post-MVP scouts (section 17.1) will run approved questions on a
+schedule and turn findings into briefs or inbox items, never into actions.
+
+This section does not change the product boundary of ADR-0003. PillarMesh answers from the warehouse
+it operates. A read-only overlay that indexes or queries a customer-managed warehouse is a different
+product boundary. It is deferred (section 20.10) and requires a new product-boundary ADR before any
+design work.
 
 ## 4. One-person data engineering operating model
 
@@ -131,25 +199,37 @@ PillarMesh manages:
 - dashboard compilation and report rendering;
 - routine schema drift and physical optimization where pre-authorized;
 - checkpointing, replay, reconciliation, and evidence;
-- backups, restore verification, patching, monitoring, and capacity management; and
+- backups, restore verification, patching, monitoring, and capacity management;
+- governed answers to in-scope stakeholder questions, computed from warehouse facts; and
 - incident correlation, impact analysis, and bounded remediation proposals.
 
 ### 4.3 Supervised autopilot
 
 The engineer's primary surface is a decision inbox rather than a task queue of routine operations. PillarMesh must not wake an operator for a transient retry, connector-token refresh, routine resynchronization, safe additive column, bounded warehouse resize, backup rotation, or Superset worker restart. It must request attention for changed business meaning, unresolved ownership, policy conflict, widened access, material recurring cost, persistent data-loss risk, migration, or an unrecoverable contract violation.
 
+Routine answering follows the same rule. A stakeholder question inside an approved answer scope
+policy (section 13.8) is answered without waking the architect. The architect is asked only when a
+question:
+
+- needs new meaning or falls outside the approved scope;
+- is materially ambiguous;
+- would widen disclosure; or
+- cannot be answered within the policy's freshness, quality, or cost limits.
+
+A post-MVP scout finding (section 17.1) requests attention on the same terms.
+
 ## 5. System model
 
 The managed platform contains six cooperating planes:
 
-1. **Demand plane:** requests, incidents, platform proposals, conversations, assignments, priority, and approvals.
+1. **Demand plane:** requests, incidents, platform proposals, conversations, assignments, priority, approvals, answer scope policies, and delegated agent sessions.
 2. **Semantic plane:** business processes, ontology, glossary, identities, relationships, metrics, constraints, policies, and contracts.
-3. **Compilation plane:** IIR, legality, feasibility, physical planning, transformation compilation, dashboard compilation, and signed execution graphs.
-4. **Managed data plane:** source acquisition, staging, warehouse, state, transformations, reconciliation, and governed consumption.
-5. **Experience plane:** architecture cockpit, embedded catalog, embedded analytics, reports, evidence, and decision inbox.
-6. **Operations plane:** scheduling, monitoring, backup, restore, upgrade, capacity, incidents, cost, and retirement.
+3. **Compilation plane:** IIR, legality, feasibility, physical planning, transformation compilation, governed query compilation, dashboard compilation, and signed execution graphs.
+4. **Managed data plane:** source acquisition, staging, warehouse, state, transformations, reconciliation, governed answer execution, and governed consumption.
+5. **Experience plane:** architecture cockpit, embedded catalog, embedded analytics, reports, evidence, decision inbox, and the agent interface.
+6. **Operations plane:** scheduling, monitoring, scouts (post-MVP), context-graph impact analysis, backup, restore, upgrade, capacity, incidents, cost, and retirement.
 
-No plane may bypass semantic authority. A dashboard, schedule, connector, or warehouse operation cannot create executable meaning by itself.
+No plane may bypass semantic authority. A dashboard, schedule, connector, warehouse operation, scout, agent, or AI interpretation cannot create executable meaning by itself.
 
 ### 5.1 Durable catalog and semantic artifact envelope
 
@@ -740,6 +820,56 @@ source object
 
 Every edge identifies producer, observation time, validity, confidence, and contract or run evidence. Inferred lineage is visibly labeled and cannot satisfy a proof obligation until validated.
 
+### 9.5 Context graph and impact analysis
+
+The context graph is a read-only, tenant-scoped projection owned by `services/knowledge-graph`. It
+joins the lineage of section 9.4 to the governed records that depend on it:
+
+```text
+source object → contract → raw generation → canonical entity → data product → metric version
+metric version → consumption object → dashboard | report | answer scope policy | scout
+answer scope policy → governed answer → requester or delegated agent session
+data product → access grant → principal
+open request → dependency → any node above
+```
+
+The graph is not an authority. It is rebuilt from authoritative records (contracts, approved
+semantic versions, catalog publications, receipts, policies, and grants), and every node and edge
+names its source record, digest, and validity. It never mutates those records.
+
+Traversal runs over the whole tenant graph under service authority. Only the presented result is
+filtered by the reader's authorization. A restricted reader therefore never sees an asset they could
+not otherwise see, and never causes an impact to be missed.
+
+Impact analysis answers "what does this change affect, and who must decide?" before a change is
+proposed and again before it is admitted.
+
+```text
+ImpactAnalysis
+  schema_version
+  analysis_id
+  tenant_id
+  subject_kind
+  subject_ref
+  graph_snapshot_digest
+  validated_impacts
+  inferred_impacts
+  affected_owner_refs
+  derived_approval_requirements
+  created_at
+```
+
+`subject_kind` is one of `source_drift`, `metric_version_change`, `contract_supersession`,
+`generation_failure`, `policy_change`, `grant_change`, or `retirement`.
+
+- Derived approval requirements add to those of sections 13.7 and 14. They never replace or reduce
+  them, and they come only from validated edges.
+- An inferred edge is shown as a possible impact. It may name an advisory reviewer, whose response
+  is not an approval requirement.
+- A change's proposal binds the `graph_snapshot_digest` it was analyzed against.
+- Before admission, the owning service re-derives the requirements from the cited source records,
+  not from the graph. It supersedes the proposal when they changed.
+
 ## 10. Integration Contract formation
 
 An Integration Contract may be compiled only when:
@@ -1276,6 +1406,61 @@ PillarMesh evaluates uniqueness, referential integrity, cardinality, domain cons
 
 Raw queryability does not authorize a dashboard or report to bypass the conformed and product layers.
 
+### 12.4 Governed query execution
+
+A governed query computes a stakeholder answer from warehouse facts. The compiler lowers a
+validated answer intent (section 13.8), with its approved metric versions and consumption-object
+publications, into the query class of the restricted SQL subset of ADR-0004.
+
+That class is read-only and admits only:
+
+- approved `consumption` objects;
+- the aggregates and expressions pinned by each metric version;
+- approved dimensions, and filters over closed value domains;
+- bounded time windows;
+- compiled small-group suppression (section 13.8); and
+- ordering and a row limit.
+
+It never references `raw`, `conformed`, `product`, quarantine, ledger, or control objects. It never
+contains DDL, DML, text taken from the question, or unbound literals. Every construct is part of the
+same versioned allowlist as transformations, with per-engine semantics pinned for PostgreSQL and
+ClickHouse. A construct outside the allowlist produces `No Valid Plan` that names the missing
+construct. The compiler never parses SQL it did not generate.
+
+Governed query execution is not a fourth processing mode. It moves no data into a warehouse layer,
+and the warehouse is the compute, as it is for Superset. Aggregation and small-group suppression
+(section 13.8) are compiled into the statement, and the runtime never aggregates or joins rows in
+its own process. The runtime executes the compiled statement through the `answer_runtime` principal
+(section 18.1) with these guards:
+
+- The engine enforces a read-only session or setting; statement text does not.
+- A server-side statement timeout applies.
+- Row and byte ceilings and cancellation apply.
+- Before admission, the engine's pinned estimator checks estimated scanned rows and bytes against
+  the policy's `scan_ceiling`. With no estimate, the question goes to per-question review.
+
+The statement reads the product generation named in its plan, not a stable view that may switch
+generations mid-answer. For every answer-enabled product, the transformation runtime keeps each
+published generation addressable by name for as long as the engine's publication mechanism
+supports it (processing-model design section 8).
+
+- When the plan's generation is still addressable, the statement reads it directly.
+- When it is not, because the engine repoints publication in place or the generation is no longer
+  retained, the runtime reads the publication pointer before and after the statement. A pointer
+  that no longer names the plan's generation yields `generation_unavailable`.
+- On PostgreSQL, the pointer check and the statement run in one repeatable-read snapshot.
+
+The runtime writes the result snapshot to the tenant data plane's result store, outside the
+warehouse, as it writes staged segments. `answer_runtime` holds no write privilege. The snapshot:
+
+- holds ordered schema, post-suppression typed rows, and the result digest;
+- follows the policy's `result_retention`;
+- is bounded by the policy's ceilings;
+- is included in data-plane backups (section 19); and
+- is never an input to EXTRACT, LAND, or TRANSFORM.
+
+The control plane holds only the snapshot's reference and digest.
+
 ## 13. Request and ticket workspace
 
 ### 13.1 Intake
@@ -1284,10 +1469,11 @@ One typed request boundary accepts:
 
 - authenticated business-user requests;
 - data engineering requests;
-- platform-generated incidents and proposals; and
-- future Slack, email, and API adapters.
+- platform-generated incidents, proposals, and post-MVP scout findings;
+- delegated agent sessions through the agent interface (section 13.9); and
+- future Slack and email adapters.
 
-The MVP includes native UI/API intake and platform-generated tickets. Slack and email intake are deferred, but their future adapters must create the same typed object rather than bypassing authorization or semantics.
+The MVP includes native UI/API intake, the agent interface's read and question tools, and platform-generated tickets. Slack and email intake are deferred, but their future adapters must create the same typed object rather than bypassing authorization or semantics.
 
 Request-management owns the native question/access intake checksum. Its
 `RequestIntakeContent` consists of `title` (string, or null for untitled internal intake)
@@ -1353,9 +1539,9 @@ Any non-terminal state may also move to `cancelled`. `rejected`, `no_valid_plan`
 
 ### 13.4 Automated work
 
-PillarMesh may automatically validate authorization, discover metadata, profile bounded samples, search the catalog, detect duplicates and dependencies, draft process and ontology changes, compile candidate contracts, estimate cost and freshness, run isolated tests, and prepare previews.
+PillarMesh may automatically validate authorization, discover metadata, profile bounded samples, search the catalog, detect duplicates and dependencies, draft process and ontology changes, compile candidate contracts, estimate cost and freshness, run isolated tests, and prepare previews. It may also interpret a question into a candidate typed intent, compute impact analysis, and compile, execute, verify, and deliver a governed answer that an approved answer scope policy admits.
 
-It may not activate new semantic meaning, widen access, accept policy conflicts, approve material cost, migrate bindings, or perform irreversible deletion without the required human authority.
+It may not activate new semantic meaning, widen access, accept policy conflicts, approve material cost, migrate bindings, or perform irreversible deletion without the required human authority. It may not answer a question outside an approved answer scope policy without per-question approval. It may not deliver a value without a verified execution receipt.
 
 ### 13.5 Conversation
 
@@ -1396,7 +1582,7 @@ is projected explicitly without substituting an answer or silently retrying prep
 Only preparation capabilities actually composed at the server are offered in the UI.
 
 
-A stakeholder data question is operational work, not an unrestricted natural-language query against raw tables. PillarMesh resolves the requester, purpose, authorized scope, applicable process and metric versions, catalog assets, freshness, and quality state before preparing an answer. An answer must identify the governed datasets and metric definitions used, their as-of time, material quality limitations, and lineage or evidence references. If the question cannot be answered from approved assets, PillarMesh creates a dependent data-product or semantic-change request instead of inventing a result.
+A stakeholder data question is operational work, not an unrestricted natural-language query against raw tables. PillarMesh resolves the requester, purpose, authorized scope, applicable process and metric versions, catalog assets, freshness, and quality state before preparing an answer. An answer must identify the governed datasets and metric definitions used, their as-of time, material quality limitations, and lineage or evidence references. A value is computed by a governed query (section 12.4) and delivered only through the contract of section 13.8. A restated definition never stands in for a computed value. If the question cannot be answered from approved assets, PillarMesh creates a dependent data-product or semantic-change request instead of inventing a result.
 
 An access request binds requester, purpose, data product, fields, classification, access mode, duration, and approving authority. PillarMesh proposes the least-privilege grant, previews its effective scope, obtains required approval, applies it through a managed role, validates intended and denied access, records evidence, and expires or revokes it according to policy. Neither an inbox conversation nor an AI recommendation grants access by itself.
 
@@ -1808,6 +1994,484 @@ revocation
 ```
 
 These remain later lifecycle stages and require their own effect and verification evidence.
+Section 13.8 owns `query_execution`, `verification`, and `requester_delivery` for stakeholder
+answers, whether a Plan 3B admission or an answer scope policy admitted them. Access fulfillment
+owns `grant_application`, `expiry`, and `revocation`.
+
+A factual `StakeholderAnswerDraft` describes the approved computation for review. Its `answer_text`
+never carries a value presented as fact. Values reach the requester only in the `GovernedAnswer` of
+section 13.8. A draft whose intent asks for a value cannot be delivered as a definition answer.
+
+### 13.8 Governed answer contract
+
+This contract turns a stakeholder question into a delivered answer computed from warehouse facts.
+All artifacts follow the rules of section 13.7: frozen, reject unknown fields, timezone-aware UTC,
+tenant-qualified identities, repository-sequence IDs, and lowercase SHA-256 canonical digests. None
+is implemented yet. The specification conformance test pins each one in the change that implements
+it.
+
+#### Ownership
+
+| Artifact | Owner |
+| --- | --- |
+| `AnswerScopePolicy`, `AnswerQuestionIntent`, `AnswerIntentValidation`, `PolicyAdmissionReceipt`, `GovernedAnswer` | `services/request-management` |
+| `GovernedQueryPlan` | `services/compiler` |
+| `AnswerExecutionReceipt` and the result snapshot | `services/runtime`, in the tenant data plane |
+| `answer_runtime` principal provisioning and probes | `services/warehouse-control` |
+
+#### AnswerScopePolicy
+
+```text
+AnswerScopePolicy
+  schema_version
+  policy_id
+  tenant_id
+  revision
+  prior_policy_digest
+  principal_scope
+  purposes
+  semantic_version_ref
+  data_product_version_refs
+  metric_version_refs
+  dimension_refs
+  filter_domains
+  max_time_window
+  max_staleness
+  quality_disposition
+  disclosure_classifications
+  disclosure_entity
+  minimum_group_size
+  restatement_confirmation
+  row_ceiling
+  byte_ceiling
+  scan_ceiling
+  period_scan_budget
+  statement_timeout
+  result_retention
+  agent_access
+  model_disclosure
+  valid_from
+  valid_until
+  approval_ids
+  created_at
+```
+
+The policy is a standing approval for the questions inside its scope. It replaces per-question
+review only for those questions.
+
+- It narrows but never widens entitlements. Every check intersects the policy with the requester's
+  current entitlements.
+- `quality_disposition` is `block` or `label`.
+- `disclosure_entity` names the approved entity whose distinct identities are counted for
+  suppression, for example Customer.
+- `minimum_group_size` is the fewest distinct `disclosure_entity` identities that may contribute to
+  any returned value (see "Disclosure protection").
+- `restatement_confirmation` is `always`, `model_interpreted`, or `never`. It states when the
+  requester must accept the rendered restatement of the validated intent before execution. The
+  default is `model_interpreted`.
+- `scan_ceiling` bounds the rows and bytes one statement may scan, as estimated by the engine's
+  pinned estimator. `period_scan_budget` bounds the policy's total estimated scan per calendar
+  month.
+- `result_retention` bounds how long result snapshots are kept.
+- `agent_access` is `allowed` or `denied`.
+- `model_disclosure` is `none`, `metadata`, or `results`. It states what an AI model may receive:
+  - `none` means form-built intents and template narratives only.
+  - `metadata` allows approved semantic metadata the requester may see.
+  - `results` also allows post-suppression aggregate result values the requester is entitled to.
+
+  Source rows, product rows, credentials, statement text, and unapproved metadata never reach a
+  model.
+
+A material edit creates a new revision and recollects approvals. An expired, superseded, or
+unapproved policy admits nothing.
+
+| Subject | Always required | Conditional authority |
+| --- | --- | --- |
+| Answer scope policy | `role:data_engineering_architect`; exact owner of every data product in scope | `role:policy_authority` for classified, finance, or residency scope, per-entity filters, `minimum_group_size` above one, or `results` model disclosure; budget authority when `period_scan_budget` exceeds the tenant's configured threshold |
+
+Unlike a single Plan 3B answer, the policy requires the data-product owner, because it creates
+standing disclosure capability against the product. A data product in scope of at least one
+approved, unexpired policy is *answer-enabled*. Governed answers, whether policy-admitted or
+reviewed, read only answer-enabled products.
+
+#### AnswerQuestionIntent
+
+```text
+AnswerQuestionIntent
+  schema_version
+  intent_id
+  tenant_id
+  request_id
+  request_revision
+  question_digest
+  intent_kind
+  metric_refs
+  dimension_refs
+  filters
+  time_window
+  ordering
+  row_limit
+  interpreter
+  interpreter_ref
+  created_at
+```
+
+`intent_kind` is `definition` or `metric_value`. `interpreter` is `form` or `model`.
+`interpreter_ref` names the form version, or the model and prompt-template version, and never holds
+prompt text. An intent is candidate input and authorizes nothing until validated. The interpreter
+is an injected port, so tests and acceptance runs can supply scripted candidates.
+
+#### AnswerIntentValidation
+
+```text
+AnswerIntentValidation
+  schema_version
+  validation_id
+  tenant_id
+  request_id
+  request_revision
+  intent_digest
+  semantic_version_digest
+  policy_id
+  policy_revision
+  policy_digest
+  entitlement_snapshot_digest
+  bound_metric_versions
+  bound_dimensions
+  bound_filters
+  restatement
+  product_generation_refs
+  outcome
+  reason_codes
+  created_at
+```
+
+Validation is deterministic and runs in `submitted`. A reference binds only to an exact identifier
+in the approved semantic version, or to an approved glossary alias for one. A model can neither add
+an alias nor choose between bindings. `restatement` is rendered from the bound identifiers, never
+from model text.
+
+Each check below runs in order. `reason_codes` records every check that did not pass, and
+`outcome` is the first failing check's outcome, or `admitted` when all pass.
+
+| Order | Check | Reason codes | Outcome |
+| --- | --- | --- | --- |
+| 1 | Authority for the semantic version, policy, and entitlements resolves without conflict | `authority_conflict` | `no_valid_plan` |
+| 2 | Every reference binds exactly once, and every filter value is in the policy's closed domain | `ambiguous_reference`, `unknown_candidate_reference`, `filter_value_outside_domain` | `clarification_required` |
+| 3 | The requester is entitled to every bound reference and filter | `not_entitled` | `denied` |
+| 4 | Every bound reference belongs to an answer-enabled product | `product_not_answer_enabled` | `dependency_required` |
+| 5 | Every bound reference, the time window, freshness, and quality are inside the policy's limits | `outside_policy_scope`, `time_window_exceeded`, `stale_product`, `quality_blocked` | `review_required` |
+
+The candidate behind a failed check 2 is discarded. The requester chooses from the approved terms
+in the policy's scope, or states that none fits. A reply creates a new request revision and moves
+`clarifying → submitted`, and validation runs again on the new candidate. A statement that no
+approved term fits records `meaning_absent` and yields `dependency_required`.
+
+Validation does not estimate cost. Ceilings are checked against the compiled plan.
+
+#### GovernedQueryPlan
+
+```text
+GovernedQueryPlan
+  schema_version
+  plan_id
+  tenant_id
+  validation_digest
+  engine_kind
+  compiler_version
+  allowlist_version
+  consumption_object_refs
+  product_generation_refs
+  minimum_group_size
+  statement_digest
+  parameter_digest
+  estimated_scan
+  ceilings
+  plan_digest
+  signature
+```
+
+The compiler builds a plan in `investigating` from a `metric_value` validation whose outcome is
+`admitted` or `review_required`. A construct outside the allowlist ends in `No Valid Plan`. If the
+engine's pinned estimator cannot produce `estimated_scan`, the plan cannot be policy-admitted and
+goes to per-question review.
+
+A reviewed factual answer binds its plan through its Plan 3B proposal: the `StakeholderAnswerDraft`
+cites the plan digest, so approvers review the exact computation. That citation is a planned
+`StakeholderAnswerDraft` field. It joins the pinned field list in the change that implements
+reviewed factual answers. Until then, only policy-admitted answers compute values.
+
+The statement text and bound parameters live only in the plan artifact. They never enter evidence,
+tickets, prompts, logs, or agent-interface results; evidence carries only digests. The readers are
+the data engineering architect and, for a Plan 3B-reviewed answer, its required approvers.
+
+#### PolicyAdmissionReceipt
+
+```text
+PolicyAdmissionReceipt
+  schema_version
+  admission_id
+  tenant_id
+  request_id
+  request_revision
+  validation_digest
+  restatement_acceptance_ref
+  plan_digest
+  policy_id
+  policy_revision
+  policy_digest
+  entitlement_snapshot_digest
+  period_scan_consumed
+  created_at
+```
+
+#### Policy admission predicate
+
+```text
+request_state investigating
+validation_outcome admitted
+restatement_accepted when_policy_requires
+plan_validation_digest exact | not_applicable_for_definition
+plan_ceilings within_policy | not_applicable_for_definition
+statement_ceiling_breach none_recorded | not_applicable_for_definition
+period_scan_budget within_policy | not_applicable_for_definition
+policy_revision latest
+policy_valid_until future
+entitlement_snapshot current
+tenant_match request | validation | plan | policy
+cancelled false
+```
+
+Every term is required as one admission decision. For a `definition` intent, `plan_digest` and
+`period_scan_consumed` are null and the plan terms are `not_applicable_for_definition`.
+`statement_ceiling_breach` fails when an earlier execution of the same `statement_digest` recorded
+`ceiling_exceeded` under the current policy revision. The runtime checks `policy_revision latest`,
+`policy_valid_until future`, and `entitlement_snapshot current` again at execution start, and
+verification checks them once more before delivery.
+
+Policy admission is recorded and displayed as policy admission, never as a reviewed approval. It
+never satisfies a Plan 3B approval requirement, and a `FulfillmentApprovalBinding` never satisfies a
+policy admission.
+
+#### AnswerExecutionReceipt
+
+```text
+AnswerExecutionReceipt
+  schema_version
+  receipt_id
+  tenant_id
+  request_id
+  plan_digest
+  principal_class
+  product_generation_refs
+  attempt
+  started_at
+  completed_at
+  outcome
+  provider_error_classification
+  row_count
+  byte_count
+  suppressed_group_count
+  result_schema_digest
+  result_digest
+  result_ref
+  freshness_observation_ref
+  quality_observation_ref
+```
+
+`principal_class` is always `answer_runtime`. `outcome` is `succeeded`, `ceiling_exceeded`,
+`timed_out`, `aborted`, `generation_unavailable`, or `provider_failed`. `aborted` means the runtime
+stopped the statement because the request was cancelled.
+
+- A retry is a new attempt of the same plan after a `provider_failed` outcome classified as
+  transient, within the runtime retry policy. It is never a new plan.
+- Replaying a command for the same request executes nothing and returns the receipt of the latest
+  attempt.
+
+#### Disclosure protection
+
+The compiled statement applies suppression itself. The runtime never suppresses after fetching, so
+a result snapshot only ever holds post-suppression values.
+
+- Every returned value, including a scalar, is computed from at least `minimum_group_size` distinct
+  `disclosure_entity` identities. A group below the minimum is omitted.
+- When filters or the time window isolate fewer entities than the minimum, the result is empty with
+  reason `below_minimum_group_size`.
+- When any group is suppressed, the answer returns no total.
+- Requesters and agents see only that some groups were withheld, never `suppressed_group_count`.
+
+Suppression limits disclosure within one answer. It does not prevent differencing across answers,
+such as a population scalar minus a breakdown's visible groups. That is why a policy with
+`minimum_group_size` above one, or with per-entity filters, needs `role:policy_authority`, who
+accepts this residual risk explicitly.
+
+#### GovernedAnswer
+
+```text
+GovernedAnswer
+  schema_version
+  answer_id
+  tenant_id
+  request_id
+  request_revision
+  intent_kind
+  restatement
+  admission_ref
+  execution_receipt_ref
+  metric_version_refs
+  product_generation_refs
+  as_of
+  freshness_disposition
+  material_quality_limitations
+  lineage_refs
+  narrative
+  narrative_source
+  result_ref
+  result_digest
+  refreshes_answer_ref
+  delivered_at
+```
+
+`admission_ref` names either a `PolicyAdmissionReceipt` or a Plan 3B `FulfillmentAdmissionReceipt`.
+
+- A `metric_value` answer always has an execution receipt whose outcome is `succeeded`. A
+  `definition` answer has none and cites the approved semantic version.
+- Every answer shows the restatement of its validated intent. The requester can see what was
+  computed and ask again if it is not what they meant.
+- `narrative_source` is `template` or `model`. Every number, date, and named entity in a model
+  narrative must appear in the verified result, rendered under the declared formatting, or in the
+  cited approved metadata. A model narrative that fails this check is discarded, and the template
+  narrative is delivered instead.
+- Replaying a request's delivery command returns its existing answer. A separate request never
+  reuses another request's answer or result; it validates, plans, and executes on its own.
+- A refresh is a new request. Its answer's `refreshes_answer_ref` names the prior answer.
+- After `result_retention` ends, the answer keeps its metadata and digests and reports the result
+  as expired. Backup copies of the snapshot expire under the same retention.
+
+#### Answer lifecycle
+
+Policy admission needs a transition that section 13.3.1 does not yet have: `investigating →
+executing`. Like `answer_runtime`, it is planned. The change that adds it to the request service
+also adds it to the pinned table, restricted to a request with a recorded `PolicyAdmissionReceipt`.
+Until then, policy-admitted answers are not implemented. Every other answer path uses existing
+transitions.
+
+1. In `submitted`, the interpreter proposes an intent and validation runs.
+   - `clarification_required` moves to `clarifying`. A reply returns to `submitted` for a new
+     validation.
+   - An `admitted` validation also moves to `clarifying` when the policy requires restatement
+     confirmation. Acceptance moves it to `investigating` without re-validation, because the intent
+     is unchanged.
+   - Any other outcome moves to `investigating`.
+2. In `investigating`, the compiler builds the plan, and the policy admission predicate is
+   evaluated.
+3. `executing` runs the plan. For a definition intent, it renders the cited definition and creates
+   no execution receipt.
+4. `verifying` checks the result, and `delivered` records the answer.
+
+| Condition | Governed outcome | Parent state |
+| --- | --- | --- |
+| Ambiguous or unknown reference | Clarification with approved options | `clarifying` |
+| Restatement confirmation required | Clarification showing the restatement | `clarifying` |
+| Admitted; plan within ceilings and budget | Policy admission, then execution | `executing` |
+| Outside scope, freshness, or quality limit | Per-question Plan 3B proposal stating the limit | `proposed` |
+| Plan over `scan_ceiling`, a recorded ceiling breach, or no estimate | Per-question Plan 3B proposal stating the estimate | `proposed` |
+| Plan over `period_scan_budget` | Plan 3B dependency on a policy revision, which needs budget authority | `investigating` |
+| Missing meaning, or product not answer-enabled | Plan 3B dependency | `investigating` |
+| Requester not entitled | Plan 3B denial proposal | `proposed` |
+| Conflicting authority or construct not admitted | `No Valid Plan` | `no_valid_plan` |
+| Policy superseded or expired, or entitlement changed, at execution start | Failure; no statement runs | `failed` |
+| `provider_failed` classified as transient | New attempt under the same plan | `executing` (unchanged) |
+| Non-transient `provider_failed`, retries exhausted, or `timed_out` | Failure with receipt | `failed` |
+| Request cancelled during execution | Statement stopped; receipt `aborted` | `cancelled` |
+| `generation_unavailable` | Failure; a resubmission validates against the current generation | `failed` |
+| `ceiling_exceeded` during execution | Failure with observed counts, recorded against the statement digest | `failed` |
+| Result verification failure | Failure with receipt | `failed` |
+| Policy or entitlement no longer valid at verification | Failure; result retained under retention, never shown | `failed` |
+| Verified result | `GovernedAnswer` delivered | `delivered` |
+
+Moving from `verifying` to `delivered` requires all of the following:
+
+- The receipt's plan digest matches the plan the admission bound: `PolicyAdmissionReceipt.plan_digest`,
+  or the plan digest cited by the reviewed `StakeholderAnswerDraft`.
+- The generation references match the plan.
+- The stored result's digest recomputes.
+- Counts are within ceilings, and the compiled statement carries the suppression.
+- Freshness and quality dispositions match the policy.
+- The delivered narrative passes the narrative check.
+- The requester's entitlements are still valid, and so is the policy for a policy admission.
+
+The delivery record is written only after the result is readable through the requester's
+authorization.
+
+#### Answer visibility
+
+- A requester, or an agent session that requester delegated, sees the answer after `delivered`.
+  Every read of its values rechecks authorization.
+- The data engineering architect also sees the intent, validation, admission, and receipt, and can
+  read the plan statement. A reviewed answer's required Plan 3B approvers can also read the
+  statement.
+- Public evidence contains references, digests, counts, and outcome fields. It contains no question
+  text, filter literal, restatement, statement, narrative, or result value.
+
+#### AI boundary
+
+AI output is candidate input at exactly two points: a candidate `AnswerQuestionIntent` and a
+candidate narrative. Deterministic validation and the narrative check stand between each and any
+effect. AI never:
+
+- writes or edits a statement;
+- binds a term to meaning;
+- resolves ambiguity;
+- selects a policy;
+- satisfies an approval or admission;
+- transitions a request; or
+- decides verification.
+
+Model inputs are limited by the policy's `model_disclosure`. Question text, catalog and glossary
+metadata, result values, and model output are untrusted data, and none of them is ever treated as
+an instruction to the platform.
+
+### 13.9 Agent interface
+
+`services/context-exposure` exposes governed answers to AI agents as host-neutral MCP tools and
+resources over the same request boundary as the native UI and API. Tools that create or advance a
+request delegate to `services/request-management`; context exposure holds no request state. It is
+separate from `services/authoring-mcp`, which serves architect authoring.
+
+Tools in the MVP:
+
+```text
+search_catalog
+describe_metric
+ask_question
+reply_to_clarification
+get_answer
+explain_answer
+get_impact
+list_my_requests
+```
+
+- `ask_question` and `reply_to_clarification` create or advance a request exactly as the native UI
+  does. Every other tool is read-only.
+- `explain_answer` returns the restatement, lineage, metric versions, generation, freshness,
+  quality, and statement digest. It never returns statement text, even to an architect, because
+  agent-interface results can enter a third-party model context. An architect reads the statement
+  in the native UI.
+- `get_impact` returns an authorization-filtered impact analysis (section 9.5).
+
+A session authenticates a human principal through delegated authorization and records both the
+principal and the agent client. Every call rechecks the principal's current entitlements and the
+policy's `agent_access`. Revoking the delegation or the entitlement stops the session's next call.
+
+An agent call never satisfies an approval requirement, even when the delegating principal holds that
+authority, and never invokes a lifecycle transition other than those created by `ask_question` and
+`reply_to_clarification`. Per-principal rate and scan ceilings apply. Tool arguments are
+plain-language or typed input and pass through the same interpretation and validation as a native
+question. Tool results carry the same provenance fields as the native answer.
+
+Write tools, approval through an agent, and agent-initiated access requests are deferred
+(section 20.10).
 
 ## 14. Risk-tiered approval
 
@@ -1909,10 +2573,61 @@ request
 → reconciliation
 → catalog publication
 → dashboard/report publication
+→ answer intent validation, governed query plan, and execution receipt
 → consumer delivery
 ```
 
-Infrastructure health cannot declare semantic success. Existing rows, prior reports, successful connector authentication, or a rendered dashboard are not evidence that the current source-to-consumer contract works.
+Infrastructure health cannot declare semantic success. Existing rows, prior reports, successful connector authentication, a rendered dashboard, or a delivered answer without a verified execution receipt are not evidence that the current source-to-consumer contract works.
+
+### 17.1 Scouts
+
+Scouts are post-MVP (section 20.11). A scout is a standing, owner-approved question that runs on a
+schedule and reports what changed. It monitors and briefs. It never acts. `services/request-management`
+owns `ScoutDefinition`.
+
+```text
+ScoutDefinition
+  schema_version
+  scout_id
+  tenant_id
+  revision
+  owner_principal_ref
+  purpose
+  answer_scope_policy_ref
+  watched_intents
+  watched_signals
+  trigger_policy_ref
+  conditions
+  audience_refs
+  delivery
+  deduplication_window
+  lifecycle_state
+  approval_ids
+  created_at
+```
+
+- `watched_intents` are validated answer intents. `watched_signals` are drawn from `freshness`,
+  `quality`, `source_drift`, `metric_version_change`, and `grant_expiry`.
+- `conditions` use a closed vocabulary: threshold, change against the prior run, and change against
+  the same period last cycle. They are evaluated deterministically over verified results.
+- `delivery` is `brief` or `inbox`.
+
+The trigger service (section 15) creates each run as a run intent. Section 15 and the trigger
+service's repository-layout row cover only activated contracts today, and both are extended when
+scouts are implemented. Each run executes its intents as governed answers under the referenced
+policy, intersected with the owner's entitlements at run time.
+
+- A met condition produces a brief of the governed answers and the deltas between runs, or a
+  platform-generated request with an impact analysis when the delivery is `inbox`.
+- A finding identical to one already delivered inside the deduplication window is suppressed, and
+  the suppression is recorded.
+- A scout whose owner loses an entitlement, or whose policy expires, suspends. It does not run with
+  narrower scope.
+
+AI may draft a brief's narrative under the narrative check of section 13.8 and may propose a scout
+definition. The owner activates each revision. A scout whose audience extends beyond the owner also
+requires the policy's approvers. A scout never creates a schedule outside a trigger policy, and
+never answers outside its policy.
 
 ## 18. Security, privacy, and access
 
@@ -1924,6 +2639,9 @@ Infrastructure health cannot declare semantic success. Existing rows, prior repo
 - Certified assets inherit contract access policy.
 - Destructive actions resolve exact targets and require explicit authority.
 - Evidence artifacts are privacy-designed and exported through a fail-closed allowlist.
+- Governed answers execute only through the read-only `answer_runtime` principal, after a policy admission or Plan 3B admission that rechecks the requester's current entitlements.
+- Question text, filter literals, statements, narratives, and result values are tenant data. They appear in evidence only as digests, and reach an AI model only as the answer scope policy's `model_disclosure` permits.
+- Agent sessions act for a delegated human principal, are rechecked on every call, and never hold approval authority.
 
 ### 18.1 Warehouse principal classes
 
@@ -1953,9 +2671,18 @@ ingestion, transformation, backup, catalog, BI, or customer identity. Each class
 and denial probes in the destination conformance suite, and a provisioned warehouse is not `ready`
 until both pass for every class.
 
+Governed answers (section 12.4) require an eighth class, `answer_runtime`. It is planned, not yet
+implemented, so it is not in the list above. The list stays pinned to the implemented principal
+classes. One change adds `answer_runtime` to that list, the implementation's class vocabulary, the
+private secret inventory, provisioning, and the positive and denial probes, together.
+
+| Principal class | Enforceable grant and command boundary |
+| --- | --- |
+| Answer runtime (planned) | Reads only approved `consumption` objects of answer-enabled data products (section 13.8), including generation-addressed publications, inside an engine-enforced read-only session with a statement timeout; holds no write privilege anywhere; it cannot access `raw`, `conformed`, `product`, quarantine, ledger, role, or backup surfaces, and it is never shared with BI or customer SQL. |
+
 ## 19. Backup, recovery, and exit
 
-PillarMesh owns warehouse, OpenMetadata, Superset metadata, state, and evidence backups. Recovery proof requires restoration into an isolated target and verification of representative data, contracts, lineage, dashboard compilation, and query behavior. Backup upload alone is insufficient.
+PillarMesh owns warehouse, OpenMetadata, Superset metadata, state, answer result snapshot, and evidence backups. Recovery proof requires restoration into an isolated target and verification of representative data, contracts, lineage, dashboard compilation, and query behavior. Backup upload alone is insufficient.
 
 Customers own their data. Exit supports an approved final consistent snapshot, Parquet and CSV data export, SQL schema where meaningful, canonical contract and evidence export, lineage export, credential revocation, retention disposition, and verified deletion after the contractual period.
 
@@ -1983,8 +2710,11 @@ The MVP deliberately contains:
 - one managed catalog: OpenMetadata;
 - one managed BI service: Apache Superset;
 - one governed data product, one certified dashboard, and one daily report;
-- one scheduled cadence: daily, plus authorized `Run now` and bounded resynchronization; and
-- one native architect inbox for stakeholder questions, access requests, changes, incidents, and approvals.
+- one scheduled cadence: daily, plus authorized `Run now` and bounded resynchronization;
+- one native architect inbox for stakeholder questions, access requests, changes, incidents, and approvals;
+- one answer scope policy over the governed data product, answering in-scope questions from warehouse facts;
+- context-graph impact analysis for drift, metric, contract, policy, grant, and retirement changes; and
+- one agent interface limited to the read and question tools of section 13.9.
 
 These are limits on the first releasable product, not changes to the platform's provider-neutral contracts. Every included component must be operated, observed, recovered, and evidenced by PillarMesh.
 
@@ -2014,13 +2744,14 @@ The architect completes four phases.
 
 #### Phase D: operate the architect inbox
 
-1. Receive a stakeholder data question; inspect the proposed answer, supporting datasets, metric versions, as-of time, quality limitations, lineage, and requester authorization; then approve or correct the response.
-2. Receive a time-bounded data-access request; inspect the proposed least-privilege grant and effective-scope preview; obtain the required authority; apply it; and verify both intended and denied access.
-3. Receive a request that cannot be answered from current governed assets and approve a dependent semantic, integration, data-product, dashboard, or report proposal rather than allowing an invented answer.
-4. Review platform-created drift, quality, freshness, and maintenance items, approving only changes that alter meaning, policy, access, material cost, or risk.
-5. Inspect the complete evidence and decision history and witness an isolated restore without opening the administrative consoles of the managed components.
+1. Approve an answer scope policy for the governed data product. In-scope stakeholder questions are then answered from warehouse facts without the architect. Each carries its metric version, generation, as-of time, freshness, quality limitations, lineage, and statement digest.
+2. Receive a stakeholder question outside that policy. Inspect the proposed computation, supporting datasets, metric versions, freshness, quality limitations, lineage, and requester authorization. Then approve or correct it.
+3. Receive a time-bounded data-access request; inspect the proposed least-privilege grant and effective-scope preview; obtain the required authority; apply it; and verify both intended and denied access.
+4. Receive a request that cannot be answered from current governed assets and approve a dependent semantic, integration, data-product, dashboard, or report proposal rather than allowing an invented answer.
+5. Review platform-created drift, quality, freshness, and maintenance items with their impact analysis, approving only changes that alter meaning, policy, access, material cost, or risk.
+6. Inspect the complete evidence and decision history and witness an isolated restore without opening the administrative consoles of the managed components.
 
-The UI required for this journey is limited to environment setup, process upload and semantic review, the architect inbox, catalog embed, integration and run status, certified dashboard and report, access preview, incidents, and evidence. It is not a general ticketing, process-modeling, catalog, SQL, or BI-authoring product.
+The UI required for this journey is limited to environment setup, process upload and semantic review, the architect inbox, answer scope policy review, answer lineage, impact analysis, catalog embed, integration and run status, certified dashboard and report, access preview, incidents, and evidence. It is not a general ticketing, process-modeling, catalog, SQL, or BI-authoring product.
 
 ### 20.4 Included providers and managed services
 
@@ -2030,7 +2761,8 @@ The UI required for this journey is limited to environment setup, process upload
 - ClickHouse destination.
 - Dedicated OpenMetadata catalog.
 - Dedicated Apache Superset BI service.
-- PillarMesh transformation, trigger, report, evidence, backup, and restore runtimes.
+- PillarMesh transformation, trigger, governed answer, report, evidence, backup, and restore runtimes.
+- PillarMesh context graph and agent interface.
 
 The source subset is fixed to the objects and fields needed by the approved story. Generic PostgreSQL replication and unrestricted Stripe coverage are not MVP commitments.
 
@@ -2064,6 +2796,9 @@ The guided template may propose defaults, but activation fails with `No Valid Pl
 - Freshness, quality, reconciliation, and evidence.
 - Platform-generated incident tickets and bounded remediation proposals.
 - Governed stakeholder-answer preparation grounded in authorization, catalog assets, metric versions, freshness, quality, and lineage.
+- Governed answers computed by compiled queries under an approved answer scope policy, with deterministic intent validation, execution receipts, result and narrative verification, and lineage.
+- Context-graph impact analysis for drift, metric, contract, policy, grant, and retirement changes.
+- Agent interface read and question tools for delegated principals.
 - Least-privilege, time-bounded access proposals, approval binding, grant validation, expiry, and revocation.
 - Backup plus witnessed isolated restore.
 - Tenant provisioning, network isolation, credential rotation, version-pinned upgrades, retirement,
@@ -2077,6 +2812,7 @@ The MVP does not include automatic capacity changes, multi-region failover, arbi
 - Data-owner semantic approval.
 - Data architect activation approval.
 - Policy approval for classified fields and finance access.
+- Answer scope policy approval by the data architect and data-product owner, plus policy and budget authority where section 13.8 requires them.
 - Budget approval when a configured threshold is exceeded.
 - Explicit retirement approval.
 
@@ -2094,13 +2830,21 @@ One person may hold several roles in an MVP tenant, but authorization and eviden
 8. Independently query representative warehouse facts; compare canonical semantic results across engines; and verify OpenMetadata lineage, Superset metric versions, and access isolation.
 9. Add the same new source facts, invoke the daily trigger in each tenant, and trace both runs to equivalent warehouse freshness and report delivery.
 10. Replay the same run intent on each engine and prove no duplicate semantic effect.
-11. Submit an authorized stakeholder question about revenue and refunds; verify a correct grounded answer with metric version, as-of time, freshness, quality limitations, datasets, and lineage references.
+11. Approve an answer scope policy for revenue and refunds. Submit an in-scope question about the facts added in step 9. Verify that it is answered without per-question approval, that its values equal an independent query of those facts on each engine, and that the answer carries restatement, metric version, generation, as-of time, freshness, quality limitations, lineage, and statement digest. Verify that its history shows policy admission, not a reviewed approval.
 12. Submit an unanswerable or unauthorized question; verify that PillarMesh creates the required dependent request or denies disclosure rather than fabricating or leaking an answer.
-13. Submit a time-bounded finance data-access request; approve the proposed least-privilege role, verify allowed and denied queries, advance the expiry boundary, and verify revocation.
-14. Inject one source-authentication or transient failure, additive source drift, a lost destination response, a report-render failure, and a process-integrity violation; verify attribution, bounded recovery or fail-closed behavior, and inbox incident creation.
-15. Restore the tenant data plane into an isolated target and verify representative data, contracts, lineage, dashboard compilation, query behavior, access state, and evidence.
-16. Export a privacy-safe evidence package linking process upload, decisions, contracts, stakeholder requests, approvals, source boundaries, warehouse effects, catalog assets, grants, and consumer delivery.
-17. Reproduce the journey with an independent architect using committed instructions and without direct administration of PostgreSQL, ClickHouse, OpenMetadata, Superset, or the runtime.
+13. Submit five questions, supplying their candidate intents through the injected interpreter port. Verify each exact outcome, and that no statement executes for any of them:
+    - an ambiguous term returns `clarification_required`;
+    - an approved metric outside the policy scope returns `review_required`;
+    - an in-scope question while the product exceeds `max_staleness` returns `review_required` with reason `stale_product`;
+    - a candidate naming a metric that is not an approved identifier or alias returns `clarification_required` with reason `unknown_candidate_reference`, and the candidate is discarded; and
+    - an in-scope question whose plan estimate exceeds `scan_ceiling` becomes a per-question proposal.
+14. Ask the step 11 question through the agent interface as a delegated principal. Verify the same result digest. Then verify that an approval attempt, an out-of-entitlement question, and a call after delegation revocation are each denied.
+15. Propose a change to the revenue metric version. Verify that the impact analysis names the affected dashboard, report, answer scope policy, and recent answers, and that its derived approval requirements add to, and never replace, those of sections 13.7 and 14.
+16. Submit a time-bounded finance data-access request; approve the proposed least-privilege role, verify allowed and denied queries, advance the expiry boundary, and verify revocation.
+17. Inject one source-authentication or transient failure, additive source drift, a lost destination response, a report-render failure, a governed-query timeout, and a process-integrity violation; verify attribution, bounded recovery or fail-closed behavior, and inbox incident creation.
+18. Restore the tenant data plane into an isolated target and verify representative data, contracts, lineage, dashboard compilation, query behavior, answer reproduction from retained results, access state, and evidence.
+19. Export a privacy-safe evidence package linking process upload, decisions, contracts, stakeholder requests, answer scope policies, answer execution receipts, approvals, source boundaries, warehouse effects, catalog assets, grants, and consumer delivery.
+20. Reproduce the journey with an independent architect using committed instructions and without direct administration of PostgreSQL, ClickHouse, OpenMetadata, Superset, or the runtime.
 
 ### 20.9 MVP exit criteria
 
@@ -2116,6 +2860,10 @@ The MVP passes only when:
 - source drift and process violations are distinguished and attributed;
 - tenant, role, catalog, BI, and warehouse isolation tests pass;
 - authorized stakeholder questions receive grounded, reproducible answers and unauthorized or unanswerable questions fail closed;
+- every delivered value comes from a verified execution receipt of a compiled governed query that reconciles to independently queried warehouse facts, and no definition answer is delivered for a question that asks for a value;
+- AI-proposed intents that fail deterministic validation never execute, and no statement that reached the warehouse was authored by AI;
+- agent-interface calls return the same governed answers as the native UI and never satisfy an approval;
+- impact analysis for a metric or contract change names every validated dependent asset;
 - access requests are purpose-bound, least-privilege, approved, positively and negatively verified, time-bounded, and revocable;
 - the isolated restore proves usable data and metadata rather than archive presence;
 - PostgreSQL and ClickHouse pass the common Plan 3A outcome subset: isolated bindings,
@@ -2145,6 +2893,9 @@ Passing the MVP proves that one data engineering architect can establish and ope
 - General process modeling beyond the curated revenue-to-cash template.
 - Process mining, executable BPMN orchestration, and unrestricted document-to-contract generation.
 - Unrestricted natural-language querying of raw warehouse data.
+- A read-only answer, context, or agent overlay over a customer-managed warehouse. This changes the product boundary of ADR-0003 and requires a new product-boundary ADR before design work.
+- Agent write tools, approval through an agent, and agent-initiated access requests.
+- Scouts (section 17.1).
 - General SQL transformation authoring or arbitrary customer code.
 - Full native BI authoring beyond governed Superset embedding.
 - Mobile applications.
@@ -2161,12 +2912,15 @@ Expansion is evidence-gated rather than calendar-gated:
 4. **Business-process breadth:** add a second curated process only after its ontology, identities, lifecycle, metrics, reconciliations, dashboard, and report can be compiled without weakening the revenue-to-cash contract.
 5. **Placement:** add customer-cloud and then on-premises managed data planes after provisioning, upgrade, observability, backup, support access, and exit controls pass the same service boundary as PillarMesh cloud.
 6. **Platform scale:** add capacity profiles, high availability, cross-region recovery, and shared infrastructure only with tenant-isolation, cost, noisy-neighbor, and witnessed recovery evidence.
+7. **Scouts:** add scouts after governed answers and the trigger service pass MVP acceptance. They must prove deterministic condition evaluation, deduplication, suspension on lost entitlement or expired policy, and a brief whose every value traces to a verified execution receipt.
+8. **Agent breadth:** add agent write tools or agent-initiated access requests one at a time. Each must prove that the agent path creates the same typed request, that approval stays with human principals, and that delegation revocation takes effect on the next call.
+9. **Customer-managed warehouse overlay:** consider only after a new product-boundary ADR accepts it. That design must define read-only enforcement in a warehouse PillarMesh does not operate, how semantic authority and evidence survive without owning LAND and TRANSFORM, and which claims of section 3.1 no longer hold.
 
 ## 21. Delivery sequence
 
 Implementation planning should preserve these dependency stages:
 
-1. Durable process-upload, ontology, authority, stakeholder-question, access-request, approval, warehouse-binding, dashboard, and trigger models.
+1. Durable process-upload, ontology, authority, stakeholder-question, answer-scope-policy, access-request, approval, warehouse-binding, dashboard, and trigger models.
 2. Managed local acceptance environment for PostgreSQL, ClickHouse, OpenMetadata, and Superset.
 3. Plan 3A warehouse contracts, provisioning lifecycle, private operational state, and two-engine
    conformance precede source acquisition, destination data movement, transformations, scheduling,
@@ -2177,9 +2931,11 @@ Implementation planning should preserve these dependency stages:
 7. PostgreSQL and ClickHouse destination conformance over one semantic corpus.
 8. Managed transformation compilation and integrity constraints.
 9. Scheduling, incremental state, replay, and recovery.
-10. Superset dashboard compilation, stakeholder-answer grounding, access fulfillment, and report delivery.
-11. Operations cockpit, incidents, evidence, backup, and restore.
-12. Two-engine witnessed acceptance and independent reproduction.
+10. Governed query compilation and answer execution under answer scope policies, including the `answer_runtime` principal.
+11. Superset dashboard compilation, access fulfillment, and report delivery.
+12. Context-graph impact analysis and the agent interface.
+13. Operations cockpit, incidents, evidence, backup, and restore.
+14. Two-engine witnessed acceptance and independent reproduction.
 
 No provider or UI breadth should be added before the revenue-to-cash journey passes end to end on both destinations.
 
@@ -2193,6 +2949,7 @@ The platform succeeds when the data engineering architect can answer, from one o
 - Which source facts and process constraints support the data product?
 - What is currently fresh, valid, at risk, or violated?
 - What changed, what is affected, and what decision is required?
+- Which answers were delivered, to whom or through which agent, from which statement, generation, and policy?
 - Can the current warehouse, catalog, dashboard, and report be reconstructed and verified?
 
 The architect should not need to answer which worker retried, which connector token rotated, which warehouse node was patched, or which Superset renderer restarted unless a persistent failure crosses the managed service boundary.

@@ -40,3 +40,19 @@ PillarMesh does not compile to Spark. The decisive reason is that warehouse SQL 
 
 - A tenant's sources make extraction the binding constraint at hundreds of millions of rows per generation while the warehouse working set stays small, measured on real volumes. This triggers a Spark **EXTRACT** emitter, delivered as Spark Connect, not a Spark transformation target.
 - The per-engine fixture burden proves unsustainable, at which point the decision to offer two warehouse engines is revisited before the compilation target is.
+
+## Amendment 2026-09-11: governed answer query class
+
+Addendum v0.1 §12.4 adds a second, read-only class to the same allowlist: governed queries that answer stakeholder questions. The compiler lowers a validated answer intent into a statement that may use only:
+
+- approved consumption objects;
+- metric-pinned aggregates;
+- approved dimensions;
+- closed-domain filters;
+- bounded time windows;
+- compiled small-group suppression; and
+- ordering and a row limit.
+
+Query constructs are governed exactly as transformation constructs are: per-engine semantics pinned across D1-D8, a reviewed proof note, positive and negative per-engine fixtures, and an independent reviewer. A construct outside the allowlist produces `No Valid Plan` naming it.
+
+Governed queries are not dbt models. The runtime executes them directly through the `answer_runtime` principal and records an execution receipt. The compiler still never parses SQL it did not generate, and no AI-authored or question-derived text reaches a statement.

@@ -72,6 +72,8 @@ Exactly three modes exist. A contract compiles to a sequence of them and nothing
 
 There is no fourth mode. No PillarMesh-owned join engine, shuffle, aggregation runtime, streaming operator, or user-supplied code path. A workload that cannot be expressed in these three modes is not "hard"; it is a trigger under §10.
 
+A governed answer query (Addendum v0.1 §12.4, amended 2026-09-11) is not a mode either. It is a read-only statement the warehouse executes, as a Superset query is, with aggregation and small-group suppression compiled into the SQL. The runtime streams the bounded, already-aggregated result to a result snapshot and never aggregates or joins rows itself. The query writes to no warehouse layer, and its result is never an input to a mode.
+
 ## 6. Compilation target
 
 Three decisions are routinely conflated and are separated here:
