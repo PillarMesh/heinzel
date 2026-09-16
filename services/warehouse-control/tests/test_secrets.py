@@ -49,6 +49,7 @@ def _secrets() -> WarehouseOperationSecrets:
         administration_password=SecretStr("administration-secret-canary"),
         ingestion_runtime_password=SecretStr("ingestion-secret-canary"),
         transformation_runtime_password=SecretStr("transformation-secret-canary"),
+        answer_runtime_password=SecretStr("answer-runtime-secret-canary"),
         backup_restore_password=SecretStr("backup-secret-canary"),
         customer_sql_probe_password=SecretStr("customer-sql-secret-canary"),
         catalog_password=SecretStr("catalog-secret-canary"),
@@ -125,6 +126,7 @@ def _stored_payload(operation_id: str) -> dict[str, str]:
         "transformation_runtime_password": (
             operation_secrets.transformation_runtime_password.get_secret_value()
         ),
+        "answer_runtime_password": operation_secrets.answer_runtime_password.get_secret_value(),
         "backup_restore_password": operation_secrets.backup_restore_password.get_secret_value(),
         "customer_sql_probe_password": (
             operation_secrets.customer_sql_probe_password.get_secret_value()
@@ -196,6 +198,7 @@ def test_operation_secret_model_is_frozen_strict_and_exact() -> None:
         "administration_password",
         "ingestion_runtime_password",
         "transformation_runtime_password",
+        "answer_runtime_password",
         "backup_restore_password",
         "customer_sql_probe_password",
         "catalog_password",
@@ -257,6 +260,7 @@ def test_encrypted_store_round_trips_with_private_modes_and_operation_only_names
         ("administration", "administration_password"),
         ("ingestion_runtime", "ingestion_runtime_password"),
         ("transformation_runtime", "transformation_runtime_password"),
+        ("answer_runtime", "answer_runtime_password"),
         ("customer_sql", "customer_sql_probe_password"),
         ("catalog", "catalog_password"),
         ("bi", "bi_password"),
@@ -289,6 +293,7 @@ def test_generic_capabilities_cannot_request_backup_secrets(tmp_path: Path) -> N
         "administration",
         "ingestion_runtime",
         "transformation_runtime",
+        "answer_runtime",
         "customer_sql",
         "catalog",
         "bi",
@@ -437,6 +442,7 @@ def test_backup_retirement_replays_a_durable_tombstone_until_ciphertext_is_erase
             administration_password=fixed_width_value,
             ingestion_runtime_password=fixed_width_value,
             transformation_runtime_password=fixed_width_value,
+            answer_runtime_password=fixed_width_value,
             backup_restore_password=fixed_width_value,
             customer_sql_probe_password=fixed_width_value,
             catalog_password=fixed_width_value,
@@ -458,7 +464,7 @@ def test_backup_retirement_replays_a_durable_tombstone_until_ciphertext_is_erase
         capability.retire()
 
     assert (directory / TOMBSTONE_A).stat(follow_symlinks=False).st_size == 0
-    assert active_ciphertext.stat(follow_symlinks=False).st_size == 716
+    assert active_ciphertext.stat(follow_symlinks=False).st_size == 760
     assert capability.is_retired() is False
 
     monkeypatch.setattr(secrets_module.os, "ftruncate", real_ftruncate)

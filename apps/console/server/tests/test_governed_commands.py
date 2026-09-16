@@ -16,14 +16,18 @@ from pathlib import Path
 from typing import Literal, Never
 
 import pytest
+from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
 from pillarmesh_console.auth import InFlightCommandKeys, TrustedActorContext
 from pillarmesh_console.contracts import (
+    AcquisitionRunNowCommand,
     ActorRole,
+    BusinessProcessManifestCommand,
     ClarifiedOutcomeAcceptanceCommand,
     ConversationMessageCommand,
     CreateRequestCommand,
     DecisionCommand,
     ProcessPackageCommand,
+    ProductIntentApprovalCommand,
     ProposalPreparationCommand,
     ResetCommand,
     RetryOperationCommand,
@@ -51,12 +55,29 @@ from pillarmesh_console.operation_handles import (
 )
 from pillarmesh_console.request_intake import request_intake_content
 from pillarmesh_contract_model import ArtifactReference, digest
+from pillarmesh_contract_service import (
+    BusinessProcessManifest,
+    ProcessPackageService,
+    SQLiteProcessPackageRepository,
+)
+from pillarmesh_evidence import AcquisitionEvidenceReceipt
+from pillarmesh_provider_sdk import AcquisitionNoValidPlan
 from pillarmesh_request_management import (
     ArchitectRequestView,
     ClarifiedOutcomeStatement,
+    DeliveryIntent,
+    DimensionIntent,
+    FreshnessObjective,
     FulfillmentApprovalBinding,
     FulfillmentProposal,
+    Grain,
     InboxRequest,
+    MeasureIntent,
+    ProductIntent,
+    ProductIntentApprovalService,
+    ProductIntentCandidate,
+    ProductIntentConstraints,
+    ProductIntentSourceCoverage,
     RequesterRequestView,
     RequestManagementService,
     RequestState,
@@ -69,6 +90,7 @@ from pillarmesh_request_management.fulfillment_models import (
     DisclosureDenial,
 )
 from pillarmesh_request_management.requester_view import OwnDecisionView
+from pillarmesh_runtime import AcquisitionOwnershipError, AcquisitionPreparationResult
 from pillarmesh_semantic_registry import OntologyReviewBundle, OntologyReviewItem
 from pillarmesh_semantic_registry.review import ReviewItemDecision
 from pillarmesh_warehouse_control import (
@@ -178,6 +200,22 @@ class _StaticWarehouseBindingReader:
 
     def current_binding(self, tenant_id: str) -> WarehouseBinding | None:
         return self._binding if tenant_id == _TENANT else None
+
+
+class _StaticCatalogBindingReader:
+    def current_binding(self, tenant_id: str) -> CatalogBinding | None:
+        if tenant_id != _TENANT:
+            return None
+        return CatalogBinding(
+            binding_id="catalog-binding-alpha",
+            tenant_id=_TENANT,
+            capability_profile_digest="f" * 64,
+            lifecycle_state=CatalogBindingState.READY,
+            revision=3,
+            created_at=_FIXED_TIME,
+            updated_at=_FIXED_TIME,
+            provisioned_at=_FIXED_TIME,
+        )
 
 
 class _RecordingFulfillmentCommands:
@@ -431,6 +469,127 @@ def _question(stack: _Stack) -> InboxRequest:
         purpose="Quarterly board reporting",
         question="What was net revenue last quarter?",
     )
+
+
+def _product_intent(request: InboxRequest) -> ProductIntent:
+    return ProductIntent(
+        request_id=request.request_id,
+        title="Quarterly net revenue",
+        business_outcome="Give finance one governed quarterly view.",
+        source_refs=("billing-postgresql",),
+        grain=Grain(keys=("fiscal_quarter",)),
+        measures=(MeasureIntent(metric_ref="net_revenue", aggregation="sum"),),
+        dimensions=(DimensionIntent(dimension_ref="fiscal_quarter"),),
+        filters=(),
+        freshness=FreshnessObjective(maximum_age_seconds=86_400),
+        delivery=DeliveryIntent(outputs=("table", "dashboard")),
+    )
+
+
+def _product_constraints() -> ProductIntentConstraints:
+    return ProductIntentConstraints(
+        approved_source_refs=("billing-postgresql",),
+        approved_metric_refs=("net_revenue",),
+        approved_dimension_refs=("fiscal_quarter",),
+        minimum_source_interval_seconds=86_400,
+    )
+
+
+class _StaticProductIntentReviewReader:
+    def __init__(self, candidate: ProductIntentCandidate) -> None:
+        self._candidate = candidate
+
+    def current_candidate(self, tenant_id: str, request_id: str) -> ProductIntentCandidate | None:
+        candidate = self._candidate
+        if candidate.tenant_id != tenant_id or candidate.request_id != request_id:
+            return None
+        return candidate
+
+
+def test_typed_product_intent_approval_delegates_the_exact_reviewed_candidate(
+    stack: _Stack,
+) -> None:
+    request = _question(stack)
+    intent = _product_intent(request)
+    constraints = _product_constraints()
+    candidate = ProductIntentCandidate(
+        candidate_id="pic-00000000000000000001-" + "a" * 24,
+        tenant_id=_TENANT,
+        request_id=request.request_id,
+        request_revision=request.revision,
+        intent=intent,
+        constraints=constraints,
+        source_coverage=(
+            ProductIntentSourceCoverage(
+                source_ref="billing-postgresql",
+                covered_fields=("fiscal_quarter", "net_revenue"),
+                authorized=True,
+            ),
+        ),
+        unresolved_constraints=(),
+        proposed_by="external-interpreter",
+        proposed_at=_FIXED_TIME,
+    )
+    reader = _StaticProductIntentReviewReader(candidate)
+    approvals = ProductIntentApprovalService(stack.repository, clock=_clock)
+    backend = stack.backend(product_intent_reviews=reader, product_intent_commands=approvals)
+
+    result = backend.approve_product_intent(
+        _architect_context(),
+        request.request_id,
+        ProductIntentApprovalCommand(
+            expected_revision=request.revision,
+            reviewed_digest=digest(intent),
+            active_role="data_architect",
+        ),
+    )
+
+    assert result.intent_digest == digest(intent)
+    assert result.intent_revision == 1
+    assert approvals.list_for_request(_TENANT, request.request_id)[0].intent == intent
+
+
+def test_typed_product_intent_approval_refuses_unresolved_source_authority(
+    stack: _Stack,
+) -> None:
+    request = _question(stack)
+    intent = _product_intent(request)
+    candidate = ProductIntentCandidate(
+        candidate_id="pic-00000000000000000001-" + "a" * 24,
+        tenant_id=_TENANT,
+        request_id=request.request_id,
+        request_revision=request.revision,
+        intent=intent,
+        constraints=_product_constraints(),
+        source_coverage=(
+            ProductIntentSourceCoverage(
+                source_ref="billing-postgresql",
+                covered_fields=("fiscal_quarter", "net_revenue"),
+                authorized=False,
+            ),
+        ),
+        unresolved_constraints=("Source authorization is required.",),
+        proposed_by="external-interpreter",
+        proposed_at=_FIXED_TIME,
+    )
+    approvals = ProductIntentApprovalService(stack.repository, clock=_clock)
+    backend = stack.backend(
+        product_intent_reviews=_StaticProductIntentReviewReader(candidate),
+        product_intent_commands=approvals,
+    )
+
+    with pytest.raises(ConsoleConflict, match="Resolve every product intent requirement"):
+        backend.approve_product_intent(
+            _architect_context(),
+            request.request_id,
+            ProductIntentApprovalCommand(
+                expected_revision=request.revision,
+                reviewed_digest=digest(intent),
+                active_role="data_architect",
+            ),
+        )
+
+    assert approvals.list_for_request(_TENANT, request.request_id) == ()
 
 
 def _conversation_digest(request_id: str, revision: int, message_ids: tuple[str, ...]) -> str:
@@ -1018,18 +1177,119 @@ def test_a_review_change_request_without_replacement_wording_is_refused(
 def test_the_process_package_command_stays_undelivered_with_its_dependency_named(
     stack: _Stack,
 ) -> None:
+    narrative = "# Revenue to cash\n"
     command = ProcessPackageCommand(
         expected_revision=1,
-        package_digest="0" * 64,
+        package_digest=hashlib.sha256(narrative.encode()).hexdigest(),
         active_role="data_architect",
-        file_name="revenue-to-cash.pdf",
-        media_type="application/pdf",
+        file_name="revenue-to-cash.md",
+        media_type="text/markdown; charset=utf-8",
+        narrative_markdown=narrative,
+        manifest=BusinessProcessManifestCommand(
+            process_name="Revenue to cash",
+            owner="Finance operations",
+            participants=(),
+            outcomes=(),
+            entities=(),
+            events=(),
+            states=(),
+            rules=(),
+            source_references=(),
+            unresolved_questions=(),
+        ),
     )
 
     with pytest.raises(ConsoleUnavailable) as failure:
         stack.backend().submit_process_package(_architect_context(), command)
 
     assert failure.value.code == CAPABILITY_NOT_DELIVERED
+
+
+def test_process_package_delegates_exact_markdown_and_strict_manifest(stack: _Stack) -> None:
+    repository = SQLiteProcessPackageRepository(":memory:")
+    packages = ProcessPackageService(repository, clock=_clock)
+    narrative = "# Revenue to cash\n\nInvoice settlement closes the process.\n"
+    command = ProcessPackageCommand(
+        expected_revision=1,
+        package_digest=hashlib.sha256(narrative.encode()).hexdigest(),
+        active_role="data_architect",
+        file_name="revenue-to-cash.md",
+        media_type="text/markdown; charset=utf-8",
+        narrative_markdown=narrative,
+        manifest=BusinessProcessManifestCommand(
+            process_name="Revenue to cash",
+            owner="Finance operations",
+            participants=("Billing", "Finance"),
+            outcomes=("Settled invoice",),
+            entities=("Invoice",),
+            events=("Invoice settled",),
+            states=("settled",),
+            rules=("Only settled invoices close",),
+            source_references=("billing-postgresql",),
+            unresolved_questions=(),
+        ),
+    )
+
+    result = stack.backend(
+        process_package_commands=packages,
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding(revision=1)),
+    ).submit_process_package(_architect_context(), command)
+
+    assert result.state == "succeeded"
+    latest = packages.latest(_TENANT)
+    assert latest is not None
+    assert packages.get_original(_TENANT, latest.receipt.package_id, 1) == narrative.encode()
+    assert result.summary == "Business process package saved."
+    assert latest.receipt.package_id not in result.summary
+    repository.close()
+
+
+def test_governed_setup_exposes_process_stage_and_projects_owning_receipt(
+    stack: _Stack,
+) -> None:
+    repository = SQLiteProcessPackageRepository(":memory:")
+    packages = ProcessPackageService(repository, clock=_clock)
+    backend = stack.backend(
+        process_package_commands=packages,
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        catalog_bindings=_StaticCatalogBindingReader(),
+    )
+
+    before = backend.get_setup(_architect_context())
+
+    assert before.active_stage == "business_process"
+    assert next(item for item in before.stages if item.stage == "sources").state == "blocked"
+    assert (
+        next(item for item in before.stages if item.stage == "business_process").state == "current"
+    )
+    packages.upload(
+        _TENANT,
+        b"# Revenue to cash\n",
+        "text/markdown; charset=utf-8",
+        BusinessProcessManifest(
+            process_name="Revenue to cash",
+            owner="Finance operations",
+            participants=(),
+            outcomes=(),
+            entities=(),
+            events=(),
+            states=(),
+            rules=(),
+            source_references=(),
+            unresolved_questions=(),
+        ),
+        _ARCHITECT,
+    )
+
+    after = backend.get_setup(_architect_context())
+
+    assert after.process_package is not None
+    assert after.process_package.candidate_summary == "Revenue to cash"
+    assert after.process_package.version == 1
+    assert (
+        next(item for item in after.stages if item.stage == "business_process").state == "complete"
+    )
+    repository.close()
 
 
 def test_operation_retry_and_demo_reset_stay_undelivered_in_governed_mode(stack: _Stack) -> None:
@@ -1479,3 +1739,189 @@ def test_preparation_without_an_owning_adapter_is_explicitly_unavailable(stack: 
         )
 
     assert failure.value.code == CAPABILITY_NOT_DELIVERED
+
+
+class _RecordingAccessPreparation:
+    def __init__(self, outcome: FulfillmentProposal) -> None:
+        self.outcome = outcome
+        self.calls: list[dict[str, object]] = []
+
+    def propose_access(self, **values: object) -> FulfillmentProposal:
+        self.calls.append(values)
+        return self.outcome
+
+
+def test_data_access_preparation_delegates_to_the_access_proposal_boundary(
+    stack: _Stack,
+) -> None:
+    submitted = stack.requests.submit_access_request(
+        tenant_id=_TENANT,
+        requester_id=_REQUESTER,
+        purpose="Review governed revenue",
+        data_product_id="product:revenue",
+        requested_fields=("region", "revenue"),
+        access_mode="query",
+        expires_at=_FIXED_TIME + timedelta(days=1),
+    )
+    clarifying = stack.requests.transition(
+        _TENANT,
+        submitted.request_id,
+        RequestState.CLARIFYING,
+        actor_id=_ARCHITECT,
+        expected_revision=submitted.revision,
+    )
+    investigating = stack.requests.transition(
+        _TENANT,
+        submitted.request_id,
+        RequestState.INVESTIGATING,
+        actor_id=_ARCHITECT,
+        expected_revision=clarifying.revision,
+    )
+    views = _StaticFulfillmentViews(
+        request=investigating,
+        statement=_statement(investigating),
+    )
+    commands = _RecordingAccessPreparation(views.proposal)
+    backend = stack.backend(
+        fulfillment=views,
+        fulfillment_preparation_commands=commands,
+    )
+    detail = backend.get_request_detail(_architect_context(), investigating.request_id)
+    assert detail.preparation_actions == ("prepare_access",)
+
+    backend.prepare_request_proposal(
+        _architect_context(),
+        investigating.request_id,
+        ProposalPreparationCommand(
+            expected_revision=investigating.revision,
+            active_role="data_architect",
+        ),
+    )
+
+    assert commands.calls == [
+        {
+            "tenant_id": _TENANT,
+            "request_id": investigating.request_id,
+            "actor_id": _ARCHITECT,
+            "expected_revision": investigating.revision,
+        }
+    ]
+
+
+class _RecordingAcquisitionCommands:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def run_now(self, **values: object) -> AcquisitionPreparationResult:
+        self.calls.append(values)
+        evidence = AcquisitionEvidenceReceipt(
+            evidence_id="evidence:acquisition:orders",
+            tenant_id=str(values["tenant_id"]),
+            run_intent_ref="a" * 64,
+            contract_ref=str(values["contract_ref"]),
+            source_binding_ref="source-binding:orders",
+            acquisition_mode="snapshot",
+            logical_object_refs=("orders",),
+            prepared_receipt_ref=None,
+            checkpoint_receipt_ref=None,
+            prior_checkpoint_revision=0,
+            resulting_checkpoint_revision=None,
+            reason_codes=("acquisition_mode_not_admitted",),
+            outcome="no_valid_plan",
+            created_at=_FIXED_TIME,
+        )
+        return AcquisitionPreparationResult(
+            evidence=evidence,
+            prepared_receipt=None,
+            batch_manifest=None,
+            governed_outcome=AcquisitionNoValidPlan(
+                reason_codes=("acquisition_mode_not_admitted",),
+                failed_constraints=("contract.acquisition_modes",),
+            ),
+        )
+
+
+def test_run_now_delegates_only_the_selected_contract_and_trigger_to_acquisition(
+    stack: _Stack,
+) -> None:
+    commands = _RecordingAcquisitionCommands()
+    backend = stack.backend(acquisition_commands=commands)
+    command = AcquisitionRunNowCommand(
+        active_role="data_architect",
+        contract_ref="contract:orders:v4",
+        trigger_window="2026-09-01T12:00:00Z/2026-09-01T13:00:00Z",
+        acquisition_mode="snapshot",
+    )
+
+    first = backend.run_acquisition_now(_architect_context(), command)
+    replay = backend.run_acquisition_now(_architect_context(), command)
+
+    assert commands.calls == [
+        {
+            "tenant_id": _TENANT,
+            "contract_ref": "contract:orders:v4",
+            "trigger_window": "2026-09-01T12:00:00Z/2026-09-01T13:00:00Z",
+            "acquisition_mode": "snapshot",
+        },
+        {
+            "tenant_id": _TENANT,
+            "contract_ref": "contract:orders:v4",
+            "trigger_window": "2026-09-01T12:00:00Z/2026-09-01T13:00:00Z",
+            "acquisition_mode": "snapshot",
+        },
+    ]
+    assert first == replay
+    assert first.outcome == "no_valid_plan"
+    serialized = first.model_dump_json()
+    assert "run_intent_ref" not in serialized
+    assert "prepared_receipt_ref" not in serialized
+    assert "checkpoint" not in serialized
+
+
+def test_run_now_requires_an_owning_acquisition_application(stack: _Stack) -> None:
+    command = AcquisitionRunNowCommand(
+        active_role="data_architect",
+        contract_ref="contract:orders:v4",
+        trigger_window="2026-09-01T12:00:00Z/2026-09-01T13:00:00Z",
+        acquisition_mode="snapshot",
+    )
+
+    with pytest.raises(ConsoleUnavailable) as failure:
+        stack.backend().run_acquisition_now(_architect_context(), command)
+
+    assert failure.value.code == CAPABILITY_NOT_DELIVERED
+
+
+def test_composed_acquisition_application_marks_source_acquisition_ready(stack: _Stack) -> None:
+    capabilities = (
+        stack.backend(acquisition_commands=_RecordingAcquisitionCommands())
+        .get_workspace(_architect_context())
+        .capabilities
+    )
+
+    source_acquisition = next(
+        capability
+        for capability in capabilities
+        if capability.capability_id == "source-acquisition"
+    )
+    assert source_acquisition.state == "ready"
+    assert source_acquisition.dependency is None
+
+
+class _ForeignAcquisitionCommands:
+    def run_now(self, **values: object) -> Never:
+        raise AcquisitionOwnershipError("contract_authority_mismatch")
+
+
+def test_run_now_does_not_reveal_a_contract_owned_by_another_tenant(stack: _Stack) -> None:
+    command = AcquisitionRunNowCommand(
+        active_role="data_architect",
+        contract_ref="contract:foreign:v1",
+        trigger_window="2026-09-01T12:00:00Z/2026-09-01T13:00:00Z",
+        acquisition_mode="snapshot",
+    )
+
+    with pytest.raises(ConsoleNotFound):
+        stack.backend(acquisition_commands=_ForeignAcquisitionCommands()).run_acquisition_now(
+            _architect_context(), command
+        )

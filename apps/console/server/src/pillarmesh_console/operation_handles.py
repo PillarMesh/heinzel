@@ -19,7 +19,7 @@ from typing import Literal, Protocol
 from .contracts import OperationFailureView, OperationState, OperationView, RecoveryAction
 
 type OperationCapabilityKind = Literal[
-    "warehouse_lifecycle", "warehouse_binding", "acquisition_batch"
+    "warehouse_lifecycle", "warehouse_binding", "acquisition_batch", "incident_recovery"
 ]
 
 CONSOLE_HANDLE_PATTERN = re.compile(r"^op_[0-9a-f]{32}$")

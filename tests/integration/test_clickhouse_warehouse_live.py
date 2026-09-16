@@ -677,6 +677,11 @@ def _open_lifecycle_driver(
                 operation_id=configuration.provision_operation_id,
                 purpose="transformation_runtime",
             ),
+            answer_runtime_secret=authority.operation_capability(
+                configuration.secret_reference,
+                operation_id=configuration.provision_operation_id,
+                purpose="answer_runtime",
+            ),
             customer_sql_secret=authority.operation_capability(
                 configuration.secret_reference,
                 operation_id=configuration.provision_operation_id,
@@ -774,18 +779,19 @@ def _new_lifecycle_driver(
         )[:24]
     )
     material = generate_tls_material(now=clock())
-    credential_canaries = credential_canaries or tuple(secrets.token_urlsafe(24) for _ in range(7))
-    if len(credential_canaries) != 7:
-        raise ValueError("ClickHouse live witness requires seven credential canaries")
+    credential_canaries = credential_canaries or tuple(secrets.token_urlsafe(24) for _ in range(8))
+    if len(credential_canaries) != 8:
+        raise ValueError("ClickHouse live witness requires eight credential canaries")
     backup_key = base64.b64encode(backup_key_bytes or os.urandom(32)).decode("ascii")
     operation_secrets = WarehouseOperationSecrets(
         administration_password=SecretStr(credential_canaries[0]),
         ingestion_runtime_password=SecretStr(credential_canaries[1]),
         transformation_runtime_password=SecretStr(credential_canaries[2]),
-        backup_restore_password=SecretStr(credential_canaries[3]),
-        customer_sql_probe_password=SecretStr(credential_canaries[4]),
-        catalog_password=SecretStr(credential_canaries[5]),
-        bi_password=SecretStr(credential_canaries[6]),
+        answer_runtime_password=SecretStr(credential_canaries[3]),
+        backup_restore_password=SecretStr(credential_canaries[4]),
+        customer_sql_probe_password=SecretStr(credential_canaries[5]),
+        catalog_password=SecretStr(credential_canaries[6]),
+        bi_password=SecretStr(credential_canaries[7]),
         tls_private_key_pem=SecretStr(material.private_key_bundle),
         tls_certificate_pem=SecretStr(material.certificate_bundle),
         backup_encryption_key_b64=SecretStr(backup_key),

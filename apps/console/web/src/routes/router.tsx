@@ -1,3 +1,4 @@
+import {ResultPage, type ResultClient} from "../features/results/result-page"
 import {Navigate, Route, Routes, useParams} from "react-router-dom"
 
 import type {
@@ -8,7 +9,12 @@ import type {
 import {AppShell} from "../components/app-shell"
 import {CapabilitySummaryPage} from "../components/capability-summary-page"
 import {RunsPage, type RunsClient} from "../features/runs/runs-page"
+import {OperationsPage, type OperationsClient} from "../features/operations/operations-page"
 import {CatalogPage, type CatalogClient} from "../features/catalog/catalog-page"
+import {
+  DashboardsPage,
+  type DashboardsClient,
+} from "../features/dashboards/dashboards-page"
 import {
   DataProductsPage,
   type DataProductsClient,
@@ -36,9 +42,11 @@ interface ConsoleRoutesProps {
     InboxClient &
     RequesterClient &
     RunsClient &
+    OperationsClient &
     AcquisitionReceiptsClient &
     CatalogClient &
-    DataProductsClient
+    DashboardsClient &
+    DataProductsClient & ResultClient
   readonly setupEnvelope: ConsoleEnvelopeSetupView | undefined
   readonly workspaceEnvelope: ConsoleEnvelopeWorkspaceView
 }
@@ -77,12 +85,26 @@ function MyRequestRoute({
   )
 }
 
+function RequestResultRoute({client}: {readonly client: ResultClient}) {
+  const {requestId} = useParams()
+  return requestId === undefined ? <RecoveryPage kind="projection" /> : <ResultPage key={requestId} client={client} requestId={requestId} />
+}
+
 function CatalogAssetRoute({client}: {readonly client: CatalogClient}) {
   const {assetRef} = useParams()
   return assetRef === undefined ? (
     <RecoveryPage kind="projection" />
   ) : (
     <CatalogPage assetRef={assetRef} client={client} />
+  )
+}
+
+function DashboardRoute({client}: {readonly client: DashboardsClient}) {
+  const {dashboardRef} = useParams()
+  return dashboardRef === undefined ? (
+    <RecoveryPage kind="projection" />
+  ) : (
+    <DashboardsPage client={client} dashboardRef={dashboardRef} />
   )
 }
 
@@ -234,6 +256,7 @@ export function ConsoleRoutes({
           }
           path="/requests/:requestId"
         />
+        <Route element={<RequestResultRoute client={setupClient} />} path="/requests/:requestId/result" />
         <Route element={<DataProductsPage client={setupClient} />} path="/data-products" />
         <Route
           element={<DataProductRoute client={setupClient} />}
@@ -241,7 +264,13 @@ export function ConsoleRoutes({
         />
         <Route element={<RunsPage client={setupClient} />} path="/runs" />
         <Route
-          element={<AcquisitionReceiptsPage client={setupClient} />}
+          element={<OperationsPage client={setupClient} session={sessionEnvelope.data} />}
+          path="/operations"
+        />
+        <Route
+          element={
+            <AcquisitionReceiptsPage client={setupClient} session={sessionEnvelope.data} />
+          }
           path="/acquisition-receipts"
         />
         <Route element={<CatalogPage client={setupClient} />} path="/catalog" />
@@ -249,10 +278,8 @@ export function ConsoleRoutes({
           element={<CatalogAssetRoute client={setupClient} />}
           path="/catalog/:assetRef"
         />
-        <Route
-          element={<CapabilitySummaryPage capabilities={capabilities} kind="dashboards" />}
-          path="/dashboards"
-        />
+        <Route element={<DashboardsPage client={setupClient} />} path="/dashboards" />
+        <Route element={<DashboardRoute client={setupClient} />} path="/dashboards/:dashboardRef" />
         <Route
           element={<CapabilitySummaryPage capabilities={capabilities} kind="evidence" />}
           path="/evidence"

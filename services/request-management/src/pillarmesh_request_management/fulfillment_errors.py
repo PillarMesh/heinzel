@@ -31,3 +31,7 @@ class FulfillmentIntegrityError(FulfillmentError):
 
 class FulfillmentNotVisible(FulfillmentError):
     pass
+
+
+class ImpactAdmissionResolutionError(RuntimeError):
+    """A declared failure while resolving authoritative impact records."""

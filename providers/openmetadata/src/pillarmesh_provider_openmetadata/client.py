@@ -10,6 +10,12 @@ from uuid import UUID
 
 import httpx
 from pillarmesh_contract_model import canonical_bytes, digest
+from pillarmesh_provider_sdk import (
+    CatalogNativeTableDefinition,
+    CatalogNativeTableObservation,
+    CatalogProductDefinition,
+    CatalogProductObservation,
+)
 from pydantic import (
     AnyUrl,
     BaseModel,
@@ -39,14 +45,16 @@ _METADATA_MARKER = "\n\nPillarMesh metadata v1: "
 _METADATA_SUFFIX = "."
 
 
-UPSTREAM_IMAGES: frozenset[str] = frozenset(
+CORE_UPSTREAM_IMAGES: frozenset[str] = frozenset(
     {
         "docker.getcollate.io/openmetadata/db@sha256:8a77669a2e64769dbb3ba4684fd527cc4a68e54879b199a6a8f1e74fa14da557",
         "docker.elastic.co/elasticsearch/elasticsearch@sha256:4f6bdcb742e892539c6ac49b0dd3e4e182e90218546e8c6a22db378c344acb60",
         "docker.getcollate.io/openmetadata/server@sha256:6c878281973d9e2c366e9da4f256a744acf67b1e53195fab67c3191e504e4169",
-        "docker.getcollate.io/openmetadata/ingestion@sha256:fe5effad9dbce98852b2f588905a4a8926c3c03de97fcceac8fe8e3ec927d717",
     }
 )
+UPSTREAM_IMAGES: frozenset[str] = CORE_UPSTREAM_IMAGES | {
+    "docker.getcollate.io/openmetadata/ingestion@sha256:fe5effad9dbce98852b2f588905a4a8926c3c03de97fcceac8fe8e3ec927d717"
+}
 
 
 class OpenMetadataSettings(BaseModel):
@@ -601,6 +609,226 @@ class _GlossaryTermResponse(_TaggedEntityResponse):
     )
 
 
+class _DomainResponse(_TaggedEntityResponse):
+    domain_type: Literal["Source-aligned", "Consumer-aligned", "Aggregate"] = Field(
+        alias="domainType"
+    )
+    parent: _EntityReference | None = None
+    children: _ResponseTuple[_EntityReference] | None = None
+    children_count: int | None = Field(default=None, alias="childrenCount")
+    experts: _ResponseTuple[_EntityReference] | None = None
+    assets: _ResponseTuple[_EntityReference] | None = None
+    followers: _ResponseTuple[_EntityReference] | None = None
+    votes: _Votes | None = None
+    certification: JsonValue | None = None
+    change_description: _ChangeDescription | None = Field(default=None, alias="changeDescription")
+    incremental_change_description: _ChangeDescription | None = Field(
+        default=None, alias="incrementalChangeDescription"
+    )
+
+
+class _DataProductResponse(_TaggedEntityResponse):
+    domains: _ResponseTuple[_EntityReference] = Field(min_length=1)
+    experts: _ResponseTuple[_EntityReference] | None = None
+    assets: _ResponseTuple[_EntityReference] | None = None
+    lifecycle_stage: (
+        Literal[
+            "IDEATION", "DESIGN", "DEVELOPMENT", "TESTING", "PRODUCTION", "DEPRECATED", "RETIRED"
+        ]
+        | None
+    ) = Field(default=None, alias="lifecycleStage")
+    data_product_type: (
+        Literal[
+            "RAW_DATA",
+            "DERIVED_DATA",
+            "DATASET",
+            "REPORTS",
+            "ANALYTIC_VIEW",
+            "VISUALISATION_3D",
+            "ALGORITHM",
+            "DECISION_SUPPORT",
+            "AUTOMATED_DECISION_MAKING",
+            "DATA_ENHANCED_PRODUCT",
+            "DATA_DRIVEN_SERVICE",
+            "DATA_ENABLED_PERFORMANCE",
+            "BI_DIRECTIONAL",
+        ]
+        | None
+    ) = Field(default=None, alias="dataProductType")
+    visibility: Literal["PRIVATE", "INVITATION", "ORGANISATION", "DATASPACE", "PUBLIC"] | None = (
+        None
+    )
+    portfolio_priority: Literal["CRITICAL", "HIGH", "MEDIUM", "LOW"] | None = Field(
+        default=None, alias="portfolioPriority"
+    )
+    sla: JsonValue | None = None
+    consumes_from: _ResponseTuple[_EntityReference] | None = Field(
+        default=None, alias="consumesFrom"
+    )
+    provides_to: _ResponseTuple[_EntityReference] | None = Field(default=None, alias="providesTo")
+    followers: _ResponseTuple[_EntityReference] | None = None
+    votes: _Votes | None = None
+    certification: JsonValue | None = None
+    change_description: _ChangeDescription | None = Field(default=None, alias="changeDescription")
+    incremental_change_description: _ChangeDescription | None = Field(
+        default=None, alias="incrementalChangeDescription"
+    )
+
+
+class _DatabaseServiceResponse(_TaggedEntityResponse):
+    service_type: Literal["Postgres", "Clickhouse"] = Field(alias="serviceType")
+    connection: JsonValue | None = None
+    pipelines: _ResponseTuple[_EntityReference] | None = None
+    domains: _ResponseTuple[_EntityReference] | None = None
+    data_products: _ResponseTuple[_EntityReference] | None = Field(
+        default=None, alias="dataProducts"
+    )
+    test_connection_result: JsonValue | None = Field(default=None, alias="testConnectionResult")
+    ingestion_runner: _EntityReference | None = Field(default=None, alias="ingestionRunner")
+    followers: _ResponseTuple[_EntityReference] | None = None
+    impersonated_by: _EntityReference | None = Field(default=None, alias="impersonatedBy")
+    data_contract: JsonValue | None = Field(default=None, alias="dataContract")
+    change_description: _ChangeDescription | None = Field(default=None, alias="changeDescription")
+    incremental_change_description: _ChangeDescription | None = Field(
+        default=None, alias="incrementalChangeDescription"
+    )
+
+
+class _DatabaseResponse(_TaggedEntityResponse):
+    service: _EntityReference
+    service_type: Literal["Postgres", "Clickhouse"] | None = Field(
+        default=None, alias="serviceType"
+    )
+    database_schemas: _ResponseTuple[_EntityReference] | None = Field(
+        default=None, alias="databaseSchemas"
+    )
+    default: bool | None = None
+    retention_period: str | None = Field(default=None, alias="retentionPeriod")
+    source_url: str | None = Field(default=None, alias="sourceUrl")
+    domains: _ResponseTuple[_EntityReference] | None = None
+    data_products: _ResponseTuple[_EntityReference] | None = Field(
+        default=None, alias="dataProducts"
+    )
+    life_cycle: JsonValue | None = Field(default=None, alias="lifeCycle")
+    source_hash: str | None = Field(default=None, alias="sourceHash")
+    location: _EntityReference | None = None
+    followers: _ResponseTuple[_EntityReference] | None = None
+    impersonated_by: _EntityReference | None = Field(default=None, alias="impersonatedBy")
+    database_profiler_config: JsonValue | None = Field(default=None, alias="databaseProfilerConfig")
+    data_contract: JsonValue | None = Field(default=None, alias="dataContract")
+    usage_summary: JsonValue | None = Field(default=None, alias="usageSummary")
+    votes: _Votes | None = None
+    certification: JsonValue | None = None
+    change_description: _ChangeDescription | None = Field(default=None, alias="changeDescription")
+    incremental_change_description: _ChangeDescription | None = Field(
+        default=None, alias="incrementalChangeDescription"
+    )
+
+
+class _DatabaseSchemaResponse(_TaggedEntityResponse):
+    database: _EntityReference
+    service: _EntityReference | None = None
+    service_type: Literal["Postgres", "Clickhouse"] | None = Field(
+        default=None, alias="serviceType"
+    )
+    tables: _ResponseTuple[_EntityReference] | None = None
+    retention_period: str | None = Field(default=None, alias="retentionPeriod")
+    source_url: str | None = Field(default=None, alias="sourceUrl")
+    domains: _ResponseTuple[_EntityReference] | None = None
+    data_products: _ResponseTuple[_EntityReference] | None = Field(
+        default=None, alias="dataProducts"
+    )
+    life_cycle: JsonValue | None = Field(default=None, alias="lifeCycle")
+    source_hash: str | None = Field(default=None, alias="sourceHash")
+    followers: _ResponseTuple[_EntityReference] | None = None
+    impersonated_by: _EntityReference | None = Field(default=None, alias="impersonatedBy")
+    database_schema_profiler_config: JsonValue | None = Field(
+        default=None, alias="databaseSchemaProfilerConfig"
+    )
+    data_contract: JsonValue | None = Field(default=None, alias="dataContract")
+    usage_summary: JsonValue | None = Field(default=None, alias="usageSummary")
+    votes: _Votes | None = None
+    certification: JsonValue | None = None
+    change_description: _ChangeDescription | None = Field(default=None, alias="changeDescription")
+    incremental_change_description: _ChangeDescription | None = Field(
+        default=None, alias="incrementalChangeDescription"
+    )
+
+
+class _TableColumnResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True, strict=True)
+
+    name: str = Field(min_length=1)
+    display_name: str | None = Field(default=None, alias="displayName")
+    data_type: str = Field(alias="dataType", min_length=1)
+    array_data_type: str | None = Field(default=None, alias="arrayDataType")
+    data_length: int | None = Field(default=None, alias="dataLength")
+    precision: int | None = None
+    scale: int | None = None
+    data_type_display: str | None = Field(default=None, alias="dataTypeDisplay")
+    description: str | None = None
+    fully_qualified_name: str | None = Field(default=None, alias="fullyQualifiedName")
+    tags: _ResponseTuple[_TagReference] = ()
+    constraint: Literal["NULL", "NOT_NULL", "UNIQUE", "PRIMARY_KEY"] | None = None
+    ordinal_position: int | None = Field(default=None, alias="ordinalPosition")
+    json_schema: str | None = Field(default=None, alias="jsonSchema")
+    children: _ResponseTuple[_TableColumnResponse] | None = None
+    profile: JsonValue | None = None
+    custom_metrics: _ResponseTuple[JsonValue] | None = Field(default=None, alias="customMetrics")
+    extension: Mapping[str, JsonValue] | None = None
+
+
+class _TableResponse(_TaggedEntityResponse):
+    table_type: str | None = Field(default=None, alias="tableType")
+    columns: _ResponseTuple[_TableColumnResponse]
+    database_schema: _EntityReference = Field(alias="databaseSchema")
+    database: _EntityReference | None = None
+    service: _EntityReference | None = None
+    service_type: Literal["Postgres", "Clickhouse"] | None = Field(
+        default=None, alias="serviceType"
+    )
+    owners: _ResponseTuple[_EntityReference] | None = None
+    domains: _ResponseTuple[_EntityReference] | None = None
+    data_products: _ResponseTuple[_EntityReference] | None = Field(
+        default=None, alias="dataProducts"
+    )
+    table_constraints: _ResponseTuple[JsonValue] | None = Field(
+        default=None, alias="tableConstraints"
+    )
+    table_partition: JsonValue | None = Field(default=None, alias="tablePartition")
+    table_profiler_config: JsonValue | None = Field(default=None, alias="tableProfilerConfig")
+    location_path: str | None = Field(default=None, alias="locationPath")
+    schema_definition: str | None = Field(default=None, alias="schemaDefinition")
+    retention_period: str | None = Field(default=None, alias="retentionPeriod")
+    source_url: str | None = Field(default=None, alias="sourceUrl")
+    file_format: str | None = Field(default=None, alias="fileFormat")
+    life_cycle: JsonValue | None = Field(default=None, alias="lifeCycle")
+    source_hash: str | None = Field(default=None, alias="sourceHash")
+    data_model: JsonValue | None = Field(default=None, alias="dataModel")
+    compression_codec: str | None = Field(default=None, alias="compressionCodec")
+    compression_enabled: bool | None = Field(default=None, alias="compressionEnabled")
+    compression_strategy: str | None = Field(default=None, alias="compressionStrategy")
+    custom_metrics: _ResponseTuple[JsonValue] | None = Field(default=None, alias="customMetrics")
+    data_contract: JsonValue | None = Field(default=None, alias="dataContract")
+    followers: _ResponseTuple[_EntityReference] | None = None
+    impersonated_by: _EntityReference | None = Field(default=None, alias="impersonatedBy")
+    joins: JsonValue | None = None
+    location: _EntityReference | None = None
+    pipeline_observability: JsonValue | None = Field(default=None, alias="pipelineObservability")
+    processed_lineage: bool | None = Field(default=None, alias="processedLineage")
+    profile: JsonValue | None = None
+    queries: _ResponseTuple[JsonValue] | None = None
+    sample_data: JsonValue | None = Field(default=None, alias="sampleData")
+    test_suite: _EntityReference | None = Field(default=None, alias="testSuite")
+    usage_summary: JsonValue | None = Field(default=None, alias="usageSummary")
+    votes: _Votes | None = None
+    certification: JsonValue | None = None
+    change_description: _ChangeDescription | None = Field(default=None, alias="changeDescription")
+    incremental_change_description: _ChangeDescription | None = Field(
+        default=None, alias="incrementalChangeDescription"
+    )
+
+
 class _AutoClassificationConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, populate_by_name=True, strict=True)
 
@@ -826,11 +1054,17 @@ class _VersionResponse(BaseModel):
 
 _ENTITY_RESPONSE_MODELS: Mapping[str, type[_EntityResponse]] = {
     "classifications": _ClassificationResponse,
+    "databaseSchemas": _DatabaseSchemaResponse,
+    "databases": _DatabaseResponse,
+    "databaseServices": _DatabaseServiceResponse,
+    "dataProducts": _DataProductResponse,
+    "domains": _DomainResponse,
     "glossaries": _GlossaryResponse,
     "glossaryTerms": _GlossaryTermResponse,
     "policies": _PolicyResponse,
     "roles": _RoleResponse,
     "tags": _TagResponse,
+    "tables": _TableResponse,
     "users": _UserResponse,
 }
 
@@ -1049,6 +1283,743 @@ class OpenMetadataClient:
         reference = _object_ref("glossary_term", tenant_key, identity, entity)
         self._remember(reference, entity, entity_type="glossaryTerm")
         return reference
+
+    def ensure_product_catalog_snapshot(
+        self, definition: CatalogProductDefinition
+    ) -> CatalogProductObservation:
+        definition = CatalogProductDefinition.model_validate(
+            definition.model_dump(mode="python"), strict=True
+        )
+        namespace_name = _object_name(definition.tenant_id, "namespace")
+        self._get_entity(
+            "glossaries",
+            namespace_name,
+            expected_name=namespace_name,
+            expected_fqn=namespace_name,
+        )
+        owner_name = _object_name(definition.tenant_id, "runtime")
+        owner = self._get_entity("users", owner_name, expected_name=owner_name)
+        tenant_key = definition.tenant_id
+        identity = definition.stable_external_key
+        name = _object_name(tenant_key, identity)
+        lookup_name = f"{namespace_name}.{name}"
+        payload: dict[str, object] = {
+            "name": name,
+            "displayName": definition.name,
+            "description": _description_with_metadata(
+                definition.description,
+                {
+                    "catalog_product_definition": canonical_bytes(definition).decode("utf-8"),
+                    "definition_digest": digest(definition),
+                },
+            ),
+            "glossary": namespace_name,
+            "owners": [{"id": owner.id, "type": "user"}],
+        }
+        try:
+            entity = self._get_entity(
+                "glossaryTerms",
+                lookup_name,
+                expected_name=name,
+                expected_fqn=lookup_name,
+                fields=("owners",),
+            )
+        except _ObjectNotFoundError:
+            entity = self._ensure_entity(
+                collection="glossaryTerms",
+                name=name,
+                lookup_name=lookup_name,
+                payload=payload,
+                fields=("owners",),
+            )
+        entity = self._validated_entity_relationships(
+            collection="glossaryTerms", entity=entity, payload=payload
+        )
+        if not self._governed_glossary_term_payload_matches(entity=entity, payload=payload):
+            raise CatalogProviderError(
+                "OpenMetadata product snapshot conflicts with immutable authority",
+                classification="conflict",
+            )
+        self._record_provider_entity_resource(collection="glossaryTerms", identifier=entity.id)
+        self._ensure_native_product_entities(definition=definition, owner=owner)
+        return self.get_product_catalog_snapshot(
+            tenant_id=tenant_key, stable_external_key=definition.stable_external_key
+        )
+
+    def get_product_catalog_snapshot(
+        self, *, tenant_id: str, stable_external_key: str
+    ) -> CatalogProductObservation:
+        name = _object_name(tenant_id, stable_external_key)
+        namespace_name = _object_name(tenant_id, "namespace")
+        entity = self._get_entity(
+            "glossaryTerms",
+            f"{namespace_name}.{name}",
+            expected_name=name,
+            expected_fqn=f"{namespace_name}.{name}",
+            fields=("owners",),
+        )
+        entity = self._validated_entity_relationships(
+            collection="glossaryTerms",
+            entity=entity,
+            payload={"glossary": namespace_name},
+        )
+        _, metadata = _description_metadata(
+            entity.description,
+            required=frozenset({"catalog_product_definition", "definition_digest"}),
+        )
+        try:
+            definition = CatalogProductDefinition.model_validate_json(
+                metadata["catalog_product_definition"], strict=True
+            )
+        except ValidationError:
+            raise CatalogProviderError(
+                "OpenMetadata product snapshot failed provider validation",
+                classification="permanent",
+            ) from None
+        if (
+            definition.tenant_id != tenant_id
+            or definition.stable_external_key != stable_external_key
+            or metadata["definition_digest"] != digest(definition)
+        ):
+            raise CatalogProviderError(
+                "OpenMetadata product snapshot failed authority validation",
+                classification="permanent",
+            )
+        self._observe_native_product_entities(definition=definition)
+        return CatalogProductObservation(
+            tenant_id=tenant_id,
+            stable_external_key=stable_external_key,
+            definition=definition,
+            definition_digest=metadata["definition_digest"],
+            provider_version=self.health().provider_version,
+        )
+
+    def ensure_native_table_snapshot(
+        self, definition: CatalogNativeTableDefinition
+    ) -> CatalogNativeTableObservation:
+        definition = CatalogNativeTableDefinition.model_validate(
+            definition.model_dump(mode="python"), strict=True
+        )
+        hierarchy = definition.warehouse
+        service_type = _native_database_service_type(hierarchy.warehouse_provider)
+        service_fqn = hierarchy.database_service_name
+        database_fqn = f"{service_fqn}.{hierarchy.database_name}"
+        schema_fqn = f"{database_fqn}.{hierarchy.schema_name}"
+        table_fqn = f"{schema_fqn}.{hierarchy.table_name}"
+
+        service_payload = self._native_hierarchy_payload(
+            definition=definition,
+            level="database_service",
+            name=hierarchy.database_service_name,
+            display_name=f"PillarMesh managed {service_type} warehouse",
+            parent_payload={"serviceType": service_type},
+        )
+        service, service_created = self._ensure_native_table_entity(
+            collection="databaseServices",
+            name=hierarchy.database_service_name,
+            fqn=service_fqn,
+            payload=service_payload,
+        )
+        self._record_created_native_resource(
+            collection="databaseServices", entity=service, created=service_created
+        )
+        if not self._native_database_service_matches(
+            entity=service, payload=service_payload, service_type=service_type
+        ):
+            raise CatalogProviderError(
+                "OpenMetadata native database service conflicts with immutable authority",
+                classification="conflict",
+            )
+
+        database_payload = self._native_hierarchy_payload(
+            definition=definition,
+            level="database",
+            name=hierarchy.database_name,
+            display_name=hierarchy.database_name,
+            parent_payload={"service": service_fqn},
+        )
+        database, database_created = self._ensure_native_table_entity(
+            collection="databases",
+            name=hierarchy.database_name,
+            fqn=database_fqn,
+            payload=database_payload,
+        )
+        self._record_created_native_resource(
+            collection="databases", entity=database, created=database_created
+        )
+        if not self._native_database_matches(
+            entity=database, payload=database_payload, service_fqn=service_fqn
+        ):
+            raise CatalogProviderError(
+                "OpenMetadata native database conflicts with immutable authority",
+                classification="conflict",
+            )
+
+        schema_payload = self._native_hierarchy_payload(
+            definition=definition,
+            level="database_schema",
+            name=hierarchy.schema_name,
+            display_name=hierarchy.schema_name,
+            parent_payload={"database": database_fqn},
+        )
+        schema, schema_created = self._ensure_native_table_entity(
+            collection="databaseSchemas",
+            name=hierarchy.schema_name,
+            fqn=schema_fqn,
+            payload=schema_payload,
+        )
+        self._record_created_native_resource(
+            collection="databaseSchemas", entity=schema, created=schema_created
+        )
+        if not self._native_database_schema_matches(
+            entity=schema, payload=schema_payload, database_fqn=database_fqn
+        ):
+            raise CatalogProviderError(
+                "OpenMetadata native database schema conflicts with immutable authority",
+                classification="conflict",
+            )
+
+        owner_name = _object_name(definition.product.tenant_id, "runtime")
+        owner = self._get_entity("users", owner_name, expected_name=owner_name)
+        owner_payload = [{"id": str(owner.id), "type": "user"}]
+        table_payload = self._native_table_payload(
+            definition=definition,
+            schema_fqn=schema_fqn,
+            owner_payload=owner_payload,
+        )
+        table, table_created = self._ensure_native_table_entity(
+            collection="tables",
+            name=hierarchy.table_name,
+            fqn=table_fqn,
+            payload=table_payload,
+            fields=("columns", "databaseSchema", "dataProducts", "domains", "owners"),
+        )
+        self._record_created_native_resource(
+            collection="tables", entity=table, created=table_created
+        )
+        if not self._native_table_matches(
+            entity=table,
+            payload=table_payload,
+            schema_fqn=schema_fqn,
+        ):
+            raise CatalogProviderError(
+                "OpenMetadata native table conflicts with immutable authority",
+                classification="conflict",
+            )
+        return self.get_native_table_snapshot(definition)
+
+    def get_native_table_snapshot(
+        self, definition: CatalogNativeTableDefinition
+    ) -> CatalogNativeTableObservation:
+        definition = CatalogNativeTableDefinition.model_validate(
+            definition.model_dump(mode="python"), strict=True
+        )
+        hierarchy = definition.warehouse
+        service_fqn = hierarchy.database_service_name
+        database_fqn = f"{service_fqn}.{hierarchy.database_name}"
+        schema_fqn = f"{database_fqn}.{hierarchy.schema_name}"
+        table_fqn = f"{schema_fqn}.{hierarchy.table_name}"
+        service_type = _native_database_service_type(hierarchy.warehouse_provider)
+
+        service = self._get_entity(
+            "databaseServices",
+            service_fqn,
+            expected_name=hierarchy.database_service_name,
+            expected_fqn=service_fqn,
+        )
+        service_payload = self._native_hierarchy_payload(
+            definition=definition,
+            level="database_service",
+            name=hierarchy.database_service_name,
+            display_name=f"PillarMesh managed {service_type} warehouse",
+            parent_payload={"serviceType": service_type},
+        )
+        database = self._get_entity(
+            "databases",
+            database_fqn,
+            expected_name=hierarchy.database_name,
+            expected_fqn=database_fqn,
+        )
+        database_payload = self._native_hierarchy_payload(
+            definition=definition,
+            level="database",
+            name=hierarchy.database_name,
+            display_name=hierarchy.database_name,
+            parent_payload={"service": service_fqn},
+        )
+        schema = self._get_entity(
+            "databaseSchemas",
+            schema_fqn,
+            expected_name=hierarchy.schema_name,
+            expected_fqn=schema_fqn,
+        )
+        schema_payload = self._native_hierarchy_payload(
+            definition=definition,
+            level="database_schema",
+            name=hierarchy.schema_name,
+            display_name=hierarchy.schema_name,
+            parent_payload={"database": database_fqn},
+        )
+        owner_name = _object_name(definition.product.tenant_id, "runtime")
+        owner = self._get_entity("users", owner_name, expected_name=owner_name)
+        owner_payload = [{"id": str(owner.id), "type": "user"}]
+        table = self._get_entity(
+            "tables",
+            table_fqn,
+            expected_name=hierarchy.table_name,
+            expected_fqn=table_fqn,
+            fields=("columns", "databaseSchema", "dataProducts", "domains", "owners"),
+        )
+        table_payload = self._native_table_payload(
+            definition=definition,
+            schema_fqn=schema_fqn,
+            owner_payload=owner_payload,
+        )
+        if not (
+            self._native_database_service_matches(
+                entity=service, payload=service_payload, service_type=service_type
+            )
+            and self._native_database_matches(
+                entity=database, payload=database_payload, service_fqn=service_fqn
+            )
+            and self._native_database_schema_matches(
+                entity=schema, payload=schema_payload, database_fqn=database_fqn
+            )
+            and self._native_table_matches(
+                entity=table, payload=table_payload, schema_fqn=schema_fqn
+            )
+        ):
+            raise CatalogProviderError(
+                "OpenMetadata native table hierarchy conflicts with immutable authority",
+                classification="conflict",
+            )
+        _, metadata = _description_metadata(
+            table.description,
+            required=frozenset({"catalog_native_table_definition", "definition_digest"}),
+        )
+        try:
+            observed_definition = CatalogNativeTableDefinition.model_validate_json(
+                metadata["catalog_native_table_definition"], strict=True
+            )
+        except ValidationError:
+            raise CatalogProviderError(
+                "OpenMetadata native table failed provider validation",
+                classification="permanent",
+            ) from None
+        if observed_definition != definition or metadata["definition_digest"] != digest(definition):
+            raise CatalogProviderError(
+                "OpenMetadata native table failed authority validation",
+                classification="permanent",
+            )
+        return CatalogNativeTableObservation(
+            definition=observed_definition,
+            definition_digest=metadata["definition_digest"],
+            table_fully_qualified_name=table_fqn,
+            provider_version=self.health().provider_version,
+        )
+
+    @staticmethod
+    def _native_hierarchy_payload(
+        *,
+        definition: CatalogNativeTableDefinition,
+        level: Literal["database_service", "database", "database_schema"],
+        name: str,
+        display_name: str,
+        parent_payload: Mapping[str, object],
+    ) -> dict[str, object]:
+        hierarchy = definition.warehouse
+        authority: dict[str, object] = {
+            "tenant_id": hierarchy.tenant_id,
+            "warehouse_binding_id": hierarchy.warehouse_binding_id,
+            "warehouse_binding_revision": hierarchy.warehouse_binding_revision,
+            "warehouse_provider": hierarchy.warehouse_provider,
+            "database_service_name": hierarchy.database_service_name,
+        }
+        if level in {"database", "database_schema"}:
+            authority["database_name"] = hierarchy.database_name
+        if level == "database_schema":
+            authority["schema_name"] = hierarchy.schema_name
+        authority_json = canonical_bytes(authority).decode("utf-8")
+        return {
+            "name": name,
+            "displayName": display_name,
+            "description": _description_with_metadata(
+                f"PillarMesh managed {level.replace('_', ' ')}.",
+                {
+                    "hierarchy_authority": authority_json,
+                    "hierarchy_authority_digest": digest(authority),
+                },
+            ),
+            **parent_payload,
+        }
+
+    @staticmethod
+    def _native_table_payload(
+        *,
+        definition: CatalogNativeTableDefinition,
+        schema_fqn: str,
+        owner_payload: list[dict[str, str]],
+    ) -> dict[str, object]:
+        product = definition.product
+        domain_name = _object_name(product.tenant_id, "product-domain")
+        product_name = _object_name(product.tenant_id, product.stable_external_key)
+        product_fqn = product_name
+        columns: list[dict[str, object]] = []
+        for column in product.columns:
+            data_type, data_type_display = _native_column_data_type(column.type_name)
+            payload: dict[str, object] = {
+                "name": column.name,
+                "dataType": data_type,
+                "dataTypeDisplay": data_type_display,
+                "constraint": "NULL" if column.nullable else "NOT_NULL",
+            }
+            if column.description is not None:
+                payload["description"] = column.description
+            columns.append(payload)
+        return {
+            "name": definition.warehouse.table_name,
+            "displayName": product.name,
+            "description": _description_with_metadata(
+                product.description,
+                {
+                    "catalog_native_table_definition": canonical_bytes(definition).decode("utf-8"),
+                    "definition_digest": digest(definition),
+                },
+            ),
+            "tableType": "View",
+            "columns": columns,
+            "databaseSchema": schema_fqn,
+            "domains": [domain_name],
+            "dataProducts": [product_fqn],
+            "owners": owner_payload,
+        }
+
+    def _ensure_native_table_entity(
+        self,
+        *,
+        collection: Literal["databaseServices", "databases", "databaseSchemas", "tables"],
+        name: str,
+        fqn: str,
+        payload: Mapping[str, object],
+        fields: tuple[str, ...] = (),
+    ) -> tuple[_EntityResponse, bool]:
+        try:
+            return (
+                self._get_entity(
+                    collection,
+                    fqn,
+                    expected_name=name,
+                    expected_fqn=fqn,
+                    fields=fields,
+                ),
+                False,
+            )
+        except _ObjectNotFoundError:
+            response = self._request(
+                "PUT", f"/api/v1/{_entity_endpoint(collection)}", json_payload=dict(payload)
+            )
+        return (
+            self._validated_entity_identity(
+                self._entity(collection, response), expected_name=name, expected_fqn=fqn
+            ),
+            True,
+        )
+
+    def _record_created_native_resource(
+        self, *, collection: str, entity: _EntityResponse, created: bool
+    ) -> None:
+        if created:
+            self._record_provider_entity_resource(collection=collection, identifier=entity.id)
+
+    @staticmethod
+    def _native_database_service_matches(
+        *, entity: _EntityResponse, payload: Mapping[str, object], service_type: str
+    ) -> bool:
+        return (
+            isinstance(entity, _DatabaseServiceResponse)
+            and entity.display_name == payload["displayName"]
+            and entity.description == payload["description"]
+            and entity.service_type == service_type
+            and entity.connection is None
+        )
+
+    @staticmethod
+    def _native_database_matches(
+        *, entity: _EntityResponse, payload: Mapping[str, object], service_fqn: str
+    ) -> bool:
+        return (
+            isinstance(entity, _DatabaseResponse)
+            and entity.display_name == payload["displayName"]
+            and entity.description == payload["description"]
+            and entity.service.type == "databaseService"
+            and entity.service.fully_qualified_name == service_fqn
+        )
+
+    @staticmethod
+    def _native_database_schema_matches(
+        *, entity: _EntityResponse, payload: Mapping[str, object], database_fqn: str
+    ) -> bool:
+        return (
+            isinstance(entity, _DatabaseSchemaResponse)
+            and entity.display_name == payload["displayName"]
+            and entity.description == payload["description"]
+            and entity.database.type == "database"
+            and entity.database.fully_qualified_name == database_fqn
+        )
+
+    @classmethod
+    def _native_table_matches(
+        cls, *, entity: _EntityResponse, payload: Mapping[str, object], schema_fqn: str
+    ) -> bool:
+        if not isinstance(entity, _TableResponse):
+            return False
+        expected_columns = payload.get("columns")
+        if not isinstance(expected_columns, list) or len(entity.columns) != len(expected_columns):
+            return False
+        observed_columns = [
+            {
+                key: value
+                for key, value in {
+                    "name": column.name,
+                    "dataType": column.data_type,
+                    "dataTypeDisplay": column.data_type_display,
+                    "constraint": column.constraint,
+                    "description": column.description,
+                }.items()
+                if value is not None
+            }
+            for column in entity.columns
+        ]
+        expected_domains = payload.get("domains")
+        expected_products = payload.get("dataProducts")
+        if (
+            not isinstance(expected_domains, list)
+            or not all(isinstance(item, str) for item in expected_domains)
+            or not isinstance(expected_products, list)
+            or not all(isinstance(item, str) for item in expected_products)
+        ):
+            return False
+        return (
+            entity.display_name == payload["displayName"]
+            and entity.description == payload["description"]
+            and entity.table_type == payload["tableType"]
+            and observed_columns == expected_columns
+            and entity.database_schema.type == "databaseSchema"
+            and entity.database_schema.fully_qualified_name == schema_fqn
+            and _entity_reference_fqns(entity.domains) == tuple(expected_domains)
+            and _entity_reference_fqns(entity.data_products) == tuple(expected_products)
+            and cls._entity_owners_match(entity=entity, expected_owners=payload["owners"])
+        )
+
+    def _observe_native_product_entities(self, *, definition: CatalogProductDefinition) -> None:
+        tenant_key = definition.tenant_id
+        domain_name = _object_name(tenant_key, "product-domain")
+        owner_name = _object_name(tenant_key, "runtime")
+        owner = self._get_entity("users", owner_name, expected_name=owner_name)
+        owner_payload = [{"id": owner.id, "type": "user"}]
+        domain_payload = self._native_domain_payload(
+            tenant_key=tenant_key, owner_payload=owner_payload, include_name=False
+        )
+        domain = self._get_entity(
+            "domains",
+            domain_name,
+            expected_name=domain_name,
+            expected_fqn=domain_name,
+            fields=("owners",),
+        )
+        if not self._native_domain_matches(domain=domain, payload=domain_payload):
+            raise CatalogProviderError(
+                "OpenMetadata native tenant domain conflicts with immutable authority",
+                classification="conflict",
+            )
+        product_name = _object_name(tenant_key, definition.stable_external_key)
+        product_payload = self._native_product_payload(
+            definition=definition,
+            domain_name=domain_name,
+            owner_payload=owner_payload,
+            include_identity=False,
+        )
+        product = self._get_entity(
+            "dataProducts",
+            product_name,
+            expected_name=product_name,
+            expected_fqn=product_name,
+            fields=("owners", "domains"),
+        )
+        if not self._native_product_matches(
+            product=product, payload=product_payload, domain_name=domain_name
+        ):
+            raise CatalogProviderError(
+                "OpenMetadata native data product conflicts with immutable authority",
+                classification="conflict",
+            )
+
+    def _ensure_native_product_entities(
+        self, *, definition: CatalogProductDefinition, owner: _EntityResponse
+    ) -> None:
+        tenant_key = definition.tenant_id
+        domain_name = _object_name(tenant_key, "product-domain")
+        owner_payload = [{"id": owner.id, "type": "user"}]
+        domain_payload = self._native_domain_payload(
+            tenant_key=tenant_key, owner_payload=owner_payload, include_name=True
+        )
+        domain = self._ensure_immutable_native_entity(
+            collection="domains",
+            name=domain_name,
+            lookup_name=domain_name,
+            payload=domain_payload,
+        )
+        if not self._native_domain_matches(domain=domain, payload=domain_payload):
+            raise CatalogProviderError(
+                "OpenMetadata native tenant domain conflicts with immutable authority",
+                classification="conflict",
+            )
+        self._record_provider_entity_resource(collection="domains", identifier=domain.id)
+
+        product_name = _object_name(tenant_key, definition.stable_external_key)
+        product_payload = self._native_product_payload(
+            definition=definition,
+            domain_name=domain_name,
+            owner_payload=owner_payload,
+            include_identity=True,
+        )
+        product = self._ensure_immutable_native_entity(
+            collection="dataProducts",
+            name=product_name,
+            lookup_name=product_name,
+            payload=product_payload,
+        )
+        if not self._native_product_matches(
+            product=product, payload=product_payload, domain_name=domain_name
+        ):
+            raise CatalogProviderError(
+                "OpenMetadata native data product conflicts with immutable authority",
+                classification="conflict",
+            )
+        self._record_provider_entity_resource(collection="dataProducts", identifier=product.id)
+
+    @staticmethod
+    def _native_domain_payload(
+        *, tenant_key: str, owner_payload: list[dict[str, str]], include_name: bool
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "displayName": f"PillarMesh {tenant_key} data products",
+            "description": _description_with_metadata(
+                "PillarMesh managed tenant data-product domain.",
+                {
+                    "tenant_key": tenant_key,
+                    "tenant_domain_identity": digest(
+                        {
+                            "domain": "pillarmesh-openmetadata-product-domain-v1",
+                            "tenant": tenant_key,
+                        }
+                    ),
+                },
+            ),
+            "domainType": "Consumer-aligned",
+            "owners": owner_payload,
+        }
+        if include_name:
+            payload["name"] = _object_name(tenant_key, "product-domain")
+        return payload
+
+    @staticmethod
+    def _native_product_payload(
+        *,
+        definition: CatalogProductDefinition,
+        domain_name: str,
+        owner_payload: list[dict[str, str]],
+        include_identity: bool,
+    ) -> dict[str, object]:
+        payload: dict[str, object] = {
+            "displayName": definition.name,
+            "description": _description_with_metadata(
+                definition.description,
+                {
+                    "definition_digest": digest(definition),
+                    "materialization_receipt_digest": definition.materialization_receipt_digest,
+                    "snapshot_external_key": definition.stable_external_key,
+                    "tenant_key": definition.tenant_id,
+                },
+            ),
+            "owners": owner_payload,
+            "dataProductType": "ANALYTIC_VIEW",
+            "visibility": "PRIVATE",
+        }
+        if include_identity:
+            payload["name"] = _object_name(definition.tenant_id, definition.stable_external_key)
+            payload["domains"] = [domain_name]
+        return payload
+
+    def _ensure_immutable_native_entity(
+        self,
+        *,
+        collection: Literal["domains", "dataProducts"],
+        name: str,
+        lookup_name: str,
+        payload: Mapping[str, object],
+    ) -> _EntityResponse:
+        try:
+            return self._get_entity(
+                collection,
+                lookup_name,
+                expected_name=name,
+                expected_fqn=lookup_name,
+                fields=("owners", "domains") if collection == "dataProducts" else ("owners",),
+            )
+        except _ObjectNotFoundError:
+            response = self._request("PUT", f"/api/v1/{collection}", json_payload=dict(payload))
+        return self._validated_entity_identity(
+            self._entity(collection, response),
+            expected_name=name,
+            expected_fqn=lookup_name,
+        )
+
+    @classmethod
+    def _native_domain_matches(
+        cls, *, domain: _EntityResponse, payload: Mapping[str, object]
+    ) -> bool:
+        return (
+            isinstance(domain, _DomainResponse)
+            and domain.display_name == payload["displayName"]
+            and domain.description == payload["description"]
+            and domain.domain_type == payload["domainType"]
+            and cls._entity_owners_match(entity=domain, expected_owners=payload["owners"])
+        )
+
+    @classmethod
+    def _native_product_matches(
+        cls,
+        *,
+        product: _EntityResponse,
+        payload: Mapping[str, object],
+        domain_name: str,
+    ) -> bool:
+        return (
+            isinstance(product, _DataProductResponse)
+            and product.display_name == payload["displayName"]
+            and product.description == payload["description"]
+            and product.data_product_type == payload["dataProductType"]
+            and product.visibility == payload["visibility"]
+            and len(product.domains) == 1
+            and cls._reference_matches_identity(
+                product.domains[0], expected_name=domain_name, expected_type="domain"
+            )
+            and cls._entity_owners_match(entity=product, expected_owners=payload["owners"])
+        )
+
+    @staticmethod
+    def _entity_owners_match(*, entity: _GovernedEntityResponse, expected_owners: object) -> bool:
+        if not isinstance(expected_owners, list) or len(expected_owners) != 1:
+            return False
+        expected_owner = expected_owners[0]
+        return (
+            isinstance(expected_owner, dict)
+            and entity.owners is not None
+            and len(entity.owners) == 1
+            and entity.owners[0].id == expected_owner.get("id")
+            and entity.owners[0].type == expected_owner.get("type")
+        )
 
     def ensure_classification(
         self,
@@ -1357,7 +2328,8 @@ class OpenMetadataClient:
         with suppress(_ObjectNotFoundError):
             response = self._request(
                 "DELETE",
-                f"/api/v1/{collection}/{identifier}?recursive=true&hardDelete=true",
+                f"/api/v1/{_entity_endpoint(collection)}/{identifier}"
+                "?recursive=true&hardDelete=true",
             )
             self._validated_operation_entity(
                 collection=collection,
@@ -1394,7 +2366,7 @@ class OpenMetadataClient:
                 classification="invalid_request",
             )
         try:
-            response = self._get(f"/api/v1/{collection}/{identifier}")
+            response = self._get(f"/api/v1/{_entity_endpoint(collection)}/{identifier}")
         except _ObjectNotFoundError:
             return True
         self._validated_operation_entity(
@@ -1810,7 +2782,7 @@ class OpenMetadataClient:
     ) -> _EntityResponse:
         entity = self._entity(
             collection,
-            self._get(f"/api/v1/{collection}/name/{name}", fields=fields),
+            self._get(f"/api/v1/{_entity_endpoint(collection)}/name/{name}", fields=fields),
         )
         return self._validated_entity_identity(
             entity,
@@ -2309,6 +3281,92 @@ class OpenMetadataClient:
             "OpenMetadata password change response failed provider validation",
             classification="permanent",
         )
+
+
+_NATIVE_COLUMN_DATA_TYPES = frozenset(
+    {
+        "NUMBER",
+        "TINYINT",
+        "SMALLINT",
+        "INT",
+        "BIGINT",
+        "BYTEINT",
+        "BYTES",
+        "FLOAT",
+        "DOUBLE",
+        "DECIMAL",
+        "NUMERIC",
+        "TIMESTAMP",
+        "TIMESTAMPZ",
+        "TIME",
+        "DATE",
+        "DATETIME",
+        "INTERVAL",
+        "STRING",
+        "MEDIUMTEXT",
+        "TEXT",
+        "CHAR",
+        "LONG",
+        "VARCHAR",
+        "BOOLEAN",
+        "BINARY",
+        "VARBINARY",
+        "ARRAY",
+        "BLOB",
+        "MAP",
+        "STRUCT",
+        "UNION",
+        "SET",
+        "GEOGRAPHY",
+        "ENUM",
+        "JSON",
+        "UUID",
+        "VARIANT",
+        "GEOMETRY",
+        "BYTEA",
+        "XML",
+        "UNKNOWN",
+        "CIDR",
+        "INET",
+        "IPV4",
+        "IPV6",
+    }
+)
+
+
+def _entity_endpoint(collection: str) -> str:
+    if collection == "databaseServices":
+        return "services/databaseServices"
+    return collection
+
+
+def _native_database_service_type(
+    warehouse_provider: Literal["postgresql", "clickhouse"],
+) -> Literal["Postgres", "Clickhouse"]:
+    if warehouse_provider == "postgresql":
+        return "Postgres"
+    return "Clickhouse"
+
+
+def _native_column_data_type(type_name: str) -> tuple[str, str]:
+    normalized = type_name.upper()
+    if normalized in _NATIVE_COLUMN_DATA_TYPES:
+        return normalized, normalized.lower()
+    return "UNKNOWN", type_name
+
+
+def _entity_reference_fqns(
+    references: tuple[_EntityReference, ...] | None,
+) -> tuple[str, ...]:
+    if references is None or any(
+        reference.fully_qualified_name is None for reference in references
+    ):
+        return ()
+    return tuple(
+        reference.fully_qualified_name
+        for reference in references
+        if reference.fully_qualified_name is not None
+    )
 
 
 def _description_with_metadata(description: str, metadata: Mapping[str, str]) -> str:

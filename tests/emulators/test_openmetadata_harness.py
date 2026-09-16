@@ -120,6 +120,30 @@ def test_core_catalog_services_have_memory_budgets_and_restart_supervision(
         assert int(service["mem_limit"]) >= 512 * 1024 * 1024
 
 
+def test_elasticsearch_has_headroom_beyond_its_managed_heap(
+    compose_config: dict[str, object],
+) -> None:
+    services = compose_config["services"]
+    assert isinstance(services, dict)
+    elasticsearch = services["elasticsearch"]
+    assert isinstance(elasticsearch, dict)
+
+    assert elasticsearch["environment"]["ES_JAVA_OPTS"] == "-Xms512m -Xmx512m"
+    assert int(elasticsearch["mem_limit"]) >= 1536 * 1024 * 1024
+
+
+def test_openmetadata_server_has_headroom_for_restored_search_rebuild(
+    compose_config: dict[str, object],
+) -> None:
+    services = compose_config["services"]
+    assert isinstance(services, dict)
+    server = services["openmetadata-server"]
+    assert isinstance(server, dict)
+
+    assert server["environment"]["JAVA_OPTS"] == "-Xms512m -Xmx1024m"
+    assert int(server["mem_limit"]) >= 2048 * 1024 * 1024
+
+
 def test_search_health_requires_a_non_red_cluster_and_is_loopback_observable(
     compose_config: dict[str, object],
 ) -> None:

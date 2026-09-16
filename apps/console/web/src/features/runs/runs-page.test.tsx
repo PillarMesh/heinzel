@@ -1,4 +1,5 @@
 import {render, screen, waitFor} from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import {expect, test, vi} from "vitest"
 
 import type {ConsoleEnvelopeRunsView, RunView} from "../../api/generated"
@@ -20,13 +21,20 @@ const run: RunView = {
   updated_at: "2026-09-01T13:00:00Z",
 }
 
-test("a witnessed run is listed with the contract it ran under", async () => {
+test("a witnessed run keeps internal identifiers behind technical details", async () => {
   const client = {getRuns: vi.fn().mockResolvedValue(envelope([run]))}
+  const user = userEvent.setup()
 
   render(<RunsPage client={client} />)
 
-  await waitFor(() => expect(screen.getByText("run-000000000000000000000001")).toBeVisible())
-  expect(screen.getByText(/a{12}/)).toBeVisible()
+  await waitFor(() => expect(screen.getByRole("heading", {name: "Succeeded run"})).toBeVisible())
+  expect(screen.queryByText("run-000000000000000000000001")).not.toBeVisible()
+  expect(screen.queryByText(/a{64}/)).not.toBeVisible()
+
+  await user.click(screen.getByText("Technical details"))
+
+  expect(screen.getByText("run-000000000000000000000001")).toBeVisible()
+  expect(screen.getByText(/a{64}/)).toBeVisible()
 })
 
 test("a tenant with no runs is told so rather than shown an empty frame", async () => {

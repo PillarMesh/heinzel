@@ -10,20 +10,46 @@ them.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
 
+from pillarmesh_access_control import (
+    AccessGrant,
+    AccessGrantDenied,
+    AccessGrantIntegrityError,
+    AccessGrantStaleRevision,
+    EntitlementPermission,
+)
+from pillarmesh_bi_control import (
+    DashboardAccessAuthorityError,
+    DashboardAccessAuthorization,
+    DashboardPublication,
+)
 from pillarmesh_catalog_control import (
     CatalogBinding,
     CatalogControlService,
     CatalogPersistenceError,
 )
-from pillarmesh_contract_model import ArtifactReference
-from pillarmesh_contract_service import AcquisitionContractLifecycleRepository
+from pillarmesh_contract_model import (
+    ArtifactModel,
+    ArtifactReference,
+    canonical_bytes,
+)
+from pillarmesh_contract_model import (
+    digest as canonical_digest,
+)
+from pillarmesh_contract_service import (
+    AcquisitionContractLifecycleRepository,
+    BusinessProcessManifest,
+    ProcessPackageReceipt,
+    ProcessPackageSnapshot,
+)
 from pillarmesh_evidence import AcquisitionEvidenceReceipt, RunRecord
+from pillarmesh_provider_sdk import CatalogProductDefinition
 from pillarmesh_request_management import (
+    ApprovedProductIntent,
     ArchitectRequestView,
     ClarifiedOutcomeStatement,
     ConversationAuthorRole,
@@ -39,13 +65,42 @@ from pillarmesh_request_management import (
     FulfillmentPolicySnapshot,
     FulfillmentProposal,
     FulfillmentStaleRevision,
+    GovernedAnswer,
     InboxRequest,
+    ProductIntent,
+    ProductIntentCandidate,
+    ProductIntentConstraints,
+    ProductIntentNoValidPlan,
     RequesterRequestView,
+    ReviewerRequestView,
     TransitionEvent,
 )
 from pillarmesh_request_management.intake import RequestDigestMismatch
+from pillarmesh_runtime import (
+    AcquisitionAuthorizationError,
+    AcquisitionContractError,
+    AcquisitionIntegrityError,
+    AcquisitionOwnershipError,
+    AcquisitionPreparationResult,
+    AcquisitionStaleRevision,
+    AcquisitionThrottledError,
+    AcquisitionTransientError,
+    AnswerExecutionReceipt,
+    AnswerResultSnapshot,
+)
 from pillarmesh_semantic_registry import OntologyReviewBundle, SemanticPersistenceError
 from pillarmesh_semantic_registry.review import ReviewItemDecision
+from pillarmesh_state import (
+    IncidentConflictError,
+    IncidentIntegrityError,
+    IncidentNotFoundError,
+    IncidentPersistenceError,
+    IncidentRecord,
+    RecoveryActionEvidence,
+    RecoveryActionNotAllowedError,
+    RecoveryCommand,
+    StaleIncidentRevisionError,
+)
 from pillarmesh_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
@@ -58,9 +113,9 @@ from pillarmesh_warehouse_control import (
     WarehouseProviderError,
 )
 from pillarmesh_warehouse_control.repository import WarehouseRepository
-from pydantic import ValidationError
+from pydantic import Field, ValidationError, field_validator
 
-from .contracts import ActorRole
+from .contracts import AcquisitionModeView, ActorRole, ImpactView
 from .errors import (
     ConsoleConflict,
     ConsoleError,
@@ -177,6 +232,18 @@ class WarehouseOperationReader(Protocol):
     ) -> PrivateWarehouseOperation | None: ...
 
 
+class TenantIncidentReader(Protocol):
+    def list_current(self, tenant_id: str) -> tuple[IncidentRecord, ...]: ...
+
+    def list_recovery_evidence(
+        self, tenant_id: str, incident_id: str
+    ) -> tuple[RecoveryActionEvidence, ...]: ...
+
+
+class IncidentRecoveryCommands(Protocol):
+    def execute(self, command: RecoveryCommand) -> RecoveryActionEvidence: ...
+
+
 class CatalogBindingReader(Protocol):
     def current_binding(self, tenant_id: str) -> CatalogBinding | None: ...
 
@@ -187,6 +254,12 @@ class CatalogSearchHealthReader(Protocol):
     def search_ready(self, tenant_id: str) -> bool: ...
 
 
+class DashboardPublicationReader(Protocol):
+    """Reads only dashboards whose desired state has a matching provider receipt."""
+
+    def list_publications(self, tenant_id: str) -> tuple[DashboardPublication, ...]: ...
+
+
 class SemanticReviewReader(Protocol):
     def load_review_bundle(self, tenant_id: str, bundle_id: str) -> OntologyReviewBundle: ...
 
@@ -195,6 +268,71 @@ class RequestInboxReader(Protocol):
     def list_inbox(self, tenant_id: str) -> tuple[InboxRequest, ...]: ...
 
     def get(self, tenant_id: str, request_id: str) -> InboxRequest: ...
+
+
+class AccessGrantReader(Protocol):
+    """Reads access-control's current grant for one tenant-qualified request."""
+
+    def load_current_for_request(self, tenant_id: str, request_id: str) -> AccessGrant | None: ...
+
+
+class AccessGrantRevocationCommands(Protocol):
+    def revoke_for_request(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+        reason: str,
+    ) -> AccessGrant: ...
+
+
+class RequestImpactReader(Protocol):
+    def get_request_impact(
+        self,
+        *,
+        tenant_id: str,
+        actor_id: str,
+        active_role: ActorRole,
+        request_id: str,
+    ) -> ImpactView | None: ...
+
+
+class ProductIntentReviewReader(Protocol):
+    def current_candidate(
+        self, tenant_id: str, request_id: str
+    ) -> ProductIntentCandidate | None: ...
+
+
+class ProductIntentApprovalCommands(Protocol):
+    def approve(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        request_revision: int,
+        approved_by: str,
+        intent: ProductIntent,
+        constraints: ProductIntentConstraints,
+    ) -> ApprovedProductIntent | ProductIntentNoValidPlan: ...
+
+    def list_for_request(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[ApprovedProductIntent, ...]: ...
+
+
+class ProcessPackageCommands(Protocol):
+    def upload(
+        self,
+        tenant_id: str,
+        original: bytes,
+        media_type: str,
+        manifest: BusinessProcessManifest,
+        uploader_id: str,
+    ) -> ProcessPackageReceipt: ...
+
+    def latest(self, tenant_id: str) -> ProcessPackageSnapshot | None: ...
 
 
 class TenantRunReader(Protocol):
@@ -213,6 +351,93 @@ class TenantAcquisitionReceiptReader(Protocol):
     def list_acquisition_receipts(
         self, tenant_id: str
     ) -> tuple[AcquisitionEvidenceReceipt, ...]: ...
+
+
+class AcquisitionRunNowCommands(Protocol):
+    """The exact command surface published by the acquisition application."""
+
+    def run_now(
+        self,
+        *,
+        tenant_id: str,
+        contract_ref: str,
+        trigger_window: str,
+        acquisition_mode: AcquisitionModeView,
+    ) -> AcquisitionPreparationResult: ...
+
+
+class VerifiedAnswerReader(Protocol):
+    def read_for_request(
+        self, *, tenant_id: str, requester_id: str, request_id: str
+    ) -> GovernedAnswer: ...
+
+    def read_for_download(
+        self, *, tenant_id: str, requester_id: str, request_id: str
+    ) -> GovernedAnswer: ...
+
+
+class AnswerResultReader(Protocol):
+    def load_execution(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[str, AnswerExecutionReceipt] | None: ...
+
+    def read_result(self, tenant_id: str, result_ref: str) -> AnswerResultSnapshot: ...
+
+
+class AnswerDownloadReceipt(ArtifactModel):
+    download_id: str = Field(min_length=1)
+    tenant_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    actor_id: str = Field(min_length=1)
+    result_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    row_count: int = Field(ge=0)
+    created_at: datetime
+
+    @field_validator("created_at")
+    @classmethod
+    def created_at_is_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("download receipt timestamp must be timezone-aware UTC")
+        return value.astimezone(UTC)
+
+
+class AnswerDownloadReceiptWriter(Protocol):
+    def record(self, receipt: AnswerDownloadReceipt) -> None: ...
+
+
+class SQLiteAnswerDownloadReceiptRepository:
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS answer_download_receipts ("
+            "download_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, request_id TEXT NOT NULL, "
+            "created_at TEXT NOT NULL, payload BLOB NOT NULL)"
+        )
+        self._connection.commit()
+
+    def record(self, receipt: AnswerDownloadReceipt) -> None:
+        with self._connection:
+            self._connection.execute(
+                "INSERT INTO answer_download_receipts "
+                "(download_id, tenant_id, request_id, created_at, payload) VALUES (?, ?, ?, ?, ?)",
+                (
+                    receipt.download_id,
+                    receipt.tenant_id,
+                    receipt.request_id,
+                    receipt.created_at.isoformat(),
+                    canonical_bytes(receipt),
+                ),
+            )
+
+    def list_for_request(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[AnswerDownloadReceipt, ...]:
+        rows = self._connection.execute(
+            "SELECT payload FROM answer_download_receipts "
+            "WHERE tenant_id = ? AND request_id = ? ORDER BY created_at, download_id",
+            (tenant_id, request_id),
+        ).fetchall()
+        return tuple(AnswerDownloadReceipt.model_validate_json(row[0]) for row in rows)
 
 
 class DerivedTenantRunReader:
@@ -254,6 +479,14 @@ class EvidenceRunReader(Protocol):
 
 class DataProductReferenceReader(Protocol):
     def permitted_references(self, tenant_id: str) -> tuple[ArtifactReference, ...]: ...
+
+
+class ProductPublicationDefinitionReader(Protocol):
+    """Reads the owning publication definition for an already permitted product."""
+
+    def definition_for_reference(
+        self, *, tenant_id: str, product_ref: ArtifactReference
+    ) -> CatalogProductDefinition | None: ...
 
 
 class PolicyPermittedDataProductReader:
@@ -322,6 +555,15 @@ class FulfillmentViewReader(Protocol):
     def architect_view(
         self, *, tenant_id: str, request_id: str, actor_id: str
     ) -> ArchitectRequestView: ...
+
+    def reviewer_view(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        authority_ref: str,
+    ) -> ReviewerRequestView: ...
 
 
 class WarehouseControlBindingReader:
@@ -499,6 +741,15 @@ class FulfillmentPreparationCommands(Protocol):
         expected_revision: int,
     ) -> FulfillmentOutcomeResult: ...
 
+    def propose_access(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> FulfillmentOutcomeResult: ...
+
     def submit_proposal(
         self,
         *,
@@ -550,6 +801,103 @@ class FulfillmentExecutionCommands(Protocol):
         actor_id: str,
         expected_revision: int,
     ) -> object: ...
+
+
+class FulfillmentAccessExecutionCommands(Protocol):
+    def execute_access(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> object: ...
+
+
+class AccessGrantCommands(Protocol):
+    def apply(self, *, tenant_id: str, request_id: str, grant_id: str) -> object: ...
+
+    def authorize(
+        self,
+        *,
+        tenant_id: str,
+        grant_id: str,
+        principal_ref: str,
+        purpose: str,
+        permission: EntitlementPermission,
+        product_version_ref: ArtifactReference,
+    ) -> AccessGrant: ...
+
+
+class DashboardAccessControlAuthority:
+    """Translate access-control's current decision into BI-control's narrow contract."""
+
+    def __init__(
+        self,
+        *,
+        commands: AccessGrantCommands,
+        clock: Callable[[], datetime],
+    ) -> None:
+        self._commands = commands
+        self._clock = clock
+
+    def authorize(
+        self,
+        *,
+        tenant_id: str,
+        authorization_id: str,
+        principal_ref: str,
+        purpose: str,
+        dashboard_id: str,
+        dashboard_version: int,
+        data_product_version_ref: ArtifactReference,
+    ) -> DashboardAccessAuthorization | None:
+        try:
+            grant = self._commands.authorize(
+                tenant_id=tenant_id,
+                grant_id=authorization_id,
+                principal_ref=principal_ref,
+                purpose=purpose,
+                permission="dashboard",
+                product_version_ref=data_product_version_ref,
+            )
+        except AccessGrantDenied:
+            return None
+        except Exception as error:
+            raise DashboardAccessAuthorityError("access-control unavailable") from error
+        if (
+            grant.grant_id != authorization_id
+            or grant.tenant_id != tenant_id
+            or grant.principal_ref != principal_ref
+            or grant.purpose != purpose
+            or grant.purpose_digest != canonical_digest(purpose)
+            or grant.data_product_version_ref != data_product_version_ref
+            or grant.access_mode != "dashboard"
+            or grant.state != "active"
+            or "dashboard" not in grant.permissions
+        ):
+            return None
+        verified_at = self._clock()
+        if verified_at.tzinfo is None or verified_at.utcoffset() != timedelta(0):
+            raise DashboardAccessAuthorityError("access-control unavailable")
+        try:
+            return DashboardAccessAuthorization(
+                authorization_id=grant.grant_id,
+                revision=grant.revision,
+                state=grant.state,
+                tenant_id=grant.tenant_id,
+                access_request_id=grant.request_id,
+                dashboard_id=dashboard_id,
+                dashboard_version=dashboard_version,
+                data_product_version_ref=grant.data_product_version_ref,
+                principal_ref=grant.principal_ref,
+                purpose_digest=grant.purpose_digest,
+                effective_at=grant.effective_at,
+                expires_at=grant.expires_at,
+                verified_at=verified_at.astimezone(UTC),
+            )
+        except ValueError as error:
+            raise DashboardAccessAuthorityError("access-control unavailable") from error
 
 
 class SemanticReviewCommands(Protocol):
@@ -646,13 +994,29 @@ def classify_downstream_failure(error: Exception) -> DownstreamClassification:
     """
     if isinstance(error, FulfillmentStaleRevision):
         return "conflict"
+    if isinstance(error, AcquisitionStaleRevision):
+        return "conflict"
+    if isinstance(
+        error,
+        (
+            AccessGrantStaleRevision,
+            StaleIncidentRevisionError,
+            IncidentConflictError,
+            RecoveryActionNotAllowedError,
+        ),
+    ):
+        return "conflict"
     if isinstance(
         error,
         (
             FulfillmentNotVisible,
+            AccessGrantDenied,
             FulfillmentOwnershipError,
             FulfillmentAuthorityError,
+            AcquisitionOwnershipError,
+            AcquisitionAuthorizationError,
             PermissionError,
+            IncidentNotFoundError,
         ),
     ):
         # An authority failure answers exactly as an unknown object does, so a probe
@@ -666,10 +1030,22 @@ def classify_downstream_failure(error: Exception) -> DownstreamClassification:
             SemanticPersistenceError,
             sqlite3.Error,
             OSError,
+            IncidentPersistenceError,
+            AcquisitionTransientError,
+            AcquisitionThrottledError,
         ),
     ):
         return "unavailable"
-    if isinstance(error, ValidationError):
+    if isinstance(
+        error,
+        (
+            ValidationError,
+            AccessGrantIntegrityError,
+            IncidentIntegrityError,
+            AcquisitionContractError,
+            AcquisitionIntegrityError,
+        ),
+    ):
         # A persisted artifact did not match its own model. Reloading cannot help,
         # and calling it a conflict tells the operator to retry forever. Pydantic's
         # ValidationError subclasses ValueError, so this arm must precede it.

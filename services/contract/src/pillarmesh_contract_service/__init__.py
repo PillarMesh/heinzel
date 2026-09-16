@@ -1,4 +1,6 @@
 from .acquisition_lifecycle import (
+    AcquisitionContractActivationConflictError,
+    AcquisitionContractActivationDeniedError,
     AcquisitionContractLifecycleNotFoundError,
     AcquisitionContractLifecycleRepository,
     SQLiteAcquisitionContractLifecycleRepository,
@@ -13,7 +15,14 @@ from .formation import (
     IntegrationContractFormationService,
 )
 from .models import AcquisitionContractLifecycleState, ActivationSummary
-from .process_models import BusinessProcessManifest, ProcessPackageReceipt
+from .process_models import (
+    AcquisitionActivationApproval,
+    ActivatedAcquisitionContract,
+    ActivatedAcquisitionContractRecord,
+    BusinessProcessManifest,
+    ProcessPackageReceipt,
+    ProcessPackageSnapshot,
+)
 from .process_service import (
     ProcessPackageRepository,
     ProcessPackageService,
@@ -26,13 +35,24 @@ from .service import (
     ObservableProvider,
     observation_fingerprint,
 )
-from .source_observation import SourceObservation, SQLiteSourceObservationRepository
+from .source_observation import (
+    SourceFreshnessObservation,
+    SourceObservation,
+    SQLiteSourceFreshnessObservationRepository,
+    SQLiteSourceObservationRepository,
+    ValidatedSourceBinding,
+)
 
 __all__ = [
+    "AcquisitionActivationApproval",
+    "AcquisitionContractActivationConflictError",
+    "AcquisitionContractActivationDeniedError",
     "AcquisitionContractAuthorityInvalidator",
     "AcquisitionContractLifecycleNotFoundError",
     "AcquisitionContractLifecycleRepository",
     "AcquisitionContractLifecycleState",
+    "ActivatedAcquisitionContract",
+    "ActivatedAcquisitionContractRecord",
     "ActivationSummary",
     "BusinessProcessManifest",
     "ContractAuthorityBoundaryError",
@@ -47,10 +67,14 @@ __all__ = [
     "ProcessPackageReceipt",
     "ProcessPackageRepository",
     "ProcessPackageService",
+    "ProcessPackageSnapshot",
     "SQLiteAcquisitionContractLifecycleRepository",
     "SQLiteProcessPackageRepository",
+    "SQLiteSourceFreshnessObservationRepository",
     "SQLiteSourceObservationRepository",
+    "SourceFreshnessObservation",
     "SourceObservation",
     "StaleAcquisitionContractLifecycleError",
+    "ValidatedSourceBinding",
     "observation_fingerprint",
 ]

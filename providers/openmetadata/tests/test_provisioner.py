@@ -25,6 +25,7 @@ from pillarmesh_catalog_control import (
 from pillarmesh_catalog_control.repository import CatalogPersistenceError
 from pillarmesh_contract_model import digest
 from pillarmesh_provider_openmetadata import (
+    CORE_UPSTREAM_IMAGES,
     UPSTREAM_IMAGES,
     CatalogObjectRef,
     CatalogObjectSnapshot,
@@ -474,6 +475,20 @@ class DependencyAwareCleanupClient(ReadyClient):
             )
         ):
             raise RuntimeError("service account cleanup must follow owned resources")
+        super().delete_recorded_resource(collection=collection, identifier=identifier)
+
+
+class TransientDeletionFailureClient(ReadyClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.fail_next_deletion = True
+
+    def delete_recorded_resource(self, *, collection: str, identifier: str) -> None:
+        if self.fail_next_deletion:
+            self.fail_next_deletion = False
+            raise CatalogProviderError(
+                "provider temporarily unavailable", classification="transient"
+            )
         super().delete_recorded_resource(collection=collection, identifier=identifier)
 
 
@@ -1106,7 +1121,7 @@ def test_restore_uses_the_root_password_inside_the_mysql_container(
     assert "SET GLOBAL local_infile=OFF" in restore_command
 
 
-def test_restore_readiness_waits_for_an_authenticated_mysql_query(
+def test_restore_readiness_waits_for_the_non_bootstrap_tcp_listener(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1120,9 +1135,7 @@ def test_restore_readiness_waits_for_an_authenticated_mysql_query(
 
     controller(tmp_path)._wait_for_mysql("project-a", environment=compose_environment())
 
-    assert commands[0][-1] == (
-        'exec mysql --user=root --password="$MYSQL_ROOT_PASSWORD" --silent --execute "SELECT 1"'
-    )
+    assert commands[0][-1] == ("exec mysqladmin --protocol=TCP --host=127.0.0.1 ping >/dev/null")
 
 
 def test_search_rebuild_runs_the_pinned_openmetadata_cli_to_terminal_completion(
@@ -1275,7 +1288,7 @@ def test_compose_controller_observes_the_exact_pinned_image_set(
     tmp_path: Path,
 ) -> None:
     compose = controller(tmp_path)
-    images = tuple(sorted(UPSTREAM_IMAGES))
+    images = tuple(sorted(CORE_UPSTREAM_IMAGES))
     monkeypatch.setattr(
         compose,
         "discover_resources",
@@ -1296,6 +1309,31 @@ def test_compose_controller_observes_the_exact_pinned_image_set(
     )
 
     assert observed_digest == digest(images)
+
+
+def test_compose_controller_rejects_an_unconfigured_profile_image(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    compose = controller(tmp_path)
+    images = tuple(sorted(UPSTREAM_IMAGES))
+    monkeypatch.setattr(
+        compose,
+        "discover_resources",
+        lambda **_: tuple(
+            SimpleNamespace(resource_kind="container", identifier=f"container-{index}")
+            for index, _ in enumerate(images)
+        ),
+    )
+    by_container = {f"container-{index}": image for index, image in enumerate(images)}
+
+    def inspect_image(command: list[str], **kwargs: object) -> _FinishedDockerProcess:
+        return _FinishedDockerProcess(stdout=json.dumps(by_container[command[-1]]).encode())
+
+    monkeypatch.setattr(subprocess, "Popen", inspect_image)
+
+    with pytest.raises(RuntimeError, match="image set differs"):
+        compose.verify_pinned_images(project_name="project-a", environment=compose_environment())
 
 
 def test_compose_controller_preserves_explicit_docker_caller_config_without_ambient_secrets(
@@ -1978,6 +2016,36 @@ def test_compose_down_failure_does_not_advance_project_cleanup_rows() -> None:
         ("users", "runtime-provider-id-tenant-a"),
         ("users", "administrator-provider-id-tenant-a"),
     }
+    repository._connection.close()
+
+
+def test_transient_provider_cleanup_keeps_the_project_retryable() -> None:
+    repository = SQLiteCatalogRepository(":memory:")
+    binding = provisioning_binding(repository)
+    compose = RecordingCompose()
+    client = TransientDeletionFailureClient()
+    provisioner = provisioner_for(repository, compose, client)
+    handle = provisioner.provision(
+        tenant_id="tenant-a",
+        binding_id=binding.binding_id,
+        operation_id="operation-a",
+    )
+
+    with pytest.raises(CatalogProviderError) as captured:
+        provisioner.retire(private_resource_handle=handle, operation_id="operation-a")
+
+    assert captured.value.classification == "transient"
+    assert compose.down_project_names == []
+    assert compose.active_resources()
+
+    provisioner.retire(private_resource_handle=handle, operation_id="operation-a")
+
+    assert compose.down_project_names == compose.project_names
+    assert compose.active_resources() == set()
+    assert all(
+        resource.cleanup_status == "complete"
+        for resource in repository.load_resources("tenant-a", binding.binding_id)
+    )
     repository._connection.close()
 
 

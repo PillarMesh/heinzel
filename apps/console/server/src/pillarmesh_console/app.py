@@ -5,6 +5,7 @@ import os
 import secrets
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
@@ -27,7 +28,13 @@ from .errors import (
     ConsoleUnavailable,
 )
 from .fixture_backend import FixtureConsoleBackend
-from .routes import ContextProvider, RouteDependencies, build_routes, correlation_id
+from .routes import (
+    ContextProvider,
+    RouteDependencies,
+    build_routes,
+    correlation_id,
+    normalized_https_origin,
+)
 
 _LOGGER = logging.getLogger(__name__)
 _CONTENT_SECURITY_POLICY = "default-src 'self'; img-src 'self'; frame-src 'self'"
@@ -103,6 +110,7 @@ def create_app(
     backend: ConsoleBackend | None = None,
     context_provider: ContextProvider | None = None,
     allowed_origin: str | None = None,
+    managed_link_origin: str | None = None,
     dist_directory: Path | str | None = None,
 ) -> Starlette:
     """Build the console application.
@@ -116,12 +124,33 @@ def create_app(
     given. The launch scripts advertise a configurable port, and an origin fixed
     at the default one leaves every read working while every command is refused
     `same_origin_required` - a misconfiguration that reads as a broken product.
+
+    `managed_link_origin` enables redirects to one explicitly configured HTTPS
+    origin. It follows `PILLARMESH_CONSOLE_MANAGED_LINK_ORIGIN` when omitted and
+    remains disabled when neither value is present.
     """
     selected_origin = (
         allowed_origin
         or os.environ.get("PILLARMESH_CONSOLE_ALLOWED_ORIGIN")
         or _DEFAULT_ALLOWED_ORIGIN
     )
+    configured_managed_link_origin = (
+        managed_link_origin
+        if managed_link_origin is not None
+        else os.environ.get("PILLARMESH_CONSOLE_MANAGED_LINK_ORIGIN")
+    )
+    selected_managed_link_origin: str | None = None
+    if configured_managed_link_origin is not None:
+        selected_managed_link_origin = normalized_https_origin(configured_managed_link_origin)
+        if selected_managed_link_origin is None:
+            raise ValueError("managed link origin must be an HTTPS origin")
+        parsed_managed_link_origin = urlsplit(configured_managed_link_origin)
+        if (
+            parsed_managed_link_origin.path not in ("", "/")
+            or "?" in configured_managed_link_origin
+            or "#" in configured_managed_link_origin
+        ):
+            raise ValueError("managed link origin must be an HTTPS origin")
     selected_backend = backend or FixtureConsoleBackend()
     dependencies = RouteDependencies(
         backend=selected_backend,
@@ -129,6 +158,7 @@ def create_app(
         csrf_tokens=SessionCsrfTokens(),
         in_flight_commands=InFlightCommandKeys(),
         allowed_origin=selected_origin,
+        managed_link_origin=selected_managed_link_origin,
     )
     routes: list[BaseRoute] = [Route("/healthz", endpoint=_health, methods=["GET"])]
     api_routes = build_routes(dependencies)
@@ -161,6 +191,7 @@ def create_app(
         routes.append(Mount("/", app=_BrowserAssets(directory=resolved_dist, html=True)))
     app = Starlette(routes=routes)
     app.state.allowed_origin = selected_origin
+    app.state.managed_link_origin = selected_managed_link_origin
 
     async def console_error_handler(request: Request, exception: Exception) -> JSONResponse:
         error = exception

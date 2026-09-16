@@ -4,7 +4,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from functools import wraps
 
-from pillarmesh_contract_model import ArtifactModel, ArtifactReference, digest
+from pillarmesh_contract_model import (
+    ArtifactModel,
+    ArtifactReference,
+    ImpactAdmissionBinding,
+    ImpactAuthoritySnapshot,
+    digest,
+)
+from pydantic import ValidationError
 
 from .fulfillment_errors import (
     FulfillmentAuthorityError,
@@ -14,12 +21,17 @@ from .fulfillment_errors import (
     FulfillmentOwnershipError,
     FulfillmentPolicyError,
     FulfillmentStaleRevision,
+    ImpactAdmissionResolutionError,
 )
 from .fulfillment_models import (
+    AccessGrantAdmissionBinding,
+    AccessGrantDeliveryObservation,
     AccessScopePreview,
+    ApprovalRequirement,
     ClarifiedOutcomeStatement,
     DenialDispositionReceipt,
     DisclosureDenial,
+    FulfillmentAccessDeliveryReceipt,
     FulfillmentAdmissionReceipt,
     FulfillmentApprovalBinding,
     FulfillmentDecision,
@@ -41,11 +53,14 @@ from .fulfillment_policy import (
 )
 from .fulfillment_protocols import (
     AccessCandidateProvider,
+    AccessGrantActivationReader,
+    AccessGrantAdmissionResolver,
     AnswerCandidateProvider,
     AnswerExecutionProvider,
     AuthorityRoleResolver,
     DataProductOwnerResolver,
     FulfillmentSnapshotResolver,
+    ImpactAdmissionResolver,
     ResolutionFailure,
 )
 from .fulfillment_repository import FulfillmentRepository
@@ -88,6 +103,7 @@ def _guard_public_operations[Service: type](service_class: Service) -> Service:
         "revise_proposal",
         "record_approval",
         "admit",
+        "execute_access",
         "execute_answer",
         "deliver_answer",
         "cancel",
@@ -113,6 +129,9 @@ class FulfillmentService:
         access_candidate_provider: AccessCandidateProvider | None = None,
         data_product_owner_resolver: DataProductOwnerResolver | None = None,
         authority_role_resolver: AuthorityRoleResolver | None = None,
+        impact_admission_resolver: ImpactAdmissionResolver | None = None,
+        access_grant_admission_resolver: AccessGrantAdmissionResolver | None = None,
+        access_grant_activation_reader: AccessGrantActivationReader | None = None,
     ) -> None:
         self._request_service = request_service
         self._repository = repository
@@ -124,6 +143,9 @@ class FulfillmentService:
         self._access_candidate_provider = access_candidate_provider
         self._data_product_owner_resolver = data_product_owner_resolver
         self._authority_role_resolver = authority_role_resolver
+        self._impact_admission_resolver = impact_admission_resolver
+        self._access_grant_admission_resolver = access_grant_admission_resolver
+        self._access_grant_activation_reader = access_grant_activation_reader
 
     def clarify_outcome(
         self,
@@ -213,11 +235,12 @@ class FulfillmentService:
             created_at=self._now(),
         )
         if isinstance(compilation, (ProposalCompilation, DenialCompilation)):
+            proposal = self._bind_impact(compilation.proposal)
             try:
                 return self._repository.store_proposal(
                     grounding=grounding,
                     policy=policy,
-                    proposal=compilation.proposal,
+                    proposal=proposal,
                     actor_id=actor_id,
                     expected_revision=expected_revision,
                 )
@@ -317,11 +340,12 @@ class FulfillmentService:
             created_at=self._now(),
         )
         if isinstance(compilation, (ProposalCompilation, DenialCompilation)):
+            proposal = self._bind_impact(compilation.proposal)
             try:
                 return self._repository.store_proposal(
                     grounding=grounding,
                     policy=policy,
-                    proposal=compilation.proposal,
+                    proposal=proposal,
                     actor_id=actor_id,
                     expected_revision=expected_revision,
                 )
@@ -434,6 +458,12 @@ class FulfillmentService:
         if not proposals:
             raise FulfillmentIntegrityError("admission requires a current proposal")
         proposal = proposals[-1]
+        if self._impact_authority_changed(proposal):
+            return self._supersede_proposal(
+                request=request,
+                actor_id=actor_id,
+                expected_revision=expected_revision,
+            )
         policy = self._repository.load_policy_snapshot(tenant_id, proposal.policy_snapshot_digest)
         now = self._now()
         current_policy = None
@@ -515,6 +545,12 @@ class FulfillmentService:
                 )
             selected.append(matches[0])
         approval_ids = tuple(item.approval_id for item in selected)
+        access_grant_binding = self._bind_access_grant_admission(
+            tenant_id=tenant_id,
+            request=request,
+            proposal=proposal,
+            policy=policy if current_policy is None else current_policy,
+        )
         admission = FulfillmentAdmissionReceipt(
             admission_id="pending",
             tenant_id=tenant_id,
@@ -531,6 +567,7 @@ class FulfillmentService:
                 else digest(current_policy)
             ),
             approval_ids=approval_ids,
+            access_grant_binding=access_grant_binding,
             admitted_at=now,
         )
         evidence = FulfillmentEvidenceReceipt(
@@ -557,6 +594,179 @@ class FulfillmentService:
             )
         except StaleRevisionError:
             raise FulfillmentStaleRevision("fulfillment request revision is stale") from None
+
+    def _bind_access_grant_admission(
+        self,
+        *,
+        tenant_id: str,
+        request: InboxRequest,
+        proposal: FulfillmentProposal,
+        policy: FulfillmentPolicySnapshot,
+    ) -> AccessGrantAdmissionBinding | None:
+        subject = proposal.subject
+        if not isinstance(subject, AccessScopePreview):
+            return None
+        resolver = self._access_grant_admission_resolver
+        if resolver is None:
+            raise FulfillmentAuthorityError("access grant admission resolver is not configured")
+        binding = AccessGrantAdmissionBinding.model_validate(
+            resolver.bind(
+                tenant_id=tenant_id,
+                request=request,
+                proposal=proposal,
+                policy=policy,
+            ).model_dump(mode="python"),
+            strict=True,
+        )
+        required_permissions = {
+            "query": {"query", "view"},
+            "dashboard": {"dashboard", "view"},
+            "export": {"download", "view"},
+        }[subject.access_mode]
+        surfaces = {target.surface for target in binding.targets}
+        if (
+            binding.proposal_digest != digest(proposal)
+            or binding.effective_at > self._now()
+            or not required_permissions.issubset(binding.permissions)
+            or not {"result", "warehouse"}.issubset(surfaces)
+            or (subject.access_mode == "dashboard" and "superset" not in surfaces)
+        ):
+            raise FulfillmentAuthorityError("access grant admission authority does not match")
+        return binding
+
+    def execute_access(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> FulfillmentAccessDeliveryReceipt:
+        recorded = self._recorded_access_delivery(tenant_id, request_id, expected_revision)
+        if recorded is not None:
+            return recorded
+        request = self._load_current(tenant_id, request_id, expected_revision)
+        if request.state is not RequestState.EXECUTING or not isinstance(
+            request.payload, DataAccessRequest
+        ):
+            raise FulfillmentIntegrityError("access execution requires an executing access request")
+        proposals = self._repository.list_proposals(tenant_id, request_id)
+        admissions = self._repository.list_admissions(tenant_id, request_id)
+        if not proposals or not admissions:
+            raise FulfillmentIntegrityError("access execution requires an admitted proposal")
+        proposal = proposals[-1]
+        admission = admissions[-1]
+        binding = admission.access_grant_binding
+        if not isinstance(proposal.subject, AccessScopePreview) or binding is None:
+            raise FulfillmentIntegrityError("access execution requires admitted access authority")
+        reader = self._access_grant_activation_reader
+        if reader is None:
+            raise FulfillmentGroundingError("access activation boundary is not configured")
+        try:
+            observation = reader.read_active(
+                tenant_id=tenant_id,
+                request_id=request_id,
+                grant_id=binding.grant_id,
+            )
+        except FulfillmentError:
+            raise
+        except Exception:
+            raise FulfillmentGroundingError(
+                "active access authority could not be verified"
+            ) from None
+        if not isinstance(observation, AccessGrantDeliveryObservation):
+            raise FulfillmentGroundingError("active access authority could not be verified")
+        expected_authority = (
+            binding.grant_id,
+            tenant_id,
+            request_id,
+            digest(proposal),
+            binding.entitlement_snapshot_digest,
+            binding.policy_revision,
+            binding.effective_at,
+            binding.permissions,
+            binding.targets,
+        )
+        observed_authority = (
+            observation.grant_id,
+            observation.tenant_id,
+            observation.request_id,
+            observation.proposal_digest,
+            observation.entitlement_snapshot_digest,
+            observation.policy_revision,
+            observation.effective_at,
+            observation.permissions,
+            observation.targets,
+        )
+        if observed_authority != expected_authority or (
+            observation.expires_at != proposal.subject.expires_at
+            or len(observation.effect_receipt_refs) != len(binding.targets)
+        ):
+            raise FulfillmentAuthorityError("active access authority does not match admission")
+        now = self._now()
+        if not observation.effective_at <= now < observation.expires_at:
+            raise FulfillmentAuthorityError("active access authority is not currently effective")
+        delivery = FulfillmentAccessDeliveryReceipt(
+            delivery_id="pending",
+            tenant_id=tenant_id,
+            request_id=request_id,
+            source_request_revision=expected_revision,
+            resulting_request_revision=expected_revision + 2,
+            admission_id=admission.admission_id,
+            proposal_id=proposal.proposal_id,
+            proposal_revision=proposal.revision,
+            proposal_digest=digest(proposal),
+            access_mode=proposal.subject.access_mode,
+            fields=proposal.subject.effective_fields,
+            effective_at=observation.effective_at,
+            expires_at=observation.expires_at,
+            permissions=observation.permissions,
+            verification_refs=observation.effect_receipt_refs,
+            delivered_at=now,
+        )
+        evidence = FulfillmentEvidenceReceipt(
+            evidence_id="pending",
+            tenant_id=tenant_id,
+            request_id=request_id,
+            request_revision=delivery.resulting_request_revision,
+            outcome="delivered",
+            proposal_id=proposal.proposal_id,
+            proposal_revision=proposal.revision,
+            authority_refs=tuple(item.authority_ref for item in proposal.required_approvals),
+            approval_ids=admission.approval_ids,
+            reason_codes=(),
+            resulting_state=RequestState.DELIVERED,
+            created_at=now,
+        )
+        try:
+            return self._repository.record_access_delivery(
+                delivery=delivery,
+                evidence=evidence,
+                actor_id=actor_id,
+                expected_revision=expected_revision,
+            )
+        except StaleRevisionError:
+            raise FulfillmentStaleRevision("fulfillment request revision is stale") from None
+
+    def _recorded_access_delivery(
+        self, tenant_id: str, request_id: str, expected_revision: int
+    ) -> FulfillmentAccessDeliveryReceipt | None:
+        try:
+            request = self._request_service.get(tenant_id, request_id)
+        except KeyError:
+            raise FulfillmentOwnershipError(
+                "fulfillment request is not owned by this tenant"
+            ) from None
+        if request.state is not RequestState.DELIVERED:
+            return None
+        return next(
+            (
+                delivery
+                for delivery in self._repository.list_access_deliveries(tenant_id, request_id)
+                if delivery.source_request_revision == expected_revision
+            ),
+            None,
+        )
 
     def execute_answer(
         self,
@@ -728,6 +938,72 @@ class FulfillmentService:
                 expected_revision=investigating.revision,
             )
         raise FulfillmentIntegrityError("proposal cannot be superseded for this request type")
+
+    def _bind_impact(self, proposal: FulfillmentProposal) -> FulfillmentProposal:
+        resolver = self._impact_admission_resolver
+        if resolver is None:
+            return proposal
+        try:
+            binding = resolver.bind(tenant_id=proposal.tenant_id, proposal=proposal)
+        except ImpactAdmissionResolutionError:
+            raise FulfillmentGroundingError("impact authority could not be resolved") from None
+        if binding is None:
+            return proposal
+        if not isinstance(binding, ImpactAdmissionBinding):
+            raise FulfillmentGroundingError("impact authority could not be resolved")
+        subject_digest = digest(proposal.subject)
+        requirements_by_authority = {
+            requirement.authority_ref: requirement for requirement in proposal.required_approvals
+        }
+        for requirement in binding.authority_snapshot.derived_approval_requirements:
+            requirements_by_authority.setdefault(
+                requirement.authority_ref,
+                ApprovalRequirement(
+                    authority_ref=requirement.authority_ref,
+                    reason_code=requirement.reason_code,
+                    subject_digest=subject_digest,
+                ),
+            )
+        payload = proposal.model_dump(mode="python")
+        payload.update(
+            {
+                "impact_admission_binding": binding,
+                "required_approvals": tuple(
+                    sorted(
+                        requirements_by_authority.values(),
+                        key=lambda item: item.authority_ref,
+                    )
+                ),
+            }
+        )
+        try:
+            return FulfillmentProposal.model_validate(payload)
+        except ValidationError:
+            raise FulfillmentGroundingError("impact authority could not be resolved") from None
+
+    def _impact_authority_changed(self, proposal: FulfillmentProposal) -> bool:
+        binding = proposal.impact_admission_binding
+        if binding is None:
+            return False
+        resolver = self._impact_admission_resolver
+        if resolver is None:
+            raise FulfillmentGroundingError("impact authority is not configured")
+        try:
+            current = resolver.rederive(
+                tenant_id=proposal.tenant_id,
+                subject=binding.subject,
+                source_record_refs=binding.authority_snapshot.source_record_refs,
+            )
+        except ImpactAdmissionResolutionError:
+            raise FulfillmentGroundingError("impact authority could not be re-derived") from None
+        if not isinstance(current, ImpactAuthoritySnapshot):
+            raise FulfillmentGroundingError("impact authority could not be re-derived")
+        if current.tenant_id != proposal.tenant_id or current.subject != binding.subject:
+            raise FulfillmentGroundingError("impact authority could not be re-derived")
+        # This digest includes canonical source record versions and derived requirements. The
+        # graph digest is intentionally excluded so rebuilding an equivalent projection cannot
+        # alter an owning service's admission decision.
+        return current.authority_digest != binding.authority_snapshot_digest
 
     def cancel(
         self,

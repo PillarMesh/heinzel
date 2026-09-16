@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, TypeAdapter
 from starlette.requests import Request
@@ -24,10 +25,36 @@ class RouteDependencies:
     csrf_tokens: SessionCsrfTokens
     in_flight_commands: InFlightCommandKeys
     allowed_origin: str
+    managed_link_origin: str | None = None
 
     @property
     def provenance(self) -> DataProvenance:
         return "demo_fixture" if self.backend.fixture_mode else "governed_local"
+
+
+def normalized_https_origin(value: str) -> str | None:
+    if "\\" in value or any(character.isspace() for character in value):
+        return None
+    try:
+        parsed = urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return None
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname is None
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        return None
+    hostname = parsed.hostname
+    if not hostname.isascii():
+        return None
+    hostname = hostname.lower()
+    if ":" in hostname:
+        hostname = f"[{hostname}]"
+    port_suffix = "" if port in (None, 443) else f":{port}"
+    return f"https://{hostname}{port_suffix}"
 
 
 def correlation_id(request: Request) -> str:
@@ -108,6 +135,7 @@ __all__ = [
     "build_routes",
     "correlation_id",
     "envelope_response",
+    "normalized_https_origin",
     "path_parameter",
     "trusted_context",
 ]

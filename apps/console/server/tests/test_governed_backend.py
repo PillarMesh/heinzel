@@ -6,18 +6,37 @@ from pathlib import Path
 from typing import Never
 
 import pytest
+from pillarmesh_access_control import (
+    AccessGrant,
+    AccessGrantDenied,
+    AccessGrantIntegrityError,
+    AccessGrantState,
+)
+from pillarmesh_bi_control import DashboardPublication
 from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
 from pillarmesh_console import fixture_backend, fixture_data
 from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.contracts import ActorRole, ResetCommand, WorkspaceView
-from pillarmesh_console.errors import ConsoleNotFound, ConsoleUnavailable
+from pillarmesh_console.contracts import (
+    AccessRevocationCommand,
+    ActorRole,
+    ResetCommand,
+    WorkspaceView,
+)
+from pillarmesh_console.errors import ConsoleConflict, ConsoleNotFound, ConsoleUnavailable
 from pillarmesh_console.governed_adapters import (
+    AccessGrantCommands,
+    AccessGrantReader,
+    AccessGrantRevocationCommands,
     CatalogBindingReader,
     CatalogSearchHealthReader,
+    DashboardPublicationReader,
     DataProductReferenceReader,
     FulfillmentViewReader,
     GovernedWorkspaceIdentity,
+    InMemoryWorkspacePrincipalDirectory,
     PolicyPermittedDataProductReader,
+    ProductPublicationDefinitionReader,
+    RequestImpactReader,
     RequestInboxReader,
     TenantAcquisitionReceiptReader,
     TenantRunReader,
@@ -43,6 +62,12 @@ from pillarmesh_evidence import (
     RunRecord,
     RunState,
 )
+from pillarmesh_provider_sdk import (
+    CatalogColumn,
+    CatalogLineageSource,
+    CatalogProductDefinition,
+    catalog_product_external_key,
+)
 from pillarmesh_request_management import (
     ApprovalRequirement,
     ArchitectRequestView,
@@ -50,6 +75,7 @@ from pillarmesh_request_management import (
     FulfillmentPolicySnapshot,
     FulfillmentProposal,
     InboxRequest,
+    RequesterAccessDeliveryView,
     RequesterRequestView,
     RequestState,
     StakeholderAnswerDraft,
@@ -225,6 +251,78 @@ def _data_access_request(request_id: str, requester_id: str) -> InboxRequest:
     )
 
 
+def _access_grant(state: AccessGrantState, *, tenant_id: str = _TENANT) -> AccessGrant:
+    values: dict[str, object] = {
+        "grant_id": "grant-private-ref",
+        "tenant_id": tenant_id,
+        "request_id": "req-00000000000000000002",
+        "revision": 2,
+        "state": state,
+        "principal_ref": "principal:requester",
+        "purpose": "Analyze regional revenue",
+        "purpose_digest": digest("Analyze regional revenue"),
+        "data_product_version_ref": ArtifactReference(
+            artifact_id="product-revenue", version=1, digest="a" * 64
+        ),
+        "fields": ("net-revenue", "region"),
+        "classification_refs": (),
+        "access_mode": "query",
+        "permissions": ("query", "view"),
+        "effective_at": _FIXED_TIME,
+        "expires_at": _FIXED_TIME + timedelta(days=1),
+        "policy_revision": 1,
+        "admission_receipt_ref": ArtifactReference(
+            artifact_id="admission-access", version=1, digest="b" * 64
+        ),
+        "entitlement_snapshot_digest": "c" * 64,
+        "created_at": _FIXED_TIME,
+        "updated_at": _FIXED_TIME,
+    }
+    if state == "failed":
+        values["failed_action"] = "revoke"
+    return AccessGrant.model_validate(values)
+
+
+class _StaticAccessGrantReader:
+    def __init__(self, grant: AccessGrant | None) -> None:
+        self._grant = grant
+        self.calls: list[tuple[str, str]] = []
+
+    def load_current_for_request(self, tenant_id: str, request_id: str) -> AccessGrant | None:
+        self.calls.append((tenant_id, request_id))
+        if self._grant is None or self._grant.tenant_id != tenant_id:
+            return None
+        return self._grant if self._grant.request_id == request_id else None
+
+
+class _FailingAccessGrantReader:
+    def load_current_for_request(self, tenant_id: str, request_id: str) -> Never:
+        raise AccessGrantIntegrityError("stored grant is invalid")
+
+
+class _MisdirectedAccessGrantReader:
+    def __init__(self, grant: AccessGrant) -> None:
+        self._grant = grant
+
+    def load_current_for_request(self, tenant_id: str, request_id: str) -> AccessGrant:
+        return self._grant
+
+
+class _AccessRevocations:
+    def __init__(self, result: AccessGrant, *, stale: bool = False) -> None:
+        self.result = result
+        self.stale = stale
+        self.calls: list[dict[str, object]] = []
+
+    def revoke_for_request(self, **values: object) -> AccessGrant:
+        self.calls.append(values)
+        if self.stale:
+            from pillarmesh_access_control import AccessGrantStaleRevision
+
+            raise AccessGrantStaleRevision("access grant revision is stale")
+        return self.result
+
+
 def _clarified_outcome(request_id: str) -> ClarifiedOutcomeStatement:
     return ClarifiedOutcomeStatement(
         statement_id="out-00000000000000000001-0123456789abcdef01234567",
@@ -290,9 +388,14 @@ class _RequesterOnlyFulfillmentReader:
     architect projection while composing a requester view."""
 
     def __init__(
-        self, request: InboxRequest, *, no_valid_plan_explanation: str | None = None
+        self,
+        request: InboxRequest,
+        *,
+        delivered_access: RequesterAccessDeliveryView | None = None,
+        no_valid_plan_explanation: str | None = None,
     ) -> None:
         self._request = request
+        self._delivered_access = delivered_access
         self._no_valid_plan_explanation = no_valid_plan_explanation
 
     def requester_view(
@@ -314,12 +417,23 @@ class _RequesterOnlyFulfillmentReader:
             fulfillment_status="in_review",
             denial_explanation=None,
             no_valid_plan_explanation=self._no_valid_plan_explanation,
+            delivered_access=self._delivered_access,
         )
 
     def architect_view(
         self, *, tenant_id: str, request_id: str, actor_id: str
     ) -> ArchitectRequestView:
         raise AssertionError("a requester projection must never read the architect projection")
+
+    def reviewer_view(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        authority_ref: str,
+    ) -> Never:
+        raise AssertionError("a requester projection must never read the reviewer projection")
 
 
 def _backend(
@@ -334,6 +448,13 @@ def _backend(
     runs: TenantRunReader | None = None,
     acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
     data_products: DataProductReferenceReader | None = None,
+    product_publications: ProductPublicationDefinitionReader | None = None,
+    impact_reader: RequestImpactReader | None = None,
+    access_grants: AccessGrantReader | None = None,
+    access_grant_commands: AccessGrantCommands | None = None,
+    access_revocation_commands: AccessGrantRevocationCommands | None = None,
+    dashboards: DashboardPublicationReader | None = None,
+    principals: InMemoryWorkspacePrincipalDirectory | None = None,
 ) -> GovernedConsoleBackend:
     """Inject doubles under the backend's own parameter types.
 
@@ -354,7 +475,197 @@ def _backend(
         runs=runs,
         acquisition_receipts=acquisition_receipts,
         data_products=data_products,
+        product_publications=product_publications,
+        impact_reader=impact_reader,
+        access_grants=access_grants,
+        access_grant_commands=access_grant_commands,
+        access_revocation_commands=access_revocation_commands,
+        dashboards=dashboards,
+        principals=principals,
     )
+
+
+class _DashboardReader:
+    def __init__(self, publications: tuple[DashboardPublication, ...]) -> None:
+        self._publications = publications
+        self.requested_tenants: list[str] = []
+
+    def list_publications(self, tenant_id: str) -> tuple[DashboardPublication, ...]:
+        self.requested_tenants.append(tenant_id)
+        return self._publications if tenant_id == _TENANT else ()
+
+
+def _dashboard_publication(
+    *,
+    dashboard_id: str = "internal:revenue-dashboard",
+    source_request_id: str = "req-00000000000000000002",
+    title: str = "Current revenue overview",
+    lifecycle_state: str = "active",
+    data_product_version_ref: ArtifactReference | None = None,
+) -> DashboardPublication:
+    return DashboardPublication.model_validate(
+        {
+            "dashboard_id": dashboard_id,
+            "version": 3,
+            "title": title,
+            "source_request_id": source_request_id,
+            "data_product_version_ref": data_product_version_ref
+            or _reference("product-revenue", version=1),
+            "lifecycle_state": lifecycle_state,
+            "as_of": _FIXED_TIME,
+            "freshness_disposition": "current",
+            "published_at": _FIXED_TIME,
+        }
+    )
+
+
+class _DashboardAccessCommands:
+    def __init__(self, authorized_grant: AccessGrant, *, denied: bool = False) -> None:
+        self._authorized_grant = authorized_grant
+        self._denied = denied
+        self.calls: list[dict[str, object]] = []
+
+    def apply(self, *, tenant_id: str, request_id: str, grant_id: str) -> AccessGrant:
+        raise AssertionError("a dashboard read must not apply an access grant")
+
+    def authorize(self, **values: object) -> AccessGrant:
+        self.calls.append(values)
+        if self._denied or values["grant_id"] != self._authorized_grant.grant_id:
+            raise AccessGrantDenied("access grant is unavailable")
+        return self._authorized_grant
+
+
+def test_dashboard_listing_projects_only_public_owned_fields_behind_an_opaque_reference() -> None:
+    reader = _DashboardReader((_dashboard_publication(),))
+    backend = _backend(dashboards=reader)
+
+    listing = backend.get_dashboards(_architect_context())
+
+    assert reader.requested_tenants == [_TENANT]
+    assert len(listing.dashboards) == 1
+    dashboard = listing.dashboards[0]
+    assert dashboard.display_name == "Current revenue overview"
+    assert dashboard.state == "ready"
+    assert dashboard.as_of == _FIXED_TIME
+    assert dashboard.freshness == "current"
+    assert dashboard.access_state == "workspace_role"
+    assert dashboard.dashboard_ref.startswith("dashboard-")
+    assert "revenue" not in dashboard.dashboard_ref
+    assert dashboard.preview_ref is None
+    assert dashboard.link_ref is None
+    assert "Revision 3" in dashboard.summary
+    assert "Superset" not in dashboard.model_dump_json()
+    assert "internal:revenue-dashboard" not in dashboard.model_dump_json()
+
+    assert backend.get_dashboard(_architect_context(), dashboard.dashboard_ref) == dashboard
+
+
+def test_dashboard_reads_fail_closed_without_provider_receipt_authority() -> None:
+    backend = _backend()
+
+    with pytest.raises(ConsoleUnavailable) as listing_failure:
+        backend.get_dashboards(_architect_context())
+    with pytest.raises(ConsoleUnavailable) as detail_failure:
+        backend.get_dashboard(_architect_context(), "dashboard-deadbeef")
+
+    assert listing_failure.value.code == CAPABILITY_NOT_DELIVERED
+    assert detail_failure.value.code == CAPABILITY_NOT_DELIVERED
+
+
+def test_requester_cannot_list_dashboards_without_grant_bound_dashboard_authority() -> None:
+    backend = _backend(dashboards=_DashboardReader((_dashboard_publication(),)))
+
+    with pytest.raises(ConsoleNotFound):
+        backend.get_dashboards(_requester_context())
+    with pytest.raises(ConsoleNotFound):
+        backend.get_dashboard(_requester_context(), "dashboard-untrusted")
+
+
+def test_requester_lists_only_dashboards_authorized_by_current_access_control() -> None:
+    authorized = _dashboard_publication(source_request_id="req-answer-revenue")
+    hidden = _dashboard_publication(
+        dashboard_id="internal:executive-dashboard",
+        source_request_id="req-answer-executive",
+        title="Executive margin",
+        data_product_version_ref=_reference("product-executive", version=1),
+    )
+    grant = _access_grant("active").model_copy(
+        update={
+            "access_mode": "dashboard",
+            "permissions": ("dashboard", "view"),
+            "data_product_version_ref": authorized.data_product_version_ref,
+        }
+    )
+    grants = _StaticAccessGrantReader(grant)
+    commands = _DashboardAccessCommands(grant)
+    principals = InMemoryWorkspacePrincipalDirectory()
+    principals.bind_principal(
+        tenant_id=_TENANT,
+        actor_id="actor-requester",
+        role="requester",
+        principal_ref=grant.principal_ref,
+    )
+    backend = _backend(
+        dashboards=_DashboardReader((hidden, authorized)),
+        requests=_StaticRequestReader((_data_access_request(grant.request_id, "actor-requester"),)),
+        access_grants=grants,
+        access_grant_commands=commands,
+        principals=principals,
+    )
+
+    listing = backend.get_dashboards(_requester_context())
+
+    assert [dashboard.display_name for dashboard in listing.dashboards] == [
+        "Current revenue overview"
+    ]
+    assert listing.dashboards[0].access_state == "active"
+    assert grants.calls == [
+        (_TENANT, grant.request_id),
+    ]
+    assert commands.calls == [
+        {
+            "tenant_id": _TENANT,
+            "grant_id": grant.grant_id,
+            "principal_ref": grant.principal_ref,
+            "purpose": grant.purpose,
+            "permission": "dashboard",
+            "product_version_ref": authorized.data_product_version_ref,
+        }
+    ]
+
+
+def test_requester_dashboard_listing_hides_a_currently_denied_grant() -> None:
+    publication = _dashboard_publication(source_request_id="req-answer-revenue")
+    grant = _access_grant("active").model_copy(
+        update={
+            "access_mode": "dashboard",
+            "permissions": ("dashboard", "view"),
+            "data_product_version_ref": publication.data_product_version_ref,
+        }
+    )
+    principals = InMemoryWorkspacePrincipalDirectory()
+    principals.bind_principal(
+        tenant_id=_TENANT,
+        actor_id="actor-requester",
+        role="requester",
+        principal_ref=grant.principal_ref,
+    )
+    backend = _backend(
+        dashboards=_DashboardReader((publication,)),
+        requests=_StaticRequestReader((_data_access_request(grant.request_id, "actor-requester"),)),
+        access_grants=_StaticAccessGrantReader(grant),
+        access_grant_commands=_DashboardAccessCommands(grant, denied=True),
+        principals=principals,
+    )
+
+    assert backend.get_dashboards(_requester_context()).dashboards == ()
+
+
+def test_dashboard_detail_rejects_the_owning_services_private_identifier() -> None:
+    backend = _backend(dashboards=_DashboardReader((_dashboard_publication(),)))
+
+    with pytest.raises(ConsoleNotFound):
+        backend.get_dashboard(_architect_context(), "internal:revenue-dashboard")
 
 
 def test_catalog_readiness_degrades_when_search_is_unhealthy() -> None:
@@ -462,6 +773,17 @@ def test_missing_downstream_implementation_is_not_delivered_without_fixture_fall
 
     with pytest.raises(ConsoleUnavailable) as failure:
         read(backend, context)  # type: ignore[operator]
+
+    assert failure.value.code == CAPABILITY_NOT_DELIVERED
+
+
+def test_missing_impact_reader_fails_closed_without_graph_or_fixture_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _forbid_fixture_data(monkeypatch)
+
+    with pytest.raises(ConsoleUnavailable) as failure:
+        _backend().get_request_impact(_architect_context(), "request-answer")
 
     assert failure.value.code == CAPABILITY_NOT_DELIVERED
 
@@ -673,6 +995,216 @@ def test_requester_projection_does_not_invent_a_question_for_data_access() -> No
     assert projected.question is None
 
 
+@pytest.mark.parametrize(
+    ("state", "title", "summary"),
+    (
+        ("pending", "Access is being set up", "approved access is being applied"),
+        ("active", "Access is active", "available until"),
+        ("expired", "Access has expired", "can no longer be used"),
+        ("revocation_pending", "Access removal is in progress", "already unavailable"),
+        ("revoked", "Access has been removed", "can no longer be used"),
+        ("failed", "Access removal needs attention", "remains unavailable"),
+    ),
+)
+def test_requester_projection_explains_authoritative_access_lifecycle(
+    state: AccessGrantState, title: str, summary: str
+) -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    reader = _StaticAccessGrantReader(_access_grant(state))
+    backend = _backend(
+        requests=_StaticRequestReader((request,)),
+        fulfillment=_RequesterOnlyFulfillmentReader(request),
+        access_grants=reader,
+    )
+
+    projected = backend.get_requester_requests(_requester_context())[0]
+
+    assert projected.access_lifecycle is not None
+    assert projected.access_lifecycle.state == state
+    assert projected.access_lifecycle.title == title
+    assert summary in projected.access_lifecycle.summary
+    assert projected.access_lifecycle.revision == 2
+    assert projected.access_lifecycle.can_revoke is (state == "active")
+    assert "grant-private-ref" not in projected.model_dump_json()
+    assert reader.calls == [(_TENANT, request.request_id)]
+
+
+def test_requester_projection_hides_historical_delivery_after_access_is_revoked() -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    delivery = RequesterAccessDeliveryView(
+        access_mode="query",
+        fields=("net-revenue",),
+        effective_at=_FIXED_TIME,
+        expires_at=_FIXED_TIME + timedelta(days=1),
+        permissions=("query", "view"),
+    )
+    backend = _backend(
+        requests=_StaticRequestReader((request,)),
+        fulfillment=_RequesterOnlyFulfillmentReader(request, delivered_access=delivery),
+        access_grants=_StaticAccessGrantReader(_access_grant("revoked")),
+    )
+
+    projected = backend.get_requester_requests(_requester_context())[0]
+
+    assert projected.access_lifecycle is not None
+    assert projected.access_lifecycle.state == "revoked"
+    assert projected.delivered_access is None
+
+
+def test_requester_projection_has_no_access_lifecycle_without_an_authoritative_grant() -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    backend = _backend(
+        requests=_StaticRequestReader((request,)),
+        fulfillment=_RequesterOnlyFulfillmentReader(request),
+        access_grants=_StaticAccessGrantReader(None),
+    )
+
+    assert backend.get_requester_requests(_requester_context())[0].access_lifecycle is None
+
+
+def test_failed_access_setup_is_distinguished_from_failed_removal() -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    grant = _access_grant("failed").model_copy(update={"failed_action": "apply"})
+    backend = _backend(
+        requests=_StaticRequestReader((request,)),
+        fulfillment=_RequesterOnlyFulfillmentReader(request),
+        access_grants=_StaticAccessGrantReader(grant),
+    )
+
+    lifecycle = backend.get_requester_requests(_requester_context())[0].access_lifecycle
+
+    assert lifecycle is not None
+    assert lifecycle.title == "Access setup needs attention"
+
+
+def test_corrupt_access_grant_projection_fails_closed() -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    backend = _backend(
+        requests=_StaticRequestReader((request,)),
+        fulfillment=_RequesterOnlyFulfillmentReader(request),
+        access_grants=_FailingAccessGrantReader(),
+    )
+
+    with pytest.raises(ConsoleUnavailable) as failure:
+        backend.get_requester_requests(_requester_context())
+
+    assert failure.value.code == "downstream_integrity"
+
+
+def test_misdirected_access_grant_projection_fails_closed() -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    backend = _backend(
+        requests=_StaticRequestReader((request,)),
+        fulfillment=_RequesterOnlyFulfillmentReader(request),
+        access_grants=_MisdirectedAccessGrantReader(
+            _access_grant("active", tenant_id="tenant-other")
+        ),
+    )
+
+    with pytest.raises(ConsoleUnavailable) as failure:
+        backend.get_requester_requests(_requester_context())
+
+    assert failure.value.code == "downstream_integrity"
+
+
+def test_requester_revokes_owned_active_access_without_public_grant_identity() -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    requests = _StaticRequestReader((request,))
+    active = _access_grant("active")
+    revoked = active.model_copy(update={"state": "revoked", "revision": 3})
+    commands = _AccessRevocations(revoked)
+    backend = _backend(
+        requests=requests,
+        fulfillment=_RequesterOnlyFulfillmentReader(request),
+        access_grants=_StaticAccessGrantReader(active),
+        access_revocation_commands=commands,
+    )
+
+    result = backend.revoke_access(
+        _requester_context(),
+        request.request_id,
+        AccessRevocationCommand(
+            expected_revision=2,
+            active_role="requester",
+            reason="The analysis is complete.",
+        ),
+    )
+
+    assert result.state == "revoked"
+    assert not result.can_revoke
+    assert "grant-private-ref" not in result.model_dump_json()
+    assert commands.calls == [
+        {
+            "tenant_id": _TENANT,
+            "request_id": request.request_id,
+            "actor_id": "actor-requester",
+            "expected_revision": 2,
+            "reason": "The analysis is complete.",
+        }
+    ]
+
+
+def test_architect_revokes_active_access_through_the_owning_service() -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    active = _access_grant("active")
+    pending = active.model_copy(update={"state": "revocation_pending", "revision": 3})
+    commands = _AccessRevocations(pending)
+    backend = _backend(
+        requests=_StaticRequestReader((request,)),
+        access_revocation_commands=commands,
+    )
+
+    result = backend.revoke_access(
+        _architect_context(),
+        request.request_id,
+        AccessRevocationCommand(
+            expected_revision=2,
+            active_role="data_architect",
+            reason="The access window should close now.",
+        ),
+    )
+
+    assert result.state == "revocation_pending"
+    assert not result.can_revoke
+    assert commands.calls[0]["actor_id"] == _ACTOR
+
+
+def test_manual_access_revocation_rejects_stale_and_cross_requester_commands() -> None:
+    request = _data_access_request("req-00000000000000000002", "actor-requester")
+    requests = _StaticRequestReader((request,))
+    active = _access_grant("active")
+    stale = _AccessRevocations(active, stale=True)
+    backend = _backend(
+        requests=requests,
+        fulfillment=_RequesterOnlyFulfillmentReader(request),
+        access_grants=_StaticAccessGrantReader(active),
+        access_revocation_commands=stale,
+    )
+    command = AccessRevocationCommand(
+        expected_revision=1,
+        active_role="requester",
+        reason="The analysis is complete.",
+    )
+
+    with pytest.raises(ConsoleConflict) as conflict:
+        backend.revoke_access(_requester_context(), request.request_id, command)
+    with pytest.raises(ConsoleNotFound):
+        backend.revoke_access(
+            TrustedActorContext(
+                tenant_id=_TENANT,
+                actor_id="actor-other-requester",
+                roles=("requester",),
+                active_role="requester",
+                session_id="session-other",
+            ),
+            request.request_id,
+            command,
+        )
+
+    assert conflict.value.code == "stale_revision"
+    assert len(stale.calls) == 1
+
+
 def test_requester_projection_excludes_another_requesters_request() -> None:
     mine = _inbox_request("req-00000000000000000001", "actor-requester")
     theirs = _inbox_request("req-00000000000000000002", "actor-someone-else")
@@ -812,21 +1344,128 @@ def _reference(artifact_id: str, version: int = 1) -> ArtifactReference:
     return ArtifactReference(artifact_id=artifact_id, version=version, digest="c" * 64)
 
 
-def test_a_data_product_projects_only_the_reference_an_owning_service_asserts() -> None:
-    """A data product is an `ArtifactReference` and nothing more.
+class _StubProductPublicationReader:
+    def __init__(self, definitions: dict[tuple[str, str, int], CatalogProductDefinition]) -> None:
+        self._definitions = definitions
+        self.asked: list[tuple[str, ArtifactReference]] = []
 
-    No service stores a name, a state or a summary for one, so the projection
-    carries the identifier, the version and the digest, and the console invents
-    none of the rest.
-    """
+    def definition_for_reference(
+        self, *, tenant_id: str, product_ref: ArtifactReference
+    ) -> CatalogProductDefinition | None:
+        self.asked.append((tenant_id, product_ref))
+        return self._definitions.get((tenant_id, product_ref.artifact_id, product_ref.version))
+
+
+def _published_definition(
+    *, tenant_id: str = _TENANT, product_id: str = "product-revenue", product_revision: int = 3
+) -> CatalogProductDefinition:
+    return CatalogProductDefinition(
+        tenant_id=tenant_id,
+        idempotency_key="a" * 64,
+        stable_external_key=catalog_product_external_key(
+            tenant_id=tenant_id,
+            product_id=product_id,
+            product_revision=product_revision,
+            generation=7,
+        ),
+        catalog_binding_id="catalog-alpha",
+        catalog_revision=4,
+        product_id=product_id,
+        product_revision=product_revision,
+        generation=7,
+        name="Current revenue by region",
+        description="Approved revenue grouped by region for finance reporting.",
+        owner_refs=("owner:finance",),
+        namespace="analytics",
+        relation_name="revenue_by_region",
+        columns=(
+            CatalogColumn(name="region", type_name="TEXT", nullable=False),
+            CatalogColumn(name="revenue", type_name="NUMERIC", nullable=False),
+        ),
+        lineage_sources=(
+            CatalogLineageSource(
+                source_ref="source:orders",
+                freshness_observation_ref=ArtifactReference(
+                    artifact_id="freshness:orders", version=8, digest="b" * 64
+                ),
+                freshness_observation_digest="b" * 64,
+                watermark_at=_FIXED_TIME - timedelta(hours=1),
+                observed_at=_FIXED_TIME,
+            ),
+        ),
+        contract_digest="d" * 64,
+        semantic_version_digest="e" * 64,
+        materialization_receipt_ref=ArtifactReference(
+            artifact_id="receipt:revenue", version=7, digest="f" * 64
+        ),
+        materialization_receipt_digest="f" * 64,
+        publication_authority_digest="1" * 64,
+    )
+
+
+def test_a_data_product_projects_the_owning_publication_definition() -> None:
     reader = _StubDataProductReader({_TENANT: (_reference("product-revenue", version=3),)})
-    backend = _backend(data_products=reader)
+    publication_reader = _StubProductPublicationReader(
+        {(_TENANT, "product-revenue", 3): _published_definition()}
+    )
+    backend = _backend(data_products=reader, product_publications=publication_reader)
 
     view = backend.get_data_product(_architect_context(), "product-revenue")
 
     assert view.data_product_id == "product-revenue"
     assert view.version == 3
-    assert view.artifact_digest == "c" * 64
+    assert view.publication_status == "published"
+    assert view.name == "Current revenue by region"
+    assert view.description == "Approved revenue grouped by region for finance reporting."
+    assert view.product_revision == 3
+    assert view.generation == 7
+    assert view.catalog_revision == 4
+    assert view.namespace == "analytics"
+    assert view.relation_name == "revenue_by_region"
+    assert view.column_count == 2
+    assert view.source_count == 1
+    assert view.freshness_observed_at == _FIXED_TIME
+
+
+def test_a_permitted_but_unpublished_product_invents_no_display_identity() -> None:
+    reference = _reference("product-revenue", version=3)
+    backend = _backend(
+        data_products=_StubDataProductReader({_TENANT: (reference,)}),
+        product_publications=_StubProductPublicationReader({}),
+    )
+
+    view = backend.get_data_product(_architect_context(), "product-revenue")
+
+    assert view.publication_status == "pending"
+    assert view.name is None
+    assert view.description is None
+    assert view.product_revision is None
+    assert view.column_count is None
+
+
+def test_an_empty_permitted_product_listing_does_not_read_publication_authority() -> None:
+    publication_reader = _StubProductPublicationReader({})
+    backend = _backend(
+        data_products=_StubDataProductReader({_TENANT: ()}),
+        product_publications=publication_reader,
+    )
+
+    assert backend.get_data_products(_architect_context()).products == ()
+    assert publication_reader.asked == []
+
+
+def test_a_publication_definition_from_another_tenant_is_denied() -> None:
+    reference = _reference("product-revenue", version=3)
+    publication_reader = _StubProductPublicationReader(
+        {(_TENANT, "product-revenue", 3): _published_definition(tenant_id="tenant-other")}
+    )
+    backend = _backend(
+        data_products=_StubDataProductReader({_TENANT: (reference,)}),
+        product_publications=publication_reader,
+    )
+
+    with pytest.raises(ConsoleNotFound):
+        backend.get_data_product(_architect_context(), "product-revenue")
 
 
 def test_data_product_listing_deduplicates_versions_and_links_the_newest() -> None:
@@ -852,12 +1491,16 @@ def test_data_product_listing_deduplicates_versions_and_links_the_newest() -> No
 def test_a_data_product_outside_the_tenant_s_permitted_references_is_not_found() -> None:
     """Reading is scoped by what the tenant's own policy snapshots permit."""
     reader = _StubDataProductReader({_TENANT: (_reference("product-revenue"),)})
-    backend = _backend(data_products=reader)
+    publication_reader = _StubProductPublicationReader(
+        {(_TENANT, "product-somebody-elses", 1): _published_definition()}
+    )
+    backend = _backend(data_products=reader, product_publications=publication_reader)
 
     with pytest.raises(ConsoleNotFound):
         backend.get_data_product(_architect_context(), "product-somebody-elses")
 
     assert reader.asked == [_TENANT]
+    assert publication_reader.asked == []
 
 
 def test_the_newest_version_of_a_permitted_reference_is_the_one_projected() -> None:

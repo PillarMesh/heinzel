@@ -1509,6 +1509,15 @@ def _revalidate_payload[Model: BaseModel](
 
 
 def _initialize_schema(connection: sqlite3.Connection) -> None:
+    # Schema discovery and creation are one write transaction. Two workers can open
+    # a fresh database together; without taking the lock before discovery both see
+    # an empty layout and the loser later fails while creating tables the winner
+    # already committed.
+    with _transaction(connection):
+        _initialize_schema_locked(connection)
+
+
+def _initialize_schema_locked(connection: sqlite3.Connection) -> None:
     tables = {
         str(row[0])
         for row in connection.execute(
@@ -1557,14 +1566,13 @@ def _initialize_schema(connection: sqlite3.Connection) -> None:
             operation="initialize acquisition state repository",
             detail="schema metadata is missing",
         )
-    with _transaction(connection):
-        for _name, statement in _SCHEMA_DEFINITIONS:
-            connection.execute(statement)
-        connection.execute(
-            "INSERT INTO acquisition_state_schema_metadata (singleton, version, checksum) "
-            "VALUES (1, ?, ?)",
-            (_SCHEMA_VERSION, _SCHEMA_CHECKSUM),
-        )
+    for _name, statement in _SCHEMA_DEFINITIONS:
+        connection.execute(statement)
+    connection.execute(
+        "INSERT INTO acquisition_state_schema_metadata (singleton, version, checksum) "
+        "VALUES (1, ?, ?)",
+        (_SCHEMA_VERSION, _SCHEMA_CHECKSUM),
+    )
 
 
 def _normalize_sql(statement: str) -> str:

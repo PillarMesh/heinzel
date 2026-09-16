@@ -3,14 +3,8 @@ import {useEffect, useState} from "react"
 import type {ConsoleEnvelopeRunsView, RunView} from "../../api/generated"
 import {ConsoleApiError} from "../../api/client"
 
-/*
- * A run is shown as the evidence store witnessed it.
- *
- * The state vocabulary is the store's own rather than the shared `OperationState`,
- * because `non_conforming` is a witnessed outcome and the nearest shared value,
- * `outcome_unknown`, would report it as ignorance. The contract digest is shown in
- * place of a product name because no service asserts one.
- */
+/* The state vocabulary is the evidence store's own. Internal references stay in
+ * the disclosure until an owning service can project a human product label. */
 const stateLabels = {
   created: "Created",
   running: "Running",
@@ -65,16 +59,21 @@ export function RunsPage({client}: RunsPageProps) {
           {runs.map((run) => (
             <li className="capability-ledger__item" key={run.run_id}>
               <div>
-                <h2>{run.run_id}</h2>
-                <p className="capability-ledger__dependency">
-                  <span>Contract</span> <code>{run.contract_digest}</code>
-                </p>
+                <h2>{stateLabels[run.state]} run</h2>
                 <p>
                   Recorded {new Date(run.created_at).toISOString()}, last changed{" "}
                   {new Date(run.updated_at).toISOString()}
                 </p>
+                <details>
+                  <summary>Technical details</summary>
+                  <dl>
+                    <dt>Run reference</dt>
+                    <dd><code>{run.run_id}</code></dd>
+                    <dt>Contract digest</dt>
+                    <dd><code>{run.contract_digest}</code></dd>
+                  </dl>
+                </details>
               </div>
-              <span>{stateLabels[run.state]}</span>
             </li>
           ))}
         </ul>

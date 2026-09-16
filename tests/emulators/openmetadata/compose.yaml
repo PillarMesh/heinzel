@@ -25,7 +25,7 @@ services:
       - elasticsearch-data:/usr/share/elasticsearch/data
     ports:
       - 127.0.0.1:9200:9200
-    mem_limit: 1024m
+    mem_limit: 1536m
     restart: unless-stopped
     healthcheck:
       test: >-
@@ -87,7 +87,7 @@ services:
   openmetadata-server:
     image: docker.getcollate.io/openmetadata/server@sha256:6c878281973d9e2c366e9da4f256a744acf67b1e53195fab67c3191e504e4169
     platform: linux/amd64
-    mem_limit: 1536m
+    mem_limit: 2048m
     restart: unless-stopped
     environment: *openmetadata-environment
     ports:

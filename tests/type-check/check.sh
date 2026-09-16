@@ -20,6 +20,10 @@ status=0
 # errors are fixed; that promotion is the unit of work, one directory per change.
 COVERED='
 apps/console/server/tests
+packages/execution-graph/tests
+services/access-control/tests
+services/context-exposure/tests
+services/dbt-adapter/tests
 '
 
 # Known uncovered, with the error count measured at the time of listing. These are
@@ -34,16 +38,20 @@ providers/openmetadata/tests
 providers/postgresql/tests
 providers/snowflake/tests
 providers/stripe/tests
+providers/superset/tests
 services/authoring-mcp/tests
+services/bi-control/tests
 services/catalog-control/tests
 services/compiler/tests
 services/connection-broker/tests
 services/contract/tests
 services/evidence/tests
+services/knowledge-graph/tests
 services/request-management/tests
 services/runtime/tests
 services/semantic-registry/tests
 services/state/tests
+services/trigger/tests
 services/warehouse-control/tests
 tests/acceptance
 tests/ci

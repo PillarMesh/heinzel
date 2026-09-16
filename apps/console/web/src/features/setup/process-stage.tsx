@@ -3,6 +3,7 @@ import {useState, type ChangeEvent} from "react"
 import {ConsoleMutationOutcomeUnknown} from "../../api/client"
 import type {MutationRequestContext} from "../../api/client"
 import type {
+  BusinessProcessManifestCommand,
   MediaType,
   OperationView,
   ProcessPackageCommand,
@@ -13,13 +14,57 @@ import {sha256File, type DigestFile} from "./file-digest"
 import {OperationStatus, type PollTimer} from "./operation-status"
 import type {IdempotencyKeyFactory, SetupClient} from "./setup-workbench"
 
-const pdfMediaType = "application/pdf"
-const docxMediaType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+const markdownMediaType = "text/markdown; charset=utf-8" as const
+const manifestArrayFields = [
+  "participants",
+  "outcomes",
+  "entities",
+  "events",
+  "states",
+  "rules",
+  "source_references",
+  "unresolved_questions",
+] as const
+const manifestFields = new Set(["schema_version", "process_name", "owner", ...manifestArrayFields])
 
 interface SelectedPackage {
   readonly digest: string
   readonly fileName: string
   readonly mediaType: MediaType
+  readonly narrativeMarkdown: string
+}
+
+function parseManifest(source: string): BusinessProcessManifestCommand {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(source)
+  } catch {
+    throw new Error("Manifest must be valid JSON.")
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("Manifest must be a JSON object.")
+  }
+  const record = parsed as Record<string, unknown>
+  const unknown = Object.keys(record).find((field) => !manifestFields.has(field))
+  if (unknown !== undefined) {
+    throw new Error(`manifest.${unknown} is not allowed.`)
+  }
+  if (record.schema_version !== undefined && record.schema_version !== "1") {
+    throw new Error('manifest.schema_version must be "1".')
+  }
+  for (const field of ["process_name", "owner"] as const) {
+    const value = record[field]
+    if (typeof value !== "string" || value.length === 0 || value.length > 128) {
+      throw new Error(`manifest.${field} must be a non-empty string of at most 128 characters.`)
+    }
+  }
+  for (const field of manifestArrayFields) {
+    const value = record[field]
+    if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+      throw new Error(`manifest.${field} must be an array of strings.`)
+    }
+  }
+  return parsed as BusinessProcessManifestCommand
 }
 
 interface ProcessAttempt {
@@ -44,7 +89,11 @@ export function ProcessStage({
   session,
   setup,
 }: ProcessStageProps) {
+  const activeRole = session.active_role === "data_architect" ? session.active_role : null
   const [fileError, setFileError] = useState<string | null>(null)
+  const [manifest, setManifest] = useState<BusinessProcessManifestCommand | null>(null)
+  const [manifestError, setManifestError] = useState<string | null>(null)
+  const [manifestSource, setManifestSource] = useState("")
   const [hashing, setHashing] = useState(false)
   const [selectedPackage, setSelectedPackage] = useState<SelectedPackage | null>(null)
   const [operation, setOperation] = useState<OperationView | null>(null)
@@ -57,25 +106,32 @@ export function ProcessStage({
       setFileError(null)
       return
     }
-    if (file.type !== pdfMediaType && file.type !== docxMediaType) {
-      setFileError("Choose a PDF or DOCX file.")
+    if (!file.name.toLowerCase().endsWith(".md")) {
+      setFileError("Choose a Markdown (.md) file.")
       return
     }
     if (file.size === 0) {
-      setFileError("Choose a non-empty PDF or DOCX file.")
+      setFileError("Choose a non-empty Markdown file.")
       return
     }
     const fileName = file.name
-    const mediaType = file.type as MediaType
+    const mediaType = markdownMediaType
     event.currentTarget.value = ""
     setFileError(null)
     setAmbiguousAttempt(null)
     setSelectedPackage(null)
     setHashing(true)
     try {
-      setSelectedPackage({digest: await digestFile(file), fileName, mediaType})
+      const bytes = await file.arrayBuffer()
+      const narrativeMarkdown = new TextDecoder("utf-8", {fatal: true}).decode(bytes)
+      setSelectedPackage({
+        digest: await digestFile(file),
+        fileName,
+        mediaType,
+        narrativeMarkdown,
+      })
     } catch {
-      setFileError("The selected file could not be hashed safely.")
+      setFileError("The selected file must contain valid UTF-8 Markdown.")
     } finally {
       setHashing(false)
     }
@@ -101,16 +157,18 @@ export function ProcessStage({
   }
 
   function submitPackage(): void {
-    if (selectedPackage === null) {
+    if (selectedPackage === null || manifest === null || activeRole === null) {
       return
     }
     void submitAttempt({
       command: {
         expected_revision: setup.revision,
         package_digest: selectedPackage.digest,
-        active_role: session.active_role,
+        active_role: activeRole,
         file_name: selectedPackage.fileName,
         media_type: selectedPackage.mediaType,
+        narrative_markdown: selectedPackage.narrativeMarkdown,
+        manifest,
       },
       context: {
         csrfToken: session.csrf_token,
@@ -124,21 +182,41 @@ export function ProcessStage({
       <p className="eyebrow">Stage 4 · Business process</p>
       <h1 id="process-title">Describe the business process</h1>
       <p className="setup-stage__lead">
-        PillarMesh records only package metadata and the SHA-256 identity of the original content.
+        PillarMesh stores the exact UTF-8 Markdown narrative and its validated process manifest.
       </p>
       <label className="process-file">
         <span>Process package</span>
         <input
-          accept={`${pdfMediaType},${docxMediaType}`}
+          accept=".md,text/markdown"
           onChange={(event) => void selectFile(event)}
           type="file"
         />
       </label>
       <p className="process-file__guidance">
-        Accepted files: PDF or DOCX. Empty files are not accepted.
+        Accepted narrative: UTF-8 Markdown (.md). Add the matching JSON manifest below.
       </p>
+      <label className="process-file">
+        <span>Business process manifest (JSON)</span>
+        <textarea
+          onChange={(event) => {
+            const source = event.currentTarget.value
+            setManifestSource(source)
+            try {
+              setManifest(parseManifest(source))
+              setManifestError(null)
+            } catch (error: unknown) {
+              setManifest(null)
+              setManifestError(error instanceof Error ? error.message : "Manifest is invalid.")
+            }
+          }}
+          rows={12}
+          spellCheck={false}
+          value={manifestSource}
+        />
+      </label>
       {hashing ? <p role="status">Computing original-content digest…</p> : null}
       {fileError === null ? null : <p role="alert">{fileError}</p>}
+      {manifestError === null ? null : <p role="alert">{manifestError}</p>}
       {ambiguousAttempt === null ? null : (
         <button
           disabled={submitting}
@@ -162,12 +240,12 @@ export function ProcessStage({
             </div>
           </dl>
           <p className="setup-warning">
-            This material edit creates a new setup revision and invalidates downstream approvals
-            whose exact input changes.
+            Saving changes creates a new process version. Approvals based on earlier content must
+            be reviewed again.
           </p>
           <button
             className="primary-action"
-            disabled={submitting}
+            disabled={submitting || manifest === null || activeRole === null}
             onClick={submitPackage}
             type="button"
           >

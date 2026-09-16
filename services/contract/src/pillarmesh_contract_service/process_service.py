@@ -7,7 +7,7 @@ from typing import Literal, Protocol
 
 from pillarmesh_contract_model import canonical_bytes, digest
 
-from .process_models import BusinessProcessManifest, ProcessPackageReceipt
+from .process_models import BusinessProcessManifest, ProcessPackageReceipt, ProcessPackageSnapshot
 
 _MARKDOWN_MEDIA_TYPE: Literal["text/markdown; charset=utf-8"] = "text/markdown; charset=utf-8"
 
@@ -37,6 +37,8 @@ class ProcessPackageRepository(Protocol):
     def load_original(self, tenant_id: str, package_id: str, version: int) -> bytes | None: ...
 
     def load_manifest(self, tenant_id: str, package_id: str, version: int) -> bytes | None: ...
+
+    def load_current_receipt(self, tenant_id: str) -> ProcessPackageReceipt | None: ...
 
 
 class SQLiteProcessPackageRepository:
@@ -92,6 +94,25 @@ class SQLiteProcessPackageRepository:
             ")"
         )
         self._migrate_manifest_source_digest()
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS process_package_current ("
+            "tenant_id TEXT NOT NULL PRIMARY KEY, "
+            "package_id TEXT NOT NULL, "
+            "version INTEGER NOT NULL, "
+            "FOREIGN KEY (package_id, version) REFERENCES process_packages(package_id, version)"
+            ")"
+        )
+        # Existing databases have no explicit acceptance sequence. SQLite rowid is
+        # the only durable insertion order available for the one-time backfill.
+        self._connection.execute(
+            "INSERT INTO process_package_current (tenant_id, package_id, version) "
+            "SELECT package.tenant_id, package.package_id, package.version "
+            "FROM process_packages AS package "
+            "WHERE package.rowid = ("
+            "SELECT MAX(candidate.rowid) FROM process_packages AS candidate "
+            "WHERE candidate.tenant_id = package.tenant_id"
+            ") ON CONFLICT(tenant_id) DO NOTHING"
+        )
         self._connection.commit()
 
     def _migrate_manifest_source_digest(self) -> None:
@@ -203,6 +224,12 @@ class SQLiteProcessPackageRepository:
                         receipt.received_at.isoformat(),
                     ),
                 )
+                self._connection.execute(
+                    "INSERT INTO process_package_current (tenant_id, package_id, version) "
+                    "VALUES (?, ?, ?) ON CONFLICT(tenant_id) DO UPDATE SET "
+                    "package_id = excluded.package_id, version = excluded.version",
+                    (receipt.tenant_id, receipt.package_id, receipt.version),
+                )
             except sqlite3.IntegrityError as error:
                 self._connection.rollback()
                 raise ValueError("process package version is immutable") from error
@@ -272,6 +299,36 @@ class SQLiteProcessPackageRepository:
         if owner[0] != tenant_id:
             raise KeyError(f"package {package_id} belongs to another tenant")
         raise RuntimeError("process package receipt points to a missing manifest")
+
+    def load_current_receipt(self, tenant_id: str) -> ProcessPackageReceipt | None:
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT package.package_id, package.version, package.tenant_id, "
+                "package.media_type, package.original_digest, package.manifest_digest, "
+                "package.manifest_source_digest, package.uploader_id, package.received_at "
+                "FROM process_package_current AS current "
+                "INNER JOIN process_packages AS package "
+                "ON package.tenant_id = current.tenant_id "
+                "AND package.package_id = current.package_id "
+                "AND package.version = current.version "
+                "WHERE current.tenant_id = ?",
+                (tenant_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return ProcessPackageReceipt.model_validate(
+            {
+                "package_id": row[0],
+                "version": row[1],
+                "tenant_id": row[2],
+                "media_type": row[3],
+                "original_digest": row[4],
+                "manifest_digest": row[5],
+                "manifest_source_digest": row[6],
+                "uploader_id": row[7],
+                "received_at": row[8],
+            }
+        )
 
     def _save_artifact(
         self,
@@ -391,3 +448,13 @@ class ProcessPackageService:
         if manifest is None:
             raise KeyError((package_id, version))
         return manifest
+
+    def latest(self, tenant_id: str) -> ProcessPackageSnapshot | None:
+        receipt = self._repository.load_current_receipt(tenant_id)
+        if receipt is None:
+            return None
+        manifest = self.get_manifest(tenant_id, receipt.package_id, receipt.version)
+        return ProcessPackageSnapshot(
+            receipt=receipt,
+            manifest=BusinessProcessManifest.model_validate_json(manifest),
+        )

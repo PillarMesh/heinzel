@@ -6,14 +6,19 @@ import {useParams} from "react-router-dom"
 import {ConsoleApiError, ConsoleMutationOutcomeUnknown} from "../../api/client"
 import type {MutationRequestContext} from "../../api/client"
 import type {
+  AccessRevocationCommand,
   AdmissionCommand,
   ActorRole,
   ConsoleEnvelopeInboxView,
+  ConsoleEnvelopeAccessLifecycleView,
+  ConsoleEnvelopeProductIntentApprovalView,
   ConsoleEnvelopeRequestDetailView,
   DataProvenance,
   Decision1,
   DecisionCommand,
   InboxView,
+  ProductIntentApprovalCommand,
+  ProductIntentReviewView,
   RequestDetailView,
   SessionView,
 } from "../../api/generated"
@@ -21,6 +26,7 @@ import {AccessPreviewReview} from "./access-preview-review"
 import {CatalogEvidence, type CatalogEvidenceClient} from "./catalog-evidence"
 import {ConversationPanel, type ConversationPanelClient} from "./conversation-panel"
 import {DashboardPreview, type DashboardPreviewClient} from "./dashboard-preview"
+import {ImpactPanel, type ImpactClient} from "../impact/impact-panel"
 import {DecisionQueue} from "./decision-queue"
 import {EvidenceDrawer, type EvidenceLayout} from "./evidence-drawer"
 import {LifecycleTimeline} from "./lifecycle-timeline"
@@ -37,7 +43,13 @@ export interface InboxClient
   extends RequestPreparationClient,
     CatalogEvidenceClient,
     ConversationPanelClient,
-    DashboardPreviewClient {
+    DashboardPreviewClient,
+    ImpactClient {
+  approveProductIntent(
+    requestId: string,
+    command: ProductIntentApprovalCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeProductIntentApprovalView>
   admitRequest(
     requestId: string,
     command: AdmissionCommand,
@@ -50,6 +62,132 @@ export interface InboxClient
   ): Promise<ConsoleEnvelopeRequestDetailView>
   getInbox(): Promise<ConsoleEnvelopeInboxView>
   getRequestDetail(requestId: string): Promise<ConsoleEnvelopeRequestDetailView>
+  revokeAccess(
+    requestId: string,
+    command: AccessRevocationCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeAccessLifecycleView>
+}
+
+interface ProductIntentReviewProps {
+  readonly client: InboxClient
+  readonly idempotencyKeyFactory: IdempotencyKeyFactory
+  readonly onApproved: (reviewedDigest: string) => void
+  readonly requestId: string
+  readonly requestRevision: number
+  readonly review: ProductIntentReviewView
+  readonly session: SessionView
+}
+
+function ProductIntentReview({
+  client,
+  idempotencyKeyFactory,
+  onApproved,
+  requestId,
+  requestRevision,
+  review,
+  session,
+}: ProductIntentReviewProps) {
+  const [approved, setApproved] = useState(review.approved)
+  const [approvedRevision, setApprovedRevision] = useState(review.approved_intent_revision)
+  const [submitting, setSubmitting] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+  const sourceCoverage = review.source_coverage
+  const unresolvedConstraints = review.unresolved_constraints ?? []
+  const activeRole = session.active_role === "data_architect" ? session.active_role : null
+  const blocked =
+    activeRole === null ||
+    unresolvedConstraints.length > 0 ||
+    sourceCoverage.some((source) => !source.authorized)
+
+  async function approve() {
+    if (activeRole === null) {
+      return
+    }
+    setSubmitting(true)
+    setFailure(null)
+    try {
+      const response = await client.approveProductIntent(
+        requestId,
+        {
+          active_role: activeRole,
+          expected_revision: requestRevision,
+          reviewed_digest: review.reviewed_digest,
+        },
+        {
+          csrfToken: session.csrf_token,
+          idempotencyKey: idempotencyKeyFactory(),
+        },
+      )
+      setApproved(true)
+      setApprovedRevision(response.data.intent_revision)
+      onApproved(review.reviewed_digest)
+    } catch {
+      setFailure("The typed product intent could not be approved. Reload and review it again.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section aria-label="Typed product intent" className="product-intent-review">
+      <div className="product-intent-review__heading">
+        <div>
+          <h3>{review.title}</h3>
+          <p>{review.business_outcome}</p>
+        </div>
+        <span className={approved ? "product-intent-review__approved" : undefined}>
+          {approved ? `Approved revision ${approvedRevision}` : "Awaiting approval"}
+        </span>
+      </div>
+
+      <div className="product-intent-review__section">
+        <h4>Source coverage</h4>
+        <ul className="product-intent-review__sources">
+          {sourceCoverage.map((source) => (
+            <li key={source.source_ref}>
+              <strong>{source.source_ref}</strong>
+              <span>{(source.covered_fields ?? []).join(", ") || "No fields covered"}</span>
+              <span className={source.authorized ? "source-authorized" : "source-unresolved"}>
+                {source.authorized ? "Authorized" : "Authorization required"}
+              </span>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <dl className="product-intent-review__facts">
+        <div><dt>Grain</dt><dd>{review.grain.join(", ")}</dd></div>
+        <div>
+          <dt>Measures</dt>
+          <dd>{review.measures.map((measure) => `${measure.metric_ref} (${measure.aggregation})`).join(", ")}</dd>
+        </div>
+        <div><dt>Dimensions</dt><dd>{(review.dimensions ?? []).join(", ") || "None"}</dd></div>
+        <div>
+          <dt>Filters</dt>
+          <dd>{(review.filters ?? []).map((filter) => `${filter.dimension_ref} ${filter.operator.replaceAll("_", " ")} ${filter.value}`).join(", ") || "None"}</dd>
+        </div>
+        <div><dt>Freshness</dt><dd>{review.freshness_seconds.toLocaleString()} seconds</dd></div>
+        <div><dt>Outputs</dt><dd>{review.outputs.join(", ")}</dd></div>
+      </dl>
+
+      {unresolvedConstraints.length === 0 ? null : (
+        <div className="product-intent-review__unresolved">
+          <h4>Unresolved constraints</h4>
+          <ul>{unresolvedConstraints.map((constraint) => <li key={constraint}>{constraint}</li>)}</ul>
+        </div>
+      )}
+      {failure === null ? null : <p role="alert">{failure}</p>}
+      <button
+        className="primary-action"
+        disabled={approved || blocked || submitting}
+        onClick={() => void approve()}
+        type="button"
+      >
+        {approved ? "Typed intent approved" : submitting ? "Approving typed intent…" : "Approve typed intent"}
+      </button>
+    </section>
+  )
 }
 
 export type IdempotencyKeyFactory = () => string
@@ -79,6 +217,108 @@ function roleLabel(role: ActorRole): string {
 function outstandingRequesterAuthority(detail: RequestDetailView) {
   return (detail.proposal?.required_authorities ?? []).find(
     (authority) => authority.role === "requester" && !authority.satisfied,
+  )
+}
+
+interface AccessRevocationPanelProps {
+  readonly client: InboxClient
+  readonly dataProvenance: DataProvenance
+  readonly detail: RequestDetailView
+  readonly idempotencyKeyFactory: IdempotencyKeyFactory
+  readonly onAuthoritativeDetail: (detail: RequestDetailView) => void
+  readonly session: SessionView
+}
+
+function AccessRevocationPanel({
+  client,
+  dataProvenance,
+  detail,
+  idempotencyKeyFactory,
+  onAuthoritativeDetail,
+  session,
+}: AccessRevocationPanelProps) {
+  const lifecycle = detail.access_lifecycle
+  const [confirming, setConfirming] = useState(false)
+  const [reason, setReason] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+  if (lifecycle === null || lifecycle === undefined) {
+    return null
+  }
+  const expectedRevision = lifecycle.revision
+
+  async function refresh(): Promise<void> {
+    const response = await client.getRequestDetail(detail.request_id)
+    if (
+      response.meta.data_provenance !== dataProvenance ||
+      response.data.request_id !== detail.request_id
+    ) {
+      throw new Error("request detail scope changed")
+    }
+    onAuthoritativeDetail(response.data)
+  }
+
+  async function revoke(): Promise<void> {
+    const explanatoryReason = reason.trim()
+    if (explanatoryReason.length === 0 || session.active_role !== "data_architect") {
+      setFailure("Explain why access should be removed.")
+      return
+    }
+    setSubmitting(true)
+    setFailure(null)
+    try {
+      const response = await client.revokeAccess(
+        detail.request_id,
+        {
+          active_role: "data_architect",
+          expected_revision: expectedRevision,
+          reason: explanatoryReason,
+        },
+        {csrfToken: session.csrf_token, idempotencyKey: idempotencyKeyFactory()},
+      )
+      if (response.meta.data_provenance !== dataProvenance) {
+        throw new Error("access lifecycle provenance changed")
+      }
+      await refresh()
+    } catch {
+      setFailure("Access removal could not be confirmed. Reload the request before trying again.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section aria-label="Access status" className="access-lifecycle">
+      <p className="eyebrow">Access status</p>
+      <h3>{lifecycle.title}</h3>
+      <p>{lifecycle.summary}</p>
+      {lifecycle.can_revoke && session.active_role === "data_architect" ? (
+        confirming ? (
+          <div className="access-lifecycle__revocation">
+            <label htmlFor="architect-access-revocation-reason">Reason for removing access</label>
+            <textarea
+              disabled={submitting}
+              id="architect-access-revocation-reason"
+              maxLength={512}
+              onChange={(event) => setReason(event.target.value)}
+              rows={3}
+              value={reason}
+            />
+            <button disabled={submitting} onClick={() => void revoke()} type="button">
+              {submitting ? "Removing access…" : "Confirm access removal"}
+            </button>
+            <button disabled={submitting} onClick={() => setConfirming(false)} type="button">
+              Keep access
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirming(true)} type="button">
+            Remove access
+          </button>
+        )
+      ) : null}
+      {failure === null ? null : <p role="alert">{failure}</p>}
+    </section>
   )
 }
 
@@ -114,6 +354,11 @@ function RequestDetailPanel({
     readonly decision: Decision1
     readonly idempotencyKey: string
   } | null>(null)
+  const [locallyApprovedIntentDigest, setLocallyApprovedIntentDigest] = useState<string | null>(null)
+  const approvedIntentDigest =
+    detail.product_intent?.approved === true
+      ? detail.product_intent.reviewed_digest
+      : locallyApprovedIntentDigest
 
   const blockingAuthority = outstandingRequesterAuthority(detail)
   const proposalDigest = detail.proposal_digest
@@ -230,6 +475,10 @@ function RequestDetailPanel({
 
   const actionsDisabled =
     !digestConfirmed || submitting !== null || requiredEvidenceUnavailable || availableActions.length === 0
+  const productIntentApprovalBlocked =
+    detail.product_intent !== null &&
+    detail.product_intent !== undefined &&
+    approvedIntentDigest !== detail.product_intent.reviewed_digest
 
   return (
     <div className="decision-detail__body">
@@ -250,6 +499,15 @@ function RequestDetailPanel({
         </div>
       </dl>
 
+      <AccessRevocationPanel
+        client={client}
+        dataProvenance={dataProvenance}
+        detail={detail}
+        idempotencyKeyFactory={idempotencyKeyFactory}
+        onAuthoritativeDetail={onAuthoritativeDetail}
+        session={session}
+      />
+
       {detail.question ? <section className="proposal-review" aria-label="Original question"><h3>Original question</h3><p>{detail.question}</p></section> : null}
       <RequestPreparation
         key={`${detail.request_id}:${detail.revision}`}
@@ -259,6 +517,25 @@ function RequestDetailPanel({
         idempotencyKeyFactory={idempotencyKeyFactory}
         onAuthoritativeDetail={onAuthoritativeDetail}
         session={session}
+      />
+      {detail.product_intent === null || detail.product_intent === undefined ? null : (
+        <ProductIntentReview
+          client={client}
+          idempotencyKeyFactory={idempotencyKeyFactory}
+          key={`${detail.request_id}:${detail.revision}:${detail.product_intent.reviewed_digest}`}
+          onApproved={setLocallyApprovedIntentDigest}
+          requestId={detail.request_id}
+          requestRevision={detail.revision}
+          review={detail.product_intent}
+          session={session}
+        />
+      )}
+
+      <ImpactPanel
+        client={client}
+        dataProvenance={dataProvenance}
+        key={detail.request_id}
+        requestId={detail.request_id}
       />
 
       {blockingAuthority === undefined ? null : (
@@ -319,7 +596,7 @@ function RequestDetailPanel({
             {availableActions.map((action) => (
               <button
                 className={action === "approve" ? "primary-action" : undefined}
-                disabled={actionsDisabled}
+                disabled={actionsDisabled || (action === "approve" && productIntentApprovalBlocked)}
                 key={action}
                 onClick={() => void recordDecision(action)}
                 type="button"

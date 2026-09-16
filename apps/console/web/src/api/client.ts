@@ -1,5 +1,8 @@
 import type {
+  AccessRevocationCommand,
+  AcquisitionRunNowCommand,
   ApiMeta,
+  AnswerResultPageView,
   ClarifiedOutcomeAcceptanceCommand,
   ConsoleApiSchema,
   ConsoleEnvelopeCatalogAssetView,
@@ -7,16 +10,23 @@ import type {
   ConsoleEnvelopeClarifiedOutcomeView,
   ConsoleEnvelopeConversationView,
   ConsoleEnvelopeDashboardView,
+  ConsoleEnvelopeDashboardsView,
   ConsoleEnvelopeDataProductView,
   ConsoleEnvelopeDataProductsView,
   ConsoleEnvelopeEvidenceView,
   ConsoleEnvelopeInboxView,
+  ConsoleEnvelopeImpactView,
+  ConsoleEnvelopeIncidentView,
+  ConsoleEnvelopeIncidentsView,
   ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView,
   ConsoleEnvelopeOperationView,
+  ConsoleEnvelopeProductIntentApprovalView,
   ConsoleEnvelopeRequesterRequestView,
   ConsoleEnvelopeRequestDetailView,
   ConsoleEnvelopeReviewView,
   ConsoleEnvelopeAcquisitionReceiptsView,
+  ConsoleEnvelopeAcquisitionReceiptView,
+  ConsoleEnvelopeAccessLifecycleView,
   ConsoleEnvelopeRunsView,
   ConsoleEnvelopeSessionView,
   ConsoleEnvelopeSetupView,
@@ -24,10 +34,12 @@ import type {
   ConversationMessageCommand,
   CreateRequestCommand,
   AdmissionCommand,
+  IncidentRecoveryCommand,
   RequestClarificationCommand,
   ProposalPreparationCommand,
   DecisionCommand,
   ProcessPackageCommand,
+  ProductIntentApprovalCommand,
   RecoveryAction,
   RequestWithdrawalCommand,
   ResetCommand,
@@ -373,6 +385,20 @@ export class ConsoleApiClient {
     )
   }
 
+  getRequestImpact(requestId: string): Promise<ConsoleEnvelopeImpactView> {
+    return this.#request(
+      `/api/v1/inbox/${encodePathSegment(requestId)}/impact`,
+      "impact_response",
+    )
+  }
+
+  async getResult(requestId: string, cursor?: string, pageSize = 100): Promise<AnswerResultPageView> {
+    const query = new URLSearchParams({page_size: String(pageSize)})
+    if (cursor !== undefined) query.set("cursor", cursor)
+    const envelope = await this.#request(`/api/v1/requests/${encodePathSegment(requestId)}/result?${query}`, "answer_result_response")
+    return envelope.data
+  }
+
   getRequesterRequests(): Promise<ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView> {
     return this.#request("/api/v1/requests/mine", "requester_requests_response")
   }
@@ -406,8 +432,26 @@ export class ConsoleApiClient {
     return this.#request("/api/v1/runs", "runs_response")
   }
 
+  getIncidents(): Promise<ConsoleEnvelopeIncidentsView> {
+    return this.#request("/api/v1/incidents", "incidents_response")
+  }
+
   getAcquisitionReceipts(): Promise<ConsoleEnvelopeAcquisitionReceiptsView> {
     return this.#request("/api/v1/acquisition-receipts", "acquisition_receipts_response")
+  }
+
+  async runAcquisitionNow(
+    command: AcquisitionRunNowCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeAcquisitionReceiptView> {
+    return (
+      await this.#mutation(
+        "/api/v1/acquisitions/run-now",
+        "acquisition_receipt_response",
+        command,
+        context,
+      )
+    ).envelope
   }
 
   getCatalogAsset(assetRef: string): Promise<ConsoleEnvelopeCatalogAssetView> {
@@ -426,6 +470,10 @@ export class ConsoleApiClient {
       `/api/v1/dashboards/${encodePathSegment(dashboardRef)}`,
       "dashboard_response",
     )
+  }
+
+  getDashboards(): Promise<ConsoleEnvelopeDashboardsView> {
+    return this.#request("/api/v1/dashboards", "dashboards_response")
   }
 
   getEvidence(evidenceRef: string): Promise<ConsoleEnvelopeEvidenceView> {
@@ -480,6 +528,21 @@ export class ConsoleApiClient {
       await this.#mutation(
         `/api/v1/inbox/${encodePathSegment(requestId)}/decisions`,
         "request_detail_response",
+        command,
+        context,
+      )
+    ).envelope
+  }
+
+  async approveProductIntent(
+    requestId: string,
+    command: ProductIntentApprovalCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeProductIntentApprovalView> {
+    return (
+      await this.#mutation(
+        `/api/v1/inbox/${encodePathSegment(requestId)}/product-intent/approval`,
+        "product_intent_approval_response",
         command,
         context,
       )
@@ -605,6 +668,21 @@ export class ConsoleApiClient {
     ).envelope
   }
 
+  async revokeAccess(
+    requestId: string,
+    command: AccessRevocationCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeAccessLifecycleView> {
+    return (
+      await this.#mutation(
+        `/api/v1/requests/${encodePathSegment(requestId)}/access/revocation`,
+        "access_lifecycle_response",
+        command,
+        context,
+      )
+    ).envelope
+  }
+
   retryOperation(
     operationId: string,
     command: RetryOperationCommand,
@@ -615,6 +693,21 @@ export class ConsoleApiClient {
       command,
       context,
     )
+  }
+
+  async recoverIncident(
+    incidentId: string,
+    command: IncidentRecoveryCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeIncidentView> {
+    return (
+      await this.#mutation(
+        `/api/v1/incidents/${encodePathSegment(incidentId)}/recovery`,
+        "incident_response",
+        command,
+        context,
+      )
+    ).envelope
   }
 
   async resetDemo(

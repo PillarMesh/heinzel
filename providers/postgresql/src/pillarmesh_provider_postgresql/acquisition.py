@@ -1425,6 +1425,7 @@ class PostgreSQLAcquisitionProvider:
             key = cursor.fetchone()
             if key is None or len(key) != 5 or key[0] != declaration.key_name:
                 raise ValueError("PostgreSQL stable key is unavailable")
+            # PostgreSQL 17 introduced MAINTAIN; older servers cannot grant that privilege.
             cursor.execute(
                 "WITH authority(relation_oid, approved_columns, approved_relation_schemas, "
                 "approved_relation_names, unrelated_schema) AS "
@@ -1469,7 +1470,9 @@ class PostgreSQLAcquisitionProvider:
                 "has_table_privilege(current_user, a.relation_oid, 'TRUNCATE') OR "
                 "has_table_privilege(current_user, a.relation_oid, 'REFERENCES') OR "
                 "has_table_privilege(current_user, a.relation_oid, 'TRIGGER') OR "
-                "has_table_privilege(current_user, a.relation_oid, 'MAINTAIN') OR "
+                "(CASE WHEN current_setting('server_version_num')::integer >= 170000 "
+                "THEN has_table_privilege(current_user, a.relation_oid, 'MAINTAIN') "
+                "ELSE FALSE END) OR "
                 "has_any_column_privilege(current_user, a.relation_oid, 'INSERT') OR "
                 "has_any_column_privilege(current_user, a.relation_oid, 'UPDATE') OR "
                 "has_any_column_privilege(current_user, a.relation_oid, 'REFERENCES')) "
@@ -1496,7 +1499,9 @@ class PostgreSQLAcquisitionProvider:
                 "has_table_privilege(current_user, undeclared.relation_oid, 'TRUNCATE') OR "
                 "has_table_privilege(current_user, undeclared.relation_oid, 'REFERENCES') OR "
                 "has_table_privilege(current_user, undeclared.relation_oid, 'TRIGGER') OR "
-                "has_table_privilege(current_user, undeclared.relation_oid, 'MAINTAIN') OR "
+                "(CASE WHEN current_setting('server_version_num')::integer >= 170000 "
+                "THEN has_table_privilege(current_user, undeclared.relation_oid, 'MAINTAIN') "
+                "ELSE FALSE END) OR "
                 "has_any_column_privilege(current_user, undeclared.relation_oid, 'SELECT') OR "
                 "has_any_column_privilege(current_user, undeclared.relation_oid, 'INSERT') OR "
                 "has_any_column_privilege(current_user, undeclared.relation_oid, 'UPDATE') OR "
@@ -1524,7 +1529,9 @@ class PostgreSQLAcquisitionProvider:
                 "has_table_privilege(candidate.rolname, a.relation_oid, 'TRUNCATE') OR "
                 "has_table_privilege(candidate.rolname, a.relation_oid, 'REFERENCES') OR "
                 "has_table_privilege(candidate.rolname, a.relation_oid, 'TRIGGER') OR "
-                "has_table_privilege(candidate.rolname, a.relation_oid, 'MAINTAIN') OR "
+                "(CASE WHEN current_setting('server_version_num')::integer >= 170000 "
+                "THEN has_table_privilege(candidate.rolname, a.relation_oid, 'MAINTAIN') "
+                "ELSE FALSE END) OR "
                 "has_any_column_privilege(candidate.rolname, a.relation_oid, 'INSERT') OR "
                 "has_any_column_privilege(candidate.rolname, a.relation_oid, 'UPDATE') OR "
                 "has_any_column_privilege(candidate.rolname, a.relation_oid, 'REFERENCES') OR "
@@ -1553,7 +1560,9 @@ class PostgreSQLAcquisitionProvider:
                 "has_table_privilege(candidate.rolname, undeclared.relation_oid, "
                 "'REFERENCES') OR "
                 "has_table_privilege(candidate.rolname, undeclared.relation_oid, 'TRIGGER') OR "
-                "has_table_privilege(candidate.rolname, undeclared.relation_oid, 'MAINTAIN') OR "
+                "(CASE WHEN current_setting('server_version_num')::integer >= 170000 "
+                "THEN has_table_privilege(candidate.rolname, undeclared.relation_oid, "
+                "'MAINTAIN') ELSE FALSE END) OR "
                 "has_any_column_privilege(candidate.rolname, undeclared.relation_oid, "
                 "'SELECT') OR "
                 "has_any_column_privilege(candidate.rolname, undeclared.relation_oid, "
@@ -1676,7 +1685,7 @@ class PostgreSQLAcquisitionProvider:
             bounds = cursor.fetchone()
         if bounds is None or bounds != (None, None, 0):
             raise ValueError("PostgreSQL before-first snapshot bounds are invalid")
-        return bounds[0], bounds[1], bounds[2]
+        return None, None, 0
 
 
 class _PostgreSQLSnapshotSession:

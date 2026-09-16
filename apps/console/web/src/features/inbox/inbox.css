@@ -193,6 +193,143 @@
   opacity: 0.6;
 }
 
+.access-lifecycle {
+  border-block: 1px solid var(--color-line);
+  display: grid;
+  gap: 0.75rem;
+  margin-block: var(--space-5);
+  padding-block: var(--space-5);
+}
+
+.access-lifecycle__revocation {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.access-lifecycle__revocation textarea {
+  border: 1px solid var(--color-line);
+  font: inherit;
+  padding: 0.6rem;
+}
+
+.product-intent-review {
+  border-block: 1px solid var(--color-line);
+  display: grid;
+  gap: var(--space-4);
+  margin-block: var(--space-5);
+  padding-block: var(--space-5);
+}
+
+.product-intent-review__heading {
+  align-items: start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.product-intent-review__heading h3,
+.product-intent-review__heading p,
+.product-intent-review__section h4,
+.product-intent-review__unresolved h4 {
+  margin: 0;
+}
+
+.product-intent-review__heading p {
+  color: var(--color-ink-muted);
+  margin-top: var(--space-2);
+  max-width: 64ch;
+}
+
+.product-intent-review__heading > span {
+  border: 1px solid var(--color-line);
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  padding: 0.35rem 0.55rem;
+}
+
+.product-intent-review__heading .product-intent-review__approved {
+  border-color: var(--color-ready);
+  color: var(--color-ready);
+}
+
+.product-intent-review__sources {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+.product-intent-review__sources li {
+  align-items: baseline;
+  border-left: 3px solid var(--color-primary);
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 1.5fr) auto;
+  padding: 0.45rem 0.65rem;
+}
+
+.product-intent-review__sources li > span {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+}
+
+.product-intent-review__sources .source-authorized {
+  color: var(--color-ready);
+}
+
+.product-intent-review__sources .source-unresolved,
+.product-intent-review__unresolved {
+  color: var(--color-attention);
+}
+
+.product-intent-review__facts {
+  display: grid;
+  gap: var(--space-2) var(--space-5);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.product-intent-review__facts div {
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-2);
+}
+
+.product-intent-review__facts dt {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.product-intent-review__facts dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.product-intent-review__unresolved {
+  background: var(--color-attention-surface);
+  padding: var(--space-3);
+}
+
+.product-intent-review__unresolved ul {
+  margin-bottom: 0;
+}
+
+@container decision-pane (max-width: 32rem) {
+  .product-intent-review__heading {
+    display: grid;
+  }
+
+  .product-intent-review__heading > span {
+    justify-self: start;
+  }
+
+  .product-intent-review__sources li,
+  .product-intent-review__facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .authority-list,
 .lifecycle-timeline,
 .conversation-panel__messages {

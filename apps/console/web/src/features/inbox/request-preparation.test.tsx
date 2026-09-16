@@ -53,6 +53,7 @@ test("records the architect clarification with the displayed revision and scoped
 
 test.each([
   ["prepare_answer", "Prepare answer proposal", "prepareRequestProposal", "investigating"],
+  ["prepare_access", "Prepare access proposal", "prepareRequestProposal", "investigating"],
   ["submit_proposal", "Submit proposal for approval", "submitRequestProposal", "proposed"],
 ] as const)("offers only the server-issued %s action", async (action, label, method, state) => {
   const {client} = setup({...detail, state, preparation_actions: [action]})

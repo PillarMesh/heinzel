@@ -1,5 +1,54 @@
 {
   "$defs": {
+    "AccessLifecycleView": {
+      "additionalProperties": false,
+      "properties": {
+        "can_revoke": {
+          "title": "Can Revoke",
+          "type": "boolean"
+        },
+        "effective_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "active",
+            "expired",
+            "revocation_pending",
+            "revoked",
+            "failed"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "summary": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "title": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "state",
+        "title",
+        "summary",
+        "effective_at",
+        "expires_at",
+        "revision",
+        "can_revoke"
+      ],
+      "title": "AccessLifecycleView",
+      "type": "object"
+    },
     "AccessMode": {
       "enum": [
         "query",
@@ -84,6 +133,37 @@
         "authority_summary"
       ],
       "title": "AccessPreviewProposalView",
+      "type": "object"
+    },
+    "AccessRevocationCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "enum": [
+            "requester",
+            "data_architect"
+          ],
+          "title": "Active Role",
+          "type": "string"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "reason": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "active_role",
+        "reason"
+      ],
+      "title": "AccessRevocationCommand",
       "type": "object"
     },
     "AcquisitionModeView": {
@@ -182,6 +262,37 @@
       "title": "AcquisitionReceiptsView",
       "type": "object"
     },
+    "AcquisitionRunNowCommand": {
+      "additionalProperties": false,
+      "description": "Ask the acquisition owner to prepare one run of an activated contract.\n\nThe command carries no contract revision, binding, schema, or checkpoint. The\nacquisition application resolves those current authorities from `contract_ref`.",
+      "properties": {
+        "acquisition_mode": {
+          "$ref": "#/$defs/AcquisitionModeView"
+        },
+        "active_role": {
+          "enum": [
+            "data_architect",
+            "data_owner"
+          ],
+          "title": "Active Role",
+          "type": "string"
+        },
+        "contract_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "trigger_window": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "active_role",
+        "contract_ref",
+        "trigger_window",
+        "acquisition_mode"
+      ],
+      "title": "AcquisitionRunNowCommand",
+      "type": "object"
+    },
     "ActorDisplayView": {
       "additionalProperties": false,
       "properties": {
@@ -261,6 +372,190 @@
       ],
       "title": "AdmissionView",
       "type": "object"
+    },
+    "AnswerResultCell": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+          "type": "string"
+        },
+        {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "AnswerResultColumnView": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_operations": {
+          "$ref": "#/$defs/JsonTuple_Literal__sort____filter___",
+          "default": []
+        },
+        "label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "value_type": {
+          "$ref": "#/$defs/AnswerResultValueType"
+        }
+      },
+      "required": [
+        "name",
+        "label",
+        "value_type"
+      ],
+      "title": "AnswerResultColumnView",
+      "type": "object"
+    },
+    "AnswerResultPageView": {
+      "additionalProperties": false,
+      "properties": {
+        "answer_text": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "as_of": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcDatetime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "columns": {
+          "$ref": "#/$defs/JsonTuple_AnswerResultColumnView_",
+          "default": []
+        },
+        "freshness": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FreshnessState"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OpaqueToken"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "request_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "row_count": {
+          "minimum": 0,
+          "title": "Row Count",
+          "type": "integer"
+        },
+        "rows": {
+          "$ref": "#/$defs/JsonTuple_JsonTuple_AnswerResultCell__",
+          "default": []
+        },
+        "status": {
+          "$ref": "#/$defs/AnswerResultStatus"
+        },
+        "technical_details": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AnswerResultTechnicalDetailsView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "title": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "request_id",
+        "title",
+        "answer_text",
+        "status",
+        "freshness",
+        "as_of",
+        "row_count"
+      ],
+      "title": "AnswerResultPageView",
+      "type": "object"
+    },
+    "AnswerResultStatus": {
+      "enum": [
+        "available",
+        "expired",
+        "failed"
+      ],
+      "type": "string"
+    },
+    "AnswerResultTechnicalDetailsView": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_receipt_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "plan_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "result_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "result_schema_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "execution_receipt_id",
+        "plan_digest",
+        "result_digest",
+        "result_schema_digest"
+      ],
+      "title": "AnswerResultTechnicalDetailsView",
+      "type": "object"
+    },
+    "AnswerResultValueType": {
+      "enum": [
+        "boolean",
+        "decimal",
+        "integer",
+        "string",
+        "timestamp"
+      ],
+      "type": "string"
     },
     "ApiError": {
       "additionalProperties": false,
@@ -383,6 +678,67 @@
       "title": "AuthorityStatusView",
       "type": "object"
     },
+    "BusinessProcessManifestCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "$ref": "#/$defs/JsonTuple_str_"
+        },
+        "events": {
+          "$ref": "#/$defs/JsonTuple_str_"
+        },
+        "outcomes": {
+          "$ref": "#/$defs/JsonTuple_str_"
+        },
+        "owner": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Owner",
+          "type": "string"
+        },
+        "participants": {
+          "$ref": "#/$defs/JsonTuple_str_"
+        },
+        "process_name": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Process Name",
+          "type": "string"
+        },
+        "rules": {
+          "$ref": "#/$defs/JsonTuple_str_"
+        },
+        "schema_version": {
+          "const": "1",
+          "default": "1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "source_references": {
+          "$ref": "#/$defs/JsonTuple_str_"
+        },
+        "states": {
+          "$ref": "#/$defs/JsonTuple_str_"
+        },
+        "unresolved_questions": {
+          "$ref": "#/$defs/JsonTuple_str_"
+        }
+      },
+      "required": [
+        "process_name",
+        "owner",
+        "participants",
+        "outcomes",
+        "entities",
+        "events",
+        "states",
+        "rules",
+        "source_references",
+        "unresolved_questions"
+      ],
+      "title": "BusinessProcessManifestCommand",
+      "type": "object"
+    },
     "CapabilityState": {
       "enum": [
         "ready",
@@ -459,14 +815,21 @@
           "default": null
         },
         "owner": {
-          "$ref": "#/$defs/NonEmptyText"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
         "asset_ref",
         "display_name",
         "definition",
-        "owner",
         "lineage_summary"
       ],
       "title": "CatalogAssetView",
@@ -561,6 +924,108 @@
       "title": "ClarifiedOutcomeView",
       "type": "object"
     },
+    "ConsoleEnvelope_AccessLifecycleView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AccessLifecycleView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[AccessLifecycleView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_AcquisitionReceiptView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AcquisitionReceiptView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[AcquisitionReceiptView]",
+      "type": "object"
+    },
     "ConsoleEnvelope_AcquisitionReceiptsView_": {
       "additionalProperties": false,
       "allOf": [
@@ -610,6 +1075,57 @@
         "data"
       ],
       "title": "ConsoleEnvelope[AcquisitionReceiptsView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_AnswerResultPageView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/AnswerResultPageView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[AnswerResultPageView]",
       "type": "object"
     },
     "ConsoleEnvelope_CatalogAssetView_": {
@@ -867,6 +1383,57 @@
       "title": "ConsoleEnvelope[DashboardView]",
       "type": "object"
     },
+    "ConsoleEnvelope_DashboardsView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/DashboardsView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[DashboardsView]",
+      "type": "object"
+    },
     "ConsoleEnvelope_DataProductView_": {
       "additionalProperties": false,
       "allOf": [
@@ -1020,6 +1587,57 @@
       "title": "ConsoleEnvelope[EvidenceView]",
       "type": "object"
     },
+    "ConsoleEnvelope_ImpactView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ImpactView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[ImpactView]",
+      "type": "object"
+    },
     "ConsoleEnvelope_InboxView_": {
       "additionalProperties": false,
       "allOf": [
@@ -1069,6 +1687,108 @@
         "data"
       ],
       "title": "ConsoleEnvelope[InboxView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_IncidentView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/IncidentView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[IncidentView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_IncidentsView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/IncidentsView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[IncidentsView]",
       "type": "object"
     },
     "ConsoleEnvelope_JsonTuple_RequesterRequestView__": {
@@ -1171,6 +1891,57 @@
         "data"
       ],
       "title": "ConsoleEnvelope[OperationView]",
+      "type": "object"
+    },
+    "ConsoleEnvelope_ProductIntentApprovalView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ProductIntentApprovalView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[ProductIntentApprovalView]",
       "type": "object"
     },
     "ConsoleEnvelope_RequestDetailView_": {
@@ -1711,14 +2482,38 @@
       "title": "CreateRequestCommand",
       "type": "object"
     },
+    "DashboardAccessViewState": {
+      "enum": [
+        "active",
+        "workspace_role"
+      ],
+      "type": "string"
+    },
     "DashboardView": {
       "additionalProperties": false,
       "properties": {
+        "access_state": {
+          "$ref": "#/$defs/DashboardAccessViewState"
+        },
+        "as_of": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
         "dashboard_ref": {
           "$ref": "#/$defs/PublicId"
         },
         "display_name": {
           "$ref": "#/$defs/NonEmptyText"
+        },
+        "freshness": {
+          "$ref": "#/$defs/FreshnessState"
+        },
+        "lifecycle_state": {
+          "enum": [
+            "active",
+            "archived"
+          ],
+          "title": "Lifecycle State",
+          "type": "string"
         },
         "link_ref": {
           "anyOf": [
@@ -1742,20 +2537,45 @@
           ],
           "default": null
         },
+        "published_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
         "state": {
           "$ref": "#/$defs/CapabilityState"
         },
         "summary": {
           "$ref": "#/$defs/NonEmptyText"
+        },
+        "version": {
+          "minimum": 1,
+          "title": "Version",
+          "type": "integer"
         }
       },
       "required": [
         "dashboard_ref",
         "display_name",
+        "version",
+        "lifecycle_state",
+        "as_of",
+        "freshness",
+        "access_state",
+        "published_at",
         "state",
         "summary"
       ],
       "title": "DashboardView",
+      "type": "object"
+    },
+    "DashboardsView": {
+      "additionalProperties": false,
+      "properties": {
+        "dashboards": {
+          "$ref": "#/$defs/JsonTuple_DashboardView_",
+          "default": []
+        }
+      },
+      "title": "DashboardsView",
       "type": "object"
     },
     "DataAccessRequestInput": {
@@ -1795,13 +2615,138 @@
     },
     "DataProductView": {
       "additionalProperties": false,
-      "description": "A data product as far as any owning service will assert one.\n\nNothing in the estate stores a data product row. It exists only as an\n`ArtifactReference` -- an identifier, a version and a digest -- inside policy\nsnapshots and access previews. A display name and a summary would therefore be\nthe console's inventions, and the console does not become an authority over\nrecords it merely projects. The same rule already governs\n`EvidenceContextView.datasets`.",
+      "description": "A policy-permitted product enriched only by its owning publication definition.",
       "properties": {
-        "artifact_digest": {
-          "$ref": "#/$defs/Digest"
+        "catalog_revision": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Catalog Revision"
+        },
+        "column_count": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Column Count"
         },
         "data_product_id": {
           "$ref": "#/$defs/PublicId"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "freshness_observed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcDatetime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "generation": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Generation"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "namespace": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "product_revision": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Revision"
+        },
+        "publication_status": {
+          "enum": [
+            "published",
+            "pending"
+          ],
+          "title": "Publication Status",
+          "type": "string"
+        },
+        "relation_name": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source_count": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Count"
         },
         "version": {
           "minimum": 1,
@@ -1811,8 +2756,8 @@
       },
       "required": [
         "data_product_id",
-        "artifact_digest",
-        "version"
+        "version",
+        "publication_status"
       ],
       "title": "DataProductView",
       "type": "object"
@@ -1927,6 +2872,35 @@
         "decision"
       ],
       "title": "DecisionCommand",
+      "type": "object"
+    },
+    "DeliveredAccessView": {
+      "additionalProperties": false,
+      "properties": {
+        "access_mode": {
+          "$ref": "#/$defs/AccessMode"
+        },
+        "effective_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "expires_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "fields": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_NonEmptyText_"
+        },
+        "permissions": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_Literal__dashboard____download____query____view___"
+        }
+      },
+      "required": [
+        "access_mode",
+        "fields",
+        "effective_at",
+        "expires_at",
+        "permissions"
+      ],
+      "title": "DeliveredAccessView",
       "type": "object"
     },
     "DeliveredAnswerView": {
@@ -2108,6 +3082,101 @@
       ],
       "type": "string"
     },
+    "ImpactApproverView": {
+      "additionalProperties": false,
+      "properties": {
+        "authority_label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "reason": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "authority_label",
+        "reason"
+      ],
+      "title": "ImpactApproverView",
+      "type": "object"
+    },
+    "ImpactChangeType": {
+      "enum": [
+        "source_drift",
+        "metric_version_change",
+        "contract_supersession",
+        "generation_failure",
+        "policy_change",
+        "grant_change",
+        "retirement"
+      ],
+      "type": "string"
+    },
+    "ImpactItemView": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_type": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "impact_handle": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "owner_label": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "impact_handle",
+        "label",
+        "asset_type",
+        "owner_label"
+      ],
+      "title": "ImpactItemView",
+      "type": "object"
+    },
+    "ImpactView": {
+      "additionalProperties": false,
+      "properties": {
+        "added_approvers": {
+          "$ref": "#/$defs/JsonTuple_ImpactApproverView_",
+          "default": []
+        },
+        "affected_owners": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "analyzed_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "change_type": {
+          "$ref": "#/$defs/ImpactChangeType"
+        },
+        "possible_impacts": {
+          "$ref": "#/$defs/JsonTuple_ImpactItemView_",
+          "default": []
+        },
+        "request_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "subject_label": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "validated_impacts": {
+          "$ref": "#/$defs/JsonTuple_ImpactItemView_",
+          "default": []
+        }
+      },
+      "required": [
+        "request_id",
+        "change_type",
+        "subject_label",
+        "analyzed_at"
+      ],
+      "title": "ImpactView",
+      "type": "object"
+    },
     "InboxItemView": {
       "additionalProperties": false,
       "properties": {
@@ -2185,6 +3254,171 @@
       "title": "InboxView",
       "type": "object"
     },
+    "IncidentAutomaticAction": {
+      "enum": [
+        "retry_transient_attempt",
+        "reconcile_external_effect"
+      ],
+      "type": "string"
+    },
+    "IncidentFailureClassification": {
+      "enum": [
+        "transient",
+        "permanent",
+        "ambiguous_outcome",
+        "authorization_denied",
+        "integrity_failure",
+        "conflict",
+        "no_valid_plan"
+      ],
+      "type": "string"
+    },
+    "IncidentKind": {
+      "enum": [
+        "stuck_lease",
+        "source_unavailable",
+        "checkpoint_conflict",
+        "schema_drift",
+        "no_valid_plan",
+        "transform_rejection",
+        "catalog_pending",
+        "query_failure",
+        "dashboard_drift",
+        "revocation_pending"
+      ],
+      "type": "string"
+    },
+    "IncidentRecoveryCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/OperationalRecoveryAction"
+        },
+        "active_role": {
+          "enum": [
+            "data_architect",
+            "data_owner"
+          ],
+          "title": "Active Role",
+          "type": "string"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "reason": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "action",
+        "active_role",
+        "reason"
+      ],
+      "title": "IncidentRecoveryCommand",
+      "type": "object"
+    },
+    "IncidentStage": {
+      "enum": [
+        "request_intake",
+        "contract_activation",
+        "extract",
+        "land",
+        "transform",
+        "catalog_publication",
+        "governed_query",
+        "dashboard_publication",
+        "access_revocation"
+      ],
+      "type": "string"
+    },
+    "IncidentView": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_operator_actions": {
+          "$ref": "#/$defs/JsonTuple_OperationalRecoveryAction_",
+          "default": []
+        },
+        "classification": {
+          "$ref": "#/$defs/IncidentFailureClassification"
+        },
+        "failed_stage": {
+          "$ref": "#/$defs/IncidentStage"
+        },
+        "incident_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "kind": {
+          "$ref": "#/$defs/IncidentKind"
+        },
+        "last_successful_stage": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IncidentStage"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "next_automatic_action": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/IncidentAutomaticAction"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "opened_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "recovery_recorded": {
+          "default": false,
+          "title": "Recovery Recorded",
+          "type": "boolean"
+        },
+        "revision": {
+          "minimum": 1,
+          "title": "Revision",
+          "type": "integer"
+        },
+        "updated_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "user_impact": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "incident_id",
+        "revision",
+        "kind",
+        "classification",
+        "failed_stage",
+        "user_impact",
+        "opened_at",
+        "updated_at"
+      ],
+      "title": "IncidentView",
+      "type": "object"
+    },
+    "IncidentsView": {
+      "additionalProperties": false,
+      "properties": {
+        "incidents": {
+          "$ref": "#/$defs/JsonTuple_IncidentView_",
+          "default": []
+        }
+      },
+      "title": "IncidentsView",
+      "type": "object"
+    },
     "JsonTuple_AcquisitionReasonCodeView_": {
       "items": {
         "$ref": "#/$defs/AcquisitionReasonCodeView"
@@ -2194,6 +3428,18 @@
     "JsonTuple_AcquisitionReceiptView_": {
       "items": {
         "$ref": "#/$defs/AcquisitionReceiptView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_AnswerResultCell_": {
+      "items": {
+        "$ref": "#/$defs/AnswerResultCell"
+      },
+      "type": "array"
+    },
+    "JsonTuple_AnswerResultColumnView_": {
+      "items": {
+        "$ref": "#/$defs/AnswerResultColumnView"
       },
       "type": "array"
     },
@@ -2239,6 +3485,12 @@
       },
       "type": "array"
     },
+    "JsonTuple_DashboardView_": {
+      "items": {
+        "$ref": "#/$defs/DashboardView"
+      },
+      "type": "array"
+    },
     "JsonTuple_DataProductView_": {
       "items": {
         "$ref": "#/$defs/DataProductView"
@@ -2257,15 +3509,49 @@
       },
       "type": "array"
     },
+    "JsonTuple_ImpactApproverView_": {
+      "items": {
+        "$ref": "#/$defs/ImpactApproverView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ImpactItemView_": {
+      "items": {
+        "$ref": "#/$defs/ImpactItemView"
+      },
+      "type": "array"
+    },
     "JsonTuple_InboxItemView_": {
       "items": {
         "$ref": "#/$defs/InboxItemView"
       },
       "type": "array"
     },
+    "JsonTuple_IncidentView_": {
+      "items": {
+        "$ref": "#/$defs/IncidentView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_JsonTuple_AnswerResultCell__": {
+      "items": {
+        "$ref": "#/$defs/JsonTuple_AnswerResultCell_"
+      },
+      "type": "array"
+    },
     "JsonTuple_LifecycleEventView_": {
       "items": {
         "$ref": "#/$defs/LifecycleEventView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_Literal__sort____filter___": {
+      "items": {
+        "enum": [
+          "sort",
+          "filter"
+        ],
+        "type": "string"
       },
       "type": "array"
     },
@@ -2281,6 +3567,12 @@
       },
       "type": "array"
     },
+    "JsonTuple_OperationalRecoveryAction_": {
+      "items": {
+        "$ref": "#/$defs/OperationalRecoveryAction"
+      },
+      "type": "array"
+    },
     "JsonTuple_OwnDecisionView_": {
       "items": {
         "$ref": "#/$defs/OwnDecisionView"
@@ -2290,6 +3582,12 @@
     "JsonTuple_PreparationAction_": {
       "items": {
         "$ref": "#/$defs/PreparationAction"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ProductIntentFilterView_": {
+      "items": {
+        "$ref": "#/$defs/ProductIntentFilterView"
       },
       "type": "array"
     },
@@ -2338,6 +3636,12 @@
     "JsonTuple_SourceConnectionView_": {
       "items": {
         "$ref": "#/$defs/SourceConnectionView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_str_": {
+      "items": {
+        "type": "string"
       },
       "type": "array"
     },
@@ -2455,9 +3759,43 @@
       "minItems": 1,
       "type": "array"
     },
+    "NonEmptyJsonTuple_Literal__dashboard____download____query____view___": {
+      "items": {
+        "enum": [
+          "dashboard",
+          "download",
+          "query",
+          "view"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
     "NonEmptyJsonTuple_NonEmptyText_": {
       "items": {
         "$ref": "#/$defs/NonEmptyText"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "NonEmptyJsonTuple_ProductDeliveryOutput_": {
+      "items": {
+        "$ref": "#/$defs/ProductDeliveryOutput"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "NonEmptyJsonTuple_ProductIntentMeasureView_": {
+      "items": {
+        "$ref": "#/$defs/ProductIntentMeasureView"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "NonEmptyJsonTuple_ProductIntentSourceCoverageView_": {
+      "items": {
+        "$ref": "#/$defs/ProductIntentSourceCoverageView"
       },
       "minItems": 1,
       "type": "array"
@@ -2723,6 +4061,14 @@
       "title": "OperationView",
       "type": "object"
     },
+    "OperationalRecoveryAction": {
+      "enum": [
+        "retry_transient_attempt",
+        "cancel_unstarted_work",
+        "reconcile_external_effect"
+      ],
+      "type": "string"
+    },
     "OwnDecisionView": {
       "additionalProperties": false,
       "properties": {
@@ -2747,6 +4093,7 @@
     "PreparationAction": {
       "enum": [
         "clarify",
+        "prepare_access",
         "prepare_answer",
         "submit_proposal"
       ],
@@ -2756,7 +4103,9 @@
       "additionalProperties": false,
       "properties": {
         "active_role": {
-          "$ref": "#/$defs/ActorRole"
+          "const": "data_architect",
+          "title": "Active Role",
+          "type": "string"
         },
         "expected_revision": {
           "minimum": 1,
@@ -2764,14 +4113,24 @@
           "type": "integer"
         },
         "file_name": {
-          "$ref": "#/$defs/NonEmptyText"
+          "maxLength": 255,
+          "minLength": 4,
+          "pattern": "^.+\\.md$",
+          "title": "File Name",
+          "type": "string"
+        },
+        "manifest": {
+          "$ref": "#/$defs/BusinessProcessManifestCommand"
         },
         "media_type": {
-          "enum": [
-            "application/pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-          ],
+          "const": "text/markdown; charset=utf-8",
           "title": "Media Type",
+          "type": "string"
+        },
+        "narrative_markdown": {
+          "maxLength": 1000000,
+          "minLength": 1,
+          "title": "Narrative Markdown",
           "type": "string"
         },
         "package_digest": {
@@ -2783,7 +4142,9 @@
         "package_digest",
         "active_role",
         "file_name",
-        "media_type"
+        "media_type",
+        "narrative_markdown",
+        "manifest"
       ],
       "title": "ProcessPackageCommand",
       "type": "object"
@@ -2817,6 +4178,227 @@
         "candidate_summary"
       ],
       "title": "ProcessPackageView",
+      "type": "object"
+    },
+    "ProductAggregation": {
+      "enum": [
+        "sum",
+        "count",
+        "minimum",
+        "maximum",
+        "average"
+      ],
+      "type": "string"
+    },
+    "ProductDeliveryOutput": {
+      "enum": [
+        "dataset",
+        "table",
+        "dashboard"
+      ],
+      "type": "string"
+    },
+    "ProductFilterOperator": {
+      "enum": [
+        "equals",
+        "not_equals",
+        "in",
+        "greater_than",
+        "less_than"
+      ],
+      "type": "string"
+    },
+    "ProductIntentApprovalCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "active_role": {
+          "const": "data_architect",
+          "title": "Active Role",
+          "type": "string"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "reviewed_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "reviewed_digest",
+        "active_role"
+      ],
+      "title": "ProductIntentApprovalCommand",
+      "type": "object"
+    },
+    "ProductIntentApprovalView": {
+      "additionalProperties": false,
+      "properties": {
+        "approval_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "approved_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "approved_by": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "artifact_reference": {
+          "$ref": "#/$defs/ArtifactReferenceView"
+        },
+        "intent_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "intent_revision": {
+          "minimum": 1,
+          "title": "Intent Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "approval_id",
+        "intent_revision",
+        "intent_digest",
+        "artifact_reference",
+        "approved_by",
+        "approved_at"
+      ],
+      "title": "ProductIntentApprovalView",
+      "type": "object"
+    },
+    "ProductIntentFilterView": {
+      "additionalProperties": false,
+      "properties": {
+        "dimension_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "operator": {
+          "$ref": "#/$defs/ProductFilterOperator"
+        },
+        "value": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "dimension_ref",
+        "operator",
+        "value"
+      ],
+      "title": "ProductIntentFilterView",
+      "type": "object"
+    },
+    "ProductIntentMeasureView": {
+      "additionalProperties": false,
+      "properties": {
+        "aggregation": {
+          "$ref": "#/$defs/ProductAggregation"
+        },
+        "metric_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "metric_ref",
+        "aggregation"
+      ],
+      "title": "ProductIntentMeasureView",
+      "type": "object"
+    },
+    "ProductIntentReviewView": {
+      "additionalProperties": false,
+      "properties": {
+        "approved": {
+          "title": "Approved",
+          "type": "boolean"
+        },
+        "approved_intent_revision": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Approved Intent Revision"
+        },
+        "business_outcome": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "filters": {
+          "$ref": "#/$defs/JsonTuple_ProductIntentFilterView_",
+          "default": []
+        },
+        "freshness_seconds": {
+          "exclusiveMinimum": 0,
+          "title": "Freshness Seconds",
+          "type": "integer"
+        },
+        "grain": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_NonEmptyText_"
+        },
+        "measures": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_ProductIntentMeasureView_"
+        },
+        "outputs": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_ProductDeliveryOutput_"
+        },
+        "reviewed_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "source_coverage": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_ProductIntentSourceCoverageView_"
+        },
+        "title": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "unresolved_constraints": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        }
+      },
+      "required": [
+        "reviewed_digest",
+        "approved",
+        "title",
+        "business_outcome",
+        "source_coverage",
+        "grain",
+        "measures",
+        "freshness_seconds",
+        "outputs"
+      ],
+      "title": "ProductIntentReviewView",
+      "type": "object"
+    },
+    "ProductIntentSourceCoverageView": {
+      "additionalProperties": false,
+      "properties": {
+        "authorized": {
+          "title": "Authorized",
+          "type": "boolean"
+        },
+        "covered_fields": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "source_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "source_ref",
+        "authorized"
+      ],
+      "title": "ProductIntentSourceCoverageView",
       "type": "object"
     },
     "ProposalApprovalView": {
@@ -2950,6 +4532,17 @@
     "RequestDetailView": {
       "additionalProperties": false,
       "properties": {
+        "access_lifecycle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessLifecycleView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "admission": {
           "anyOf": [
             {
@@ -2985,6 +4578,17 @@
         "preparation_notes": {
           "$ref": "#/$defs/JsonTuple_NonEmptyText_",
           "default": []
+        },
+        "product_intent": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProductIntentReviewView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "proposal": {
           "anyOf": [
@@ -3122,10 +4726,32 @@
     "RequesterRequestView": {
       "additionalProperties": false,
       "properties": {
+        "access_lifecycle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AccessLifecycleView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "clarified_outcome": {
           "anyOf": [
             {
               "$ref": "#/$defs/ClarifiedOutcomeView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "delivered_access": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeliveredAccessView"
             },
             {
               "type": "null"
@@ -3189,6 +4815,11 @@
         },
         "requested_outcome": {
           "$ref": "#/$defs/NonEmptyText"
+        },
+        "result_page_available": {
+          "default": false,
+          "title": "Result Page Available",
+          "type": "boolean"
         },
         "revision": {
           "minimum": 1,
@@ -4028,11 +5659,26 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "access_lifecycle_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_AccessLifecycleView_"
+    },
+    "access_revocation_command": {
+      "$ref": "#/$defs/AccessRevocationCommand"
+    },
+    "acquisition_receipt_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_AcquisitionReceiptView_"
+    },
     "acquisition_receipts_response": {
       "$ref": "#/$defs/ConsoleEnvelope_AcquisitionReceiptsView_"
     },
+    "acquisition_run_now_command": {
+      "$ref": "#/$defs/AcquisitionRunNowCommand"
+    },
     "admission_command": {
       "$ref": "#/$defs/AdmissionCommand"
+    },
+    "answer_result_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_AnswerResultPageView_"
     },
     "catalog_asset_response": {
       "$ref": "#/$defs/ConsoleEnvelope_CatalogAssetView_"
@@ -4058,6 +5704,9 @@
     "dashboard_response": {
       "$ref": "#/$defs/ConsoleEnvelope_DashboardView_"
     },
+    "dashboards_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_DashboardsView_"
+    },
     "data_product_response": {
       "$ref": "#/$defs/ConsoleEnvelope_DataProductView_"
     },
@@ -4073,14 +5722,32 @@
     "evidence_response": {
       "$ref": "#/$defs/ConsoleEnvelope_EvidenceView_"
     },
+    "impact_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_ImpactView_"
+    },
     "inbox_response": {
       "$ref": "#/$defs/ConsoleEnvelope_InboxView_"
+    },
+    "incident_recovery_command": {
+      "$ref": "#/$defs/IncidentRecoveryCommand"
+    },
+    "incident_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_IncidentView_"
+    },
+    "incidents_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_IncidentsView_"
     },
     "operation_response": {
       "$ref": "#/$defs/ConsoleEnvelope_OperationView_"
     },
     "process_package_command": {
       "$ref": "#/$defs/ProcessPackageCommand"
+    },
+    "product_intent_approval_command": {
+      "$ref": "#/$defs/ProductIntentApprovalCommand"
+    },
+    "product_intent_approval_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_ProductIntentApprovalView_"
     },
     "proposal_preparation_command": {
       "$ref": "#/$defs/ProposalPreparationCommand"
@@ -4132,23 +5799,32 @@
     "review_response",
     "inbox_response",
     "request_detail_response",
+    "impact_response",
     "requester_requests_response",
     "requester_request_response",
+    "access_lifecycle_response",
     "conversation_response",
     "clarified_outcome_response",
     "data_products_response",
     "data_product_response",
     "catalog_assets_response",
     "runs_response",
+    "incidents_response",
+    "incident_response",
     "acquisition_receipts_response",
+    "acquisition_receipt_response",
     "catalog_asset_response",
     "dashboard_response",
+    "dashboards_response",
     "evidence_response",
     "operation_response",
+    "product_intent_approval_response",
+    "answer_result_response",
     "error_response",
     "warehouse_binding_command",
     "process_package_command",
     "decision_command",
+    "product_intent_approval_command",
     "admission_command",
     "request_clarification_command",
     "proposal_preparation_command",
@@ -4156,7 +5832,10 @@
     "conversation_message_command",
     "clarified_outcome_acceptance_command",
     "request_withdrawal_command",
+    "access_revocation_command",
     "retry_operation_command",
+    "incident_recovery_command",
+    "acquisition_run_now_command",
     "reset_command"
   ],
   "title": "ConsoleApiSchema",

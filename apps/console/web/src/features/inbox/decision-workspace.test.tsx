@@ -176,6 +176,20 @@ const accessDetail: RequestDetailView = {
   available_actions: ["approve", "reject", "request_changes"],
 }
 
+const activeAccessDetail: RequestDetailView = {
+  ...accessDetail,
+  state: "delivered",
+  access_lifecycle: {
+    state: "active",
+    title: "Access is active",
+    summary: "The approved access is available until 2026-01-08T00:00:00+00:00.",
+    effective_at: "2026-01-01T00:00:00Z",
+    expires_at: "2026-01-08T00:00:00Z",
+    revision: 2,
+    can_revoke: true,
+  },
+}
+
 const details: Readonly<Record<string, RequestDetailView>> = {
   "request-answer": answerDetail,
   "request-access": accessDetail,
@@ -199,7 +213,12 @@ function createClient(overrides: Partial<InboxClient> = {}): InboxClient {
       }
       return detailEnvelope(detail)
     }),
+    revokeAccess: vi.fn(),
+    getRequestImpact: vi.fn(async () => {
+      throw new Error("no impact analysis")
+    }),
     decideRequest: vi.fn(),
+    approveProductIntent: vi.fn(),
     appendConversationMessage: vi.fn(),
     getCatalogAsset: vi.fn(async () => {
       throw new Error("no catalog record")
@@ -249,6 +268,80 @@ test("the queue preserves the server-issued order and never re-sorts it in the b
     expect.stringContaining("Weekly revenue movement"),
     expect.stringContaining("Disputed invoice treatment"),
   ])
+})
+
+test("architect removes active access with its grant revision and refreshes the detail", async () => {
+  const user = userEvent.setup()
+  const pendingDetail: RequestDetailView = {
+    ...activeAccessDetail,
+    access_lifecycle: {
+      ...activeAccessDetail.access_lifecycle!,
+      state: "revocation_pending",
+      title: "Access removal is in progress",
+      summary: "Access is already unavailable while cleanup completes.",
+      revision: 3,
+      can_revoke: false,
+    },
+  }
+  const getRequestDetail = vi
+    .fn()
+    .mockResolvedValueOnce(detailEnvelope(activeAccessDetail))
+    .mockResolvedValueOnce(detailEnvelope(pendingDetail))
+  const revokeAccess = vi.fn(async () => ({
+    meta: {correlation_id: "correlation-revoke", data_provenance: "demo_fixture" as const},
+    data: pendingDetail.access_lifecycle!,
+  }))
+  const client = createClient({getRequestDetail, revokeAccess})
+  renderWorkspace(client, "request-access")
+
+  await user.click(await screen.findByRole("button", {name: "Remove access"}))
+  await user.type(screen.getByLabelText("Reason for removing access"), "Access no longer needed")
+  await user.click(screen.getByRole("button", {name: "Confirm access removal"}))
+
+  await waitFor(() => expect(revokeAccess).toHaveBeenCalledTimes(1))
+  expect(revokeAccess).toHaveBeenCalledWith(
+    "request-access",
+    {
+      expected_revision: 2,
+      active_role: "data_architect",
+      reason: "Access no longer needed",
+    },
+    {csrfToken: session.csrf_token, idempotencyKey: "idempotency-decision"},
+  )
+  expect(await screen.findByRole("heading", {name: "Access removal is in progress"})).toBeVisible()
+  expect(screen.queryByRole("button", {name: "Remove access"})).not.toBeInTheDocument()
+})
+
+test("shows the authorization-filtered impact analysis inside the selected decision", async () => {
+  const client = createClient({
+    getRequestImpact: vi.fn(async () => ({
+      meta: {correlation_id: "correlation-impact", data_provenance: "demo_fixture" as const},
+      data: {
+        request_id: "request-answer",
+        change_type: "metric_version_change" as const,
+        subject_label: "Net revenue v2",
+        analyzed_at: "2026-09-12T12:00:00Z",
+        validated_impacts: [{
+          impact_handle: "impact-revenue-dashboard",
+          label: "Revenue overview",
+          asset_type: "Dashboard",
+          owner_label: "Revenue data owner",
+        }],
+        possible_impacts: [],
+        affected_owners: ["Revenue data owner"],
+        added_approvers: [{
+          authority_label: "Revenue data owner",
+          reason: "Approval required for a validated dependency.",
+        }],
+      },
+    })),
+  })
+  renderWorkspace(client, "request-answer")
+
+  const impact = await screen.findByRole("region", {name: "Impact analysis"})
+  expect(within(impact).getByText("Revenue overview")).toBeVisible()
+  expect(within(impact).getByText("Revenue data owner", {selector: "strong"})).toBeVisible()
+  expect(within(impact).queryByRole("button")).toBeNull()
 })
 
 test("request-type and lifecycle-state filters narrow the queue without reordering it", async () => {
@@ -305,6 +398,124 @@ test("a request whose requester acceptance is missing is marked blocked and admi
   expect(detail).toHaveTextContent("Accept the clarified outcome before the architect decides.")
   expect(within(detail).queryByRole("button", {name: /Approve/})).toBeNull()
   expect(within(detail).queryByRole("button", {name: /Reject/})).toBeNull()
+})
+
+test("typed intent review shows the full contract and blocks approval while requirements remain", async () => {
+  const user = userEvent.setup()
+  const typedIntentDetail = {
+    ...answerDetail,
+    product_intent: {
+      reviewed_digest: "f".repeat(64),
+      approved: false,
+      approved_intent_revision: null,
+      title: "Quarterly net revenue",
+      business_outcome: "Give finance one governed quarterly view.",
+      source_coverage: [
+        {
+          source_ref: "billing-postgresql",
+          covered_fields: ["fiscal_quarter", "net_revenue"],
+          authorized: false,
+        },
+      ],
+      grain: ["fiscal_quarter"],
+      measures: [{metric_ref: "net_revenue", aggregation: "sum"}],
+      dimensions: ["fiscal_quarter"],
+      filters: [],
+      freshness_seconds: 86400,
+      outputs: ["table", "dashboard"],
+      unresolved_constraints: ["Source authorization is required."],
+    },
+  } as unknown as RequestDetailView
+  const client = createClient({
+    getRequestDetail: vi.fn(async () => detailEnvelope(typedIntentDetail)),
+  })
+  renderWorkspace(client, "request-answer")
+
+  const review = await screen.findByRole("region", {name: "Typed product intent"})
+  expect(review).toHaveTextContent("Quarterly net revenue")
+  expect(review).toHaveTextContent("billing-postgresql")
+  expect(review).toHaveTextContent("fiscal_quarter")
+  expect(review).toHaveTextContent("net_revenue")
+  expect(review).toHaveTextContent("86,400 seconds")
+  expect(review).toHaveTextContent("table")
+  expect(review).toHaveTextContent("dashboard")
+  expect(review).toHaveTextContent("Source authorization is required.")
+  expect(within(review).getByRole("button", {name: "Approve typed intent"})).toBeDisabled()
+
+  await user.click(screen.getByRole("checkbox", {name: /I confirm the exact reviewed digest/}))
+  expect(screen.getByRole("button", {name: "Approve"})).toBeDisabled()
+})
+
+test("typed intent approval submits the exact reviewed digest and request revision", async () => {
+  const user = userEvent.setup()
+  const reviewedDigest = "f".repeat(64)
+  const typedIntentDetail = {
+    ...answerDetail,
+    product_intent: {
+      reviewed_digest: reviewedDigest,
+      approved: false,
+      approved_intent_revision: null,
+      title: "Quarterly net revenue",
+      business_outcome: "Give finance one governed quarterly view.",
+      source_coverage: [
+        {
+          source_ref: "billing-postgresql",
+          covered_fields: ["fiscal_quarter", "net_revenue"],
+          authorized: true,
+        },
+      ],
+      grain: ["fiscal_quarter"],
+      measures: [{metric_ref: "net_revenue", aggregation: "sum"}],
+      dimensions: ["fiscal_quarter"],
+      filters: [],
+      freshness_seconds: 86400,
+      outputs: ["table", "dashboard"],
+      unresolved_constraints: [],
+    },
+  } as unknown as RequestDetailView
+  const approveProductIntent = vi.fn(async () => ({
+    meta: {correlation_id: "correlation-intent", data_provenance: "demo_fixture" as const},
+    data: {
+      approval_id: "product-intent-approval",
+      intent_revision: 1,
+      intent_digest: reviewedDigest,
+      artifact_reference: {
+        artifact_id: "product-intent-approval",
+        version: 1,
+        digest: "e".repeat(64),
+      },
+      approved_by: "actor-architect",
+      approved_at: "2026-01-01T00:00:00Z",
+    },
+  }))
+  const client = createClient({
+    approveProductIntent,
+    getRequestDetail: vi.fn(async () => detailEnvelope(typedIntentDetail)),
+  })
+  renderWorkspace(client, "request-answer")
+
+  const review = await screen.findByRole("region", {name: "Typed product intent"})
+  const fulfillmentApproval = screen.getByRole("button", {name: "Approve"})
+  await user.click(screen.getByRole("checkbox", {name: /I confirm the exact reviewed digest/}))
+
+  expect(fulfillmentApproval).toBeDisabled()
+
+  await user.click(within(review).getByRole("button", {name: "Approve typed intent"}))
+
+  await waitFor(() => expect(review).toHaveTextContent("Typed intent approved"))
+  expect(fulfillmentApproval).toBeEnabled()
+  expect(approveProductIntent).toHaveBeenCalledWith(
+    "request-answer",
+    {
+      active_role: "data_architect",
+      expected_revision: 2,
+      reviewed_digest: reviewedDigest,
+    },
+    {
+      csrfToken: "csrf-token-with-at-least-thirty-two-characters",
+      idempotencyKey: "idempotency-decision",
+    },
+  )
 })
 
 test("a decision is displayed as applied only after the server returns the new projection", async () => {

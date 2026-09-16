@@ -7,12 +7,38 @@ from .artifacts import (
     LocalAcquisitionArtifactStore,
 )
 from .crypto import CursorCipher, CursorCipherError, decrypt_cursor, encrypt_cursor
+from .incident_models import (
+    IncidentAutomaticAction,
+    IncidentFailureClassification,
+    IncidentKind,
+    IncidentOperatorAction,
+    IncidentRecord,
+    IncidentStage,
+    RecoveryActionEvidence,
+    RecoveryCommand,
+    RunRecoveryAction,
+)
+from .incident_repository import (
+    IncidentConflictError,
+    IncidentIntegrityError,
+    IncidentNotFoundError,
+    IncidentPersistenceError,
+    SQLiteIncidentRepository,
+    StaleIncidentRevisionError,
+)
 from .models import (
     GovernedAcquisitionOutcomeState,
     PreparedAcquisitionState,
     PreparedAcquisitionStateStatus,
     SourceCheckpointState,
     StateModel,
+)
+from .recovery_service import (
+    ExternalEffectRecoveryCommands,
+    ExternalEffectRecoveryUnavailableError,
+    OwningWorkflowRecoveryCommands,
+    RecoveryActionNotAllowedError,
+    RecoveryCommandService,
 )
 from .repository import (
     AcquisitionStateConflictError,
@@ -22,6 +48,17 @@ from .repository import (
     SQLiteAcquisitionStateRepository,
     StaleAcquisitionRevisionError,
 )
+from .run_models import (
+    RunAttemptClaim,
+    RunAttemptCompletion,
+    RunCancellation,
+    RunIntent,
+    RunRecord,
+    RunRetryRequest,
+    TriggerWindow,
+)
+from .run_repository import SQLiteRunRepository
+from .run_service import RunService
 
 __all__ = [
     "AcquisitionArtifactDigestMismatchError",
@@ -34,15 +71,44 @@ __all__ = [
     "AcquisitionStateRepository",
     "CursorCipher",
     "CursorCipherError",
+    "ExternalEffectRecoveryCommands",
+    "ExternalEffectRecoveryUnavailableError",
     "GovernedAcquisitionOutcomeState",
+    "IncidentAutomaticAction",
+    "IncidentConflictError",
+    "IncidentFailureClassification",
+    "IncidentIntegrityError",
+    "IncidentKind",
+    "IncidentNotFoundError",
+    "IncidentOperatorAction",
+    "IncidentPersistenceError",
+    "IncidentRecord",
+    "IncidentStage",
     "InvalidAcquisitionArtifactIdentifierError",
     "LocalAcquisitionArtifactStore",
+    "OwningWorkflowRecoveryCommands",
     "PreparedAcquisitionState",
     "PreparedAcquisitionStateStatus",
+    "RecoveryActionEvidence",
+    "RecoveryActionNotAllowedError",
+    "RecoveryCommand",
+    "RecoveryCommandService",
+    "RunAttemptClaim",
+    "RunAttemptCompletion",
+    "RunCancellation",
+    "RunIntent",
+    "RunRecord",
+    "RunRecoveryAction",
+    "RunRetryRequest",
+    "RunService",
     "SQLiteAcquisitionStateRepository",
+    "SQLiteIncidentRepository",
+    "SQLiteRunRepository",
     "SourceCheckpointState",
     "StaleAcquisitionRevisionError",
+    "StaleIncidentRevisionError",
     "StateModel",
+    "TriggerWindow",
     "decrypt_cursor",
     "encrypt_cursor",
 ]

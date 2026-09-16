@@ -12,6 +12,10 @@ from starlette.routing import Route
 
 from ..auth import TrustedActorContext
 from ..contracts import (
+    AccessLifecycleView,
+    AccessRevocationCommand,
+    AcquisitionReceiptView,
+    AcquisitionRunNowCommand,
     AdmissionCommand,
     ClarifiedOutcomeAcceptanceCommand,
     ClarifiedOutcomeView,
@@ -20,8 +24,12 @@ from ..contracts import (
     ConversationView,
     CreateRequestCommand,
     DecisionCommand,
+    IncidentRecoveryCommand,
+    IncidentView,
     OperationView,
     ProcessPackageCommand,
+    ProductIntentApprovalCommand,
+    ProductIntentApprovalView,
     ProposalPreparationCommand,
     RequestClarificationCommand,
     RequestDetailView,
@@ -42,12 +50,16 @@ from . import (
 )
 
 _OPERATION_RESPONSE = TypeAdapter(ConsoleEnvelope[OperationView])
+_INCIDENT_RESPONSE = TypeAdapter(ConsoleEnvelope[IncidentView])
 _REVIEW_RESPONSE = TypeAdapter(ConsoleEnvelope[ReviewView])
 _REQUEST_DETAIL_RESPONSE = TypeAdapter(ConsoleEnvelope[RequestDetailView])
 _REQUESTER_REQUEST_RESPONSE = TypeAdapter(ConsoleEnvelope[RequesterRequestView])
 _CONVERSATION_RESPONSE = TypeAdapter(ConsoleEnvelope[ConversationView])
 _CLARIFIED_OUTCOME_RESPONSE = TypeAdapter(ConsoleEnvelope[ClarifiedOutcomeView])
 _SETUP_RESPONSE = TypeAdapter(ConsoleEnvelope[SetupView])
+_PRODUCT_INTENT_APPROVAL_RESPONSE = TypeAdapter(ConsoleEnvelope[ProductIntentApprovalView])
+_ACQUISITION_RECEIPT_RESPONSE = TypeAdapter(ConsoleEnvelope[AcquisitionReceiptView])
+_ACCESS_LIFECYCLE_RESPONSE = TypeAdapter(ConsoleEnvelope[AccessLifecycleView])
 
 
 def _invalid_request(*, code: str, safe_message: str, field: str | None = None) -> Never:
@@ -130,6 +142,18 @@ def _command_status(result: BaseModel) -> int:
 
 
 def command_routes(dependencies: RouteDependencies) -> list[Route]:
+    async def acquisition_run_now(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        command = await _parse_command(request, AcquisitionRunNowCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.run_acquisition_now(context, command),
+        )
+        return envelope_response(request, dependencies, result, _ACQUISITION_RECEIPT_RESPONSE)
+
     async def warehouse_binding(request: Request) -> Response:
         context = trusted_context(request, dependencies)
         key = _validate_command_request(request, dependencies, context)
@@ -191,6 +215,24 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
             lambda: dependencies.backend.decide_request(context, request_id, command),
         )
         return envelope_response(request, dependencies, result, _REQUEST_DETAIL_RESPONSE)
+
+    async def product_intent_approval(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        request_id = path_parameter(request, "request_id")
+        command = await _parse_command(request, ProductIntentApprovalCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.approve_product_intent(context, request_id, command),
+        )
+        return envelope_response(
+            request,
+            dependencies,
+            result,
+            _PRODUCT_INTENT_APPROVAL_RESPONSE,
+        )
 
     async def request_clarification(request: Request) -> Response:
         context = trusted_context(request, dependencies)
@@ -269,6 +311,19 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
         )
         return envelope_response(request, dependencies, result, _REQUESTER_REQUEST_RESPONSE)
 
+    async def revoke_access(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        request_id = path_parameter(request, "request_id")
+        command = await _parse_command(request, AccessRevocationCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.revoke_access(context, request_id, command),
+        )
+        return envelope_response(request, dependencies, result, _ACCESS_LIFECYCLE_RESPONSE)
+
     async def append_message(request: Request) -> Response:
         context = trusted_context(request, dependencies)
         key = _validate_command_request(request, dependencies, context)
@@ -314,6 +369,21 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
             status_code=_command_status(result),
         )
 
+    async def recover_incident(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        incident_id = path_parameter(request, "incident_id")
+        command = await _parse_command(request, IncidentRecoveryCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.recover_incident(
+                context, incident_id, command, idempotency_key=key
+            ),
+        )
+        return envelope_response(request, dependencies, result, _INCIDENT_RESPONSE)
+
     async def reset(request: Request) -> Response:
         context = trusted_context(request, dependencies)
         key = _validate_command_request(request, dependencies, context)
@@ -327,6 +397,7 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
         return envelope_response(request, dependencies, result, _SETUP_RESPONSE)
 
     routes = [
+        Route("/api/v1/acquisitions/run-now", acquisition_run_now, methods=["POST"]),
         Route("/api/v1/inbox/{request_id}/clarification", request_clarification, methods=["POST"]),
         Route("/api/v1/inbox/{request_id}/proposal", request_proposal, methods=["POST"]),
         Route(
@@ -338,6 +409,11 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
         Route("/api/v1/setup/process-packages", process_package, methods=["POST"]),
         Route("/api/v1/reviews/{review_id}/decisions", review_decision, methods=["POST"]),
         Route("/api/v1/inbox/{request_id}/decisions", request_decision, methods=["POST"]),
+        Route(
+            "/api/v1/inbox/{request_id}/product-intent/approval",
+            product_intent_approval,
+            methods=["POST"],
+        ),
         Route("/api/v1/inbox/{request_id}/admission", request_admission, methods=["POST"]),
         Route("/api/v1/requests", create_request, methods=["POST"]),
         Route("/api/v1/requests/{request_id}/conversation", append_message, methods=["POST"]),
@@ -347,7 +423,13 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
             methods=["POST"],
         ),
         Route("/api/v1/requests/{request_id}/withdrawal", withdraw_request, methods=["POST"]),
+        Route("/api/v1/requests/{request_id}/access/revocation", revoke_access, methods=["POST"]),
         Route("/api/v1/operations/{operation_id}/retry", retry_operation, methods=["POST"]),
+        Route(
+            "/api/v1/incidents/{incident_id}/recovery",
+            recover_incident,
+            methods=["POST"],
+        ),
     ]
     if dependencies.backend.fixture_mode:
         routes.append(Route("/api/v1/demo/reset", reset, methods=["POST"]))

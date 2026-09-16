@@ -1443,6 +1443,7 @@ class PostgreSQLWarehouseProvider:
         administration_secret: WarehouseOperationSecretCapability,
         ingestion_runtime_secret: WarehouseOperationSecretCapability,
         transformation_runtime_secret: WarehouseOperationSecretCapability,
+        answer_runtime_secret: WarehouseOperationSecretCapability,
         customer_sql_secret: WarehouseOperationSecretCapability,
         catalog_secret: WarehouseOperationSecretCapability,
         bi_secret: WarehouseOperationSecretCapability,
@@ -1461,6 +1462,7 @@ class PostgreSQLWarehouseProvider:
         self._administration_secret = administration_secret
         self._ingestion_runtime_secret = ingestion_runtime_secret
         self._transformation_runtime_secret = transformation_runtime_secret
+        self._answer_runtime_secret = answer_runtime_secret
         self._customer_sql_secret = customer_sql_secret
         self._catalog_secret = catalog_secret
         self._bi_secret = bi_secret
@@ -1857,6 +1859,7 @@ class PostgreSQLWarehouseProvider:
             "transformation_runtime": (
                 self._transformation_runtime_secret.resolve().get_secret_value()
             ),
+            "answer_runtime": self._answer_runtime_secret.resolve().get_secret_value(),
             "customer_sql": self._customer_sql_secret.resolve().get_secret_value(),
             "catalog": self._catalog_secret.resolve().get_secret_value(),
             "bi": self._bi_secret.resolve().get_secret_value(),

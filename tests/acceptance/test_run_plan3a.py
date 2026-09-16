@@ -80,7 +80,7 @@ def _environment(private_parent: Path) -> dict[str, str]:
         "PILLARMESH_PLAN3A_CLICKHOUSE_IMAGE": _CLICKHOUSE_IMAGE,
         "PILLARMESH_PLAN3A_RETENTION_DEADLINE": "2026-08-28T12:00:00Z",
         "PILLARMESH_PLAN3A_CREDENTIAL_CANARIES": json.dumps(
-            [f"credential-private-marker-{index}" for index in range(7)]
+            [f"credential-private-marker-{index}" for index in range(8)]
         ),
         "PILLARMESH_PLAN3A_STATE_ENCRYPTION_KEY": "encryption-private-marker",
         "PILLARMESH_PLAN3A_EVIDENCE_SIGNING_KEY": "signing-private-marker",

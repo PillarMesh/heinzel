@@ -187,7 +187,7 @@ class FakeBackend:
         # cannot evaluate; Task 9 proves the same statement against PostgreSQL grant semantics.
         statement_is_exact = (
             hashlib.sha256(normalized_statement.encode()).hexdigest()
-            == "aaa2dd0bc9c78c4a0712b13e7d9338d8cbab81dd0973e0bcf973e2219f68c136"
+            == "9241746875e7f5d202b4919687451c987339fb7f850964d2c75089ebca1b219d"
         )
         parameters_are_exact = (
             isinstance(params, tuple)
@@ -453,6 +453,7 @@ def test_privilege_probe_covers_mutation_administration_and_unrelated_schema_den
     assert "unnest(a.approved_relation_schemas, a.approved_relation_names)" in statement
     assert "undeclared_relations" in statement
     assert "has_sequence_privilege" in statement
+    assert statement.count("current_setting('server_version_num')::integer >= 170000") == 4
     assert isinstance(params, tuple) and "private_unrelated" in params
 
 

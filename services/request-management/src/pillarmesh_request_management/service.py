@@ -14,6 +14,7 @@ from .models import (
     DataProductChangeRequest,
     DecisionBinding,
     DecisionKind,
+    DelegatedRequestProvenance,
     InboxRequest,
     RequestState,
     SchemaSemanticChangeRequest,
@@ -25,7 +26,9 @@ from .repository import RequestRepository, StaleRevisionError
 _TRANSITIONS: dict[RequestState, frozenset[RequestState]] = {
     RequestState.SUBMITTED: frozenset({RequestState.CLARIFYING, RequestState.INVESTIGATING}),
     RequestState.CLARIFYING: frozenset({RequestState.INVESTIGATING, RequestState.SUBMITTED}),
-    RequestState.INVESTIGATING: frozenset({RequestState.PROPOSED, RequestState.NO_VALID_PLAN}),
+    RequestState.INVESTIGATING: frozenset(
+        {RequestState.PROPOSED, RequestState.EXECUTING, RequestState.NO_VALID_PLAN}
+    ),
     RequestState.PROPOSED: frozenset({RequestState.AWAITING_APPROVAL, RequestState.INVESTIGATING}),
     RequestState.AWAITING_APPROVAL: frozenset(
         {RequestState.EXECUTING, RequestState.REJECTED, RequestState.INVESTIGATING}
@@ -56,17 +59,24 @@ class RequestManagementService:
         question: str,
         title: str | None = None,
         request_digest: str | None = None,
+        delegated_agent: DelegatedRequestProvenance | None = None,
     ) -> InboxRequest:
         payload = StakeholderQuestion(purpose=purpose, question=question)
         content = RequestIntakeContent(title=title, payload=payload)
         if request_digest is not None:
             content.verify_digest(request_digest)
+        if delegated_agent is not None and (
+            delegated_agent.principal_ref != requester_id
+            or delegated_agent.purpose_digest != digest(purpose)
+        ):
+            raise ValueError("delegated agent provenance does not match the request")
         now = self._now()
         request = InboxRequest(
             title=title,
             request_id=self._request_id(tenant_id),
             tenant_id=tenant_id,
             requester_id=requester_id,
+            delegated_agent=delegated_agent,
             payload=payload,
             state=RequestState.SUBMITTED,
             revision=1,
@@ -241,6 +251,10 @@ class RequestManagementService:
     ) -> InboxRequest:
         request = self.get(tenant_id, request_id)
         self._assert_current_revision(request, expected_revision)
+        if request.state is RequestState.INVESTIGATING and state is RequestState.EXECUTING:
+            raise ValueError(
+                "transition investigating -> executing requires a policy admission receipt"
+            )
         allowed_states = _TRANSITIONS[request.state]
         if state not in allowed_states and (
             state is not RequestState.CANCELLED or request.state in _terminal_states()

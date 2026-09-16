@@ -93,6 +93,14 @@ describe("AppShell", () => {
     expect(screen.getByRole("complementary", {name: "Governance spine"})).toBeInTheDocument()
     expect(screen.getByText("Demo scenario - no managed effects")).toBeInTheDocument()
     expect(screen.getByRole("link", {name: "Runs"})).toHaveAttribute("aria-current", "page")
+    expect(screen.getByRole("link", {name: "Incidents"})).toHaveAttribute(
+      "href",
+      "/operations",
+    )
+    expect(screen.getByRole("link", {name: "Workspace setup"})).toHaveAttribute(
+      "href",
+      "/setup",
+    )
     expect(screen.getByText("Not delivered")).toBeInTheDocument()
     expect(screen.getByText("Governed evidence service wiring")).toBeInTheDocument()
   })

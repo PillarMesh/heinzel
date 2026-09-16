@@ -4,7 +4,7 @@
 local-acceptance provider that carries a binding to `ready` with no engine in
 existence. This module replaces that provider with `PostgreSQLWarehouseProvider`,
 so confirming the warehouse binding in the browser starts a real PostgreSQL
-container over TLS, provisions seven separated principal classes, runs their
+container over TLS, provisions eight separated principal classes, runs their
 positive and denial probes, takes a backup, restores it into an isolated second
 instance, verifies it, and tears that instance down -- and only then records the
 evidence that admits the binding to `ready`.
@@ -23,6 +23,7 @@ from __future__ import annotations
 import base64
 import os
 import secrets as secrets_module
+import sqlite3
 from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -31,6 +32,7 @@ from typing import Protocol
 
 import psycopg
 from cryptography.fernet import Fernet
+from pillarmesh_contract_model import digest
 from pillarmesh_provider_postgresql import (
     PostgreSQLBackupCommandBoundary,
     PostgreSQLWarehouseProvider,
@@ -70,11 +72,43 @@ _PRINCIPAL_PURPOSES = (
     "administration",
     "ingestion_runtime",
     "transformation_runtime",
+    "answer_runtime",
     "backup_restore",
     "customer_sql",
     "catalog",
     "bi",
 )
+
+_SEQUENCE_NAMESPACE_HEX_CHARACTERS = 32
+_LOCAL_SEQUENCE_BITS = 64
+
+
+class PostgreSQLAcceptanceWarehouseRepository(SQLiteWarehouseRepository):
+    """Allocate binding sequences in a namespace owned by one local workspace.
+
+    Production derives provider resource identity from authoritative tenant and
+    binding identifiers. The interactive acceptance harness intentionally reuses a
+    fixed tenant, so a plain fresh SQLite sequence would make separate workspaces
+    authoritative for the same Docker names. Namespacing the allocator keeps the
+    provider's identity and cleanup authority unchanged while ensuring each local
+    workspace mints distinct canonical bindings.
+    """
+
+    def __init__(self, *, connection: sqlite3.Connection, workspace_directory: Path) -> None:
+        super().__init__(connection=connection)
+        namespace_digest = digest(
+            {
+                "domain": "pillarmesh-postgresql-acceptance-workspace-v1",
+                "workspace_directory": str(workspace_directory.resolve()),
+            }
+        )
+        self._sequence_namespace = int(namespace_digest[:_SEQUENCE_NAMESPACE_HEX_CHARACTERS], 16)
+
+    def next_sequence(self, tenant_id: str) -> int:
+        local_sequence = super().next_sequence(tenant_id)
+        if local_sequence >= 1 << _LOCAL_SEQUENCE_BITS:
+            raise RuntimeError("PostgreSQL acceptance workspace exhausted its binding sequence")
+        return (self._sequence_namespace << _LOCAL_SEQUENCE_BITS) | local_sequence
 
 
 class RepositoryResourceRecorder:
@@ -291,10 +325,11 @@ def run_operation_secrets(*, clock: Callable[[], datetime]) -> WarehouseOperatio
         administration_password=SecretStr(passwords[0]),
         ingestion_runtime_password=SecretStr(passwords[1]),
         transformation_runtime_password=SecretStr(passwords[2]),
-        backup_restore_password=SecretStr(passwords[3]),
-        customer_sql_probe_password=SecretStr(passwords[4]),
-        catalog_password=SecretStr(passwords[5]),
-        bi_password=SecretStr(passwords[6]),
+        answer_runtime_password=SecretStr(passwords[3]),
+        backup_restore_password=SecretStr(passwords[4]),
+        customer_sql_probe_password=SecretStr(passwords[5]),
+        catalog_password=SecretStr(passwords[6]),
+        bi_password=SecretStr(passwords[7]),
         tls_private_key_pem=SecretStr(material.private_key_bundle),
         tls_certificate_pem=SecretStr(material.certificate_bundle),
         backup_encryption_key_b64=SecretStr(
@@ -353,6 +388,7 @@ def build_postgresql_provider(
         administration_secret=capability("administration"),
         ingestion_runtime_secret=capability("ingestion_runtime"),
         transformation_runtime_secret=capability("transformation_runtime"),
+        answer_runtime_secret=capability("answer_runtime"),
         customer_sql_secret=capability("customer_sql"),
         catalog_secret=capability("catalog"),
         bi_secret=capability("bi"),
@@ -375,6 +411,7 @@ def build_postgresql_provider(
 __all__ = [
     "COMPOSE_FILE",
     "DeferredPostgreSQLProvider",
+    "PostgreSQLAcceptanceWarehouseRepository",
     "RepositoryResourceRecorder",
     "build_postgresql_provider",
     "private_secret_directories",

@@ -435,6 +435,13 @@ class WarehouseRepository(Protocol):
         expected_revision: int,
     ) -> None: ...
 
+    def load_initial_validation_evidence(
+        self,
+        tenant_id: str,
+        binding_id: str,
+        current_binding_revision: int,
+    ) -> WarehouseValidationEvidence: ...
+
     def load_retirement_evidence(
         self,
         tenant_id: str,
@@ -1220,6 +1227,47 @@ class SQLiteWarehouseRepository:
                 evidence.binding_revision,
                 canonical_bytes(evidence),
             )
+
+    def load_initial_validation_evidence(
+        self,
+        tenant_id: str,
+        binding_id: str,
+        current_binding_revision: int,
+    ) -> WarehouseValidationEvidence:
+        with _translate_sqlite_errors("load warehouse validation evidence"):
+            rows = self._connection.execute(
+                "SELECT binding_revision, evidence_id, payload "
+                "FROM warehouse_validation_evidence "
+                "WHERE tenant_id = ? AND binding_id = ? "
+                "AND ? = ("
+                "SELECT MAX(revision) FROM warehouse_bindings "
+                "WHERE tenant_id = ? AND binding_id = ?"
+                ")",
+                (
+                    tenant_id,
+                    binding_id,
+                    current_binding_revision,
+                    tenant_id,
+                    binding_id,
+                ),
+            ).fetchall()
+        if not rows:
+            raise KeyError("validated engine evidence was not found")
+        if len(rows) != 1:
+            raise WarehousePersistenceError("warehouse validation evidence is ambiguous")
+        binding_revision, evidence_id, payload = rows[0]
+        try:
+            evidence = WarehouseValidationEvidence.model_validate_json(payload)
+        except (TypeError, ValueError) as error:
+            raise WarehousePersistenceError("warehouse validation evidence is invalid") from error
+        if (
+            evidence.tenant_id != tenant_id
+            or evidence.binding_id != binding_id
+            or evidence.binding_revision != binding_revision
+            or evidence.evidence_id != evidence_id
+        ):
+            raise WarehousePersistenceError("warehouse validation evidence index is invalid")
+        return evidence
 
     def load_retirement_evidence(
         self,

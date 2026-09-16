@@ -3,7 +3,12 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, Self
 
-from pillarmesh_contract_model import ArtifactModel, ArtifactReference, digest
+from pillarmesh_contract_model import (
+    ArtifactModel,
+    ArtifactReference,
+    ImpactAdmissionBinding,
+    digest,
+)
 from pydantic import Field, field_validator, model_validator
 
 from .models import DataAccessRequest, InboxRequest, RequestState, StakeholderQuestion
@@ -11,6 +16,8 @@ from .models import DataAccessRequest, InboxRequest, RequestState, StakeholderQu
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
 
 type AccessMode = Literal["query", "dashboard", "export"]
+type AccessGrantEffectSurface = Literal["result", "superset", "warehouse"]
+type AccessGrantPermission = Literal["dashboard", "download", "query", "view"]
 type DependencyKind = Literal["semantic_change", "data_product_change"]
 type FreshnessDisposition = Literal["current", "stale", "unknown", "not_applicable"]
 type FulfillmentDecision = Literal["approve", "reject", "request_changes"]
@@ -134,6 +141,9 @@ class StakeholderAnswerDraft(ArtifactModel):
     material_quality_limitations: tuple[ArtifactReference, ...]
     lineage_refs: tuple[ArtifactReference, ...]
     disclosure_classifications: tuple[ArtifactReference, ...]
+    plan_digest: str | None = Field(
+        default=None, pattern=_DIGEST_PATTERN, exclude_if=lambda value: value is None
+    )
 
     @field_validator("as_of")
     @classmethod
@@ -207,6 +217,9 @@ class FulfillmentProposal(ArtifactModel):
     clarified_outcome_digest: str = Field(pattern=_DIGEST_PATTERN)
     grounding_snapshot_digest: str = Field(pattern=_DIGEST_PATTERN)
     policy_snapshot_digest: str = Field(pattern=_DIGEST_PATTERN)
+    impact_admission_binding: ImpactAdmissionBinding | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     subject: FulfillmentSubject
     required_approvals: tuple[ApprovalRequirement, ...] = Field(min_length=1)
     created_at: datetime
@@ -230,6 +243,18 @@ class FulfillmentProposal(ArtifactModel):
             for requirement in self.required_approvals
         ):
             raise ValueError("approval requirement names an unrelated subject digest")
+        binding = self.impact_admission_binding
+        if binding is not None:
+            if binding.tenant_id != self.tenant_id:
+                raise ValueError("impact admission binding must belong to the proposal tenant")
+            if binding.subject.change_subject_digest != digest(self.subject):
+                raise ValueError("impact admission binding must name the proposal subject")
+            required_authorities = {item.authority_ref for item in self.required_approvals}
+            if any(
+                requirement.authority_ref not in required_authorities
+                for requirement in binding.authority_snapshot.derived_approval_requirements
+            ):
+                raise ValueError("proposal omits a derived impact approval authority")
         return self
 
     @classmethod
@@ -379,6 +404,43 @@ class FulfillmentApprovalBinding(ArtifactModel):
         return _timezone_aware_utc(value, "created_at")
 
 
+class AccessGrantEffectTarget(ArtifactModel):
+    surface: AccessGrantEffectSurface
+    provider_resource_ref: str = Field(min_length=1)
+
+
+class AccessGrantAdmissionBinding(ArtifactModel):
+    grant_id: str = Field(min_length=1)
+    proposal_digest: str = Field(pattern=_DIGEST_PATTERN)
+    entitlement_snapshot_digest: str = Field(pattern=_DIGEST_PATTERN)
+    policy_revision: int = Field(gt=0)
+    effective_at: datetime
+    permissions: tuple[AccessGrantPermission, ...] = Field(min_length=1)
+    targets: tuple[AccessGrantEffectTarget, ...] = Field(min_length=1)
+
+    @field_validator("effective_at")
+    @classmethod
+    def requires_timezone_aware_utc(cls, value: datetime) -> datetime:
+        return _timezone_aware_utc(value, "effective_at")
+
+    @field_validator("permissions")
+    @classmethod
+    def permissions_are_canonical(
+        cls, value: tuple[AccessGrantPermission, ...]
+    ) -> tuple[AccessGrantPermission, ...]:
+        _require_unique(value, "access grant permissions")
+        return tuple(sorted(value))
+
+    @field_validator("targets")
+    @classmethod
+    def targets_are_canonical(
+        cls, value: tuple[AccessGrantEffectTarget, ...]
+    ) -> tuple[AccessGrantEffectTarget, ...]:
+        surfaces = tuple(target.surface for target in value)
+        _require_unique(surfaces, "access grant target surfaces")
+        return tuple(sorted(value, key=lambda target: target.surface))
+
+
 class FulfillmentAdmissionReceipt(ArtifactModel):
     admission_id: str = Field(min_length=1)
     tenant_id: str = Field(min_length=1)
@@ -391,6 +453,9 @@ class FulfillmentAdmissionReceipt(ArtifactModel):
     grounding_snapshot_digest: str = Field(pattern=_DIGEST_PATTERN)
     policy_snapshot_digest: str = Field(pattern=_DIGEST_PATTERN)
     approval_ids: tuple[str, ...] = Field(min_length=1)
+    access_grant_binding: AccessGrantAdmissionBinding | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     admitted_at: datetime
     execution_status: Literal["ready_for_execution"] = "ready_for_execution"
 
@@ -422,6 +487,104 @@ class FulfillmentDeliveryReceipt(ArtifactModel):
 
     @model_validator(mode="after")
     def has_unique_verification_references(self) -> Self:
+        _require_unique(self.verification_refs, "verification_refs")
+        return self
+
+
+class AccessGrantDeliveryObservation(ArtifactModel):
+    grant_id: str = Field(min_length=1)
+    tenant_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    proposal_digest: str = Field(pattern=_DIGEST_PATTERN)
+    entitlement_snapshot_digest: str = Field(pattern=_DIGEST_PATTERN)
+    policy_revision: int = Field(gt=0)
+    effective_at: datetime
+    expires_at: datetime
+    permissions: tuple[AccessGrantPermission, ...] = Field(min_length=1)
+    targets: tuple[AccessGrantEffectTarget, ...] = Field(min_length=1)
+    effect_receipt_refs: tuple[ArtifactReference, ...] = Field(min_length=1)
+
+    @field_validator("effective_at", "expires_at")
+    @classmethod
+    def timestamps_are_utc(cls, value: datetime) -> datetime:
+        return _timezone_aware_utc(value, "access grant timestamp")
+
+    @field_validator("permissions")
+    @classmethod
+    def delivery_permissions_are_canonical(
+        cls, value: tuple[AccessGrantPermission, ...]
+    ) -> tuple[AccessGrantPermission, ...]:
+        _require_unique(value, "access grant permissions")
+        return tuple(sorted(value))
+
+    @field_validator("targets")
+    @classmethod
+    def delivery_targets_are_canonical(
+        cls, value: tuple[AccessGrantEffectTarget, ...]
+    ) -> tuple[AccessGrantEffectTarget, ...]:
+        surfaces = tuple(target.surface for target in value)
+        _require_unique(surfaces, "access grant target surfaces")
+        return tuple(sorted(value, key=lambda target: target.surface))
+
+    @field_validator("effect_receipt_refs")
+    @classmethod
+    def effect_receipts_are_unique(
+        cls, value: tuple[ArtifactReference, ...]
+    ) -> tuple[ArtifactReference, ...]:
+        _require_unique(value, "access grant effect receipt references")
+        return value
+
+    @model_validator(mode="after")
+    def effective_window_is_valid(self) -> Self:
+        if self.expires_at <= self.effective_at:
+            raise ValueError("access grant expiry must follow its effective time")
+        return self
+
+
+class FulfillmentAccessDeliveryReceipt(ArtifactModel):
+    schema_version: Literal["1"] = "1"
+    delivery_id: str = Field(min_length=1)
+    tenant_id: str = Field(min_length=1)
+    request_id: str = Field(min_length=1)
+    source_request_revision: int = Field(ge=1)
+    resulting_request_revision: int = Field(ge=3)
+    admission_id: str = Field(min_length=1)
+    proposal_id: str = Field(min_length=1)
+    proposal_revision: int = Field(ge=1)
+    proposal_digest: str = Field(pattern=_DIGEST_PATTERN)
+    access_mode: Literal["query", "dashboard", "export"]
+    fields: tuple[str, ...] = Field(min_length=1)
+    effective_at: datetime
+    expires_at: datetime
+    permissions: tuple[AccessGrantPermission, ...] = Field(min_length=1)
+    verification_refs: tuple[ArtifactReference, ...] = Field(min_length=1)
+    delivered_at: datetime
+
+    @field_validator("effective_at", "expires_at", "delivered_at")
+    @classmethod
+    def access_delivery_timestamps_are_utc(cls, value: datetime) -> datetime:
+        return _timezone_aware_utc(value, "access delivery timestamp")
+
+    @field_validator("fields")
+    @classmethod
+    def access_delivery_fields_are_canonical(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        _require_unique(value, "access delivery fields")
+        if any(not field for field in value):
+            raise ValueError("access delivery fields must not be empty")
+        return tuple(sorted(value))
+
+    @field_validator("permissions")
+    @classmethod
+    def access_delivery_permissions_are_canonical(
+        cls, value: tuple[AccessGrantPermission, ...]
+    ) -> tuple[AccessGrantPermission, ...]:
+        _require_unique(value, "access delivery permissions")
+        return tuple(sorted(value))
+
+    @model_validator(mode="after")
+    def access_delivery_is_consistent(self) -> Self:
+        if self.expires_at <= self.effective_at:
+            raise ValueError("access delivery expiry must follow its effective time")
         _require_unique(self.verification_refs, "verification_refs")
         return self
 

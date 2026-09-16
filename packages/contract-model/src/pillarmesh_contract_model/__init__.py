@@ -1,4 +1,11 @@
 from .canonical import JsonValue, canonical_bytes, canonical_value, digest
+from .impact_admission import (
+    ImpactAdmissionBinding,
+    ImpactApprovalRequirement,
+    ImpactAuthoritySnapshot,
+    ImpactSubject,
+    ImpactSubjectKind,
+)
 from .models import (
     FIXED_PROJECTION,
     AccessPolicy,
@@ -48,6 +55,11 @@ __all__ = [
     "FailurePolicy",
     "FieldMapping",
     "FreshnessRequirement",
+    "ImpactAdmissionBinding",
+    "ImpactApprovalRequirement",
+    "ImpactAuthoritySnapshot",
+    "ImpactSubject",
+    "ImpactSubjectKind",
     "InformationKind",
     "IntegrationContract",
     "JsonValue",

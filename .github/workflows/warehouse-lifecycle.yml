@@ -133,7 +133,7 @@ jobs:
           echo "PILLARMESH_PLAN3A_CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:25.8.32.4@sha256:7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0" >> "$GITHUB_ENV"
           state_encryption_key="$(uv run python -c 'import secrets; print(secrets.token_urlsafe(48))')"
           evidence_signing_key="$(uv run python -c 'import secrets; print(secrets.token_urlsafe(48))')"
-          credential_canaries="$(uv run python -c 'import json,secrets; print(json.dumps([secrets.token_urlsafe(24) for _ in range(7)]))')"
+          credential_canaries="$(uv run python -c 'import json,secrets; print(json.dumps([secrets.token_urlsafe(24) for _ in range(8)]))')"
           credential_masks="$(PILLARMESH_CREDENTIAL_CANARIES="$credential_canaries" uv run python -c 'import json,os; print(*json.loads(os.environ["PILLARMESH_CREDENTIAL_CANARIES"]), sep="\n")')"
           printf '::add-mask::%s\n' "$state_encryption_key" "$evidence_signing_key"
           while IFS= read -r credential_canary; do

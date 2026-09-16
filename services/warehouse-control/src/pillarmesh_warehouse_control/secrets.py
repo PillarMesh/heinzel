@@ -21,6 +21,7 @@ type WarehouseOperationSecretPurpose = Literal[
     "administration",
     "ingestion_runtime",
     "transformation_runtime",
+    "answer_runtime",
     "customer_sql",
     "catalog",
     "bi",
@@ -34,6 +35,7 @@ _PURPOSE_FIELDS: dict[str, str] = {
     "administration": "administration_password",
     "ingestion_runtime": "ingestion_runtime_password",
     "transformation_runtime": "transformation_runtime_password",
+    "answer_runtime": "answer_runtime_password",
     "customer_sql": "customer_sql_probe_password",
     "catalog": "catalog_password",
     "bi": "bi_password",
@@ -65,6 +67,7 @@ class WarehouseOperationSecrets(BaseModel):
     administration_password: SecretStr
     ingestion_runtime_password: SecretStr
     transformation_runtime_password: SecretStr
+    answer_runtime_password: SecretStr
     backup_restore_password: SecretStr
     customer_sql_probe_password: SecretStr
     catalog_password: SecretStr
@@ -82,6 +85,7 @@ class _StoredWarehouseOperationSecrets(BaseModel):
     administration_password: str
     ingestion_runtime_password: str
     transformation_runtime_password: str
+    answer_runtime_password: str
     backup_restore_password: str
     customer_sql_probe_password: str
     catalog_password: str
@@ -103,6 +107,7 @@ class _StoredWarehouseOperationSecrets(BaseModel):
             transformation_runtime_password=(
                 operation_secrets.transformation_runtime_password.get_secret_value()
             ),
+            answer_runtime_password=operation_secrets.answer_runtime_password.get_secret_value(),
             backup_restore_password=(operation_secrets.backup_restore_password.get_secret_value()),
             customer_sql_probe_password=(
                 operation_secrets.customer_sql_probe_password.get_secret_value()
@@ -121,6 +126,7 @@ class _StoredWarehouseOperationSecrets(BaseModel):
             administration_password=SecretStr(self.administration_password),
             ingestion_runtime_password=SecretStr(self.ingestion_runtime_password),
             transformation_runtime_password=SecretStr(self.transformation_runtime_password),
+            answer_runtime_password=SecretStr(self.answer_runtime_password),
             backup_restore_password=SecretStr(self.backup_restore_password),
             customer_sql_probe_password=SecretStr(self.customer_sql_probe_password),
             catalog_password=SecretStr(self.catalog_password),

@@ -12,6 +12,9 @@ from typing import BinaryIO, Literal, Protocol, Self
 
 from pillarmesh_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
 from pillarmesh_contract_model import ArtifactModel, canonical_bytes, digest
+from pillarmesh_contract_service import (
+    ActivatedAcquisitionContract as ActivatedAcquisitionContract,
+)
 from pillarmesh_evidence import AcquisitionEvidenceReceipt, AcquisitionPublicReasonCode
 from pillarmesh_provider_sdk import (
     AcquisitionAcknowledgement,
@@ -50,7 +53,7 @@ from pillarmesh_state import (
     SourceCheckpointState,
     StaleAcquisitionRevisionError,
 )
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import BaseModel, ValidationError, model_validator
 
 from .acquisition_errors import (
     AcquisitionAuthorizationError,
@@ -77,36 +80,6 @@ type GovernedOutcome = AcquisitionNoValidPlan | ResynchronizationRequired
 type OrderScalar = bool | int | Decimal | str | datetime
 type OrderAtom = tuple[str, OrderScalar]
 type RecordOrder = tuple[OrderAtom, ...]
-
-_DIGEST_PATTERN = r"^[0-9a-f]{64}$"
-
-
-class ActivatedAcquisitionContract(ArtifactModel):
-    schema_version: Literal["1"] = "1"
-    tenant_id: str = Field(min_length=1)
-    contract_ref: str = Field(min_length=1)
-    contract_digest: str = Field(pattern=_DIGEST_PATTERN)
-    source_binding_ref: str = Field(min_length=1)
-    source_binding_revision: int = Field(ge=1)
-    credential_revision: int = Field(ge=1)
-    acknowledgement_consumer_ref: str = Field(min_length=1)
-    capability_profile_digest: str = Field(pattern=_DIGEST_PATTERN)
-    source_observation_ref: str = Field(min_length=1)
-    source_observation_digest: str = Field(pattern=_DIGEST_PATTERN)
-    lifecycle_state: Literal["activated", "inactive"]
-    acquisition_modes: tuple[AcquisitionMode, ...] = Field(min_length=1)
-    object_schemas: tuple[AcquisitionObjectSchema, ...] = Field(min_length=1)
-    record_ceiling: int = Field(gt=0)
-    encoded_byte_ceiling: int = Field(gt=0)
-
-    @model_validator(mode="after")
-    def requires_canonical_unique_authority(self) -> Self:
-        if self.acquisition_modes != tuple(sorted(set(self.acquisition_modes))):
-            raise ValueError("acquisition_modes must be unique and in canonical order")
-        object_refs = tuple(schema.logical_object_ref for schema in self.object_schemas)
-        if object_refs != tuple(sorted(set(object_refs))):
-            raise ValueError("object_schemas must be unique and in canonical order")
-        return self
 
 
 class AcquisitionPreparationResult(ArtifactModel):

@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import sqlite3
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -17,7 +18,7 @@ from pillarmesh_connection_broker import (
     SourceConnectionBinding,
     SourceConnectionBindingState,
 )
-from pillarmesh_contract_model import canonical_bytes, digest
+from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
 from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
 from pillarmesh_provider_postgresql import (
     PostgreSQLAcquisitionProvider,
@@ -576,7 +577,7 @@ class _ForbiddenDestinationBoundary:
 
 
 class OfflinePlan4AHarness:
-    def __init__(self, work_dir: Path) -> None:
+    def __init__(self, work_dir: Path, *, check_same_thread: bool = True) -> None:
         self.work_dir = work_dir
         self.work_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
         os.chmod(self.work_dir, 0o700)
@@ -592,6 +593,10 @@ class OfflinePlan4AHarness:
             str(self.state_path),
             cipher=_CursorCipher(),
             reference_factory=self.references,
+            connection_factory=lambda path: sqlite3.connect(
+                path,
+                check_same_thread=check_same_thread,
+            ),
         )
         self.evidence_path = self.work_dir / "acquisition-evidence.sqlite"
         self.evidence_store = SQLiteStore.open(self.evidence_path)
@@ -607,10 +612,10 @@ class OfflinePlan4AHarness:
         self.source_provider_resolutions = 0
         self.private_boundaries: dict[tuple[str, str], bytes] = {}
         self.runner = AcquisitionRunner(
-            binding_resolver=self._resolve_binding,
+            binding_resolver=self.load_binding,
             contract_resolver=self._resolve_contract,
-            observation_resolver=self._resolve_observation,
-            provider_resolver=self._resolve_provider,
+            observation_resolver=self.load_observation,
+            provider_resolver=self.resolve_provider,
             state_store=self.state,
             artifact_store=self.artifact_store,
             evidence_writer=self.evidence,
@@ -663,10 +668,23 @@ class OfflinePlan4AHarness:
             observation=observation,
             declared=AcquisitionDeclaredActivation(
                 contract_ref=_CONTRACT_REF,
+                process_package_ref=ArtifactReference(
+                    artifact_id="process:managed-business-data",
+                    version=1,
+                    digest="1" * 64,
+                ),
+                product_intent_ref=ArtifactReference(
+                    artifact_id="intent:managed-business-data",
+                    version=1,
+                    digest="2" * 64,
+                ),
+                destination_product_ref="product:managed-business-data",
                 acknowledgement_consumer_ref=_CONSUMER_REF,
                 object_schemas=schemas,
                 record_ceiling=100,
                 encoded_byte_ceiling=1_000_000,
+                activated_by="acceptance-architect",
+                activated_at=self.clock(),
             ),
         )
         authority = _TenantAuthority(database, provider, observation, binding, contract)
@@ -734,11 +752,15 @@ class OfflinePlan4AHarness:
     def artifact_count(self) -> int:
         return sum(path.is_file() for path in self.artifact_root.rglob("*"))
 
-    def _resolve_binding(self, tenant_id: str, binding_ref: str) -> SourceConnectionBinding:
+    def load_binding(self, tenant_id: str, binding_ref: str) -> SourceConnectionBinding:
         authority = self.authorities[tenant_id]
         if binding_ref != authority.binding.binding_id:
             raise KeyError("binding not found")
         return authority.binding
+
+    def load(self, tenant_id: str, binding_ref: str) -> SourceConnectionBinding:
+        """Expose the connection-broker reader shape used by runtime composition."""
+        return self.load_binding(tenant_id, binding_ref)
 
     def _resolve_contract(self, tenant_id: str, contract_ref: str) -> ActivatedAcquisitionContract:
         authority = self.authorities[tenant_id]
@@ -746,14 +768,18 @@ class OfflinePlan4AHarness:
             raise KeyError("contract not found")
         return authority.contract
 
-    def _resolve_observation(
+    def load_observation(
         self, tenant_id: str, observation_ref: str
     ) -> AcquisitionSourceObservation:
         return self.observations[(tenant_id, observation_ref)]
 
-    def _resolve_provider(self, binding: SourceConnectionBinding) -> PostgreSQLAcquisitionProvider:
+    def resolve_provider(self, binding: SourceConnectionBinding) -> PostgreSQLAcquisitionProvider:
         self.source_provider_resolutions += 1
         return self.authorities[binding.tenant_id].provider
+
+    def close(self) -> None:
+        self.state.close()
+        self.evidence_store.close()
 
 
 def execute_plan4a_journey(work_dir: Path) -> Plan4AJourney:

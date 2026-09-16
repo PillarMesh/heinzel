@@ -8,7 +8,7 @@ from pydantic import Field, model_validator
 
 
 class PreconditionResult(ArtifactModel):
-    number: int = Field(ge=1, le=10)
+    number: int = Field(ge=1, le=20)
     status: Literal["satisfied", "unsatisfied", "unknown"]
     reason: str
     evidence_ids: tuple[str, ...] = ()

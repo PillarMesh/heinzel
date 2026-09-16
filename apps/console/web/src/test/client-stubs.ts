@@ -1,12 +1,15 @@
+import type {ResultClient} from "../features/results/result-api"
 import {vi} from "vitest"
 
 import type {ApiMeta} from "../api/generated"
 import type {InboxClient} from "../features/inbox/decision-workspace"
 import type {RequesterClient} from "../features/requests/my-requests"
 import type {RunsClient} from "../features/runs/runs-page"
+import type {OperationsClient} from "../features/operations/operations-page"
 import type {AcquisitionReceiptsClient} from "../features/acquisition/acquisition-receipts-page"
 import type {CatalogClient} from "../features/catalog/catalog-page"
 import type {DataProductsClient} from "../features/data-products/data-products-page"
+import type {DashboardsClient} from "../features/dashboards/dashboards-page"
 
 /**
  * Stubs for the feature protocols a test does not itself exercise.
@@ -31,9 +34,11 @@ export function featureClientStubs(
 ): InboxClient &
   RequesterClient &
   RunsClient &
+  OperationsClient &
   AcquisitionReceiptsClient &
   CatalogClient &
-  DataProductsClient {
+  DashboardsClient &
+  DataProductsClient & ResultClient {
   const meta = stubMeta(provenance)
   return {
     acceptClarifiedOutcome: unexpected("acceptClarifiedOutcome"),
@@ -48,18 +53,25 @@ export function featureClientStubs(
     getClarifiedOutcome: unexpected("getClarifiedOutcome"),
     getConversation: unexpected("getConversation"),
     getDashboard: vi.fn(async () => ({meta, data: null})),
+    getDashboards: vi.fn(async () => ({meta, data: {dashboards: []}})),
     getDataProduct: vi.fn(async () => ({meta, data: null})),
     getDataProducts: vi.fn(async () => ({meta, data: {products: []}})),
     getInbox: vi.fn(async () => ({meta, data: {items: [], selected_request_id: null}})),
     getRequestDetail: unexpected("getRequestDetail"),
+    getRequestImpact: unexpected("getRequestImpact"),
     getRequesterRequests: vi.fn(async () => ({meta, data: []})),
+    getResult: unexpected("getResult"),
     getRuns: vi.fn(async () => ({meta, data: {runs: []}})),
+    getIncidents: vi.fn(async () => ({meta, data: {incidents: []}})),
+    recoverIncident: unexpected("recoverIncident"),
     getAcquisitionReceipts: vi.fn(async () => ({meta, data: {receipts: []}})),
     withdrawRequest: unexpected("withdrawRequest"),
   } as unknown as InboxClient &
     RequesterClient &
     RunsClient &
+    OperationsClient &
     AcquisitionReceiptsClient &
     CatalogClient &
-    DataProductsClient
+    DashboardsClient &
+    DataProductsClient & ResultClient
 }

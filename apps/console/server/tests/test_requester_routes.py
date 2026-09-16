@@ -32,6 +32,7 @@ _REQUESTER_REQUEST_FIELDS = {
     "requested_outcome",
     "revision",
     "updated_at",
+    "result_page_available",
     "own_decisions",
     "clarified_outcome",
     "question",

@@ -15,6 +15,7 @@
     "test": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:governed": "npm run build && playwright test -c playwright.governed.config.ts",
+    "test:e2e:native": "npm run build && playwright test -c playwright.native.config.ts",
     "typecheck": "tsc --noEmit",
     "demo": "node scripts/dev.mjs",
     "serve:built": "node scripts/serve-built.mjs"

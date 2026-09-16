@@ -1,0 +1,27 @@
+[project]
+name = "pillarmesh-access-control"
+version = "0.1.0"
+requires-python = "==3.13.*"
+dependencies = [
+  "cryptography>=46.0,<47",
+  "httpx>=0.28,<1",
+  "pillarmesh-contract-model",
+  "pillarmesh-provider-sdk",
+  "pillarmesh-request-management",
+  "pydantic>=2.11,<3",
+]
+
+[tool.uv.sources]
+pillarmesh-contract-model = { workspace = true }
+pillarmesh-provider-sdk = { workspace = true }
+pillarmesh-request-management = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.mutmut]
+source_paths = ["src/pillarmesh_access_control"]
+only_mutate = ["src/pillarmesh_access_control/application_service.py"]
+also_copy = ["tests"]
+pytest_add_cli_args_test_selection = ["tests/test_application_service.py"]

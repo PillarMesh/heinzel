@@ -7,9 +7,11 @@ from pillarmesh_contract_model import ArtifactModel, canonical_bytes, digest
 
 from .fulfillment_errors import FulfillmentIntegrityError
 from .fulfillment_models import (
+    AccessScopePreview,
     ClarifiedOutcomeStatement,
     DenialDispositionReceipt,
     DisclosureDenial,
+    FulfillmentAccessDeliveryReceipt,
     FulfillmentAdmissionReceipt,
     FulfillmentApprovalBinding,
     FulfillmentDeliveryReceipt,
@@ -75,6 +77,10 @@ class FulfillmentRepository(Protocol):
         self, tenant_id: str, request_id: str
     ) -> tuple[FulfillmentDeliveryReceipt, ...]: ...
 
+    def list_access_deliveries(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[FulfillmentAccessDeliveryReceipt, ...]: ...
+
     def list_dependencies(
         self, tenant_id: str, parent_request_id: str
     ) -> tuple[RequestDependency, ...]: ...
@@ -136,6 +142,15 @@ class FulfillmentRepository(Protocol):
         actor_id: str,
         expected_revision: int,
     ) -> FulfillmentDeliveryReceipt: ...
+
+    def record_access_delivery(
+        self,
+        *,
+        delivery: FulfillmentAccessDeliveryReceipt,
+        evidence: FulfillmentEvidenceReceipt,
+        actor_id: str,
+        expected_revision: int,
+    ) -> FulfillmentAccessDeliveryReceipt: ...
 
     def store_no_valid_plan(
         self,
@@ -622,6 +637,101 @@ class SQLiteFulfillmentRepository:
             self._insert_evidence(stored_evidence)
             return stored_delivery
 
+    def record_access_delivery(
+        self,
+        *,
+        delivery: FulfillmentAccessDeliveryReceipt,
+        evidence: FulfillmentEvidenceReceipt,
+        actor_id: str,
+        expected_revision: int,
+    ) -> FulfillmentAccessDeliveryReceipt:
+        with _transaction(self._connection):
+            request = self._requests.load_owned_request(delivery.tenant_id, delivery.request_id)
+            if request.revision != expected_revision:
+                raise StaleRevisionError("access delivery request revision is stale")
+            if request.state is not RequestState.EXECUTING:
+                raise ValueError("access delivery requires an executing request")
+            admissions = self.list_admissions(delivery.tenant_id, delivery.request_id)
+            if not admissions:
+                raise ValueError("access delivery requires an admission")
+            admission = admissions[-1]
+            proposal = self._load_latest_proposal(delivery.tenant_id, delivery.request_id)
+            binding = admission.access_grant_binding
+            if (
+                delivery.source_request_revision != expected_revision
+                or delivery.resulting_request_revision != expected_revision + 2
+                or delivery.admission_id != admission.admission_id
+                or delivery.proposal_id != proposal.proposal_id
+                or delivery.proposal_revision != proposal.revision
+                or delivery.proposal_digest != digest(proposal)
+                or not isinstance(proposal.subject, AccessScopePreview)
+                or binding is None
+                or delivery.access_mode != proposal.subject.access_mode
+                or delivery.fields != proposal.subject.effective_fields
+                or delivery.effective_at != binding.effective_at
+                or delivery.expires_at != proposal.subject.expires_at
+                or delivery.permissions != binding.permissions
+            ):
+                raise ValueError("access delivery does not bind the admitted grant")
+            if (
+                evidence.tenant_id != delivery.tenant_id
+                or evidence.request_id != delivery.request_id
+                or evidence.request_revision != delivery.resulting_request_revision
+                or evidence.outcome != "delivered"
+                or evidence.proposal_id != delivery.proposal_id
+                or evidence.proposal_revision != delivery.proposal_revision
+                or evidence.resulting_state is not RequestState.DELIVERED
+            ):
+                raise ValueError("access delivery evidence does not match the outcome")
+
+            delivery_sequence = self._requests.allocate_artifact_sequence_in_transaction(
+                delivery.tenant_id, "fulfillment_access_delivery"
+            )
+            stored_delivery = delivery.model_copy(
+                update={
+                    "delivery_id": self._artifact_id(
+                        "fulfillment_access_delivery", delivery.tenant_id, delivery_sequence
+                    )
+                }
+            )
+            stored_evidence = self._allocate_evidence(evidence)
+            verifying = self._requests.transition_in_transaction(
+                tenant_id=delivery.tenant_id,
+                request_id=delivery.request_id,
+                expected_revision=expected_revision,
+                actor_id=actor_id,
+                to_state=RequestState.VERIFYING,
+                created_at=delivery.delivered_at,
+            )
+            delivered = self._requests.transition_in_transaction(
+                tenant_id=delivery.tenant_id,
+                request_id=delivery.request_id,
+                expected_revision=verifying.revision,
+                actor_id=actor_id,
+                to_state=RequestState.DELIVERED,
+                created_at=delivery.delivered_at,
+            )
+            if delivered.revision != delivery.resulting_request_revision:
+                raise StaleRevisionError("access delivery resulting revision is stale")
+            self._connection.execute(
+                "INSERT INTO fulfillment_access_deliveries "
+                "(delivery_id, tenant_id, request_id, source_request_revision, "
+                "resulting_request_revision, admission_id, recorded_at, payload) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    stored_delivery.delivery_id,
+                    stored_delivery.tenant_id,
+                    stored_delivery.request_id,
+                    stored_delivery.source_request_revision,
+                    stored_delivery.resulting_request_revision,
+                    stored_delivery.admission_id,
+                    stored_delivery.delivered_at.isoformat(),
+                    canonical_bytes(stored_delivery),
+                ),
+            )
+            self._insert_evidence(stored_evidence)
+            return stored_delivery
+
     def store_no_valid_plan(
         self,
         *,
@@ -943,6 +1053,19 @@ class SQLiteFulfillmentRepository:
             _validate_persisted_artifact(FulfillmentDeliveryReceipt, row[0]) for row in rows
         )
 
+    def list_access_deliveries(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[FulfillmentAccessDeliveryReceipt, ...]:
+        self._requests.load_owned_request(tenant_id, request_id)
+        rows = self._connection.execute(
+            "SELECT payload FROM fulfillment_access_deliveries "
+            "WHERE tenant_id = ? AND request_id = ? ORDER BY recorded_at, delivery_id",
+            (tenant_id, request_id),
+        ).fetchall()
+        return tuple(
+            _validate_persisted_artifact(FulfillmentAccessDeliveryReceipt, row[0]) for row in rows
+        )
+
     def list_evidence(
         self, tenant_id: str, request_id: str
     ) -> tuple[FulfillmentEvidenceReceipt, ...]:
@@ -1088,6 +1211,20 @@ class SQLiteFulfillmentRepository:
         )
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS fulfillment_deliveries ("
+            "delivery_id TEXT PRIMARY KEY, "
+            "tenant_id TEXT NOT NULL, "
+            "request_id TEXT NOT NULL, "
+            "source_request_revision INTEGER NOT NULL, "
+            "resulting_request_revision INTEGER NOT NULL, "
+            "admission_id TEXT NOT NULL, "
+            "recorded_at TEXT NOT NULL, "
+            "payload BLOB NOT NULL, "
+            "UNIQUE (tenant_id, request_id, source_request_revision), "
+            "UNIQUE (tenant_id, admission_id)"
+            ")"
+        )
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS fulfillment_access_deliveries ("
             "delivery_id TEXT PRIMARY KEY, "
             "tenant_id TEXT NOT NULL, "
             "request_id TEXT NOT NULL, "
@@ -1290,6 +1427,16 @@ class SQLiteFulfillmentRepository:
         expected_revision: int,
         effective_policy_digest: str,
     ) -> None:
+        access_binding = admission.access_grant_binding
+        if isinstance(proposal.subject, AccessScopePreview):
+            if (
+                access_binding is None
+                or access_binding.proposal_digest != digest(proposal)
+                or access_binding.effective_at > proposal.subject.expires_at
+            ):
+                raise ValueError("access admission does not bind current grant authority")
+        elif access_binding is not None:
+            raise ValueError("non-access admission cannot carry grant authority")
         if (
             admission.source_request_revision != expected_revision
             or admission.resulting_request_revision != expected_revision + 1
@@ -1439,6 +1586,7 @@ class SQLiteFulfillmentRepository:
             "fulfillment_approval": "apr",
             "fulfillment_evidence": "evd",
             "fulfillment_delivery": "dlv",
+            "fulfillment_access_delivery": "adl",
             "fulfillment_proposal": "prp",
             "grounding_snapshot": "grd",
             "policy_snapshot": "pol",

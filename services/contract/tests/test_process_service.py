@@ -66,6 +66,79 @@ def test_upload_preserves_original_and_creates_new_version() -> None:
     assert first.original_digest != second.original_digest
     assert first.media_type == MARKDOWN
     assert packages.get_original("tenant-a", first.package_id, 1) == b"# Revenue to cash\n"
+    assert packages.latest("tenant-a").receipt == second
+
+
+def test_latest_package_is_tenant_scoped_and_empty_before_upload() -> None:
+    packages = service()
+
+    assert packages.latest("tenant-a") is None
+    packages.upload("tenant-b", b"# Other process\n", MARKDOWN, manifest(), "architect-b")
+    assert packages.latest("tenant-a") is None
+
+
+def test_latest_package_follows_acceptance_order_when_clocks_are_equal(tmp_path: Path) -> None:
+    database_path = str(tmp_path / "process-packages.db")
+    repository = SQLiteProcessPackageRepository(database_path)
+    packages = ProcessPackageService(repository, clock=lambda: NOW)
+    first = packages.upload(
+        "tenant-a",
+        b"# Beta process\n",
+        MARKDOWN,
+        manifest().model_copy(update={"process_name": "beta"}),
+        "architect-a",
+    )
+    second = packages.upload(
+        "tenant-a",
+        b"# Alpha process\n",
+        MARKDOWN,
+        manifest().model_copy(update={"process_name": "alpha"}),
+        "architect-a",
+    )
+
+    assert first.received_at == second.received_at
+    assert first.package_id > second.package_id
+    repository.close()
+
+    reopened = ProcessPackageService(
+        SQLiteProcessPackageRepository(database_path), clock=lambda: NOW
+    )
+    latest = reopened.latest("tenant-a")
+    assert latest is not None
+    assert latest.receipt == second
+
+
+def test_opening_database_without_current_pointer_backfills_acceptance_order(
+    tmp_path: Path,
+) -> None:
+    database_path = str(tmp_path / "process-packages.db")
+    repository = SQLiteProcessPackageRepository(database_path)
+    packages = ProcessPackageService(repository, clock=lambda: NOW)
+    packages.upload(
+        "tenant-a",
+        b"# Beta process\n",
+        MARKDOWN,
+        manifest().model_copy(update={"process_name": "beta"}),
+        "architect-a",
+    )
+    second = packages.upload(
+        "tenant-a",
+        b"# Alpha process\n",
+        MARKDOWN,
+        manifest().model_copy(update={"process_name": "alpha"}),
+        "architect-a",
+    )
+    repository._connection.execute("DROP TABLE process_package_current")
+    repository._connection.commit()
+    repository.close()
+
+    reopened = ProcessPackageService(
+        SQLiteProcessPackageRepository(database_path), clock=lambda: NOW
+    )
+
+    latest = reopened.latest("tenant-a")
+    assert latest is not None
+    assert latest.receipt == second
 
 
 def test_upload_rejects_non_utf8_narrative() -> None:

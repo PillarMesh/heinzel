@@ -63,6 +63,42 @@ def test_an_explicit_allowed_origin_still_wins_over_the_environment(
     assert app.state.allowed_origin == "http://127.0.0.1:9000"
 
 
+def test_managed_link_origin_is_absent_until_explicitly_configured() -> None:
+    app = create_app()
+
+    assert app.state.managed_link_origin is None
+
+
+def test_managed_link_origin_is_normalized_from_explicit_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PILLARMESH_CONSOLE_MANAGED_LINK_ORIGIN", "https://BI.EXAMPLE.TEST:443/")
+
+    app = create_app()
+
+    assert app.state.managed_link_origin == "https://bi.example.test"
+
+
+@pytest.mark.parametrize(
+    "origin",
+    (
+        "http://bi.example.test",
+        "//bi.example.test",
+        "https://user@bi.example.test",
+        "https://bi.example.test/path",
+        "https://bi.example.test?query=1",
+        "https://bi.example.test?",
+        "https://bi.example.test#fragment",
+        "https://bi.example.test#",
+        "https://bi.example.test:bad",
+        "https:\\bi.example.test",
+    ),
+)
+def test_invalid_managed_link_origin_configuration_is_rejected(origin: str) -> None:
+    with pytest.raises(ValueError, match="managed link origin"):
+        create_app(managed_link_origin=origin)
+
+
 def test_a_malformed_persisted_artifact_is_not_reported_as_a_stale_revision() -> None:
     """Pydantic's ValidationError is a ValueError.
 

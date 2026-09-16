@@ -6,6 +6,7 @@ from pillarmesh_warehouse_control import (
     EngineKind,
     WarehouseBinding,
     WarehouseBindingState,
+    WarehousePrincipalClass,
     WarehouseRestoreVerification,
     WarehouseResumeValidationEvidence,
     WarehouseRetirementEvidence,
@@ -13,6 +14,11 @@ from pillarmesh_warehouse_control import (
     WarehouseValidationProfile,
 )
 from pydantic import BaseModel, ValidationError
+
+
+def test_answer_runtime_is_a_distinct_warehouse_principal_class() -> None:
+    assert WarehousePrincipalClass.ANSWER_RUNTIME.value == "answer_runtime"
+
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 

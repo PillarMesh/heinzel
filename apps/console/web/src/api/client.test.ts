@@ -1,6 +1,11 @@
 import {describe, expect, test, vi} from "vitest"
 
-import type {DecisionCommand, WarehouseBindingCommand} from "./generated"
+import type {
+  AcquisitionRunNowCommand,
+  DecisionCommand,
+  IncidentRecoveryCommand,
+  WarehouseBindingCommand,
+} from "./generated"
 import {
   ConsoleApiClient,
   ConsoleApiError,
@@ -78,6 +83,24 @@ const operationEnvelope = {
     recovery_actions: [],
     operation_digest: null,
     retry_token: null,
+  },
+}
+
+const incidentEnvelope = {
+  meta: {correlation_id: "correlation-incident", data_provenance: "governed_local"},
+  data: {
+    incident_id: "incident-a",
+    revision: 1,
+    kind: "source_unavailable",
+    classification: "transient",
+    last_successful_stage: "contract_activation",
+    failed_stage: "extract",
+    user_impact: "The latest interval is unavailable.",
+    next_automatic_action: "retry_transient_attempt",
+    allowed_operator_actions: ["retry_transient_attempt"],
+    opened_at: "2026-09-12T20:00:00Z",
+    updated_at: "2026-09-12T20:01:00Z",
+    recovery_recorded: false,
   },
 }
 
@@ -343,6 +366,72 @@ describe("ConsoleApiClient response boundary", () => {
 })
 
 describe("ConsoleApiClient mutation authority", () => {
+  test("starts acquisition with contract authority and no browser tenant", async () => {
+    let capturedInput: RequestInfo | URL | undefined
+    let capturedInit: RequestInit | undefined
+    const transport: typeof fetch = vi.fn(async (input, init) => {
+      capturedInput = input
+      capturedInit = init
+      return jsonResponse({
+        data: {
+          evidence_id: "evidence-ref:prepared-1",
+          contract_ref: "contract:orders:v1",
+          source_binding_ref: "source-binding:orders",
+          acquisition_mode: "snapshot",
+          logical_object_refs: ["orders"],
+          outcome: "prepared",
+          reason_codes: [],
+          created_at: "2026-09-14T12:00:00Z",
+        },
+        meta: {correlation_id: "correlation-acquisition", data_provenance: "governed_local"},
+      })
+    })
+    const client = new ConsoleApiClient({transport})
+    const command: AcquisitionRunNowCommand = {
+      acquisition_mode: "snapshot",
+      active_role: "data_architect",
+      contract_ref: "contract:orders:v1",
+      trigger_window: "2026-09-14T12:00:00Z/2026-09-14T13:00:00Z",
+    }
+
+    await client.runAcquisitionNow(command, {
+      csrfToken: "csrf-token-bound-to-session",
+      idempotencyKey: "idempotency-acquisition-0001",
+    })
+
+    expect(capturedInput).toBe("/api/v1/acquisitions/run-now")
+    expect(JSON.parse(String(capturedInit?.body))).toEqual(command)
+    expect(String(capturedInit?.body)).not.toContain("tenant_id")
+    expect(String(capturedInit?.body)).not.toContain("source_binding_ref")
+  })
+
+  test("sends incident recovery authority without browser tenant or actor", async () => {
+    let capturedInput: RequestInfo | URL | undefined
+    let capturedInit: RequestInit | undefined
+    const transport: typeof fetch = vi.fn(async (input, init) => {
+      capturedInput = input
+      capturedInit = init
+      return jsonResponse(incidentEnvelope)
+    })
+    const client = new ConsoleApiClient({transport})
+    const command: IncidentRecoveryCommand = {
+      expected_revision: 1,
+      action: "retry_transient_attempt",
+      active_role: "data_architect",
+      reason: "Source access restored.",
+    }
+
+    await client.recoverIncident("incident-a", command, {
+      csrfToken: "csrf-token-bound-to-session",
+      idempotencyKey: "idempotency-incident-0001",
+    })
+
+    expect(capturedInput).toBe("/api/v1/incidents/incident-a/recovery")
+    expect(JSON.parse(String(capturedInit?.body))).toEqual(command)
+    expect(String(capturedInit?.body)).not.toContain("tenant_id")
+    expect(String(capturedInit?.body)).not.toContain("actor_id")
+  })
+
   test("sends exact review authority and replay material without browser tenant or actor", async () => {
     let capturedInput: RequestInfo | URL | undefined
     let capturedInit: RequestInit | undefined

@@ -12,13 +12,18 @@ from pillarmesh_request_management.intake import RequestDigestMismatch
 from pydantic import ValidationError
 
 from .auth import TrustedActorContext
-from .backend import AuthorizedLink, PreviewContent
+from .backend import AuthorizedDownload, AuthorizedLink, PreviewContent
 from .contracts import (
+    AccessLifecycleView,
+    AccessRevocationCommand,
     AcquisitionReceiptsView,
+    AcquisitionReceiptView,
+    AcquisitionRunNowCommand,
     ActorDisplayView,
     ActorRole,
     AdmissionCommand,
     AdmissionView,
+    AnswerResultPageView,
     CatalogAssetsView,
     CatalogAssetView,
     ClarifiedOutcomeAcceptanceCommand,
@@ -27,6 +32,7 @@ from .contracts import (
     ConversationMessageView,
     ConversationView,
     CreateRequestCommand,
+    DashboardsView,
     DashboardView,
     DataProductsView,
     DataProductView,
@@ -34,12 +40,20 @@ from .contracts import (
     DisplayReferenceView,
     EvidenceContextView,
     EvidenceView,
+    ImpactApproverView,
+    ImpactItemView,
+    ImpactView,
     InboxView,
+    IncidentRecoveryCommand,
+    IncidentsView,
+    IncidentView,
     OperationFailureView,
     OperationView,
     OwnDecisionView,
     ProcessPackageCommand,
     ProcessPackageView,
+    ProductIntentApprovalCommand,
+    ProductIntentApprovalView,
     ProposalPreparationCommand,
     RecordedDecisionView,
     RecoveryAction,
@@ -460,6 +474,53 @@ class FixtureConsoleBackend:
             raise ConsoleNotFound()
         return detail
 
+    def get_request_impact(self, context: TrustedActorContext, request_id: str) -> ImpactView:
+        self._authorize(
+            context,
+            ("data_architect", "data_owner", "policy_approver", "budget_approver"),
+        )
+        if request_id != "request-answer":
+            raise ConsoleNotFound()
+        validated = (
+            ImpactItemView(
+                impact_handle="impact-a0f5bfb7aa7ea54f5123",
+                label="Revenue overview",
+                asset_type="Dashboard",
+                owner_label="Revenue data owner",
+            ),
+        )
+        possible = (
+            ()
+            if context.active_role == "data_owner"
+            else (
+                ImpactItemView(
+                    impact_handle="impact-e071e4af36bcc08ea76c",
+                    label="Quarterly forecast",
+                    asset_type="Report",
+                    owner_label="Finance data owner",
+                ),
+            )
+        )
+        return ImpactView(
+            request_id=request_id,
+            change_type="metric_version_change",
+            subject_label="Net revenue v2",
+            analyzed_at=fixture_clock(),
+            validated_impacts=validated,
+            possible_impacts=possible,
+            affected_owners=tuple(sorted({item.owner_label for item in (*validated, *possible)})),
+            added_approvers=(
+                ImpactApproverView(
+                    authority_label="Revenue data owner",
+                    reason="Approval required for a validated dependency.",
+                ),
+                ImpactApproverView(
+                    authority_label="Executive data owner",
+                    reason="Approval required for a validated dependency.",
+                ),
+            ),
+        )
+
     def get_requester_requests(
         self, context: TrustedActorContext
     ) -> tuple[RequesterRequestView, ...]:
@@ -471,6 +532,25 @@ class FixtureConsoleBackend:
                 for request_id, request in self._state.requester_requests.items()
                 if self._state.request_owners.get(request_id) == principal
             )
+
+    def get_answer_result(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        *,
+        cursor: str | None = None,
+        page_size: int = 100,
+    ) -> AnswerResultPageView:
+        self._authorize(context, ("requester",))
+        self._authorize_request_owner(context, request_id)
+        raise ConsoleNotFound()
+
+    def download_answer_result(
+        self, context: TrustedActorContext, request_id: str
+    ) -> AuthorizedDownload:
+        self._authorize(context, ("requester",))
+        self._authorize_request_owner(context, request_id)
+        raise ConsoleNotFound()
 
     def get_conversation(self, context: TrustedActorContext, request_id: str) -> ConversationView:
         self._authorize(
@@ -517,9 +597,24 @@ class FixtureConsoleBackend:
         self._authorize(context, ("data_architect", "data_owner"))
         return self._seed.runs
 
+    def get_incidents(self, context: TrustedActorContext) -> IncidentsView:
+        self._authorize(context, ("data_architect", "data_owner"))
+        return IncidentsView()
+
     def get_acquisition_receipts(self, context: TrustedActorContext) -> AcquisitionReceiptsView:
         self._authorize(context, ("data_architect", "data_owner"))
         return self._seed.acquisition_receipts
+
+    def run_acquisition_now(
+        self, context: TrustedActorContext, command: AcquisitionRunNowCommand
+    ) -> AcquisitionReceiptView:
+        self._authorize(context, ("data_architect", "data_owner"))
+        self._require_command_role(context, command.active_role)
+        raise ConsoleUnavailable(
+            code="capability_not_delivered",
+            safe_message="Source acquisition is not delivered in demo mode.",
+            recovery_action="none",
+        )
 
     def get_catalog_asset(self, context: TrustedActorContext, asset_ref: str) -> CatalogAssetView:
         self._authorize(context, ("requester", "data_architect", "data_owner"))
@@ -543,6 +638,15 @@ class FixtureConsoleBackend:
         if dashboard is None:
             raise ConsoleNotFound()
         return dashboard
+
+    def get_dashboards(self, context: TrustedActorContext) -> DashboardsView:
+        self._authorize(context, ("requester", "data_architect", "data_owner"))
+        return DashboardsView(
+            dashboards=tuple(
+                self._seed.dashboards[dashboard_ref]
+                for dashboard_ref in sorted(self._seed.dashboards)
+            )
+        )
 
     def get_evidence(self, context: TrustedActorContext, evidence_ref: str) -> EvidenceView:
         self._authorize(
@@ -879,6 +983,16 @@ class FixtureConsoleBackend:
             )
             self._commit(next_state)
             return decided
+
+    def approve_product_intent(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: ProductIntentApprovalCommand,
+    ) -> ProductIntentApprovalView:
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        raise ConsoleNotFound()
 
     @staticmethod
     def _admission_for(detail: RequestDetailView) -> AdmissionView | None:
@@ -1273,6 +1387,18 @@ class FixtureConsoleBackend:
             self._commit(next_state)
             return withdrawn
 
+    def revoke_access(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: AccessRevocationCommand,
+    ) -> AccessLifecycleView:
+        raise ConsoleUnavailable(
+            code="capability_not_delivered",
+            safe_message="Manual access revocation requires a governed workspace.",
+            recovery_action="none",
+        )
+
     def retry_operation(
         self,
         context: TrustedActorContext,
@@ -1367,6 +1493,18 @@ class FixtureConsoleBackend:
             )
             self._commit(next_state)
             return retry
+
+    def recover_incident(
+        self,
+        context: TrustedActorContext,
+        incident_id: str,
+        command: IncidentRecoveryCommand,
+        *,
+        idempotency_key: str,
+    ) -> IncidentView:
+        self._authorize(context, ("data_architect", "data_owner"))
+        self._require_command_role(context, command.active_role)
+        raise ConsoleNotFound()
 
     def reset(self, context: TrustedActorContext, command: ResetCommand) -> SetupView:
         self._authorize(context, ("data_architect",))

@@ -2814,8 +2814,18 @@ def test_delete_accepts_the_openmetadata_entity_response_shape() -> None:
         ("tags", _TAG_ID, {"id": _TAG_ID, "name": "tag", "dataProducts": []}),
         ("roles", _ROLE_ID, {"id": _ROLE_ID, "name": "role", "domains": []}),
         ("policies", _POLICY_ID, {"id": _POLICY_ID, "name": "policy", "domains": []}),
+        (
+            "databaseServices",
+            _NAMESPACE_ID,
+            {
+                "id": _NAMESPACE_ID,
+                "name": "warehouse",
+                "serviceType": "Postgres",
+                "tags": [],
+            },
+        ),
     ],
-    ids=("user", "classification", "tag", "role", "policy"),
+    ids=("user", "classification", "tag", "role", "policy", "database-service"),
 )
 def test_delete_accepts_documented_collection_specific_fields(
     collection: str,

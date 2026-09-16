@@ -350,6 +350,82 @@ def test_reviewer_sees_only_the_exact_subject_for_held_authority() -> None:
     assert not hasattr(view, "policy_snapshot_digest")
 
 
+def test_reviewer_does_not_reuse_a_decision_from_a_superseded_proposal() -> None:
+    fulfillment, requests, prepared = prepared_service()
+    repository, proposal, awaiting = prepared
+    requirement = next(
+        item
+        for item in proposal.required_approvals
+        if item.authority_ref == "role:data_engineering_architect"
+    )
+    fulfillment.record_approval(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="architect-a",
+        authority_ref=requirement.authority_ref,
+        subject_digest=requirement.subject_digest,
+        decision="approve",
+        expected_revision=awaiting.revision,
+    )
+    requester_requirement = next(
+        item
+        for item in proposal.required_approvals
+        if item.authority_ref == "principal:requester-a"
+    )
+    fulfillment.record_approval(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="requester-a",
+        authority_ref=requester_requirement.authority_ref,
+        subject_digest=requester_requirement.subject_digest,
+        decision="approve",
+        expected_revision=awaiting.revision,
+    )
+    investigating = requests.transition(
+        "tenant-a",
+        proposal.request_id,
+        RequestState.INVESTIGATING,
+        actor_id="architect-a",
+        expected_revision=awaiting.revision,
+    )
+    replacement = fulfillment.propose_answer(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="architect-a",
+        expected_revision=investigating.revision,
+    )
+    fulfillment.submit_proposal(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="architect-a",
+        expected_revision=replacement.request_revision,
+    )
+    reader = FulfillmentReadService(
+        request_service=requests,
+        repository=repository,
+        authority_role_resolver=fulfillment._authority_role_resolver,
+    )
+
+    view = reader.reviewer_view(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="architect-a",
+        authority_ref="role:data_engineering_architect",
+    )
+
+    assert view.proposal_id == replacement.proposal_id
+    assert view.own_decisions == ()
+    requester_view = reader.requester_view(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="requester-a",
+    )
+    assert (
+        tuple(item for item in requester_view.own_decisions if item.lifecycle == "fulfillment")
+        == ()
+    )
+
+
 def test_requester_requirement_never_projects_the_candidate_subject() -> None:
     """The requester holds a requirement, but it binds the clarified outcome.
 

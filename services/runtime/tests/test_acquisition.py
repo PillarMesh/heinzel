@@ -12,7 +12,8 @@ from pillarmesh_connection_broker import (
     SourceConnectionBinding,
     SourceConnectionBindingState,
 )
-from pillarmesh_contract_model import canonical_bytes, digest
+from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
+from pillarmesh_contract_service import ActivatedAcquisitionContractRecord
 from pillarmesh_evidence import AcquisitionEvidenceReceipt
 from pillarmesh_provider_sdk import (
     AcquisitionAcknowledgement,
@@ -56,6 +57,7 @@ from pillarmesh_runtime import (
     ActivatedAcquisitionContract,
     BindingResolver,
     ProviderResolver,
+    compose_acquisition_application,
 )
 from pillarmesh_state import (
     AcquisitionArtifactStoreError,
@@ -181,6 +183,13 @@ def _contract(
         "tenant_id": TENANT,
         "contract_ref": CONTRACT_REF,
         "contract_digest": CONTRACT_DIGEST,
+        "process_package_ref": ArtifactReference(
+            artifact_id="process:orders", version=1, digest="1" * 64
+        ),
+        "product_intent_ref": ArtifactReference(
+            artifact_id="intent:orders", version=1, digest="2" * 64
+        ),
+        "destination_product_ref": "product:orders",
         "source_binding_ref": BINDING_REF,
         "source_binding_revision": 3,
         "credential_revision": 1,
@@ -193,6 +202,8 @@ def _contract(
         "object_schemas": schemas,
         "record_ceiling": 10,
         "encoded_byte_ceiling": 100_000,
+        "activated_by": "architect-a",
+        "activated_at": NOW,
     }
     values.update(changes)
     return ActivatedAcquisitionContract.model_validate(values)
@@ -1774,3 +1785,82 @@ def test_an_unclassified_provider_resolver_failure_is_still_a_denial() -> None:
         runner.prepare(_intent(observation))
 
     assert evidence.receipts[-1].reason_codes == ("authorization_denied",)
+
+
+def test_composed_application_prepares_once_and_replays_without_advancing_checkpoint() -> None:
+    schema = _schema()
+    observation = _observation(schema)
+    contract = _contract(schema, observation)
+    record = ActivatedAcquisitionContractRecord(
+        tenant_id=TENANT,
+        contract_ref=CONTRACT_REF,
+        revision=1,
+        contract_digest=CONTRACT_DIGEST,
+        contract_artifact_ref=ArtifactReference(
+            artifact_id=CONTRACT_REF,
+            version=1,
+            digest=digest(contract),
+        ),
+        activated_by=contract.activated_by,
+        activated_at=contract.activated_at,
+        contract=contract,
+    )
+    binding = _binding()
+    events: list[str] = []
+    state = _ApplicationStateStore(events)
+    artifacts = ArtifactStore(events)
+    evidence = EvidenceWriter(events)
+    provider = Provider(Session((_record(),), schema))
+    references = iter(f"reference:{index}" for index in range(10))
+
+    class ContractReader:
+        def list_contracts(self, tenant_id: str) -> tuple[ActivatedAcquisitionContractRecord, ...]:
+            assert tenant_id == TENANT
+            return (record,)
+
+    class BindingReader:
+        def load(self, tenant_id: str, binding_id: str) -> SourceConnectionBinding:
+            assert (tenant_id, binding_id) == (TENANT, BINDING_REF)
+            return binding
+
+    application = compose_acquisition_application(
+        contract_repository=ContractReader(),
+        binding_repository=BindingReader(),
+        observation_resolver=lambda tenant_id, observation_ref: observation,
+        provider_resolver=lambda resolved_binding: provider,
+        state_store=state,
+        artifact_store=artifacts,
+        evidence_writer=evidence,
+        reference_factory=lambda kind: next(references),
+        clock=lambda: NOW,
+    )
+
+    first = application.run_now(
+        tenant_id=TENANT,
+        contract_ref=CONTRACT_REF,
+        trigger_window="2026-09-11T12:00:00Z/2026-09-11T13:00:00Z",
+        acquisition_mode="snapshot",
+    )
+    replay = application.run_now(
+        tenant_id=TENANT,
+        contract_ref=CONTRACT_REF,
+        trigger_window="2026-09-11T12:00:00Z/2026-09-11T13:00:00Z",
+        acquisition_mode="snapshot",
+    )
+
+    assert first.prepared_receipt == replay.prepared_receipt
+    assert first.batch_manifest == replay.batch_manifest
+    assert provider.calls == 1
+    assert state.acknowledgements == []
+
+
+class _ApplicationStateStore(StateStore):
+    def load_checkpoint(
+        self,
+        tenant_id: str,
+        contract_digest: str,
+        source_binding_ref: str,
+    ) -> SourceCheckpointState:
+        if self.checkpoint is None:
+            raise AcquisitionStateNotFoundError
+        return self.checkpoint[0]

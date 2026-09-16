@@ -257,6 +257,7 @@ describe("ConsoleRoutes", () => {
     ["/inbox", "Decision queue"],
     ["/data-products", "Data products"],
     ["/runs", "Runs"],
+    ["/operations", "Incidents"],
     ["/catalog", "Catalog"],
     ["/dashboards", "Dashboards"],
     ["/evidence", "Evidence"],
@@ -269,18 +270,14 @@ describe("ConsoleRoutes", () => {
     expect(screen.getByText("Demo scenario - no managed effects")).toBeVisible()
   })
 
-  test("renders dashboards with only the capability that concerns dashboards", () => {
+  test("renders dashboards from the owning listing", async () => {
     renderRoutes("/dashboards")
 
     expect(screen.getByRole("heading", {name: "Dashboards"})).toBeVisible()
     expect(
-      screen.getByText("Review managed dashboard capability and delivery boundaries."),
+      screen.getByText("Dashboards published from governed products by the managed BI provider."),
     ).toBeVisible()
-    const ledger = screen.getByRole("list", {name: "Dashboards capability states"})
-    expect(ledger).toHaveTextContent("Analyst dashboards")
-    expect(ledger).toHaveTextContent("Not delivered")
-    expect(ledger).not.toHaveTextContent("Managed warehouse")
-    expect(ledger).not.toHaveTextContent("Fixture journey")
+    expect(await screen.findByText("No dashboards have been published.")).toBeVisible()
   })
 
   test("renders evidence with only evidence capabilities and where each record is kept", () => {
@@ -419,6 +416,26 @@ test("App loads the setup projection for a workspace still in setup", async () =
   render(<App client={client} />)
 
   expect(await screen.findByRole("heading", {name: "Activation approval"})).toBeVisible()
+  expect(getSetup).toHaveBeenCalledTimes(1)
+})
+
+test("App keeps an architect's unfinished setup reachable after the workspace activates", async () => {
+  window.history.pushState({}, "", "/setup")
+  const processEnvelope = {
+    ...setupEnvelope,
+    data: {...setupEnvelope.data, active_stage: "business_process" as const},
+  }
+  const getSetup = vi.fn(async () => processEnvelope)
+  const client: ConsoleBootstrapClient = {
+    ...setupClient,
+    getSession: vi.fn(async () => sessionEnvelope),
+    getWorkspace: vi.fn(async () => workspaceEnvelope("active")),
+    getSetup,
+  }
+
+  render(<App client={client} />)
+
+  expect(await screen.findByRole("heading", {name: "Describe the business process"})).toBeVisible()
   expect(getSetup).toHaveBeenCalledTimes(1)
 })
 

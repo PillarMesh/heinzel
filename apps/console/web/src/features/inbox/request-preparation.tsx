@@ -30,6 +30,7 @@ interface Props {
 
 const labels: Record<PreparationAction, string> = {
   clarify: "Record clarification",
+  prepare_access: "Prepare access proposal",
   prepare_answer: "Prepare answer proposal",
   submit_proposal: "Submit proposal for approval",
 }
@@ -74,7 +75,7 @@ export function RequestPreparation({client, dataProvenance, detail, idempotencyK
     try {
       const response = action === "clarify"
         ? await client.clarifyRequest(detail.request_id, {...command, restated_request: restatedRequest.trim(), in_scope_summary: inScope.trim(), out_of_scope_summary: outOfScope.trim()}, context)
-        : action === "prepare_answer"
+        : action === "prepare_answer" || action === "prepare_access"
           ? await client.prepareRequestProposal(detail.request_id, command, context)
           : await client.submitRequestProposal(detail.request_id, command, context)
       acceptResponse(response)
@@ -104,6 +105,8 @@ export function RequestPreparation({client, dataProvenance, detail, idempotencyK
         </>
       ) : actions.includes("prepare_answer") ? (
         <p>Prepare an answer from the governed semantic scope and policy. Review the resulting proposal before submitting it for approval.</p>
+      ) : actions.includes("prepare_access") ? (
+        <p>Prepare the least-privilege access scope from the governed product and current policy. Review the resulting proposal before submitting it for approval.</p>
       ) : (
         <p>Submit the displayed proposal so its required authorities can review it.</p>
       )}

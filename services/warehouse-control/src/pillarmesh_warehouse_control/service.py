@@ -512,6 +512,36 @@ class WarehouseControlService:
             raise KeyError("warehouse binding was not found")
         return binding
 
+    def get_validated_engine_evidence(
+        self,
+        tenant_id: str,
+        binding_id: str,
+        *,
+        expected_revision: int,
+    ) -> WarehouseValidationEvidence:
+        try:
+            binding = self.get(tenant_id, binding_id)
+        except KeyError:
+            raise KeyError("validated engine evidence was not found") from None
+        self._assert_current_revision(binding, expected_revision)
+        try:
+            evidence = self._repository.load_initial_validation_evidence(
+                tenant_id,
+                binding_id,
+                binding.revision,
+            )
+        except KeyError:
+            raise KeyError("validated engine evidence was not found") from None
+        if binding.lifecycle_state is not WarehouseBindingState.READY:
+            raise WarehouseAdmissionError("validated engine evidence requires a ready binding")
+        if evidence.binding_revision + 1 != binding.revision:
+            raise WarehouseAdmissionError("validated engine evidence is stale")
+        if evidence.engine_kind is not binding.engine_kind:
+            raise WarehouseAdmissionError(
+                "validated engine evidence does not match the warehouse binding"
+            )
+        return evidence
+
     @staticmethod
     def _capability_profile_digest(
         capacity_profile: Literal["mvp-fixed"],

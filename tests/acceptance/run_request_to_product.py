@@ -1,0 +1,274 @@
+from __future__ import annotations
+
+import sqlite3
+from contextlib import closing
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Protocol
+
+from pillarmesh_compiler import NoValidPlan, compile_product_iir
+from pillarmesh_iir import (
+    AggregateMeasure,
+    AggregateOperation,
+    ColumnDeclaration,
+    ColumnReference,
+    NamedExpression,
+    ProductIntentIR,
+    ProjectOperation,
+    SourceRelation,
+)
+from pillarmesh_request_management import (
+    ApprovedProductIntent,
+    DeliveryIntent,
+    DimensionIntent,
+    FreshnessObjective,
+    Grain,
+    MeasureIntent,
+    ProductIntent,
+    ProductIntentApprovalService,
+    ProductIntentCandidate,
+    ProductIntentCandidateService,
+    ProductIntentConstraints,
+    ProductIntentSourceCoverage,
+    RequestManagementService,
+    SQLiteRequestRepository,
+)
+from pillarmesh_semantic_registry import SQLiteProductCatalogPublicationRepository
+
+from tests.acceptance.console_native_answer_fixture import DIMENSION, METRIC
+from tests.acceptance.run_console_governed import ARCHITECT, REQUESTER, TENANT
+
+_SOURCE_REF = "source-live-a"
+_PRODUCT_REF = "product_revenue_v1"
+_SOURCE_RELATION = "source_revenue"
+_NOW = datetime(2026, 9, 15, 12, tzinfo=UTC)
+_POSTGRESQL_VERSION = (
+    "postgres:18.6-bookworm@sha256:33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935"
+)
+_POSTGRESQL_CAPABILITIES = (
+    "binary_collation",
+    "decimal_38_9_sum",
+    "group_by",
+    "project",
+    "quoted_identifiers",
+    "utc_timezone",
+)
+
+
+def _clock() -> datetime:
+    return _NOW
+
+
+class ProductPublicationAuthority(Protocol):
+    def list_publications(self, *, tenant_id: str) -> tuple[object, ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class RequestToProductCompilation:
+    request_id: str
+    request_revision: int
+    product_publications_before_request: int
+    product_publications_before_compilation: int
+    product_publications_after_compilation: int
+    candidate: ProductIntentCandidate
+    approved_intent: ApprovedProductIntent
+    product_iir: ProductIntentIR
+    compiler_outcome: NoValidPlan
+
+
+class _SQLiteProductPublicationInventory:
+    def __init__(self, database_path: Path) -> None:
+        self._database_path = database_path
+        self._repository = SQLiteProductCatalogPublicationRepository(
+            str(database_path), check_same_thread=False
+        )
+
+    def close(self) -> None:
+        self._repository.close()
+
+    def list_publications(self, *, tenant_id: str) -> tuple[object, ...]:
+        # The repository intentionally exposes lookup by exact product generation rather than
+        # tenant-wide enumeration. This acceptance-only inventory reads its durable intent table
+        # so a seeded or partially prepared publication cannot satisfy the fresh-journey proof.
+        with sqlite3.connect(self._database_path) as connection:
+            rows = connection.execute(
+                "SELECT operation_id FROM product_catalog_publication_intents "
+                "WHERE tenant_id = ? ORDER BY operation_id",
+                (tenant_id,),
+            ).fetchall()
+        return tuple(row[0] for row in rows)
+
+
+def require_empty_product_publication_authority(
+    authority: ProductPublicationAuthority,
+    *,
+    tenant_id: str,
+) -> int:
+    publications = authority.list_publications(tenant_id=tenant_id)
+    if publications:
+        raise ValueError(
+            "request-to-product acceptance requires an empty product publication authority"
+        )
+    return len(publications)
+
+
+def build_product_iir(approved_intent: ApprovedProductIntent) -> ProductIntentIR:
+    intent = approved_intent.intent
+    expected_shape = (
+        intent.source_refs == (_SOURCE_REF,)
+        and intent.grain.keys == (DIMENSION.artifact_id,)
+        and intent.measures == (MeasureIntent(metric_ref=METRIC.artifact_id, aggregation="sum"),)
+        and intent.dimensions == (DimensionIntent(dimension_ref=DIMENSION.artifact_id),)
+        and intent.filters == ()
+    )
+    if not expected_shape:
+        raise ValueError("approved product intent does not match the revenue product IIR mapping")
+
+    source = SourceRelation(
+        relation_namespace="raw",
+        relation_name=_SOURCE_RELATION,
+        alias=_SOURCE_RELATION,
+        columns=(
+            ColumnDeclaration(name="region", value_type="string", nullable=False),
+            ColumnDeclaration(name="amount", value_type="decimal", nullable=False),
+        ),
+    )
+    return ProductIntentIR(
+        product_ref=_PRODUCT_REF,
+        source=source,
+        operations=(
+            ProjectOperation(
+                expressions=(
+                    NamedExpression(
+                        output_name="region",
+                        expression=ColumnReference(
+                            relation_alias=_SOURCE_RELATION,
+                            column_name="region",
+                        ),
+                    ),
+                    NamedExpression(
+                        output_name="amount",
+                        expression=ColumnReference(
+                            relation_alias=_SOURCE_RELATION,
+                            column_name="amount",
+                        ),
+                    ),
+                )
+            ),
+            AggregateOperation(
+                group_by=(ColumnReference(relation_alias=_SOURCE_RELATION, column_name="region"),),
+                measures=(
+                    AggregateMeasure(
+                        function="sum",
+                        output_name="total_revenue",
+                        argument=ColumnReference(
+                            relation_alias=_SOURCE_RELATION,
+                            column_name="amount",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        grain=(ColumnReference(relation_alias=_SOURCE_RELATION, column_name="region"),),
+        freshness_seconds=intent.freshness.maximum_age_seconds,
+    )
+
+
+def execute_postgresql_request_to_product(directory: Path) -> RequestToProductCompilation:
+    directory.mkdir(parents=True, exist_ok=True)
+    publication_inventory = _SQLiteProductPublicationInventory(
+        directory / "product-publications.sqlite3"
+    )
+    with closing(publication_inventory):
+        before_request = require_empty_product_publication_authority(
+            publication_inventory, tenant_id=TENANT
+        )
+        request_repository = SQLiteRequestRepository(
+            sqlite3.connect(directory / "requests.sqlite3"), _owns_connection=True
+        )
+        with closing(request_repository):
+            requests = RequestManagementService(request_repository, clock=_clock)
+            candidates = ProductIntentCandidateService(request_repository, clock=_clock)
+            approvals = ProductIntentApprovalService(request_repository, clock=_clock)
+            request = requests.submit_question(
+                tenant_id=TENANT,
+                requester_id=REQUESTER,
+                purpose="Build a governed revenue product for regional review.",
+                question="Create current revenue by region as a dataset, table, and dashboard.",
+                title="Current revenue by region",
+            )
+            intent = ProductIntent(
+                request_id=request.request_id,
+                title="Current revenue by region",
+                business_outcome="Give revenue leaders one governed current regional view.",
+                source_refs=(_SOURCE_REF,),
+                grain=Grain(keys=(DIMENSION.artifact_id,)),
+                measures=(MeasureIntent(metric_ref=METRIC.artifact_id, aggregation="sum"),),
+                dimensions=(DimensionIntent(dimension_ref=DIMENSION.artifact_id),),
+                filters=(),
+                freshness=FreshnessObjective(maximum_age_seconds=3_600),
+                delivery=DeliveryIntent(outputs=("dataset", "table", "dashboard")),
+            )
+            constraints = ProductIntentConstraints(
+                approved_source_refs=(_SOURCE_REF,),
+                approved_metric_refs=(METRIC.artifact_id,),
+                approved_dimension_refs=(DIMENSION.artifact_id,),
+                minimum_source_interval_seconds=3_600,
+            )
+            candidate = candidates.propose(
+                tenant_id=TENANT,
+                request_id=request.request_id,
+                request_revision=request.revision,
+                idempotency_key="request-to-product-candidate-1",
+                proposed_by="external-interpreter",
+                intent=intent,
+                constraints=constraints,
+                source_coverage=(
+                    ProductIntentSourceCoverage(
+                        source_ref=_SOURCE_REF,
+                        covered_fields=("region", "amount"),
+                        authorized=True,
+                    ),
+                ),
+                unresolved_constraints=(),
+            )
+            approval = approvals.approve(
+                tenant_id=TENANT,
+                request_id=request.request_id,
+                request_revision=request.revision,
+                approved_by=ARCHITECT,
+                intent=candidate.intent,
+                constraints=candidate.constraints,
+            )
+            if not isinstance(approval, ApprovedProductIntent):
+                raise AssertionError("acceptance product intent was not approved")
+            if candidates.current_candidate(TENANT, request.request_id) != candidate:
+                raise AssertionError("product intent candidate was not durably recorded")
+            if approvals.list_for_request(TENANT, request.request_id) != (approval,):
+                raise AssertionError("product intent approval was not durably recorded")
+
+            before_compilation = require_empty_product_publication_authority(
+                publication_inventory, tenant_id=TENANT
+            )
+            product_iir = build_product_iir(approval)
+            compiler_outcome = compile_product_iir(
+                product_iir,
+                engine="postgresql",
+                engine_version=_POSTGRESQL_VERSION,
+                capabilities=_POSTGRESQL_CAPABILITIES,
+            )
+            after_compilation = require_empty_product_publication_authority(
+                publication_inventory, tenant_id=TENANT
+            )
+            return RequestToProductCompilation(
+                request_id=request.request_id,
+                request_revision=request.revision,
+                product_publications_before_request=before_request,
+                product_publications_before_compilation=before_compilation,
+                product_publications_after_compilation=after_compilation,
+                candidate=candidate,
+                approved_intent=approval,
+                product_iir=product_iir,
+                compiler_outcome=compiler_outcome,
+            )

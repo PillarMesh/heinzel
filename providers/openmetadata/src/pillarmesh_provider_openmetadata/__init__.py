@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .client import UPSTREAM_IMAGES, OpenMetadataClient, OpenMetadataSettings
+from .client import CORE_UPSTREAM_IMAGES, UPSTREAM_IMAGES, OpenMetadataClient, OpenMetadataSettings
 from .models import (
     CatalogObjectRef,
     CatalogObjectSnapshot,
@@ -11,6 +11,7 @@ from .models import (
     ProviderBuildIdentity,
     ProviderHealth,
 )
+from .product_catalog import OpenMetadataProductCatalogProvider
 from .provisioner import (
     DockerComposeController,
     EncryptedDirectoryOpenMetadataSecretStore,
@@ -22,6 +23,7 @@ from .provisioner import (
 from .publication import OpenMetadataPublicationProvider, openmetadata_publication_provider
 
 __all__ = [
+    "CORE_UPSTREAM_IMAGES",
     "UPSTREAM_IMAGES",
     "CatalogObjectRef",
     "CatalogObjectSnapshot",
@@ -34,6 +36,7 @@ __all__ = [
     "LineagePayload",
     "OpenMetadataClient",
     "OpenMetadataOperationSecrets",
+    "OpenMetadataProductCatalogProvider",
     "OpenMetadataProvisioner",
     "OpenMetadataPublicationProvider",
     "OpenMetadataSecretStore",

@@ -14,7 +14,9 @@ The service map mirrors the concrete control-plane components in Revenue-to-Cash
 
 | Path | Owns | Must not own |
 | --- | --- | --- |
+| `services/access-control` | Connected enterprise-entitlement observations and current snapshots; governed access-grant application, expiry, revocation, and receipts | Request approval, warehouse credentials, provider-local identifiers, or execution state |
 | `services/authoring-mcp` | Host-neutral authoring tools/resources, sessions, authorization filtering, draft mutations | Semantic validity or execution state |
+| `services/bi-control` | Versioned dashboard desired state, provider reconciliation, publication receipts, and archive lifecycle | Business meaning, access grants, provider-local identifiers, or dashboard rendering |
 | `services/catalog-control` | Tenant catalog-binding lifecycle, provider selection, capability validation, and private resource-ledger cleanup | Semantic authority, approved meaning, contract legality, or public provider identifiers |
 | `services/compiler` | Contract parsing, semantic IIR, legality, feasibility, plan selection, deployment compilation | Runtime retries or record-level nondeterminism |
 | `services/connection-broker` | OAuth attempts/callbacks, token exchange and rotation, opaque connection handles | Raw secrets in MCP results |

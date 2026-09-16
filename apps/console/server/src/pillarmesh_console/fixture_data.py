@@ -470,8 +470,18 @@ def build_fixture_seed() -> FixtureSeed:
             {
                 "product-revenue": DataProductView(
                     data_product_id="product-revenue",
-                    artifact_digest="a" * 64,
                     version=1,
+                    publication_status="published",
+                    name="Current revenue by region",
+                    description="Approved revenue grouped by region for finance reporting.",
+                    product_revision=1,
+                    generation=1,
+                    catalog_revision=1,
+                    namespace="analytics",
+                    relation_name="revenue_by_region",
+                    column_count=2,
+                    source_count=1,
+                    freshness_observed_at=FIXED_TIME,
                 )
             }
         ),
@@ -530,6 +540,12 @@ def build_fixture_seed() -> FixtureSeed:
                 "dashboard-revenue": DashboardView(
                     dashboard_ref="dashboard-revenue",
                     display_name="Synthetic revenue overview",
+                    version=1,
+                    lifecycle_state="active",
+                    as_of=FIXED_TIME,
+                    freshness="current",
+                    access_state="workspace_role",
+                    published_at=FIXED_TIME,
                     state="not_delivered",
                     summary="The downstream dashboard is intentionally unavailable.",
                     preview_ref="preview-dashboard-revenue",

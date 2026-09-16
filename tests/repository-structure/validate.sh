@@ -32,6 +32,7 @@ deploy/README.md
 docs
 docs/architecture/decisions/ADR-0001-monorepo-structure.md
 docs/architecture/decisions/ADR-0003-managed-data-engineering-platform.md
+docs/architecture/decisions/ADR-0007-access-control.md
 docs/architecture/repository-layout.md
 docs/architecture/specifications/enterprise-data-compiler-foundational-architecture-v0.3.docx
 docs/architecture/specifications/enterprise-data-compiler-revenue-to-cash-mvp-implementation-plan-v1.4.docx
@@ -87,7 +88,7 @@ validate_components() {
 }
 
 validate_components apps 'console'
-validate_components services 'authoring-mcp catalog-control compiler connection-broker context-exposure contract dbt-adapter evidence knowledge-graph provider-registry reconciliation relay request-management runtime semantic-registry state trigger warehouse-control'
+validate_components services 'access-control authoring-mcp bi-control catalog-control compiler connection-broker context-exposure contract dbt-adapter evidence knowledge-graph provider-registry reconciliation relay request-management runtime semantic-registry state trigger warehouse-control'
 validate_components packages 'client-sdk contract-model execution-graph iir observability provider-sdk'
 
 if [ "$status" -eq 0 ]; then

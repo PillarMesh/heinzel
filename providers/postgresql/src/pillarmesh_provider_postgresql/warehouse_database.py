@@ -19,6 +19,7 @@ _PRINCIPALS = (
     "administration",
     "ingestion_runtime",
     "transformation_runtime",
+    "answer_runtime",
     "backup_restore",
     "customer_sql",
     "catalog",
@@ -618,6 +619,7 @@ def _apply_grants(cursor: Any, plan: PostgreSQLGrantPlan) -> None:
         "USAGE, CREATE",
     )
     _grant_schema(cursor, plan, "customer_sql", ("consumption",), "USAGE")
+    _grant_schema(cursor, plan, "answer_runtime", ("consumption",), "USAGE")
     _grant_schema(cursor, plan, "catalog", _NAMESPACES, "USAGE")
     _grant_schema(cursor, plan, "bi", ("consumption",), "USAGE")
     cursor.execute(
@@ -656,6 +658,12 @@ def _apply_grants(cursor: Any, plan: PostgreSQLGrantPlan) -> None:
         sql.SQL("GRANT SELECT ON {}.customer_probe TO {}").format(
             sql.Identifier(plan.namespace("consumption")),
             sql.Identifier(plan.role("customer_sql")),
+        )
+    )
+    cursor.execute(
+        sql.SQL("GRANT SELECT ON {}.customer_probe TO {}").format(
+            sql.Identifier(plan.namespace("consumption")),
+            sql.Identifier(plan.role("answer_runtime")),
         )
     )
     cursor.execute(
@@ -916,6 +924,7 @@ def _expected_schema_privilege(principal: str, namespace: str, privilege: str) -
         "transformation_runtime": frozenset(
             {"raw", "conformed", "product", "consumption", "quarantine"}
         ),
+        "answer_runtime": frozenset({"consumption"}),
         "backup_restore": frozenset((*_NAMESPACES, "unrelated")),
         "customer_sql": frozenset({"consumption"}),
         "catalog": frozenset(_NAMESPACES),
@@ -925,6 +934,7 @@ def _expected_schema_privilege(principal: str, namespace: str, privilege: str) -
         "administration": frozenset(_NAMESPACES),
         "ingestion_runtime": frozenset({"raw"}),
         "transformation_runtime": frozenset({"conformed", "product", "consumption", "quarantine"}),
+        "answer_runtime": frozenset(),
         "backup_restore": frozenset(),
         "customer_sql": frozenset(),
         "catalog": frozenset(),
@@ -964,6 +974,8 @@ def _expected_table_privilege(
             ("quarantine", "quarantine_probe"),
         } and privilege in {"SELECT", "INSERT", "UPDATE", "DELETE"}
     if principal == "customer_sql":
+        return target == ("consumption", "customer_probe") and privilege == "SELECT"
+    if principal == "answer_runtime":
         return target == ("consumption", "customer_probe") and privilege == "SELECT"
     if principal == "bi":
         return target == ("consumption", "certified_probe") and privilege == "SELECT"
@@ -1122,6 +1134,14 @@ def _probe_summaries(
                         ).format(sql.Identifier(plan.namespace("raw"))),
                     )
                     denials.append((principal, "governed_row_write"))
+                if principal == "answer_runtime":
+                    _require_denial(
+                        connection,
+                        sql.SQL(
+                            "INSERT INTO {}.customer_probe (id, payload) VALUES (-1, 'forbidden')"
+                        ).format(sql.Identifier(plan.namespace("consumption"))),
+                    )
+                    denials.append((principal, "governed_row_write"))
     return (
         {"domain": "pillarmesh-postgresql-positive-probes-v1", "probes": tuple(positive)},
         {"domain": "pillarmesh-postgresql-denial-probes-v1", "probes": tuple(denials)},
@@ -1187,7 +1207,7 @@ def _positive_probe(connection: Any, plan: PostgreSQLGrantPlan, principal: str) 
                     sql.Identifier(plan.namespace("raw"))
                 )
             )
-        elif principal == "customer_sql":
+        elif principal in {"customer_sql", "answer_runtime"}:
             cursor.execute(
                 sql.SQL("SELECT payload FROM {}.customer_probe").format(
                     sql.Identifier(plan.namespace("consumption"))

@@ -26,6 +26,7 @@ class WarehousePrincipalClass(StrEnum):
     ADMINISTRATION = "administration"
     INGESTION_RUNTIME = "ingestion_runtime"
     TRANSFORMATION_RUNTIME = "transformation_runtime"
+    ANSWER_RUNTIME = "answer_runtime"
     BACKUP_RESTORE = "backup_restore"
     CUSTOMER_SQL = "customer_sql"
     CATALOG = "catalog"

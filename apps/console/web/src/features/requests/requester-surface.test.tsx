@@ -90,6 +90,30 @@ const deliveredRequest: RequesterRequestView = {
   },
 }
 
+const deliveredAccessRequest: RequesterRequestView = {
+  ...ownRequest,
+  kind: "data_access",
+  state: "delivered",
+  revision: 7,
+  title: "Regional revenue access",
+  delivered_access: {
+    access_mode: "query",
+    fields: ["net-revenue", "region"],
+    effective_at: "2026-09-13T12:00:00Z",
+    expires_at: "2026-09-14T12:00:00Z",
+    permissions: ["query", "view"],
+  },
+  access_lifecycle: {
+    state: "active",
+    title: "Access is active",
+    summary: "Your approved access is available until 2026-09-14T12:00:00+00:00.",
+    effective_at: "2026-09-13T12:00:00Z",
+    expires_at: "2026-09-14T12:00:00Z",
+    revision: 2,
+    can_revoke: true,
+  },
+}
+
 const requestsEnvelope: ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView = {
   meta: {correlation_id: "correlation-requests", data_provenance: "demo_fixture"},
   data: [ownRequest],
@@ -155,6 +179,7 @@ const client = {
   getClarifiedOutcome: vi.fn(),
   getConversation: vi.fn(),
   getRequesterRequests: vi.fn(),
+  revokeAccess: vi.fn(),
   withdrawRequest: vi.fn(),
   // Reviewer projections this surface must never reach for.
   getEvidence: vi.fn(),
@@ -343,6 +368,10 @@ test("follows only the requester's own requests and no reviewer or evidence proj
   expect(items[0]).toHaveTextContent("Explain the weekly net revenue movement.")
   expect(items[0]).toHaveTextContent("clarifying")
   expect(items[0]).toHaveTextContent("Clarified outcome statement")
+  expect(within(items[0]!).getByRole("link", {name: "Open Weekly net revenue movement"})).toHaveAttribute(
+    "href",
+    "/requests/request-blocked-acceptance",
+  )
 
   expect(client.getInbox).not.toHaveBeenCalled()
   expect(client.getRequestDetail).not.toHaveBeenCalled()
@@ -354,6 +383,21 @@ test("follows only the requester's own requests and no reviewer or evidence proj
   expect(screen.queryByText(/evidence/i)).not.toBeInTheDocument()
   expect(screen.queryByText(/other request/i)).not.toBeInTheDocument()
   expect(screen.queryByText(/hidden|withheld from you|not shown/i)).not.toBeInTheDocument()
+})
+
+test("keeps request internals behind technical details", async () => {
+  const user = userEvent.setup()
+
+  renderSurface(ownRequest.request_id)
+
+  await screen.findByRole("heading", {name: ownRequest.title})
+  expect(screen.getByText(ownRequest.request_id)).not.toBeVisible()
+  expect(screen.getByText(`Revision ${ownRequest.revision}`)).not.toBeVisible()
+
+  await user.click(screen.getByText("Technical details"))
+
+  expect(screen.getByText(ownRequest.request_id)).toBeVisible()
+  expect(screen.getByText(`Revision ${ownRequest.revision}`)).toBeVisible()
 })
 
 test("shows the original question and requester-safe no-valid-plan explanation", async () => {
@@ -403,6 +447,107 @@ test("shows a verified delivered answer and its governed references", async () =
   expect(screen.getByText(/Lineage: Governed lineage.*version 1/i)).toBeVisible()
   expect(screen.queryByText(/product-revenue|metric-net-revenue|lineage-f+/i)).not.toBeInTheDocument()
   expect(screen.queryByText(/withheld/i)).not.toBeInTheDocument()
+})
+
+test("shows delivered access without internal grant or provider identifiers", async () => {
+  client.getRequesterRequests.mockResolvedValue({
+    ...requestsEnvelope,
+    data: [deliveredAccessRequest],
+  })
+
+  renderSurface(deliveredAccessRequest.request_id)
+
+  expect(await screen.findByRole("heading", {name: "Access is ready"})).toBeVisible()
+  expect(screen.getByRole("heading", {name: "Access is active"})).toBeVisible()
+  expect(screen.getByText(/query the approved fields: net-revenue, region/i)).toBeVisible()
+  expect(screen.getByText(/access expires automatically/i)).toBeVisible()
+  expect(screen.queryByText(/grant-|effect-|relation:/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/no further action/i)).not.toBeInTheDocument()
+})
+
+test.each([
+  ["pending", "Access is being set up", "approved access is being applied"],
+  ["expired", "Access has expired", "can no longer be used"],
+  ["revocation_pending", "Access removal is in progress", "already unavailable"],
+  ["revoked", "Access has been removed", "can no longer be used"],
+  ["failed", "Access removal needs attention", "remains unavailable"],
+] as const)("shows %s access in plain language", async (state, title, summary) => {
+  client.getRequesterRequests.mockResolvedValue({
+    ...requestsEnvelope,
+    data: [
+      {
+        ...deliveredAccessRequest,
+        access_lifecycle: {
+          ...deliveredAccessRequest.access_lifecycle!,
+          state,
+          title,
+          summary: `Your access ${summary}.`,
+          can_revoke: false,
+        },
+      },
+    ],
+  })
+
+  renderSurface(deliveredAccessRequest.request_id)
+
+  expect(await screen.findByRole("heading", {name: title})).toBeVisible()
+  expect(screen.getByText(new RegExp(summary, "i"))).toBeVisible()
+  expect(screen.queryByText(/grant-|effect-|relation:/i)).not.toBeInTheDocument()
+  expect(screen.queryByRole("button", {name: "Remove access"})).not.toBeInTheDocument()
+  expect(screen.queryByRole("heading", {name: "Access is ready"})).not.toBeInTheDocument()
+})
+
+test("removes active access with the authoritative grant revision and reloads status", async () => {
+  const user = userEvent.setup()
+  client.getRequesterRequests
+    .mockResolvedValueOnce({
+      ...requestsEnvelope,
+      meta: {...requestsEnvelope.meta, data_provenance: "governed_local"},
+      data: [deliveredAccessRequest],
+    })
+    .mockResolvedValueOnce({
+      ...requestsEnvelope,
+      meta: {...requestsEnvelope.meta, data_provenance: "governed_local"},
+      data: [
+        {
+          ...deliveredAccessRequest,
+          delivered_access: null,
+          access_lifecycle: {
+            ...deliveredAccessRequest.access_lifecycle!,
+            state: "revocation_pending",
+            title: "Access removal is in progress",
+            summary: "Your access is already unavailable while cleanup completes.",
+            revision: 3,
+            can_revoke: false,
+          },
+        },
+      ],
+    })
+  client.revokeAccess.mockResolvedValue({
+    meta: {correlation_id: "correlation-revoke", data_provenance: "governed_local"},
+    data: {
+      ...deliveredAccessRequest.access_lifecycle!,
+      state: "revocation_pending",
+      title: "Access removal is in progress",
+      summary: "Your access is already unavailable while cleanup completes.",
+      revision: 3,
+      can_revoke: false,
+    },
+  })
+  renderSurface(deliveredAccessRequest.request_id, "governed_local")
+
+  await user.click(await screen.findByRole("button", {name: "Remove access"}))
+  await user.type(screen.getByLabelText("Reason for removing access"), "Analysis complete")
+  await user.click(screen.getByRole("button", {name: "Confirm access removal"}))
+
+  await waitFor(() => expect(client.revokeAccess).toHaveBeenCalledTimes(1))
+  expect(client.revokeAccess).toHaveBeenCalledWith(
+    deliveredAccessRequest.request_id,
+    {expected_revision: 2, active_role: "requester", reason: "Analysis complete"},
+    {csrfToken: session.csrf_token, idempotencyKey: "idempotency-requester-fixed"},
+  )
+  expect(await screen.findByRole("heading", {name: "Access removal is in progress"})).toBeVisible()
+  expect(screen.queryByRole("button", {name: "Remove access"})).not.toBeInTheDocument()
 })
 
 test("starts a distinct revised request from the refused question without mutating on open", async () => {
@@ -745,4 +890,17 @@ test("offers no withdrawal on a request that has already reached an outcome", as
 
   expect(await screen.findByText("What is the current MRR")).toBeVisible()
   expect(screen.queryByRole("button", {name: "Withdraw request"})).not.toBeInTheDocument()
+})
+
+test("offers a result page only when the service authorizes it", async () => {
+  client.getRequesterRequests.mockResolvedValue({
+    ...requestsEnvelope,
+    data: [{...deliveredRequest, result_page_available: true}],
+  })
+
+  renderSurface(deliveredRequest.request_id)
+
+  expect(await screen.findByRole("link", {name: "View results"})).toHaveAttribute(
+    "href", `/requests/${deliveredRequest.request_id}/result`,
+  )
 })

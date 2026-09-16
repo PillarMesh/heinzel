@@ -4,21 +4,29 @@ version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
   "pillarmesh-connection-broker",
+  "pillarmesh-catalog-control",
   "pillarmesh-contract-model",
+  "pillarmesh-contract-service",
   "pillarmesh-evidence",
   "pillarmesh-execution-graph",
   "pillarmesh-provider-sdk",
+  "pillarmesh-semantic-registry",
   "pillarmesh-state",
+  "pillarmesh-warehouse-control",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
+pillarmesh-catalog-control = { workspace = true }
 pillarmesh-connection-broker = { workspace = true }
 pillarmesh-contract-model = { workspace = true }
+pillarmesh-contract-service = { workspace = true }
 pillarmesh-evidence = { workspace = true }
 pillarmesh-execution-graph = { workspace = true }
 pillarmesh-provider-sdk = { workspace = true }
+pillarmesh-semantic-registry = { workspace = true }
 pillarmesh-state = { workspace = true }
+pillarmesh-warehouse-control = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

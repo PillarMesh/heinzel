@@ -1,0 +1,168 @@
+{
+  "schema_version": "1",
+  "rule_id": "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE",
+  "activation_scope": "postgresql",
+  "cross_engine_equivalence_claimed": false,
+  "note": "Maps every D1-D8 equivalence dimension to the artifacts that carry it. Executable engine cases live in generation-scoped-json-conformance.json and run against the pinned engine. Compiler-boundary dimensions are carried by named unit tests, because the construct they exclude cannot be expressed in the IIR and so has no row form. ClickHouse status is not_claimed under PostgreSQL activation per the ADR-0004 amendment of 2026-09-15; it becomes claimed only with its own evidence and a second independent review.",
+  "dimensions": [
+    {
+      "dimension": "D1",
+      "title": "null and missing",
+      "carried_by": "engine_cases",
+      "postgresql_status": "claimed",
+      "clickhouse_status": "not_claimed",
+      "positive_cases": [
+        "valid_rows"
+      ],
+      "negative_cases": [
+        "missing_group",
+        "null_group",
+        "missing_measure",
+        "null_measure"
+      ],
+      "negatives_excluded_at_compiler_boundary": false,
+      "compiler_tests": []
+    },
+    {
+      "dimension": "D2",
+      "title": "precision and range",
+      "carried_by": "engine_cases",
+      "postgresql_status": "claimed",
+      "clickhouse_status": "not_claimed",
+      "positive_cases": [
+        "decimal_zero",
+        "decimal_negative",
+        "decimal_scale_nine",
+        "decimal_max_positive",
+        "decimal_max_negative",
+        "decimal_safe_multirow_sum"
+      ],
+      "negative_cases": [
+        "decimal_outside_precision",
+        "decimal_excess_scale"
+      ],
+      "negatives_excluded_at_compiler_boundary": false,
+      "compiler_tests": [
+        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_physical_decimal_and_sum_overflow_semantics_fail_closed"
+      ],
+      "divergence_motivated_exclusions": [
+        "decimal_excess_scale stays inadmissible because PostgreSQL rounds excess scale where ClickHouse truncates it. This exclusion survives single-engine activation so ClickHouse can join the rule later without renegotiating it."
+      ]
+    },
+    {
+      "dimension": "D3",
+      "title": "collation",
+      "carried_by": "engine_cases",
+      "postgresql_status": "claimed",
+      "clickhouse_status": "not_claimed",
+      "positive_cases": [
+        "case_variant_groups",
+        "unicode_composed_decomposed_groups",
+        "trailing_space_groups"
+      ],
+      "negative_cases": [],
+      "negatives_excluded_at_compiler_boundary": false,
+      "negative_not_applicable_reason": "Group strings use profile-specific binary semantics, so every distinct byte sequence is a distinct group and no input is inadmissible on collation grounds. Provider sort order differs for case variants, so result ordering is not claimed and the positive cases assert an equivalent row set rather than an equivalent row sequence.",
+      "compiler_tests": []
+    },
+    {
+      "dimension": "D4",
+      "title": "locale",
+      "carried_by": "compiler_boundary",
+      "postgresql_status": "claimed",
+      "clickhouse_status": "not_claimed",
+      "positive_cases": [],
+      "negative_cases": [],
+      "negatives_excluded_at_compiler_boundary": true,
+      "negative_not_applicable_reason": "The IIR can express the case-conversion functions lower and upper, so the locale claim rests on the restricted shape predicate rather than the IIR vocabulary. A case conversion is not a direct declared source input, so the projection check rejects it before emission and it has no row form.",
+      "compiler_tests": [
+        "services/compiler/tests/test_locale_and_timezone_exclusion.py::test_d4_case_conversion_in_the_projection_is_not_a_direct_input",
+        "services/compiler/tests/test_locale_and_timezone_exclusion.py::test_d4_upper_case_conversion_is_rejected_on_the_same_ground",
+        "services/compiler/tests/test_locale_and_timezone_exclusion.py::test_the_baseline_product_satisfies_every_shape_check"
+      ]
+    },
+    {
+      "dimension": "D5",
+      "title": "timezone",
+      "carried_by": "compiler_boundary",
+      "postgresql_status": "claimed",
+      "clickhouse_status": "not_claimed",
+      "positive_cases": [],
+      "negative_cases": [],
+      "negatives_excluded_at_compiler_boundary": true,
+      "negative_not_applicable_reason": "The IIR can declare timestamp columns and datetime literals, so the timezone claim rests on the restricted shape predicate. Grouping admits only non-null string columns and the measure admits only a non-null decimal column, so no timestamp expression survives to emission. Evaluation time is separately required to be UTC.",
+      "compiler_tests": [
+        "services/compiler/tests/test_locale_and_timezone_exclusion.py::test_d5_a_timestamp_group_column_cannot_be_grouped",
+        "services/compiler/tests/test_locale_and_timezone_exclusion.py::test_d5_a_timestamp_measure_cannot_be_summed",
+        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_non_utc_evaluation_time_fails_closed",
+        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_aware_non_utc_evaluation_time_fails_closed"
+      ]
+    },
+    {
+      "dimension": "D6",
+      "title": "identifier encoding",
+      "carried_by": "compiler_boundary",
+      "postgresql_status": "claimed",
+      "clickhouse_status": "not_claimed",
+      "positive_cases": [],
+      "negative_cases": [],
+      "negatives_excluded_at_compiler_boundary": true,
+      "negative_not_applicable_reason": "Identifier encoding is rejected at the compiler boundary before any statement is emitted, so an inadmissible identifier never reaches the engine and has no row form.",
+      "compiler_tests": [
+        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_identifier_security_rejects_sql_syntax_wildcards_and_confusables",
+        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_emitter_revalidates_identifiers_after_unsafe_model_copy",
+        "services/compiler/tests/test_generation_scoped_product_sql.py::test_generation_source_rejects_hostile_physical_and_json_identifiers"
+      ]
+    },
+    {
+      "dimension": "D7",
+      "title": "literal typing",
+      "carried_by": "engine_cases",
+      "postgresql_status": "claimed_with_unenforced_exclusion",
+      "clickhouse_status": "not_claimed",
+      "positive_cases": [
+        "valid_rows"
+      ],
+      "negative_cases": [
+        "malformed_decimal",
+        "wrong_type_decimal"
+      ],
+      "negatives_excluded_at_compiler_boundary": false,
+      "compiler_tests": [
+        "services/compiler/tests/test_generation_scoped_product_sql.py::test_generation_emission_rejects_coercible_generation_identity"
+      ],
+      "divergence_motivated_exclusions": [
+        "wrong_type_decimal stays inadmissible because both pinned engines coerce a numeric JSON value into the declared decimal although the contract requires a JSON string. The exclusion is a contract requirement, not a PostgreSQL limitation, and survives single-engine activation."
+      ],
+      "unenforced_exclusions": [
+        {
+          "case_id": "wrong_type_decimal",
+          "claim": "the source contract requires the decimal field to arrive as a JSON string",
+          "enforced_by": null,
+          "live_evidence": "Verified against the pinned PostgreSQL 18.6 image on 2026-09-15: the emitted statement decodes the payload with `->>`, which stringifies a JSON number, so the numeric payload {\"revenue\": 12.5} yields the row (east, 12.500000000) instead of being rejected. Nothing in the compiler or the provider boundary refuses it; the fixture records the engine's behaviour, not a refusal.",
+          "consequence": "The D7 literal-typing claim is carried by the contract text alone. It must not be described as enforced until an accepted enforcement point exists."
+        }
+      ]
+    },
+    {
+      "dimension": "D8",
+      "title": "relational behavior",
+      "carried_by": "engine_cases",
+      "postgresql_status": "claimed",
+      "clickhouse_status": "not_claimed",
+      "positive_cases": [
+        "valid_rows",
+        "wrong_generation_excluded",
+        "empty_selected_generation"
+      ],
+      "negative_cases": [],
+      "negatives_excluded_at_compiler_boundary": true,
+      "negative_not_applicable_reason": "Joins, filters, deduplication, ordering, limits, and additional measures are excluded by the shape predicate before emission, so they have no row form. Their rejection is carried by the shape tests below.",
+      "compiler_tests": [
+        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_shape_evaluation_rejects_a_reference_outside_the_declared_source_alias",
+        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_emitter_never_invents_an_aggregate_function",
+        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_emitter_rejects_a_measure_output_that_collides_with_a_group_output"
+      ]
+    }
+  ]
+}

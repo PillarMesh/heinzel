@@ -90,7 +90,7 @@ test("the skip link is the first stop of the keyboard order and moves focus to t
   // The skip link comes before the product navigation, so it is reached before any
   // of the chrome it exists to skip.
   await page.keyboard.press("Tab")
-  await expect(page.getByRole("link", {name: "Inbox"})).toBeFocused()
+  await expect(page.getByRole("link", {name: "Workspace setup"})).toBeFocused()
 
   await page.keyboard.press("Shift+Tab")
   await expect(skipLink).toBeFocused()
@@ -122,7 +122,7 @@ test("keyboard alone completes the setup foundation stage", async ({page, reques
   await page.keyboard.press("Enter")
 
   await expect(page.getByRole("status", {name: "Warehouse operation"})).toContainText(
-    "Provisioning accepted",
+    "Request accepted",
   )
   const setup = await (await request.get("/api/v1/setup")).json()
   expect(setup.data.warehouse_binding.engine).toBe("postgresql")

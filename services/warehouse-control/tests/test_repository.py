@@ -14,6 +14,7 @@ from pillarmesh_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
     PrivateWarehouseResource,
+    WarehouseAdmissionError,
     WarehouseBinding,
     WarehouseBindingState,
     WarehouseControlService,
@@ -2195,6 +2196,145 @@ def test_initial_validation_records_binding_restore_and_evidence_atomically() ->
         ).fetchone()
         is None
     )
+
+
+def test_validated_engine_evidence_read_returns_the_recorded_authority() -> None:
+    repository = SQLiteWarehouseRepository(":memory:")
+    fixture = stable_admission_fixture(repository, "initial")
+    source = fixture.source
+    ready = fixture.terminal
+    restore = restore_verification(source)
+    evidence = validation_evidence(source, restore)
+    repository.record_initial_validation_operation(
+        ready,
+        evidence,
+        restore,
+        fixture.expected_operation,
+        fixture.succeeded_operation,
+        expected_revision=source.revision,
+    )
+    control = WarehouseControlService(repository, clock=lambda: NOW)
+
+    observed = control.get_validated_engine_evidence(
+        source.tenant_id,
+        source.binding_id,
+        expected_revision=ready.revision,
+    )
+
+    assert observed == evidence
+
+
+@pytest.mark.parametrize(
+    ("tenant_id", "binding_id"),
+    (("tenant-b", "existing"), ("tenant-a", "missing")),
+)
+def test_validated_engine_evidence_read_hides_binding_existence(
+    tenant_id: str,
+    binding_id: str,
+) -> None:
+    repository = SQLiteWarehouseRepository(":memory:")
+    fixture = stable_admission_fixture(repository, "initial")
+    source = fixture.source
+    ready = fixture.terminal
+    restore = restore_verification(source)
+    repository.record_initial_validation_operation(
+        ready,
+        validation_evidence(source, restore),
+        restore,
+        fixture.expected_operation,
+        fixture.succeeded_operation,
+        expected_revision=source.revision,
+    )
+    control = WarehouseControlService(repository, clock=lambda: NOW)
+    requested_binding_id = source.binding_id if binding_id == "existing" else binding_id
+
+    with pytest.raises(KeyError, match="validated engine evidence was not found"):
+        control.get_validated_engine_evidence(
+            tenant_id,
+            requested_binding_id,
+            expected_revision=ready.revision,
+        )
+
+
+def test_validated_engine_evidence_read_rejects_a_stale_binding_revision() -> None:
+    repository = SQLiteWarehouseRepository(":memory:")
+    fixture = stable_admission_fixture(repository, "initial")
+    source = fixture.source
+    ready = fixture.terminal
+    restore = restore_verification(source)
+    repository.record_initial_validation_operation(
+        ready,
+        validation_evidence(source, restore),
+        restore,
+        fixture.expected_operation,
+        fixture.succeeded_operation,
+        expected_revision=source.revision,
+    )
+    control = WarehouseControlService(repository, clock=lambda: NOW)
+
+    with pytest.raises(ValueError, match="binding revision is stale"):
+        control.get_validated_engine_evidence(
+            source.tenant_id,
+            source.binding_id,
+            expected_revision=source.revision,
+        )
+
+
+def test_validated_engine_evidence_read_rejects_stale_recorded_evidence() -> None:
+    repository = SQLiteWarehouseRepository(":memory:")
+    fixture = stable_admission_fixture(repository, "initial")
+    source = fixture.source
+    ready = fixture.terminal
+    restore = restore_verification(source)
+    repository.record_initial_validation_operation(
+        ready,
+        validation_evidence(source, restore),
+        restore,
+        fixture.expected_operation,
+        fixture.succeeded_operation,
+        expected_revision=source.revision,
+    )
+    suspended = advance_binding(ready, WarehouseBindingState.SUSPENDED)
+    resumed = advance_binding(suspended, WarehouseBindingState.READY)
+    repository.save(suspended)
+    repository.save(resumed)
+    control = WarehouseControlService(repository, clock=lambda: NOW)
+
+    with pytest.raises(WarehouseAdmissionError, match="validated engine evidence is stale"):
+        control.get_validated_engine_evidence(
+            source.tenant_id,
+            source.binding_id,
+            expected_revision=resumed.revision,
+        )
+
+
+def test_validated_engine_evidence_read_requires_a_ready_binding() -> None:
+    repository = SQLiteWarehouseRepository(":memory:")
+    fixture = stable_admission_fixture(repository, "initial")
+    source = fixture.source
+    ready = fixture.terminal
+    restore = restore_verification(source)
+    repository.record_initial_validation_operation(
+        ready,
+        validation_evidence(source, restore),
+        restore,
+        fixture.expected_operation,
+        fixture.succeeded_operation,
+        expected_revision=source.revision,
+    )
+    suspended = advance_binding(ready, WarehouseBindingState.SUSPENDED)
+    repository.save(suspended)
+    control = WarehouseControlService(repository, clock=lambda: NOW)
+
+    with pytest.raises(
+        WarehouseAdmissionError,
+        match="validated engine evidence requires a ready binding",
+    ):
+        control.get_validated_engine_evidence(
+            source.tenant_id,
+            source.binding_id,
+            expected_revision=suspended.revision,
+        )
 
 
 @pytest.mark.parametrize("kind", ("resume", "retirement"))

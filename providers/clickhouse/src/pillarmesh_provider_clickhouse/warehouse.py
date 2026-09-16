@@ -1342,6 +1342,7 @@ class ClickHouseWarehouseProvider:
         administration_secret: WarehouseOperationSecretCapability,
         ingestion_runtime_secret: WarehouseOperationSecretCapability,
         transformation_runtime_secret: WarehouseOperationSecretCapability,
+        answer_runtime_secret: WarehouseOperationSecretCapability,
         customer_sql_secret: WarehouseOperationSecretCapability,
         catalog_secret: WarehouseOperationSecretCapability,
         bi_secret: WarehouseOperationSecretCapability,
@@ -1359,6 +1360,7 @@ class ClickHouseWarehouseProvider:
         self._administration_secret = administration_secret
         self._ingestion_runtime_secret = ingestion_runtime_secret
         self._transformation_runtime_secret = transformation_runtime_secret
+        self._answer_runtime_secret = answer_runtime_secret
         self._customer_sql_secret = customer_sql_secret
         self._catalog_secret = catalog_secret
         self._bi_secret = bi_secret
@@ -1582,6 +1584,7 @@ class ClickHouseWarehouseProvider:
                     "transformation_runtime": (
                         self._transformation_runtime_secret.resolve().get_secret_value()
                     ),
+                    "answer_runtime": self._answer_runtime_secret.resolve().get_secret_value(),
                     "customer_sql": self._customer_sql_secret.resolve().get_secret_value(),
                     "catalog": self._catalog_secret.resolve().get_secret_value(),
                     "bi": self._bi_secret.resolve().get_secret_value(),
@@ -1711,6 +1714,7 @@ class ClickHouseWarehouseProvider:
             "administration": self._administration_secret,
             "ingestion_runtime": self._ingestion_runtime_secret,
             "transformation_runtime": self._transformation_runtime_secret,
+            "answer_runtime": self._answer_runtime_secret,
             "customer_sql": self._customer_sql_secret,
             "catalog": self._catalog_secret,
             "bi": self._bi_secret,
@@ -2144,6 +2148,7 @@ _ROLE_CLASSES = (
     "administration",
     "ingestion_runtime",
     "transformation_runtime",
+    "answer_runtime",
     "backup_restore",
     "customer_sql",
     "catalog",
@@ -2406,6 +2411,10 @@ def _grant_statements(
             f"GRANT SELECT ON `{databases['raw']}`.* TO `{roles['transformation_runtime']}`",
         )
     )
+    statements.append(
+        f"GRANT SELECT ON `{databases['consumption']}`.`customer_probe` "
+        f"TO `{roles['answer_runtime']}`"
+    )
     statements.extend(
         (
             f"GRANT SELECT, INSERT, CREATE TABLE, ALTER, DROP TABLE ON `{databases[name]}`.* "
@@ -2665,6 +2674,7 @@ def _expected_grant_rows(plan: ClickHouseGrantPlan) -> set[str]:
     for database in plan.databases.values():
         add("backup_restore", "BACKUP", database)
     add("customer_sql", "SELECT", plan.databases["consumption"], "customer_probe")
+    add("answer_runtime", "SELECT", plan.databases["consumption"], "customer_probe")
     add("bi", "SELECT", plan.databases["consumption"], "certified_probe")
     for table in ("databases", "tables", "columns"):
         add("catalog", "SELECT", "system", table)
@@ -2694,6 +2704,15 @@ def _ordinary_principal_probe_specifications(
             "transformation_runtime",
             (f"SELECT ON `{raw}`.*", f"INSERT ON `{conformed}`.*"),
             (f"BACKUP ON `{raw}`.*", "CREATE USER ON *.*"),
+        ),
+        (
+            "answer_runtime",
+            (f"SELECT ON {customer_probe}",),
+            (
+                f"INSERT ON {customer_probe}",
+                f"SELECT ON `{raw}`.*",
+                "CREATE USER ON *.*",
+            ),
         ),
         (
             "customer_sql",

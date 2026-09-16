@@ -5,9 +5,16 @@ import json
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from decimal import Decimal
 from types import MappingProxyType
 from typing import Annotated, Literal, Self
 
+from pillarmesh_state import (
+    IncidentAutomaticAction,
+    IncidentFailureClassification,
+    IncidentKind,
+    IncidentStage,
+)
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -15,6 +22,7 @@ from pydantic import (
     ConfigDict,
     Field,
     GetJsonSchemaHandler,
+    field_validator,
     model_validator,
 )
 from pydantic.json_schema import JsonSchemaValue
@@ -108,9 +116,29 @@ type WarehouseEngine = Literal["postgresql", "clickhouse"]
 type WorkspaceState = Literal["setup", "pending_activation", "active", "unavailable"]
 type RiskLevel = Literal["low", "medium", "high", "critical"]
 type FreshnessState = Literal["current", "stale", "unknown", "not_applicable"]
+type DashboardAccessViewState = Literal["active", "workspace_role"]
+type AnswerResultStatus = Literal["available", "expired", "failed"]
+type AnswerResultValueType = Literal["boolean", "decimal", "integer", "string", "timestamp"]
 type AccessMode = Literal["query", "dashboard", "export"]
+type ProductAggregation = Literal["sum", "count", "minimum", "maximum", "average"]
+type ProductFilterOperator = Literal["equals", "not_equals", "in", "greater_than", "less_than"]
+type ProductDeliveryOutput = Literal["dataset", "table", "dashboard"]
 type RecoveryAction = Literal[
     "correct_input", "reauthenticate", "reload", "retry", "contact_support", "none"
+]
+type OperationalRecoveryAction = Literal[
+    "retry_transient_attempt",
+    "cancel_unstarted_work",
+    "reconcile_external_effect",
+]
+type ImpactChangeType = Literal[
+    "source_drift",
+    "metric_version_change",
+    "contract_supersession",
+    "generation_failure",
+    "policy_change",
+    "grant_change",
+    "retirement",
 ]
 
 
@@ -142,6 +170,7 @@ def _as_utc(value: datetime) -> datetime:
 type UtcDatetime = Annotated[
     datetime, BeforeValidator(_parse_json_datetime), AfterValidator(_as_utc)
 ]
+type AnswerResultCell = str | int | float | bool | Decimal | UtcDatetime | None
 
 
 def _json_array_to_tuple(value: object) -> object:
@@ -486,6 +515,24 @@ class OwnDecisionView(StrictModel):
     created_at: UtcDatetime
 
 
+class DeliveredAccessView(StrictModel):
+    access_mode: AccessMode
+    fields: NonEmptyJsonTuple[NonEmptyText]
+    effective_at: UtcDatetime
+    expires_at: UtcDatetime
+    permissions: NonEmptyJsonTuple[Literal["dashboard", "download", "query", "view"]]
+
+
+class AccessLifecycleView(StrictModel):
+    state: Literal["pending", "active", "expired", "revocation_pending", "revoked", "failed"]
+    title: NonEmptyText
+    summary: NonEmptyText
+    effective_at: UtcDatetime
+    expires_at: UtcDatetime
+    revision: int = Field(ge=1)
+    can_revoke: bool
+
+
 class RequesterRequestView(StrictModel):
     request_id: PublicId
     kind: RequestKind
@@ -494,12 +541,19 @@ class RequesterRequestView(StrictModel):
     requested_outcome: NonEmptyText
     revision: int = Field(ge=1)
     updated_at: UtcDatetime
+    result_page_available: bool = False
     own_decisions: JsonTuple[OwnDecisionView] = Field(default=())
     clarified_outcome: ClarifiedOutcomeView | None = None
     question: NonEmptyText | None = None
     denial_explanation: NonEmptyText | None = None
     no_valid_plan_explanation: NonEmptyText | None = None
     delivered_answer: DeliveredAnswerView | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    delivered_access: DeliveredAccessView | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+    access_lifecycle: AccessLifecycleView | None = Field(
         default=None, exclude_if=lambda value: value is None
     )
 
@@ -519,6 +573,42 @@ class DeliveredAnswerView(StrictModel):
     lineage: JsonTuple[ArtifactReferenceView] = Field(default=())
     quality_limitations: JsonTuple[ArtifactReferenceView] = Field(default=())
     delivery_ref: PublicId
+
+
+class AnswerResultColumnView(StrictModel):
+    name: NonEmptyText
+    label: NonEmptyText
+    value_type: AnswerResultValueType
+    allowed_operations: JsonTuple[Literal["sort", "filter"]] = Field(default=())
+
+
+class AnswerResultTechnicalDetailsView(StrictModel):
+    execution_receipt_id: NonEmptyText
+    plan_digest: Digest
+    result_digest: Digest
+    result_schema_digest: Digest
+
+
+class AnswerResultPageView(StrictModel):
+    request_id: PublicId
+    title: NonEmptyText
+    answer_text: NonEmptyText | None
+    status: AnswerResultStatus
+    freshness: FreshnessState | None
+    as_of: UtcDatetime | None
+    row_count: int = Field(ge=0)
+    columns: JsonTuple[AnswerResultColumnView] = Field(default=())
+    rows: JsonTuple[JsonTuple[AnswerResultCell]] = Field(default=())
+    next_cursor: OpaqueToken | None = None
+    technical_details: AnswerResultTechnicalDetailsView | None = None
+
+    @model_validator(mode="after")
+    def unavailable_results_never_expose_snapshot_content(self) -> Self:
+        if self.status != "available" and (
+            self.columns or self.rows or self.next_cursor or self.technical_details is not None
+        ):
+            raise ValueError("unavailable results cannot expose snapshot content")
+        return self
 
 
 class ProposalApprovalView(StrictModel):
@@ -634,7 +724,46 @@ class AdmissionView(StrictModel):
     pending_delivery: bool = Field(default=False, exclude_if=lambda value: value is False)
 
 
-type PreparationAction = Literal["clarify", "prepare_answer", "submit_proposal"]
+class ProductIntentSourceCoverageView(StrictModel):
+    source_ref: NonEmptyText
+    covered_fields: JsonTuple[NonEmptyText] = Field(default=())
+    authorized: bool
+
+
+class ProductIntentMeasureView(StrictModel):
+    metric_ref: NonEmptyText
+    aggregation: ProductAggregation
+
+
+class ProductIntentFilterView(StrictModel):
+    dimension_ref: NonEmptyText
+    operator: ProductFilterOperator
+    value: NonEmptyText
+
+
+class ProductIntentReviewView(StrictModel):
+    reviewed_digest: Digest
+    approved: bool
+    approved_intent_revision: int | None = Field(default=None, ge=1)
+    title: NonEmptyText
+    business_outcome: NonEmptyText
+    source_coverage: NonEmptyJsonTuple[ProductIntentSourceCoverageView]
+    grain: NonEmptyJsonTuple[NonEmptyText]
+    measures: NonEmptyJsonTuple[ProductIntentMeasureView]
+    dimensions: JsonTuple[NonEmptyText] = Field(default=())
+    filters: JsonTuple[ProductIntentFilterView] = Field(default=())
+    freshness_seconds: int = Field(gt=0)
+    outputs: NonEmptyJsonTuple[ProductDeliveryOutput]
+    unresolved_constraints: JsonTuple[NonEmptyText] = Field(default=())
+
+    @model_validator(mode="after")
+    def approval_revision_matches_status(self) -> Self:
+        if self.approved != (self.approved_intent_revision is not None):
+            raise ValueError("approved intent revision must be present exactly when approved")
+        return self
+
+
+type PreparationAction = Literal["clarify", "prepare_access", "prepare_answer", "submit_proposal"]
 
 
 class RequestDetailView(StrictModel):
@@ -654,6 +783,33 @@ class RequestDetailView(StrictModel):
     preparation_actions: JsonTuple[PreparationAction] = Field(default=())
     preparation_notes: JsonTuple[NonEmptyText] = Field(default=())
     question: NonEmptyText | None = None
+    product_intent: ProductIntentReviewView | None = None
+    access_lifecycle: AccessLifecycleView | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
+
+
+class ImpactItemView(StrictModel):
+    impact_handle: PublicId
+    label: NonEmptyText
+    asset_type: NonEmptyText
+    owner_label: NonEmptyText
+
+
+class ImpactApproverView(StrictModel):
+    authority_label: NonEmptyText
+    reason: NonEmptyText
+
+
+class ImpactView(StrictModel):
+    request_id: PublicId
+    change_type: ImpactChangeType
+    subject_label: NonEmptyText
+    analyzed_at: UtcDatetime
+    validated_impacts: JsonTuple[ImpactItemView] = Field(default=())
+    possible_impacts: JsonTuple[ImpactItemView] = Field(default=())
+    affected_owners: JsonTuple[NonEmptyText] = Field(default=())
+    added_approvers: JsonTuple[ImpactApproverView] = Field(default=())
 
 
 class OperationFailureView(StrictModel):
@@ -754,19 +910,45 @@ class OperationView(StrictModel):
 
 
 class DataProductView(StrictModel):
-    """A data product as far as any owning service will assert one.
-
-    Nothing in the estate stores a data product row. It exists only as an
-    `ArtifactReference` -- an identifier, a version and a digest -- inside policy
-    snapshots and access previews. A display name and a summary would therefore be
-    the console's inventions, and the console does not become an authority over
-    records it merely projects. The same rule already governs
-    `EvidenceContextView.datasets`.
-    """
+    """A policy-permitted product enriched only by its owning publication definition."""
 
     data_product_id: PublicId
-    artifact_digest: Digest
     version: int = Field(ge=1)
+    publication_status: Literal["published", "pending"]
+    name: NonEmptyText | None = None
+    description: NonEmptyText | None = None
+    product_revision: int | None = Field(default=None, ge=1)
+    generation: int | None = Field(default=None, ge=1)
+    catalog_revision: int | None = Field(default=None, ge=1)
+    namespace: NonEmptyText | None = None
+    relation_name: NonEmptyText | None = None
+    column_count: int | None = Field(default=None, ge=1)
+    source_count: int | None = Field(default=None, ge=1)
+    freshness_observed_at: UtcDatetime | None = None
+
+    @model_validator(mode="after")
+    def publication_metadata_matches_status(self) -> Self:
+        publication_values = (
+            self.name,
+            self.description,
+            self.product_revision,
+            self.generation,
+            self.catalog_revision,
+            self.namespace,
+            self.relation_name,
+            self.column_count,
+            self.source_count,
+            self.freshness_observed_at,
+        )
+        if self.publication_status == "published" and any(
+            value is None for value in publication_values
+        ):
+            raise ValueError("published data products require complete publication metadata")
+        if self.publication_status == "pending" and any(
+            value is not None for value in publication_values
+        ):
+            raise ValueError("pending data products cannot assert publication metadata")
+        return self
 
 
 class DataProductsView(StrictModel):
@@ -795,6 +977,25 @@ class RunView(StrictModel):
 
 class RunsView(StrictModel):
     runs: JsonTuple[RunView] = Field(default=())
+
+
+class IncidentView(StrictModel):
+    incident_id: NonEmptyText
+    revision: int = Field(ge=1)
+    kind: IncidentKind
+    classification: IncidentFailureClassification
+    last_successful_stage: IncidentStage | None = None
+    failed_stage: IncidentStage
+    user_impact: NonEmptyText
+    next_automatic_action: IncidentAutomaticAction | None = None
+    allowed_operator_actions: JsonTuple[OperationalRecoveryAction] = Field(default=())
+    opened_at: UtcDatetime
+    updated_at: UtcDatetime
+    recovery_recorded: bool = False
+
+
+class IncidentsView(StrictModel):
+    incidents: JsonTuple[IncidentView] = Field(default=())
 
 
 class AcquisitionReceiptView(StrictModel):
@@ -831,11 +1032,24 @@ class AcquisitionReceiptsView(StrictModel):
     receipts: JsonTuple[AcquisitionReceiptView] = Field(default=())
 
 
+class AcquisitionRunNowCommand(StrictModel):
+    """Ask the acquisition owner to prepare one run of an activated contract.
+
+    The command carries no contract revision, binding, schema, or checkpoint. The
+    acquisition application resolves those current authorities from `contract_ref`.
+    """
+
+    active_role: Literal["data_architect", "data_owner"]
+    contract_ref: NonEmptyText
+    trigger_window: NonEmptyText
+    acquisition_mode: AcquisitionModeView
+
+
 class CatalogAssetView(StrictModel):
     asset_ref: PublicId
     display_name: NonEmptyText
     definition: NonEmptyText
-    owner: NonEmptyText
+    owner: NonEmptyText | None = None
     classifications: JsonTuple[NonEmptyText] = Field(default=())
     lineage_summary: NonEmptyText
     link_ref: PublicId | None = None
@@ -848,10 +1062,20 @@ class CatalogAssetsView(StrictModel):
 class DashboardView(StrictModel):
     dashboard_ref: PublicId
     display_name: NonEmptyText
+    version: int = Field(ge=1)
+    lifecycle_state: Literal["active", "archived"]
+    as_of: UtcDatetime
+    freshness: FreshnessState
+    access_state: DashboardAccessViewState
+    published_at: UtcDatetime
     state: CapabilityState
     summary: NonEmptyText
     preview_ref: PublicId | None = None
     link_ref: PublicId | None = None
+
+
+class DashboardsView(StrictModel):
+    dashboards: JsonTuple[DashboardView] = Field(default=())
 
 
 class EvidenceView(StrictModel):
@@ -874,15 +1098,28 @@ class WarehouseBindingCommand(StrictModel):
     capacity: NonEmptyText
 
 
+class BusinessProcessManifestCommand(StrictModel):
+    schema_version: Literal["1"] = "1"
+    process_name: str = Field(min_length=1, max_length=128)
+    owner: str = Field(min_length=1, max_length=128)
+    participants: JsonTuple[str]
+    outcomes: JsonTuple[str]
+    entities: JsonTuple[str]
+    events: JsonTuple[str]
+    states: JsonTuple[str]
+    rules: JsonTuple[str]
+    source_references: JsonTuple[str]
+    unresolved_questions: JsonTuple[str]
+
+
 class ProcessPackageCommand(StrictModel):
     expected_revision: int = Field(ge=1)
     package_digest: Digest
-    active_role: ActorRole
-    file_name: NonEmptyText
-    media_type: Literal[
-        "application/pdf",
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ]
+    active_role: Literal["data_architect"]
+    file_name: str = Field(min_length=4, max_length=255, pattern=r"^.+\.md$")
+    media_type: Literal["text/markdown; charset=utf-8"]
+    narrative_markdown: str = Field(min_length=1, max_length=1_000_000)
+    manifest: BusinessProcessManifestCommand
 
 
 class DecisionCommand(StrictModel):
@@ -901,6 +1138,21 @@ class DecisionCommand(StrictModel):
     decision: Literal["approve", "reject", "request_changes"]
     review_item_id: NonEmptyText | None = None
     revised_content: NonEmptyText | None = None
+
+
+class ProductIntentApprovalCommand(StrictModel):
+    expected_revision: int = Field(ge=1)
+    reviewed_digest: Digest
+    active_role: Literal["data_architect"]
+
+
+class ProductIntentApprovalView(StrictModel):
+    approval_id: NonEmptyText
+    intent_revision: int = Field(ge=1)
+    intent_digest: Digest
+    artifact_reference: ArtifactReferenceView
+    approved_by: NonEmptyText
+    approved_at: UtcDatetime
 
 
 class ProposalPreparationCommand(StrictModel):
@@ -975,11 +1227,38 @@ class RequestWithdrawalCommand(StrictModel):
     active_role: Literal["requester"]
 
 
+class AccessRevocationCommand(StrictModel):
+    expected_revision: int = Field(ge=1)
+    active_role: Literal["requester", "data_architect"]
+    reason: str = Field(min_length=1, max_length=512)
+
+    @field_validator("reason")
+    @classmethod
+    def reason_explains_revocation(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("access revocation reason cannot be blank")
+        return value
+
+
 class RetryOperationCommand(StrictModel):
     expected_revision: int = Field(ge=1)
     operation_digest: Digest
     retry_token: OpaqueToken
     active_role: ActorRole
+
+
+class IncidentRecoveryCommand(StrictModel):
+    expected_revision: int = Field(ge=1)
+    action: OperationalRecoveryAction
+    active_role: Literal["data_architect", "data_owner"]
+    reason: NonEmptyText
+
+    @field_validator("reason")
+    @classmethod
+    def reason_explains_the_action(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("recovery reason cannot be blank")
+        return value
 
 
 class ResetCommand(StrictModel):
@@ -1008,23 +1287,32 @@ class ConsoleApiSchema(StrictModel):
     review_response: ConsoleEnvelope[ReviewView]
     inbox_response: ConsoleEnvelope[InboxView]
     request_detail_response: ConsoleEnvelope[RequestDetailView]
+    impact_response: ConsoleEnvelope[ImpactView]
     requester_requests_response: ConsoleEnvelope[JsonTuple[RequesterRequestView]]
     requester_request_response: ConsoleEnvelope[RequesterRequestView]
+    access_lifecycle_response: ConsoleEnvelope[AccessLifecycleView]
     conversation_response: ConsoleEnvelope[ConversationView]
     clarified_outcome_response: ConsoleEnvelope[ClarifiedOutcomeView]
     data_products_response: ConsoleEnvelope[DataProductsView]
     data_product_response: ConsoleEnvelope[DataProductView]
     catalog_assets_response: ConsoleEnvelope[CatalogAssetsView]
     runs_response: ConsoleEnvelope[RunsView]
+    incidents_response: ConsoleEnvelope[IncidentsView]
+    incident_response: ConsoleEnvelope[IncidentView]
     acquisition_receipts_response: ConsoleEnvelope[AcquisitionReceiptsView]
+    acquisition_receipt_response: ConsoleEnvelope[AcquisitionReceiptView]
     catalog_asset_response: ConsoleEnvelope[CatalogAssetView]
     dashboard_response: ConsoleEnvelope[DashboardView]
+    dashboards_response: ConsoleEnvelope[DashboardsView]
     evidence_response: ConsoleEnvelope[EvidenceView]
     operation_response: ConsoleEnvelope[OperationView]
+    product_intent_approval_response: ConsoleEnvelope[ProductIntentApprovalView]
+    answer_result_response: ConsoleEnvelope[AnswerResultPageView]
     error_response: ConsoleErrorEnvelope
     warehouse_binding_command: WarehouseBindingCommand
     process_package_command: ProcessPackageCommand
     decision_command: DecisionCommand
+    product_intent_approval_command: ProductIntentApprovalCommand
     admission_command: AdmissionCommand
     request_clarification_command: RequestClarificationCommand
     proposal_preparation_command: ProposalPreparationCommand
@@ -1032,5 +1320,8 @@ class ConsoleApiSchema(StrictModel):
     conversation_message_command: ConversationMessageCommand
     clarified_outcome_acceptance_command: ClarifiedOutcomeAcceptanceCommand
     request_withdrawal_command: RequestWithdrawalCommand
+    access_revocation_command: AccessRevocationCommand
     retry_operation_command: RetryOperationCommand
+    incident_recovery_command: IncidentRecoveryCommand
+    acquisition_run_now_command: AcquisitionRunNowCommand
     reset_command: ResetCommand

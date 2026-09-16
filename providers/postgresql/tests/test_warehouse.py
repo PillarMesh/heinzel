@@ -800,6 +800,7 @@ class _UnexpectedPrincipalCursor:
             "administration",
             "ingestion_runtime",
             "transformation_runtime",
+            "answer_runtime",
             "backup_restore",
             "customer_sql",
             "catalog",
@@ -955,6 +956,7 @@ class _ProbeScopeConnection:
             "administration",
             "ingestion_runtime",
             "transformation_runtime",
+            "answer_runtime",
             "backup_restore",
             "customer_sql",
             "catalog",
@@ -1098,6 +1100,7 @@ def _provider(
         administration_secret=ordinary,
         ingestion_runtime_secret=ordinary,
         transformation_runtime_secret=ordinary,
+        answer_runtime_secret=ordinary,
         customer_sql_secret=ordinary,
         catalog_secret=ordinary,
         bi_secret=ordinary,
@@ -1286,6 +1289,23 @@ def test_ingestion_create_is_confined_to_raw_and_control_is_append_only() -> Non
     assert control_grant in cursor.statements
     assert not any(
         "USAGE, CREATE" in statement and plan.namespace("control") in statement
+        for statement in cursor.statements
+    )
+
+
+def test_answer_runtime_can_only_read_approved_consumption_objects() -> None:
+    plan = derive_grant_plan("pgw-stable-private-handle")
+    cursor = _RecordingGrantCursor()
+
+    _apply_grants(cursor, plan)
+
+    role = plan.role("answer_runtime")
+    consumption = plan.namespace("consumption")
+    assert f'GRANT USAGE ON SCHEMA "{consumption}" TO "{role}"' in cursor.statements
+    assert f'GRANT SELECT ON "{consumption}".customer_probe TO "{role}"' in cursor.statements
+    assert not any(
+        statement.endswith(f'TO "{role}"')
+        and any(privilege in statement for privilege in ("INSERT", "UPDATE", "DELETE", "CREATE"))
         for statement in cursor.statements
     )
 
@@ -1825,6 +1845,7 @@ def test_backup_capability_is_confined_to_the_backup_command_boundary(tmp_path: 
         administration_secret=ordinary,
         ingestion_runtime_secret=ordinary,
         transformation_runtime_secret=ordinary,
+        answer_runtime_secret=ordinary,
         customer_sql_secret=ordinary,
         catalog_secret=ordinary,
         bi_secret=ordinary,
@@ -4169,6 +4190,7 @@ def test_backup_retirement_journal_accepts_only_a_durable_phase_prefix(
         "administration",
         "ingestion_runtime",
         "transformation_runtime",
+        "answer_runtime",
         "backup_restore",
         "customer_sql",
         "catalog",

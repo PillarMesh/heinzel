@@ -2,10 +2,18 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from pillarmesh_contract_model import ArtifactModel, ArtifactReference
+from pillarmesh_contract_model import (
+    ArtifactModel,
+    ArtifactReference,
+    ImpactAdmissionBinding,
+    ImpactAuthoritySnapshot,
+    ImpactSubject,
+)
 from pydantic import Field
 
 from .fulfillment_models import (
+    AccessGrantAdmissionBinding,
+    AccessGrantDeliveryObservation,
     AccessScopePreview,
     FreshnessDisposition,
     FulfillmentAdmissionReceipt,
@@ -80,6 +88,42 @@ class DataProductOwnerResolver(Protocol):
         tenant_id: str,
         data_product_ref: ArtifactReference,
     ) -> str: ...
+
+
+class AccessGrantAdmissionResolver(Protocol):
+    def bind(
+        self,
+        *,
+        tenant_id: str,
+        request: InboxRequest,
+        proposal: FulfillmentProposal,
+        policy: FulfillmentPolicySnapshot,
+    ) -> AccessGrantAdmissionBinding: ...
+
+
+class AccessGrantActivationReader(Protocol):
+    def read_active(
+        self, *, tenant_id: str, request_id: str, grant_id: str
+    ) -> AccessGrantDeliveryObservation | None: ...
+
+
+class ImpactAdmissionResolver(Protocol):
+    """Resolve impact authority or raise ``ImpactAdmissionResolutionError``."""
+
+    def bind(
+        self,
+        *,
+        tenant_id: str,
+        proposal: FulfillmentProposal,
+    ) -> ImpactAdmissionBinding | None: ...
+
+    def rederive(
+        self,
+        *,
+        tenant_id: str,
+        subject: ImpactSubject,
+        source_record_refs: tuple[ArtifactReference, ...],
+    ) -> ImpactAuthoritySnapshot: ...
 
 
 class FreshnessEvaluator(Protocol):

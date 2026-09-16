@@ -107,7 +107,7 @@ test.describe("architect journey", () => {
 
     const operation = page.getByRole("status", {name: "Warehouse operation"})
     await expect(operation).toBeVisible()
-    await expect(operation).toContainText("Provisioning accepted")
+    await expect(operation).toContainText("Request accepted")
     await expect(operation).not.toContainText("Provisioning succeeded")
     await expect(page.getByText("Provisioning succeeded")).toHaveCount(0)
 
@@ -131,7 +131,7 @@ test.describe("architect journey", () => {
     // Capability state, not destination equivalence: the fixture cannot prove that
     // a ClickHouse warehouse was provisioned, and the console must not imply it.
     await expect(page.getByRole("status", {name: "Warehouse operation"})).toContainText(
-      "Provisioning accepted",
+      "Request accepted",
     )
     await expect(page.getByText("Provisioning succeeded")).toHaveCount(0)
 

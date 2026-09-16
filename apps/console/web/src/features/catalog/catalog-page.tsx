@@ -66,7 +66,9 @@ export function CatalogPage({assetRef, client}: CatalogPageProps) {
                   )}
                 </h2>
                 <p>{asset.definition}</p>
-                <p>Owner: {asset.owner}</p>
+                {asset.owner === null || asset.owner === undefined ? null : (
+                  <p>Owner: {asset.owner}</p>
+                )}
                 <p>{asset.lineage_summary}</p>
                 {(asset.classifications ?? []).length === 0 ? null : (
                   <p>Classifications: {(asset.classifications ?? []).join(", ")}</p>

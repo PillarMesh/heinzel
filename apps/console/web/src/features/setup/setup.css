@@ -35,17 +35,32 @@
 
 .setup-progress__item {
   border-left: 1px solid var(--color-navy-line);
+  padding: 0 0 var(--space-5) var(--space-4);
+}
+
+.setup-progress__item > button {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
   display: grid;
+  font: inherit;
   gap: var(--space-3);
   grid-template-columns: 1.5rem minmax(0, 1fr);
-  padding: 0 0 var(--space-5) var(--space-4);
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.setup-progress__item > button:disabled {
+  cursor: default;
 }
 
 .setup-progress__item[aria-current="step"] {
   border-left-color: var(--color-primary);
 }
 
-.setup-progress__item > span:last-of-type {
+.setup-progress__item button > span:last-of-type {
   display: grid;
   gap: 0.1rem;
 }

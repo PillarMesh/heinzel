@@ -8,6 +8,7 @@ import pytest
 from pillarmesh_console import contracts
 from pillarmesh_console.contracts import (
     AccessPreviewProposalView,
+    AccessRevocationCommand,
     ApiMeta,
     ClarifiedOutcomeAcceptanceCommand,
     ConsoleEnvelope,
@@ -91,6 +92,7 @@ def test_every_browser_command_excludes_actor_and_tenant_authority() -> None:
         CreateRequestCommand,
         ConversationMessageCommand,
         ClarifiedOutcomeAcceptanceCommand,
+        AccessRevocationCommand,
         RetryOperationCommand,
         ResetCommand,
     )
@@ -98,6 +100,15 @@ def test_every_browser_command_excludes_actor_and_tenant_authority() -> None:
     for command_model in command_models:
         assert "tenant_id" not in command_model.model_fields
         assert "actor_id" not in command_model.model_fields
+
+
+def test_access_revocation_requires_an_explanatory_reason() -> None:
+    with pytest.raises(ValidationError, match="reason"):
+        AccessRevocationCommand(
+            expected_revision=2,
+            active_role="requester",
+            reason="   ",
+        )
 
 
 def test_fixture_envelope_cannot_claim_real_evidence() -> None:

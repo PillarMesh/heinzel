@@ -5,8 +5,13 @@ from typing import Protocol
 
 from .auth import TrustedActorContext
 from .contracts import (
+    AccessLifecycleView,
+    AccessRevocationCommand,
     AcquisitionReceiptsView,
+    AcquisitionReceiptView,
+    AcquisitionRunNowCommand,
     AdmissionCommand,
+    AnswerResultPageView,
     CatalogAssetsView,
     CatalogAssetView,
     ClarifiedOutcomeAcceptanceCommand,
@@ -14,14 +19,21 @@ from .contracts import (
     ConversationMessageCommand,
     ConversationView,
     CreateRequestCommand,
+    DashboardsView,
     DashboardView,
     DataProductsView,
     DataProductView,
     DecisionCommand,
     EvidenceView,
+    ImpactView,
     InboxView,
+    IncidentRecoveryCommand,
+    IncidentsView,
+    IncidentView,
     OperationView,
     ProcessPackageCommand,
+    ProductIntentApprovalCommand,
+    ProductIntentApprovalView,
     ProposalPreparationCommand,
     RequestClarificationCommand,
     RequestDetailView,
@@ -49,6 +61,14 @@ class AuthorizedLink:
     location: str
 
 
+@dataclass(frozen=True, slots=True)
+class AuthorizedDownload:
+    body: bytes
+    media_type: str
+    filename: str
+    result_digest: str
+
+
 class ConsoleBackend(Protocol):
     @property
     def fixture_mode(self) -> bool: ...
@@ -67,9 +87,24 @@ class ConsoleBackend(Protocol):
         self, context: TrustedActorContext, request_id: str
     ) -> RequestDetailView: ...
 
+    def get_request_impact(self, context: TrustedActorContext, request_id: str) -> ImpactView: ...
+
     def get_requester_requests(
         self, context: TrustedActorContext
     ) -> tuple[RequesterRequestView, ...]: ...
+
+    def get_answer_result(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        *,
+        cursor: str | None = None,
+        page_size: int = 100,
+    ) -> AnswerResultPageView: ...
+
+    def download_answer_result(
+        self, context: TrustedActorContext, request_id: str
+    ) -> AuthorizedDownload: ...
 
     def get_conversation(
         self, context: TrustedActorContext, request_id: str
@@ -87,7 +122,13 @@ class ConsoleBackend(Protocol):
 
     def get_runs(self, context: TrustedActorContext) -> RunsView: ...
 
+    def get_incidents(self, context: TrustedActorContext) -> IncidentsView: ...
+
     def get_acquisition_receipts(self, context: TrustedActorContext) -> AcquisitionReceiptsView: ...
+
+    def run_acquisition_now(
+        self, context: TrustedActorContext, command: AcquisitionRunNowCommand
+    ) -> AcquisitionReceiptView: ...
 
     def get_catalog_asset(
         self, context: TrustedActorContext, asset_ref: str
@@ -96,6 +137,8 @@ class ConsoleBackend(Protocol):
     def get_catalog_assets(self, context: TrustedActorContext) -> CatalogAssetsView: ...
 
     def get_dashboard(self, context: TrustedActorContext, dashboard_ref: str) -> DashboardView: ...
+
+    def get_dashboards(self, context: TrustedActorContext) -> DashboardsView: ...
 
     def get_evidence(self, context: TrustedActorContext, evidence_ref: str) -> EvidenceView: ...
 
@@ -116,6 +159,13 @@ class ConsoleBackend(Protocol):
     def decide_request(
         self, context: TrustedActorContext, request_id: str, command: DecisionCommand
     ) -> RequestDetailView: ...
+
+    def approve_product_intent(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: ProductIntentApprovalCommand,
+    ) -> ProductIntentApprovalView: ...
 
     def clarify_request(
         self, context: TrustedActorContext, request_id: str, command: RequestClarificationCommand
@@ -158,12 +208,28 @@ class ConsoleBackend(Protocol):
         command: RequestWithdrawalCommand,
     ) -> RequesterRequestView: ...
 
+    def revoke_access(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: AccessRevocationCommand,
+    ) -> AccessLifecycleView: ...
+
     def retry_operation(
         self,
         context: TrustedActorContext,
         operation_id: str,
         command: RetryOperationCommand,
     ) -> OperationView: ...
+
+    def recover_incident(
+        self,
+        context: TrustedActorContext,
+        incident_id: str,
+        command: IncidentRecoveryCommand,
+        *,
+        idempotency_key: str,
+    ) -> IncidentView: ...
 
     def get_preview(self, context: TrustedActorContext, preview_ref: str) -> PreviewContent: ...
 

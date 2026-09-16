@@ -35,18 +35,22 @@ function isPending(operation: OperationView): boolean {
 
 function operationTitle(operation: OperationView): string {
   if (operation.state === "accepted") {
-    return "Provisioning accepted"
+    return "Request accepted"
   }
   if (operation.state === "running") {
-    return "Provisioning in progress"
+    return "In progress"
   }
   if (operation.state === "outcome_unknown") {
     return "Operation outcome unknown"
   }
   if (operation.state === "succeeded") {
-    return "Provisioning succeeded"
+    return "Completed"
   }
-  return "Provisioning failed"
+  return "Action failed"
+}
+
+function technicalLabel(value: string | undefined): string {
+  return value?.replaceAll("_", " ") ?? "Not reported"
 }
 
 export function OperationStatus({
@@ -118,16 +122,19 @@ export function OperationStatus({
     >
       <p className="operation-status__title">{operationTitle(currentOperation)}</p>
       <p>{currentOperation.summary}</p>
-      <dl>
-        <div>
-          <dt>Operation</dt>
-          <dd>{currentOperation.operation_id}</dd>
-        </div>
-        <div>
-          <dt>Phase</dt>
-          <dd>{currentOperation.phase}</dd>
-        </div>
-      </dl>
+      <details>
+        <summary>Technical details</summary>
+        <dl>
+          <div>
+            <dt>Operation reference</dt>
+            <dd>{currentOperation.operation_id}</dd>
+          </div>
+          <div>
+            <dt>Phase</dt>
+            <dd>{technicalLabel(currentOperation.phase)}</dd>
+          </div>
+        </dl>
+      </details>
     </section>
   )
 }

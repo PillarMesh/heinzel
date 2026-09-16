@@ -9,6 +9,7 @@ from pillarmesh_console.auth import TrustedActorContext
 from pillarmesh_console.contracts import ActorRole
 from pillarmesh_console.fixture_backend import FixtureConsoleBackend
 from pillarmesh_console.fixture_data import build_fixture_seed
+from starlette.requests import Request
 from starlette.testclient import TestClient
 
 _CSP = "default-src 'self'; img-src 'self'; frame-src 'self'"
@@ -37,7 +38,11 @@ def _client(
     authenticated: bool = True,
     raise_server_exceptions: bool = True,
 ) -> Iterator[TestClient]:
-    provider = (lambda _: context or _context()) if authenticated else (lambda _: None)
+    def provider(_: Request) -> TrustedActorContext | None:
+        if not authenticated:
+            return None
+        return context or _context()
+
     with TestClient(
         create_app(
             backend=backend or FixtureConsoleBackend(),

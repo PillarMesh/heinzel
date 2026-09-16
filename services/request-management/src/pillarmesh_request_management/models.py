@@ -2,10 +2,32 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pillarmesh_contract_model import ArtifactModel
-from pydantic import Field, field_validator
+from pillarmesh_contract_model import ArtifactModel, digest
+from pydantic import Field, field_validator, model_validator
+
+
+class DelegatedRequestProvenance(ArtifactModel):
+    schema_version: Literal["1"] = "1"
+    delegation_id: str = Field(min_length=1, max_length=512)
+    principal_ref: str = Field(min_length=1, max_length=512)
+    agent_client_ref: str = Field(min_length=1, max_length=512)
+    purpose_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    delegation_authority_ref: str = Field(min_length=1, max_length=512)
+    delegation_authority_revision: int = Field(gt=0)
+    entitlement_snapshot_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    policy_id: str = Field(min_length=1, max_length=512)
+    policy_revision: int = Field(gt=0)
+    policy_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    invoked_at: datetime
+
+    @field_validator("invoked_at")
+    @classmethod
+    def invoked_at_is_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("invoked_at must be timezone-aware UTC")
+        return value.astimezone(UTC)
 
 
 class RequestState(StrEnum):
@@ -81,6 +103,9 @@ class InboxRequest(ArtifactModel):
     request_id: str
     tenant_id: str
     requester_id: str
+    delegated_agent: DelegatedRequestProvenance | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
     payload: Annotated[
         StakeholderQuestion
         | DataAccessRequest
@@ -99,6 +124,18 @@ class InboxRequest(ArtifactModel):
         if value.tzinfo is None or value.utcoffset() != timedelta(0):
             raise ValueError("timestamp must be timezone-aware UTC")
         return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def delegated_agent_matches_requester_and_purpose(self) -> Self:
+        delegated_agent = self.delegated_agent
+        if delegated_agent is None:
+            return self
+        if (
+            delegated_agent.principal_ref != self.requester_id
+            or delegated_agent.purpose_digest != digest(self.payload.purpose)
+        ):
+            raise ValueError("delegated agent provenance does not match the request")
+        return self
 
 
 type ConversationAuthorRole = Literal[

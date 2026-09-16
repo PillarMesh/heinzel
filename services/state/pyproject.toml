@@ -21,11 +21,13 @@ source_paths = ["src/pillarmesh_state"]
 only_mutate = [
   "src/pillarmesh_state/artifacts.py",
   "src/pillarmesh_state/crypto.py",
+  "src/pillarmesh_state/recovery_service.py",
   "src/pillarmesh_state/repository.py",
 ]
 also_copy = ["tests"]
 pytest_add_cli_args_test_selection = [
   "tests/test_artifacts.py",
   "tests/test_crypto.py",
+  "tests/test_recovery_service.py",
   "tests/test_repository.py",
 ]

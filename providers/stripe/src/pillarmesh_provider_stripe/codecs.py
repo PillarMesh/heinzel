@@ -129,7 +129,7 @@ def normalize_stripe_event(
     if payload.get("object") != "event":
         raise StripeCodecError("wrong_object_discriminator")
     api_version = payload.get("api_version")
-    if api_version != STRIPE_API_VERSION:
+    if not isinstance(api_version, str) or api_version != STRIPE_API_VERSION:
         raise StripeCodecError("unsupported_creation_version")
     _require_string(payload.get("id"))
     event_created = _timestamp(payload.get("created"))

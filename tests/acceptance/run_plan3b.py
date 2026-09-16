@@ -10,6 +10,8 @@ from typing import ClassVar, Literal
 from pillarmesh_contract_model import ArtifactModel, digest
 from pillarmesh_evidence import package_fulfillment_receipts
 from pillarmesh_request_management import (
+    AccessGrantAdmissionBinding,
+    AccessGrantEffectTarget,
     AccessScopePreview,
     DataAccessRequest,
     DecisionKind,
@@ -141,6 +143,41 @@ class ScenarioOwnerResolver:
         return "owner:product-revenue"
 
 
+class ScenarioGrantAdmissionResolver:
+    def bind(
+        self,
+        *,
+        tenant_id: str,
+        request: InboxRequest,
+        proposal: FulfillmentProposal,
+        policy: FulfillmentPolicySnapshot,
+    ) -> AccessGrantAdmissionBinding:
+        if tenant_id != request.tenant_id or tenant_id != policy.tenant_id:
+            raise ValueError("grant admission belongs to another tenant")
+        if not isinstance(proposal.subject, AccessScopePreview):
+            raise ValueError("grant admission requires an access proposal")
+        return AccessGrantAdmissionBinding(
+            grant_id="grant-" + digest((tenant_id, request.request_id, proposal.proposal_id))[:24],
+            proposal_digest=digest(proposal),
+            entitlement_snapshot_digest=digest(policy.entitlement_observation_refs),
+            policy_revision=policy.approved_policy_refs[0].version,
+            effective_at=NOW,
+            permissions=("query", "view"),
+            targets=(
+                AccessGrantEffectTarget(
+                    surface="result",
+                    provider_resource_ref=f"result:{proposal.subject.data_product_ref.artifact_id}",
+                ),
+                AccessGrantEffectTarget(
+                    surface="warehouse",
+                    provider_resource_ref=(
+                        f"relation:{proposal.subject.data_product_ref.artifact_id}"
+                    ),
+                ),
+            ),
+        )
+
+
 class ScenarioRoleResolver:
     _roles: ClassVar[frozenset[tuple[str, str]]] = frozenset(
         {
@@ -254,6 +291,7 @@ def run_offline_plan3b() -> Plan3BAcceptanceResult:
         access_candidate_provider=ScenarioAccessProvider(),
         data_product_owner_resolver=ScenarioOwnerResolver(),
         authority_role_resolver=roles,
+        access_grant_admission_resolver=ScenarioGrantAdmissionResolver(),
         policy_compiler=FulfillmentPolicyCompiler(freshness_evaluator=ScenarioFreshness()),
         clock=lambda: NOW,
     )

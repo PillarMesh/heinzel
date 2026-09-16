@@ -1,3 +1,5 @@
+import {useState} from "react"
+
 import type {
   ConsoleEnvelopeOperationView,
   ConsoleEnvelopeReviewView,
@@ -5,6 +7,7 @@ import type {
   DecisionCommand,
   ProcessPackageCommand,
   SessionView,
+  SetupStage,
   WarehouseBindingCommand,
 } from "../../api/generated"
 import type {MutationRequestContext, OperationSubmissionResult} from "../../api/client"
@@ -70,6 +73,14 @@ export function SetupWorkbench({
   setupEnvelope,
 }: SetupWorkbenchProps) {
   const setup = setupEnvelope.data
+  const [stageSelection, setStageSelection] = useState<{
+    readonly setupDigest: string
+    readonly stage: SetupStage
+  } | null>(null)
+  const visibleStage =
+    stageSelection?.setupDigest === setup.setup_digest
+      ? stageSelection.stage
+      : setup.active_stage
   const reviewRefs =
     requestedReviewRef === undefined ? (setup.pending_review_refs ?? []) : [requestedReviewRef]
 
@@ -80,22 +91,30 @@ export function SetupWorkbench({
         <ol aria-label="Setup stages">
           {setup.stages.map((stage, index) => (
             <li
-              aria-current={stage.stage === setup.active_stage ? "step" : undefined}
+              aria-current={stage.stage === visibleStage ? "step" : undefined}
               className={`setup-progress__item setup-progress__item--${stage.state}`}
               key={stage.stage}
             >
-              <span className="setup-progress__number">{index + 1}</span>
-              <span>
-                <strong>{stage.label}</strong>
-                <small>{stageStateLabel(stage.state)}</small>
-                {stage.detail === null || stage.detail === undefined ? null : <em>{stage.detail}</em>}
-              </span>
+              <button
+                disabled={stage.stage !== setup.active_stage && stage.state === "not_started"}
+                onClick={() =>
+                  setStageSelection({setupDigest: setup.setup_digest, stage: stage.stage})
+                }
+                type="button"
+              >
+                <span className="setup-progress__number">{index + 1}</span>
+                <span>
+                  <strong>{stage.label}</strong>
+                  <small>{stageStateLabel(stage.state)}</small>
+                  {stage.detail === null || stage.detail === undefined ? null : <em>{stage.detail}</em>}
+                </span>
+              </button>
             </li>
           ))}
         </ol>
       </nav>
       <div className="setup-workbench__surface">
-        {setup.active_stage === "foundation" ? (
+        {visibleStage === "foundation" ? (
           <FoundationStage
             client={client}
             idempotencyKeyFactory={idempotencyKeyFactory}
@@ -104,11 +123,11 @@ export function SetupWorkbench({
             session={session}
             setup={setup}
           />
-        ) : setup.active_stage === "managed_services" ? (
+        ) : visibleStage === "managed_services" ? (
           <ServicesStage setup={setup} />
-        ) : setup.active_stage === "sources" ? (
+        ) : visibleStage === "sources" ? (
           <SourcesStage setup={setup} />
-        ) : setup.active_stage === "business_process" ? (
+        ) : visibleStage === "business_process" ? (
           <ProcessStage
             client={client}
             digestFile={digestFile}
@@ -117,7 +136,7 @@ export function SetupWorkbench({
             session={session}
             setup={setup}
           />
-        ) : setup.active_stage === "meaning" ? (
+        ) : visibleStage === "meaning" ? (
           <ReviewProjection
             client={client}
             dataProvenance={setupEnvelope.meta.data_provenance}
@@ -126,7 +145,7 @@ export function SetupWorkbench({
             reviewRefs={reviewRefs}
             session={session}
           />
-        ) : setup.active_stage === "data_product" ? (
+        ) : visibleStage === "data_product" ? (
           <ReviewProjection
             client={client}
             dataProvenance={setupEnvelope.meta.data_provenance}
@@ -135,7 +154,7 @@ export function SetupWorkbench({
             reviewRefs={reviewRefs}
             session={session}
           />
-        ) : setup.active_stage === "activation" ? (
+        ) : visibleStage === "activation" ? (
           <ActivationStage
             client={client}
             dataProvenance={setupEnvelope.meta.data_provenance}

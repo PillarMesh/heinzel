@@ -133,7 +133,7 @@ def _witness_private_environment(runner_directory: Path) -> dict[str, str]:
         "PILLARMESH_PLAN3A_CLICKHOUSE_IMAGE": CLICKHOUSE_IMAGE,
         "PILLARMESH_PLAN3A_RETENTION_DEADLINE": "2026-08-28T12:00:00Z",
         "PILLARMESH_PLAN3A_CREDENTIAL_CANARIES": json.dumps(
-            [f"private-credential-marker-{index}" for index in range(7)]
+            [f"private-credential-marker-{index}" for index in range(8)]
         ),
         "PILLARMESH_PLAN3A_STATE_ENCRYPTION_KEY": "private-state-encryption-marker",
         "PILLARMESH_PLAN3A_EVIDENCE_SIGNING_KEY": "private-evidence-signing-marker",
@@ -542,10 +542,51 @@ def test_private_environment_masks_generated_credentials_before_export(
     def digest_value(value: str) -> str:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
-    assert len(masked_values) == len(generated_values) == 9
+    assert len(masked_values) == len(generated_values) == 10
     assert {digest_value(value) for value in masked_values} == {
         digest_value(value) for value in generated_values
     }
+
+
+def test_generated_canaries_satisfy_the_acceptance_parser(
+    workflow: dict[str, Any],
+    tmp_path: Path,
+) -> None:
+    """The workflow and the harness must agree on what a valid canary set is.
+
+    The harness raised its minimum from seven to eight canaries when the answer runtime
+    principal was added, but the workflow kept generating seven. Every live lifecycle run then
+    failed before doing any work, surfacing only as "Docker usage sampling failed" because
+    the witness parses the environment inside its scope loader. Execute the real prepare step
+    and feed its output to the real parser, so the two cannot drift apart again.
+    """
+    from tests.acceptance.run_plan3a import _parse_canaries
+
+    prepare_step = next(
+        step
+        for step in workflow["jobs"]["lifecycle"]["steps"]
+        if step.get("name") == "Prepare the private witness environment"
+    )
+    github_environment = tmp_path / "github-environment"
+    runner_directory = tmp_path / "runner"
+    runner_directory.mkdir()
+    completed = subprocess.run(
+        ["bash", "-c", str(prepare_step["run"])],
+        capture_output=True,
+        check=False,
+        env={
+            **os.environ,
+            "RUNNER_TEMP": str(runner_directory),
+            "GITHUB_ENV": str(github_environment),
+        },
+        text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    exported = dict(
+        line.split("=", 1) for line in github_environment.read_text(encoding="utf-8").splitlines()
+    )
+
+    _parse_canaries(exported["PILLARMESH_PLAN3A_CREDENTIAL_CANARIES"])
 
 
 def test_live_job_executes_only_the_task9_acceptance_authority(

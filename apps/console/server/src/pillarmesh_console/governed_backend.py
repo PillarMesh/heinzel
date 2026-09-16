@@ -10,32 +10,62 @@ answers with nothing.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import csv
 import hashlib
+import io
+import re
 import secrets
+import unicodedata
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from typing import Never
+from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+from functools import partial
+from typing import Literal, Never
 
+from pillarmesh_access_control import AccessGrant, AccessGrantDenied, AccessGrantIntegrityError
+from pillarmesh_bi_control import DashboardPublication
 from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
 from pillarmesh_contract_model import ArtifactReference, digest
+from pillarmesh_contract_service import BusinessProcessManifest
+from pillarmesh_evidence import AcquisitionEvidenceReceipt
 from pillarmesh_request_management import (
     ArchitectRequestView,
     ConversationEntry,
     FulfillmentApprovalBinding,
     FulfillmentProposal,
+    GovernedAnswer,
+    GovernedAnswerNotVisible,
     InboxRequest,
+    ProductIntentCandidate,
+    ProductIntentNoValidPlan,
     RequestState,
+    ReviewerRequestView,
 )
 from pillarmesh_request_management import RequesterRequestView as ServiceRequesterRequestView
 from pillarmesh_request_management.fulfillment_models import (
     AccessScopePreview,
     DenialDispositionReceipt,
+    DisclosureDenial,
     FulfillmentAdmissionReceipt,
     StakeholderAnswerDraft,
 )
 from pillarmesh_request_management.models import DataAccessRequest, StakeholderQuestion
+from pillarmesh_runtime import AnswerExecutionReceipt, AnswerResultSnapshot, QueryResultNotFound
 from pillarmesh_semantic_registry import CatalogPublicationRepository, OntologyReviewBundle
 from pillarmesh_semantic_registry.review import ReviewItemDecision
+from pillarmesh_state import (
+    ExternalEffectRecoveryUnavailableError,
+    IncidentConflictError,
+    IncidentIntegrityError,
+    IncidentNotFoundError,
+    IncidentPersistenceError,
+    IncidentRecord,
+    RecoveryActionNotAllowedError,
+    RecoveryCommand,
+    StaleIncidentRevisionError,
+)
 from pillarmesh_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
@@ -46,14 +76,20 @@ from pillarmesh_warehouse_control import (
 )
 
 from .auth import TrustedActorContext
+from .backend import AuthorizedDownload
 from .contracts import (
+    AccessLifecycleView,
     AccessPreviewProposalView,
+    AccessRevocationCommand,
     AcquisitionReceiptsView,
     AcquisitionReceiptView,
+    AcquisitionRunNowCommand,
     ActorDisplayView,
     ActorRole,
     AdmissionCommand,
     AdmissionView,
+    AnswerResultColumnView,
+    AnswerResultPageView,
     ArtifactReferenceView,
     CapabilityState,
     CapabilityView,
@@ -65,27 +101,41 @@ from .contracts import (
     ConversationMessageView,
     ConversationView,
     CreateRequestCommand,
+    DashboardsView,
     DashboardView,
     DataProductsView,
     DataProductView,
     DatasetEvidenceView,
     Decision,
     DecisionCommand,
+    DeliveredAccessView,
     DeliveredAnswerView,
     DisclosureDenialProposalView,
     DisplayReferenceView,
     EvidenceContextView,
     EvidenceView,
     FreshnessState,
+    ImpactView,
     InboxItemView,
     InboxView,
+    IncidentRecoveryCommand,
+    IncidentsView,
+    IncidentView,
     LifecycleEventView,
+    OperationalRecoveryAction,
     OperationFailureView,
     OperationState,
     OperationView,
     OwnDecisionView,
     PreparationAction,
     ProcessPackageCommand,
+    ProcessPackageView,
+    ProductIntentApprovalCommand,
+    ProductIntentApprovalView,
+    ProductIntentFilterView,
+    ProductIntentMeasureView,
+    ProductIntentReviewView,
+    ProductIntentSourceCoverageView,
     ProposalApprovalView,
     ProposalPreparationCommand,
     RequestClarificationCommand,
@@ -126,20 +176,37 @@ from .errors import (
     ConsoleUnavailable,
 )
 from .governed_adapters import (
+    AccessGrantCommands,
+    AccessGrantReader,
+    AccessGrantRevocationCommands,
+    AcquisitionRunNowCommands,
+    AnswerDownloadReceipt,
+    AnswerDownloadReceiptWriter,
+    AnswerResultReader,
     CatalogBindingReader,
     CatalogSearchHealthReader,
+    DashboardPublicationReader,
     DataProductReferenceReader,
+    FulfillmentAccessExecutionCommands,
     FulfillmentDecisionCommands,
     FulfillmentExecutionCommands,
     FulfillmentPreparationCommands,
     FulfillmentViewReader,
     GovernedWorkspaceIdentity,
+    IncidentRecoveryCommands,
+    ProcessPackageCommands,
+    ProductIntentApprovalCommands,
+    ProductIntentReviewReader,
+    ProductPublicationDefinitionReader,
+    RequestImpactReader,
     RequestInboxReader,
     RequestIntakeCommands,
     SemanticReviewCommands,
     SemanticReviewReader,
     TenantAcquisitionReceiptReader,
+    TenantIncidentReader,
     TenantRunReader,
+    VerifiedAnswerReader,
     WarehouseBindingReader,
     WarehouseConfirmation,
     WarehouseLifecycleCommands,
@@ -170,7 +237,7 @@ _SETUP_STAGES: tuple[SetupStage, ...] = (
     "activation",
 )
 _UNDELIVERED_STAGES: frozenset[SetupStage] = frozenset(
-    {"sources", "business_process", "meaning", "data_product", "activation"}
+    {"sources", "meaning", "data_product", "activation"}
 )
 _REQUEST_STATES: dict[RequestState, ConsoleRequestState] = {
     RequestState.SUBMITTED: "submitted",
@@ -229,6 +296,24 @@ _TRANSIENT_CLASSIFICATIONS = frozenset(
     }
 )
 _DECISIONS: frozenset[str] = frozenset({"approve", "reject", "request_changes"})
+_MAX_RESULT_PAGE_SIZE = 500
+_SAFE_FILENAME_CHARACTER = re.compile(r"[^a-z0-9]+")
+
+
+def _supported_incident_actions(
+    record: IncidentRecord,
+) -> tuple[OperationalRecoveryAction, ...]:
+    actions: list[OperationalRecoveryAction] = []
+    for action in record.allowed_operator_actions:
+        if (
+            action == "retry_transient_attempt"
+            or action == "cancel_unstarted_work"
+            or action == "reconcile_external_effect"
+        ):
+            actions.append(action)
+    return tuple(actions)
+
+
 # `request_changes` maps to the owning revise decision, which requires replacement
 # wording; the command carries it now, and a request without it is still refused.
 _REVIEW_DECISIONS: dict[Decision, ReviewItemDecision] = {
@@ -268,51 +353,6 @@ def _catalog_classification_label(
     return semantic_names.get(reference, "Governed classification")
 
 
-@dataclass(frozen=True, slots=True)
-class _Capability:
-    capability_id: str
-    label: str
-    dependency: str
-    detail: str
-
-
-_UNDELIVERED_CAPABILITIES: tuple[_Capability, ...] = (
-    _Capability(
-        capability_id="process-package",
-        label="Business process package",
-        dependency="a process-package command that carries the narrative document",
-        detail=(
-            "The submission command carries no document bytes and names a media type "
-            "the owning upload transaction does not accept."
-        ),
-    ),
-    _Capability(
-        capability_id="analyst-dashboard",
-        label="Analyst dashboards",
-        dependency="the governed Superset embedding surface",
-        detail="Dashboard embedding remains an outstanding analyst-surface obligation.",
-    ),
-    _Capability(
-        capability_id="source-acquisition",
-        label="Source acquisition",
-        dependency="a composed acquisition runtime",
-        detail=(
-            "Receipts an acquisition records are now retained and readable, but "
-            "nothing here can perform one: the runtime is composed only in tests."
-        ),
-    ),
-    _Capability(
-        capability_id="operation-retry",
-        label="Operation retry",
-        dependency="a public retry authority issued by an owning service",
-        detail=(
-            "No owning service publishes a retry token, and the console must not "
-            "become a second replay authority by minting one."
-        ),
-    ),
-)
-
-
 def _engine_label(engine: EngineKind) -> str:
     """The engine's name as an architect writes it.
 
@@ -347,8 +387,14 @@ class GovernedConsoleBackend:
         requests: RequestInboxReader | None = None,
         fulfillment: FulfillmentViewReader | None = None,
         runs: TenantRunReader | None = None,
+        incidents: TenantIncidentReader | None = None,
+        impact_reader: RequestImpactReader | None = None,
+        incident_recovery_commands: IncidentRecoveryCommands | None = None,
         acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
+        acquisition_commands: AcquisitionRunNowCommands | None = None,
         data_products: DataProductReferenceReader | None = None,
+        product_publications: ProductPublicationDefinitionReader | None = None,
+        dashboards: DashboardPublicationReader | None = None,
         data_access_intake_available: bool = True,
         actors: WorkspaceActorDirectory | None = None,
         principals: WorkspacePrincipalDirectory | None = None,
@@ -356,8 +402,22 @@ class GovernedConsoleBackend:
         request_commands: RequestIntakeCommands | None = None,
         fulfillment_commands: FulfillmentDecisionCommands | None = None,
         fulfillment_execution_commands: FulfillmentExecutionCommands | None = None,
+        fulfillment_access_execution_commands: FulfillmentAccessExecutionCommands | None = None,
+        access_grant_commands: AccessGrantCommands | None = None,
+        access_grants: AccessGrantReader | None = None,
+        access_revocation_commands: AccessGrantRevocationCommands | None = None,
         fulfillment_preparation_commands: FulfillmentPreparationCommands | None = None,
+        product_intent_reviews: ProductIntentReviewReader | None = None,
+        product_intent_commands: ProductIntentApprovalCommands | None = None,
+        process_package_commands: ProcessPackageCommands | None = None,
         semantic_review_commands: SemanticReviewCommands | None = None,
+        answer_results: AnswerResultReader | None = None,
+        verified_answers: VerifiedAnswerReader | None = None,
+        answer_downloads: AnswerDownloadReceiptWriter | None = None,
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        answer_download_identifiers: Callable[[], str] = lambda: (
+            f"download-{secrets.token_hex(16)}"
+        ),
         reset_tokens: Callable[[], str] = lambda: secrets.token_urlsafe(32),
     ) -> None:
         self._identity = identity
@@ -371,8 +431,14 @@ class GovernedConsoleBackend:
         self._requests = requests
         self._fulfillment = fulfillment
         self._runs = runs
+        self._incidents = incidents
+        self._impact_reader = impact_reader
+        self._incident_recovery_commands = incident_recovery_commands
         self._acquisition_receipts = acquisition_receipts
+        self._acquisition_commands = acquisition_commands
         self._data_products = data_products
+        self._product_publications = product_publications
+        self._dashboards = dashboards
         self._data_access_intake_available = data_access_intake_available
         self._actors = actors
         self._principals = principals
@@ -380,8 +446,20 @@ class GovernedConsoleBackend:
         self._request_commands = request_commands
         self._fulfillment_commands = fulfillment_commands
         self._fulfillment_execution_commands = fulfillment_execution_commands
+        self._fulfillment_access_execution_commands = fulfillment_access_execution_commands
+        self._access_grant_commands = access_grant_commands
+        self._access_grants = access_grants
+        self._access_revocation_commands = access_revocation_commands
         self._fulfillment_preparation_commands = fulfillment_preparation_commands
+        self._product_intent_reviews = product_intent_reviews
+        self._product_intent_commands = product_intent_commands
+        self._process_package_commands = process_package_commands
         self._semantic_review_commands = semantic_review_commands
+        self._answer_results = answer_results
+        self._verified_answers = verified_answers
+        self._answer_downloads = answer_downloads
+        self._clock = clock
+        self._answer_download_identifiers = answer_download_identifiers
         self._reset_tokens = reset_tokens
 
     @property
@@ -412,6 +490,19 @@ class GovernedConsoleBackend:
         request_state, request_detail = self._request_capability(context)
         review_state: CapabilityState = (
             "ready" if self._semantic_reviews is not None else "not_delivered"
+        )
+        access_delivery_available = all(
+            command is not None
+            for command in (
+                self._request_commands,
+                self._fulfillment_preparation_commands,
+                self._fulfillment_commands,
+                self._access_grant_commands,
+                self._fulfillment_access_execution_commands,
+            )
+        )
+        operation_recovery_available = (
+            self._incidents is not None and self._incident_recovery_commands is not None
         )
         capabilities: list[CapabilityView] = [
             CapabilityView(
@@ -507,6 +598,21 @@ class GovernedConsoleBackend:
                 ),
             ),
             CapabilityView(
+                capability_id="source-acquisition",
+                label="Source acquisition",
+                state="ready" if self._acquisition_commands is not None else "not_delivered",
+                detail=(
+                    "An activated contract can be run now through the acquisition application."
+                    if self._acquisition_commands is not None
+                    else "No acquisition application command interface is wired."
+                ),
+                dependency=(
+                    None
+                    if self._acquisition_commands is not None
+                    else "a composed acquisition application"
+                ),
+            ),
+            CapabilityView(
                 capability_id="catalog-asset-preview",
                 label="Catalog asset preview",
                 state="ready" if self._catalog_publications is not None else "not_delivered",
@@ -523,36 +629,74 @@ class GovernedConsoleBackend:
                 ),
             ),
             CapabilityView(
+                capability_id="analyst-dashboard",
+                label="Analyst dashboards",
+                state="ready" if self._dashboards is not None else "not_delivered",
+                detail=(
+                    "Published dashboards are read from BI control after provider receipt."
+                    if self._dashboards is not None
+                    else "No BI control publication read interface is wired."
+                ),
+                dependency=(
+                    None
+                    if self._dashboards is not None
+                    else "a provider-receipted BI control publication read interface"
+                ),
+            ),
+            CapabilityView(
+                capability_id="process-package",
+                label="Business process package",
+                state="ready" if self._process_package_commands is not None else "not_delivered",
+                detail=(
+                    "UTF-8 Markdown narratives and strict manifests are persisted "
+                    "by contract service."
+                    if self._process_package_commands is not None
+                    else "No contract process-package command interface is wired."
+                ),
+                dependency=(
+                    None
+                    if self._process_package_commands is not None
+                    else "command delegation to contract process-package service"
+                ),
+            ),
+            CapabilityView(
                 capability_id="data-access-intake",
                 label="Data access requests",
                 state=(
                     "ready"
-                    if self._data_access_intake_available and self._request_commands is not None
+                    if self._data_access_intake_available and access_delivery_available
                     else "not_delivered"
                 ),
                 detail=(
-                    "Data access requests are accepted into request-management."
-                    if self._data_access_intake_available and self._request_commands is not None
+                    "Approved access is applied, verified, delivered, and expires automatically."
+                    if self._data_access_intake_available and access_delivery_available
                     else "Data access requests are not accepted: grant application, expiry, "
                     "and revocation are not delivered."
                 ),
                 dependency=(
                     None
-                    if self._data_access_intake_available and self._request_commands is not None
+                    if self._data_access_intake_available and access_delivery_available
                     else "an owning service that applies, expires, and revokes access grants"
                 ),
             ),
-        ]
-        capabilities.extend(
             CapabilityView(
-                capability_id=capability.capability_id,
-                label=capability.label,
-                state="not_delivered",
-                detail=capability.detail,
-                dependency=capability.dependency,
-            )
-            for capability in _UNDELIVERED_CAPABILITIES
-        )
+                capability_id="operation-retry",
+                label="Operation recovery",
+                state="ready" if operation_recovery_available else "not_delivered",
+                detail=(
+                    "State-owned incidents expose only recovery actions valid for the current "
+                    "revision."
+                    if operation_recovery_available
+                    else "Incident recovery requires both the authoritative incident reader and "
+                    "its command service."
+                ),
+                dependency=(
+                    None
+                    if operation_recovery_available
+                    else "state-owned incident read and recovery command wiring"
+                ),
+            ),
+        ]
         degraded = any(capability.state == "degraded" for capability in capabilities)
         state: WorkspaceState = "unavailable" if degraded else self._workspace_state(capabilities)
         return WorkspaceView(
@@ -578,10 +722,24 @@ class GovernedConsoleBackend:
             if catalog_reader is None
             else self._guarded(lambda: catalog_reader.current_binding(context.tenant_id))
         )
-        stage_states = self._stage_states(binding, catalog_binding)
+        process_package_commands = self._process_package_commands
+        process_package = (
+            None
+            if process_package_commands is None
+            else self._guarded(lambda: process_package_commands.latest(context.tenant_id))
+        )
+        stage_states = self._stage_states(
+            binding,
+            catalog_binding,
+            process_package_available=process_package_commands is not None,
+            process_package_recorded=process_package is not None,
+        )
         active_stage = next(
-            (stage for stage in _SETUP_STAGES if stage_states[stage] != "complete"),
-            _SETUP_STAGES[-1],
+            (stage for stage in _SETUP_STAGES if stage_states[stage] == "current"),
+            next(
+                (stage for stage in _SETUP_STAGES if stage_states[stage] != "complete"),
+                _SETUP_STAGES[-1],
+            ),
         )
         payload: dict[str, object] = {
             "workspace_ref": self._identity.workspace_ref,
@@ -621,6 +779,17 @@ class GovernedConsoleBackend:
                     state=_BINDING_STATES[binding.lifecycle_state],
                 )
             ),
+            "process_package": (
+                None
+                if process_package is None
+                else ProcessPackageView(
+                    package_ref=process_package.receipt.package_id,
+                    version=process_package.receipt.version,
+                    content_digest=process_package.receipt.original_digest,
+                    state="ready",
+                    candidate_summary=process_package.manifest.process_name,
+                )
+            ),
         }
         unbound = SetupView.model_validate(payload | {"setup_digest": "0" * 64})
         return SetupView.model_validate(
@@ -652,9 +821,34 @@ class GovernedConsoleBackend:
     def get_request_detail(
         self, context: TrustedActorContext, request_id: str
     ) -> RequestDetailView:
-        self._authorize(context, ("data_architect",))
+        self._authorize(
+            context,
+            ("data_architect", "data_owner", "policy_approver", "budget_approver"),
+        )
         request = self._visible_request(context, request_id)
+        if context.active_role != "data_architect":
+            return self._reviewer_request_detail_view(context, request)
         return self._request_detail_view(context, request)
+
+    def get_request_impact(self, context: TrustedActorContext, request_id: str) -> ImpactView:
+        self._authorize(
+            context,
+            ("data_architect", "data_owner", "policy_approver", "budget_approver"),
+        )
+        reader = self._impact_reader
+        if reader is None:
+            raise _not_delivered("an authorization-filtered impact read interface")
+        impact = self._guarded(
+            lambda: reader.get_request_impact(
+                tenant_id=context.tenant_id,
+                actor_id=context.actor_id,
+                active_role=context.active_role,
+                request_id=request_id,
+            )
+        )
+        if impact is None or impact.request_id != request_id:
+            raise ConsoleNotFound()
+        return impact
 
     def get_requester_requests(
         self, context: TrustedActorContext
@@ -667,6 +861,301 @@ class GovernedConsoleBackend:
             for request in requests
             if request.requester_id == context.actor_id
         )
+
+    def get_answer_result(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        *,
+        cursor: str | None = None,
+        page_size: int = 100,
+    ) -> AnswerResultPageView:
+        self._authorize(context, ("requester",))
+        request, answer, receipt = self._answer_result_authority(context, request_id)
+        if receipt.outcome != "succeeded":
+            return AnswerResultPageView(
+                request_id=request.request_id,
+                title=self._request_title(request),
+                answer_text=None if answer is None else answer.narrative,
+                status="failed",
+                freshness=None if answer is None else answer.freshness_disposition,
+                as_of=None if answer is None else answer.as_of,
+                row_count=receipt.row_count,
+            )
+        if (
+            answer is None
+            or request.state is not RequestState.DELIVERED
+            or receipt.result_ref is None
+        ):
+            raise ConsoleNotFound()
+        try:
+            snapshot = self._answer_results_or_fail().read_result(
+                context.tenant_id, receipt.result_ref
+            )
+        except QueryResultNotFound:
+            return AnswerResultPageView(
+                request_id=request.request_id,
+                title=self._request_title(request),
+                answer_text=answer.narrative,
+                status="expired",
+                freshness=answer.freshness_disposition,
+                as_of=answer.as_of,
+                row_count=receipt.row_count,
+            )
+        except Exception as error:
+            raise console_error_for(error) from error
+        if (
+            snapshot.tenant_id != context.tenant_id
+            or snapshot.request_id != request_id
+            or snapshot.plan_digest != receipt.plan_digest
+            or snapshot.result_ref != receipt.result_ref
+            or snapshot.result_digest != receipt.result_digest
+            or snapshot.result_schema_digest != receipt.result_schema_digest
+            or snapshot.row_count != receipt.row_count
+            or snapshot.byte_count != receipt.byte_count
+            or snapshot.product_generation_refs != receipt.product_generation_refs
+        ):
+            raise ConsoleUnavailable(
+                code="answer_result_integrity_failure",
+                safe_message="The answer result could not be verified.",
+                recovery_action="contact_support",
+            )
+        if not 1 <= page_size <= _MAX_RESULT_PAGE_SIZE:
+            raise ConsoleInvalidRequest(
+                code="invalid_page_size",
+                safe_message=f"Page size must be between 1 and {_MAX_RESULT_PAGE_SIZE}.",
+                recovery_action="correct_input",
+                field="page_size",
+            )
+        offset = self._result_offset(cursor, snapshot.result_digest)
+        if offset > snapshot.row_count:
+            raise ConsoleInvalidRequest(
+                code="invalid_result_cursor",
+                safe_message="The result page cursor is invalid.",
+                recovery_action="correct_input",
+                field="cursor",
+            )
+        end = min(offset + page_size, snapshot.row_count)
+        next_cursor = (
+            self._result_cursor(snapshot.result_digest, end) if end < snapshot.row_count else None
+        )
+        return AnswerResultPageView(
+            request_id=request.request_id,
+            title=self._request_title(request),
+            answer_text=answer.narrative,
+            status="available",
+            freshness=answer.freshness_disposition,
+            as_of=answer.as_of,
+            row_count=receipt.row_count,
+            columns=tuple(
+                AnswerResultColumnView(
+                    name=column.name,
+                    label=column.name.replace("_", " ").strip().title(),
+                    value_type=column.value_type,
+                    allowed_operations=(),
+                )
+                for column in snapshot.columns
+            ),
+            rows=snapshot.rows[offset:end],
+            next_cursor=next_cursor,
+        )
+
+    def download_answer_result(
+        self, context: TrustedActorContext, request_id: str
+    ) -> AuthorizedDownload:
+        request, answer, receipt = self._answer_result_authority(
+            context, request_id, permission="download"
+        )
+        if (
+            receipt.outcome != "succeeded"
+            or receipt.result_ref is None
+            or answer.result_ref is None
+            or request.state is not RequestState.DELIVERED
+        ):
+            raise ConsoleNotFound()
+        try:
+            snapshot = self._answer_results_or_fail().read_result(
+                context.tenant_id, receipt.result_ref
+            )
+        except QueryResultNotFound as error:
+            raise ConsoleNotFound() from error
+        except Exception as error:
+            raise console_error_for(error) from error
+        if (
+            snapshot.tenant_id != context.tenant_id
+            or snapshot.request_id != request_id
+            or snapshot.plan_digest != receipt.plan_digest
+            or snapshot.result_ref != receipt.result_ref
+            or snapshot.result_digest != receipt.result_digest
+            or snapshot.result_schema_digest != receipt.result_schema_digest
+            or snapshot.row_count != receipt.row_count
+            or snapshot.byte_count != receipt.byte_count
+            or snapshot.product_generation_refs != receipt.product_generation_refs
+        ):
+            raise ConsoleUnavailable(
+                code="answer_result_integrity_failure",
+                safe_message="The answer result could not be verified.",
+                recovery_action="contact_support",
+            )
+        body = self._csv(snapshot)
+        writer = self._answer_downloads
+        if writer is None:
+            raise _not_delivered("durable answer download receipts")
+        download = AnswerDownloadReceipt(
+            download_id=self._answer_download_identifiers(),
+            tenant_id=context.tenant_id,
+            request_id=request_id,
+            actor_id=context.actor_id,
+            result_digest=snapshot.result_digest,
+            row_count=snapshot.row_count,
+            created_at=self._clock(),
+        )
+        try:
+            writer.record(download)
+        except Exception as error:
+            raise ConsoleUnavailable(
+                code="answer_download_unavailable",
+                safe_message="The answer download could not be recorded.",
+                recovery_action="retry",
+            ) from error
+        return AuthorizedDownload(
+            body=body,
+            media_type="text/csv",
+            filename=self._download_filename(self._request_title(request)),
+            result_digest=snapshot.result_digest,
+        )
+
+    def _answer_result_authority(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        *,
+        permission: Literal["view", "download"] = "view",
+    ) -> tuple[InboxRequest, GovernedAnswer, AnswerExecutionReceipt]:
+        self._authorize(context, ("requester",))
+        requests = self._require_requests(context)
+        request = next(
+            (
+                candidate
+                for candidate in requests
+                if candidate.request_id == request_id and candidate.requester_id == context.actor_id
+            ),
+            None,
+        )
+        if request is None:
+            raise ConsoleNotFound()
+        if self._verified_answers is None:
+            raise _not_delivered("current governed answer authorization")
+        try:
+            read = (
+                self._verified_answers.read_for_download
+                if permission == "download"
+                else self._verified_answers.read_for_request
+            )
+            answer = read(
+                tenant_id=context.tenant_id,
+                requester_id=context.actor_id,
+                request_id=request_id,
+            )
+        except GovernedAnswerNotVisible as error:
+            raise ConsoleNotFound() from error
+        execution = self._guarded(
+            lambda: self._answer_results_or_fail().load_execution(context.tenant_id, request_id)
+        )
+        if execution is None:
+            raise ConsoleNotFound()
+        receipt = execution[1]
+        if (
+            answer.tenant_id != context.tenant_id
+            or answer.request_id != request_id
+            or answer.execution_receipt_ref != receipt.receipt_id
+            or answer.result_ref != receipt.result_ref
+            or answer.result_digest != receipt.result_digest
+            or digest(answer.product_generation_refs) != digest(receipt.product_generation_refs)
+            or receipt.tenant_id != context.tenant_id
+            or receipt.request_id != request_id
+        ):
+            raise ConsoleNotFound()
+        return request, answer, receipt
+
+    def _answer_results_or_fail(self) -> AnswerResultReader:
+        if self._answer_results is None:
+            raise _not_delivered("the tenant answer result store")
+        return self._answer_results
+
+    @staticmethod
+    def _result_cursor(result_digest: str, offset: int) -> str:
+        return base64.urlsafe_b64encode(f"{result_digest}:{offset}".encode()).decode().rstrip("=")
+
+    @staticmethod
+    def _result_offset(cursor: str | None, result_digest: str) -> int:
+        if cursor is None:
+            return 0
+        try:
+            decoded = base64.urlsafe_b64decode(cursor + "=" * (-len(cursor) % 4)).decode()
+            bound_digest, raw_offset = decoded.rsplit(":", 1)
+            if (
+                bound_digest != result_digest
+                or not raw_offset.isascii()
+                or not raw_offset.isdigit()
+            ):
+                raise ValueError
+            return int(raw_offset)
+        except (ValueError, UnicodeDecodeError, binascii.Error) as error:
+            raise ConsoleInvalidRequest(
+                code="invalid_result_cursor",
+                safe_message="The result page cursor is invalid.",
+                recovery_action="correct_input",
+                field="cursor",
+            ) from error
+
+    @staticmethod
+    def _download_filename(title: str) -> str:
+        ascii_title = unicodedata.normalize("NFKD", title).encode("ascii", "ignore").decode()
+        stem = _SAFE_FILENAME_CHARACTER.sub("-", ascii_title.lower()).strip("-")[:80]
+        return f"{stem or 'answer-result'}.csv"
+
+    @staticmethod
+    def _csv(snapshot: AnswerResultSnapshot) -> bytes:
+        def decimal_cell(value: str) -> str:
+            try:
+                number = Decimal(value)
+            except InvalidOperation:
+                number = Decimal("NaN")
+            if not number.is_finite():
+                raise ConsoleUnavailable(
+                    code="answer_result_integrity_failure",
+                    safe_message="The answer result could not be verified.",
+                    recovery_action="contact_support",
+                )
+            return str(number)
+
+        def text_cell(value: str) -> str:
+            if value.lstrip().startswith(("=", "+", "-", "@")) or value.startswith(
+                ("\t", "\r", "\n")
+            ):
+                return f"'{value}"
+            return value
+
+        stream = io.StringIO(newline="")
+        writer = csv.writer(stream, lineterminator="\r\n")
+        writer.writerow(text_cell(column.name) for column in snapshot.columns)
+        for row in snapshot.rows:
+            writer.writerow(
+                value.isoformat()
+                if isinstance(value, datetime)
+                else str(value)
+                if isinstance(value, (Decimal, bool))
+                else ""
+                if value is None
+                else decimal_cell(value)
+                if isinstance(value, str) and column.value_type == "decimal"
+                else text_cell(value)
+                if isinstance(value, str)
+                else value
+                for column, value in zip(snapshot.columns, row, strict=True)
+            )
+        return stream.getvalue().encode("utf-8")
 
     def get_conversation(self, context: TrustedActorContext, request_id: str) -> ConversationView:
         self._authorize(
@@ -706,11 +1195,7 @@ class GovernedConsoleBackend:
         # Policy snapshots accumulate over a tenant's history, so one product is
         # permitted at several versions. The newest is the one a reader means.
         newest = max(permitted, key=lambda reference: reference.version)
-        return DataProductView(
-            data_product_id=newest.artifact_id,
-            artifact_digest=newest.digest,
-            version=newest.version,
-        )
+        return self._data_product_view(context, newest)
 
     def get_data_products(self, context: TrustedActorContext) -> DataProductsView:
         self._authorize(context, context.roles)
@@ -723,13 +1208,47 @@ class GovernedConsoleBackend:
                 newest_by_id[reference.artifact_id] = reference
         return DataProductsView(
             products=tuple(
-                DataProductView(
-                    data_product_id=reference.artifact_id,
-                    artifact_digest=reference.digest,
-                    version=reference.version,
-                )
+                self._data_product_view(context, reference)
                 for reference in sorted(newest_by_id.values(), key=lambda item: item.artifact_id)
             )
+        )
+
+    def _data_product_view(
+        self, context: TrustedActorContext, reference: ArtifactReference
+    ) -> DataProductView:
+        reader = self._product_publications
+        if reader is None:
+            definition = None
+        else:
+            definition = reader.definition_for_reference(
+                tenant_id=context.tenant_id, product_ref=reference
+            )
+        if definition is None:
+            return DataProductView(
+                data_product_id=reference.artifact_id,
+                version=reference.version,
+                publication_status="pending",
+            )
+        if (
+            definition.tenant_id != context.tenant_id
+            or definition.product_id != reference.artifact_id
+            or definition.product_revision != reference.version
+        ):
+            raise ConsoleNotFound()
+        return DataProductView(
+            data_product_id=reference.artifact_id,
+            version=reference.version,
+            publication_status="published",
+            name=definition.name,
+            description=definition.description,
+            product_revision=definition.product_revision,
+            generation=definition.generation,
+            catalog_revision=definition.catalog_revision,
+            namespace=definition.namespace,
+            relation_name=definition.relation_name,
+            column_count=len(definition.columns),
+            source_count=len(definition.lineage_sources),
+            freshness_observed_at=max(source.observed_at for source in definition.lineage_sources),
         )
 
     def get_runs(self, context: TrustedActorContext) -> RunsView:
@@ -750,6 +1269,131 @@ class GovernedConsoleBackend:
             )
         )
 
+    def get_incidents(self, context: TrustedActorContext) -> IncidentsView:
+        self._authorize(context, ("data_architect", "data_owner"))
+        reader = self._incidents
+        if reader is None:
+            raise _not_delivered("a tenant-scoped incident read interface")
+        records = self._guarded(lambda: reader.list_current(context.tenant_id))
+        projected: list[IncidentView] = []
+        for record in records:
+            public_reference = mint_console_handle()
+            self._operation_handles.store(
+                OperationHandleRecord(
+                    tenant_id=context.tenant_id,
+                    console_handle=public_reference,
+                    capability_kind="incident_recovery",
+                    private_identity=record.incident_id,
+                )
+            )
+            projected.append(self._incident_view(reader, record, public_reference))
+        return IncidentsView(incidents=tuple(projected))
+
+    def recover_incident(
+        self,
+        context: TrustedActorContext,
+        incident_id: str,
+        command: IncidentRecoveryCommand,
+        *,
+        idempotency_key: str,
+    ) -> IncidentView:
+        self._authorize(context, ("data_architect", "data_owner"))
+        self._require_command_role(context, command.active_role)
+        reader = self._incidents
+        recovery = self._incident_recovery_commands
+        if reader is None or recovery is None:
+            raise _not_delivered("state-owned incident recovery wiring")
+        handle = self._operation_handles.load(
+            tenant_id=context.tenant_id, console_handle=incident_id
+        )
+        if handle is None or handle.capability_kind != "incident_recovery":
+            raise ConsoleNotFound()
+        normalized_reason = command.reason.strip()
+        command_identity = digest(
+            {
+                "tenant_id": context.tenant_id,
+                "actor_id": context.actor_id,
+                "idempotency_key": idempotency_key,
+                "incident_id": handle.private_identity,
+                "expected_incident_revision": command.expected_revision,
+                "action": command.action,
+                "reason": normalized_reason,
+            }
+        )
+        owner_command = RecoveryCommand(
+            command_id=f"console-recovery-{command_identity}",
+            tenant_id=context.tenant_id,
+            incident_id=handle.private_identity,
+            expected_incident_revision=command.expected_revision,
+            action=command.action,
+            actor_id=context.actor_id,
+            reason=normalized_reason,
+        )
+        try:
+            recovery.execute(owner_command)
+            record = next(
+                item
+                for item in reader.list_current(context.tenant_id)
+                if item.incident_id == handle.private_identity
+            )
+        except IncidentNotFoundError:
+            raise ConsoleNotFound() from None
+        except StopIteration:
+            raise ConsoleNotFound() from None
+        except StaleIncidentRevisionError:
+            self._stale("The incident changed. Reload it and review the new revision.")
+        except (RecoveryActionNotAllowedError, IncidentConflictError):
+            raise ConsoleConflict(
+                code="recovery_unavailable",
+                safe_message="This recovery action is no longer available. Reload the incident.",
+                recovery_action="reload",
+            ) from None
+        except IncidentIntegrityError:
+            raise ConsoleUnavailable(
+                code="downstream_integrity",
+                safe_message="The governing service returned state the console cannot trust.",
+                recovery_action="contact_support",
+            ) from None
+        except IncidentPersistenceError:
+            raise ConsoleUnavailable(
+                code="downstream_unavailable",
+                safe_message="The governing service is temporarily unavailable.",
+                recovery_action="retry",
+            ) from None
+        except ExternalEffectRecoveryUnavailableError:
+            raise ConsoleUnavailable(
+                code="downstream_unavailable",
+                safe_message="The external effect could not be reconciled yet.",
+                recovery_action="retry",
+            ) from None
+        return self._incident_view(reader, record, incident_id)
+
+    def _incident_view(
+        self,
+        reader: TenantIncidentReader,
+        record: IncidentRecord,
+        public_reference: str,
+    ) -> IncidentView:
+        evidence = self._guarded(
+            lambda: reader.list_recovery_evidence(record.tenant_id, record.incident_id)
+        )
+        recovery_recorded = any(item.incident_revision == record.revision for item in evidence)
+        actions = () if recovery_recorded else _supported_incident_actions(record)
+        return IncidentView(
+            incident_id=public_reference,
+            revision=record.revision,
+            kind=record.kind,
+            classification=record.classification,
+            last_successful_stage=record.last_successful_stage,
+            failed_stage=record.failed_stage,
+            user_impact=record.user_impact,
+            next_automatic_action=(None if recovery_recorded else record.next_automatic_action),
+            allowed_operator_actions=actions,
+            opened_at=record.opened_at,
+            updated_at=record.updated_at,
+            recovery_recorded=recovery_recorded,
+        )
+
     def get_acquisition_receipts(self, context: TrustedActorContext) -> AcquisitionReceiptsView:
         # The same role set the fixture backend enforces. Governed mode must never be
         # more permissive than the demo that stands in for it.
@@ -758,19 +1402,38 @@ class GovernedConsoleBackend:
             raise _not_delivered("a durable acquisition evidence store")
         receipts = self._acquisition_receipts.list_acquisition_receipts(context.tenant_id)
         return AcquisitionReceiptsView(
-            receipts=tuple(
-                AcquisitionReceiptView(
-                    evidence_id=receipt.evidence_id,
-                    contract_ref=receipt.contract_ref,
-                    source_binding_ref=receipt.source_binding_ref,
-                    acquisition_mode=receipt.acquisition_mode,
-                    logical_object_refs=receipt.logical_object_refs,
-                    outcome=receipt.outcome,
-                    reason_codes=receipt.reason_codes,
-                    created_at=receipt.created_at,
-                )
-                for receipt in receipts
+            receipts=tuple(self._acquisition_receipt_view(receipt) for receipt in receipts)
+        )
+
+    def run_acquisition_now(
+        self, context: TrustedActorContext, command: AcquisitionRunNowCommand
+    ) -> AcquisitionReceiptView:
+        self._authorize(context, ("data_architect", "data_owner"))
+        self._require_command_role(context, command.active_role)
+        commands = self._acquisition_commands
+        if commands is None:
+            raise _not_delivered("command delegation to the acquisition application")
+        result = self._guarded(
+            lambda: commands.run_now(
+                tenant_id=context.tenant_id,
+                contract_ref=command.contract_ref,
+                trigger_window=command.trigger_window,
+                acquisition_mode=command.acquisition_mode,
             )
+        )
+        return self._acquisition_receipt_view(result.evidence)
+
+    @staticmethod
+    def _acquisition_receipt_view(receipt: AcquisitionEvidenceReceipt) -> AcquisitionReceiptView:
+        return AcquisitionReceiptView(
+            evidence_id=receipt.evidence_id,
+            contract_ref=receipt.contract_ref,
+            source_binding_ref=receipt.source_binding_ref,
+            acquisition_mode=receipt.acquisition_mode,
+            logical_object_refs=receipt.logical_object_refs,
+            outcome=receipt.outcome,
+            reason_codes=receipt.reason_codes,
+            created_at=receipt.created_at,
         )
 
     def get_catalog_asset(self, context: TrustedActorContext, asset_ref: str) -> CatalogAssetView:
@@ -813,11 +1476,9 @@ class GovernedConsoleBackend:
                     continue
                 glossary = glossary_by_identity.get(identity)
                 owner = (
-                    glossary.normalized_payload.get("owner_ref")
-                    if glossary is not None
-                    else intent.contract_reference.artifact_id
+                    glossary.normalized_payload.get("owner_ref") if glossary is not None else None
                 )
-                if not isinstance(owner, str):
+                if owner is not None and not isinstance(owner, str):
                     raise ValueError("persisted catalog glossary owner is invalid")
                 classifications = tuple(
                     sorted(
@@ -867,7 +1528,131 @@ class GovernedConsoleBackend:
         )
 
     def get_dashboard(self, context: TrustedActorContext, dashboard_ref: str) -> DashboardView:
-        raise _not_delivered("the governed Superset embedding surface")
+        self._authorize(context, ("requester", "data_architect", "data_owner"))
+        for dashboard in self.get_dashboards(context).dashboards:
+            if dashboard.dashboard_ref == dashboard_ref:
+                return dashboard
+        raise ConsoleNotFound()
+
+    def get_dashboards(self, context: TrustedActorContext) -> DashboardsView:
+        self._authorize(context, ("requester", "data_architect", "data_owner"))
+        reader = self._dashboards
+        if reader is None:
+            raise _not_delivered("a provider-receipted BI control publication read interface")
+        publications = self._guarded(lambda: reader.list_publications(context.tenant_id))
+        if context.active_role == "requester":
+            publications = self._requester_dashboard_publications(context, publications)
+        return DashboardsView(
+            dashboards=tuple(
+                DashboardView(
+                    dashboard_ref=self._dashboard_reference(
+                        context.tenant_id, publication.dashboard_id, publication.version
+                    ),
+                    display_name=publication.title,
+                    version=publication.version,
+                    lifecycle_state=publication.lifecycle_state,
+                    as_of=publication.as_of,
+                    freshness=publication.freshness_disposition,
+                    access_state=(
+                        "active" if context.active_role == "requester" else "workspace_role"
+                    ),
+                    published_at=publication.published_at,
+                    state=("ready" if publication.lifecycle_state == "active" else "blocked"),
+                    summary=(
+                        f"Revision {publication.version} was published by the managed BI provider "
+                        f"on {publication.published_at:%B %-d, %Y}."
+                        if publication.lifecycle_state == "active"
+                        else f"Revision {publication.version} is archived."
+                    ),
+                )
+                for publication in publications
+            )
+        )
+
+    def _requester_dashboard_publications(
+        self,
+        context: TrustedActorContext,
+        publications: tuple[DashboardPublication, ...],
+    ) -> tuple[DashboardPublication, ...]:
+        grants = self._access_grants
+        commands = self._access_grant_commands
+        principals = self._principals
+        requests = self._requests
+        if grants is None or commands is None or principals is None or requests is None:
+            raise ConsoleNotFound()
+        principal_ref = principals.principal_ref(
+            tenant_id=context.tenant_id,
+            actor_id=context.actor_id,
+            role="requester",
+        )
+        if principal_ref is None:
+            raise ConsoleNotFound()
+
+        access_grants: list[AccessGrant] = []
+        inbox = self._guarded(lambda: requests.list_inbox(context.tenant_id))
+        for request in inbox:
+            if (
+                request.requester_id != context.actor_id
+                or not isinstance(request.payload, DataAccessRequest)
+                or request.payload.access_mode != "dashboard"
+            ):
+                continue
+            grant = self._guarded(
+                partial(grants.load_current_for_request, context.tenant_id, request.request_id)
+            )
+            if (
+                grant is not None
+                and grant.tenant_id == context.tenant_id
+                and grant.request_id == request.request_id
+                and grant.principal_ref == principal_ref
+            ):
+                access_grants.append(grant)
+
+        visible: list[DashboardPublication] = []
+        for publication in publications:
+            if publication.lifecycle_state != "active":
+                continue
+            for grant in access_grants:
+                if grant.data_product_version_ref != publication.data_product_version_ref:
+                    continue
+                try:
+                    authorized = commands.authorize(
+                        tenant_id=context.tenant_id,
+                        grant_id=grant.grant_id,
+                        principal_ref=principal_ref,
+                        purpose=grant.purpose,
+                        permission="dashboard",
+                        product_version_ref=publication.data_product_version_ref,
+                    )
+                except AccessGrantDenied:
+                    continue
+                except Exception as error:
+                    raise console_error_for(error) from error
+                if (
+                    authorized.grant_id == grant.grant_id
+                    and authorized.tenant_id == context.tenant_id
+                    and authorized.request_id == grant.request_id
+                    and authorized.principal_ref == principal_ref
+                    and authorized.purpose == grant.purpose
+                    and authorized.data_product_version_ref == publication.data_product_version_ref
+                    and authorized.state == "active"
+                    and "dashboard" in authorized.permissions
+                ):
+                    visible.append(publication)
+                    break
+        return tuple(visible)
+
+    @staticmethod
+    def _dashboard_reference(tenant_id: str, dashboard_id: str, version: int) -> str:
+        identity_digest = digest(
+            {
+                "domain": "pillarmesh-console-dashboard-reference-v1",
+                "tenant_id": tenant_id,
+                "dashboard_id": dashboard_id,
+                "version": version,
+            }
+        )
+        return f"dashboard-{identity_digest[:24]}"
 
     def get_evidence(self, context: TrustedActorContext, evidence_ref: str) -> EvidenceView:
         requests = self._require_requests(context)
@@ -919,6 +1704,10 @@ class GovernedConsoleBackend:
                     revision=binding.revision,
                 ),
             )
+        if record.capability_kind == "incident_recovery":
+            # Incident handles are valid only at the incident recovery boundary. Answering
+            # through the generic operation route would disclose that a probed handle exists.
+            raise ConsoleNotFound()
         if record.capability_kind != "warehouse_lifecycle":
             raise _not_delivered("acquisition operation read wiring")
         reader = self._warehouse_operations
@@ -960,11 +1749,39 @@ class GovernedConsoleBackend:
 
     def submit_process_package(
         self, context: TrustedActorContext, command: ProcessPackageCommand
-    ) -> Never:
-        # The owning upload transaction needs the narrative bytes and a business
-        # process manifest. This command carries neither, and its media types are
-        # not the one that transaction accepts, so there is nothing to delegate.
-        raise _not_delivered("a process-package command that carries the narrative document")
+    ) -> OperationView:
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        setup = self.get_setup(context)
+        self._require_current_revision(command.expected_revision, setup.revision)
+        narrative = command.narrative_markdown.encode("utf-8")
+        if hashlib.sha256(narrative).hexdigest() != command.package_digest:
+            raise ConsoleInvalidRequest(
+                code="process_package_digest_mismatch",
+                safe_message="The Markdown narrative does not match its submitted digest.",
+                recovery_action="correct_input",
+                field="package_digest",
+            )
+        commands = self._process_package_commands
+        if commands is None:
+            raise _not_delivered("command delegation to contract process-package service")
+        manifest = BusinessProcessManifest.model_validate(command.manifest.model_dump())
+        receipt = self._guarded(
+            lambda: commands.upload(
+                context.tenant_id,
+                narrative,
+                command.media_type,
+                manifest,
+                context.actor_id,
+            )
+        )
+        return OperationView(
+            operation_id=f"process-package-{digest(receipt)[:32]}",
+            revision=receipt.version,
+            state="succeeded",
+            phase="process_package_persisted",
+            summary="Business process package saved.",
+        )
 
     def decide_review(
         self, context: TrustedActorContext, review_id: str, command: DecisionCommand
@@ -1043,7 +1860,10 @@ class GovernedConsoleBackend:
     def decide_request(
         self, context: TrustedActorContext, request_id: str, command: DecisionCommand
     ) -> RequestDetailView:
-        self._authorize(context, ("data_architect",))
+        self._authorize(
+            context,
+            ("data_architect", "data_owner", "policy_approver", "budget_approver"),
+        )
         self._require_command_role(context, command.active_role)
         # `DecisionCommand` also decides an ontology review, where these two carry
         # meaning. A fulfillment decision has no review item and no wording to revise,
@@ -1059,11 +1879,16 @@ class GovernedConsoleBackend:
         commands = self._require_fulfillment_commands()
         authority_ref = self._principal_ref(context)
         request = self._visible_request(context, request_id)
-        architect_view = self._architect_view(context, request_id)
         self._require_current_revision(command.expected_revision, request.revision)
-        self._require_held_requirement(
-            architect_view.proposals, authority_ref, command.reviewed_digest
-        )
+        if context.active_role == "data_architect":
+            architect_view = self._architect_view(context, request_id)
+            self._require_held_requirement(
+                architect_view.proposals, authority_ref, command.reviewed_digest
+            )
+        else:
+            reviewer_view = self._reviewer_view(context, request_id, authority_ref)
+            if reviewer_view.requirement.subject_digest != command.reviewed_digest:
+                self._stale("The reviewed proposal changed. Reload it before deciding.")
         self._guarded(
             lambda: commands.record_approval(
                 tenant_id=context.tenant_id,
@@ -1075,7 +1900,56 @@ class GovernedConsoleBackend:
                 expected_revision=command.expected_revision,
             )
         )
-        return self._request_detail_view(context, self._visible_request(context, request_id))
+        return self.get_request_detail(context, request_id)
+
+    def approve_product_intent(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: ProductIntentApprovalCommand,
+    ) -> ProductIntentApprovalView:
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        request = self._visible_request(context, request_id)
+        self._require_current_revision(command.expected_revision, request.revision)
+        candidate = self._product_intent_candidate(context, request)
+        if candidate is None or digest(candidate.intent) != command.reviewed_digest:
+            self._stale("The typed product intent changed. Reload it before approving.")
+        if candidate.unresolved_constraints or any(
+            not coverage.authorized for coverage in candidate.source_coverage
+        ):
+            raise ConsoleConflict(
+                code="product_intent_unresolved",
+                safe_message="Resolve every product intent requirement before approval.",
+                recovery_action="correct_input",
+            )
+        commands = self._product_intent_commands
+        if commands is None:
+            raise _not_delivered("typed product intent approval")
+        result = self._guarded(
+            lambda: commands.approve(
+                tenant_id=context.tenant_id,
+                request_id=request_id,
+                request_revision=request.revision,
+                approved_by=context.actor_id,
+                intent=candidate.intent,
+                constraints=candidate.constraints,
+            )
+        )
+        if isinstance(result, ProductIntentNoValidPlan):
+            raise ConsoleConflict(
+                code="product_intent_no_valid_plan",
+                safe_message="The typed product intent has unresolved governed constraints.",
+                recovery_action="correct_input",
+            )
+        return ProductIntentApprovalView(
+            approval_id=result.approval_id,
+            intent_revision=result.intent_revision,
+            intent_digest=result.intent_digest,
+            artifact_reference=self._artifact_view(result.artifact_reference),
+            approved_by=result.approved_by,
+            approved_at=result.approved_at,
+        )
 
     def _preparation_commands(
         self,
@@ -1120,15 +1994,31 @@ class GovernedConsoleBackend:
     def prepare_request_proposal(
         self, context: TrustedActorContext, request_id: str, command: ProposalPreparationCommand
     ) -> RequestDetailView:
-        commands = self._preparation_commands(context, request_id, command, "prepare_answer")
-        self._guarded(
-            lambda: commands.propose_answer(
-                tenant_id=context.tenant_id,
-                request_id=request_id,
-                actor_id=context.actor_id,
-                expected_revision=command.expected_revision,
-            )
+        if self._fulfillment_preparation_commands is None:
+            raise _not_delivered("request preparation through request-management")
+        request = self._visible_request(context, request_id)
+        action: PreparationAction = (
+            "prepare_access" if isinstance(request.payload, DataAccessRequest) else "prepare_answer"
         )
+        commands = self._preparation_commands(context, request_id, command, action)
+        if action == "prepare_access":
+            self._guarded(
+                lambda: commands.propose_access(
+                    tenant_id=context.tenant_id,
+                    request_id=request_id,
+                    actor_id=context.actor_id,
+                    expected_revision=command.expected_revision,
+                )
+            )
+        else:
+            self._guarded(
+                lambda: commands.propose_answer(
+                    tenant_id=context.tenant_id,
+                    request_id=request_id,
+                    actor_id=context.actor_id,
+                    expected_revision=command.expected_revision,
+                )
+            )
         return self._request_detail_view(context, self._visible_request(context, request_id))
 
     def submit_request_proposal(
@@ -1150,14 +2040,18 @@ class GovernedConsoleBackend:
     ) -> tuple[PreparationAction, ...]:
         if self._fulfillment_preparation_commands is None:
             return ()
-        if not isinstance(request.payload, StakeholderQuestion):
+        if not isinstance(request.payload, (DataAccessRequest, StakeholderQuestion)):
             return ()
         if request.state in (RequestState.SUBMITTED, RequestState.CLARIFYING):
             return ("clarify",)
         if view.dependencies:
             return ()
         if request.state is RequestState.INVESTIGATING and view.clarified_outcomes:
-            return ("prepare_answer",)
+            return (
+                "prepare_access"
+                if isinstance(request.payload, DataAccessRequest)
+                else "prepare_answer",
+            )
         if request.state is RequestState.PROPOSED and view.proposals:
             return ("submit_proposal",)
         return ()
@@ -1219,6 +2113,47 @@ class GovernedConsoleBackend:
                     tenant_id=context.tenant_id,
                     request_id=request_id,
                     actor_id="pillarmesh-runtime",
+                    expected_revision=admitted.revision,
+                )
+            )
+        if admitted.state is RequestState.EXECUTING and isinstance(
+            admitted.payload, DataAccessRequest
+        ):
+            access_commands = self._access_grant_commands
+            delivery_commands = self._fulfillment_access_execution_commands
+            fulfillment = self._require_fulfillment()
+            if access_commands is None or delivery_commands is None:
+                raise _not_delivered("access grant application and verified delivery")
+            architect_view = self._guarded(
+                lambda: fulfillment.architect_view(
+                    tenant_id=context.tenant_id,
+                    request_id=request_id,
+                    actor_id=context.actor_id,
+                )
+            )
+            binding = (
+                architect_view.admissions[-1].access_grant_binding
+                if architect_view.admissions
+                else None
+            )
+            if binding is None:
+                raise ConsoleConflict(
+                    code="access_admission_unavailable",
+                    safe_message="The approved access terms are unavailable.",
+                    recovery_action="reload",
+                )
+            self._guarded(
+                lambda: access_commands.apply(
+                    tenant_id=context.tenant_id,
+                    request_id=request_id,
+                    grant_id=binding.grant_id,
+                )
+            )
+            self._guarded(
+                lambda: delivery_commands.execute_access(
+                    tenant_id=context.tenant_id,
+                    request_id=request_id,
+                    actor_id="pillarmesh-access-control",
                     expected_revision=admitted.revision,
                 )
             )
@@ -1387,6 +2322,36 @@ class GovernedConsoleBackend:
             item for item in self._require_requests(context) if item.request_id == request_id
         )
         return self._requester_request(context, withdrawn)
+
+    def revoke_access(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        command: AccessRevocationCommand,
+    ) -> AccessLifecycleView:
+        self._authorize(context, ("requester", "data_architect"))
+        self._require_command_role(context, command.active_role)
+        reader = self._requests
+        if reader is None:
+            raise _not_delivered("request-management read wiring")
+        request = self._guarded(lambda: reader.get(context.tenant_id, request_id))
+        if context.active_role == "requester" and request.requester_id != context.actor_id:
+            raise ConsoleNotFound()
+        if not isinstance(request.payload, DataAccessRequest):
+            raise ConsoleNotFound()
+        commands = self._access_revocation_commands
+        if commands is None:
+            raise _not_delivered("access-control manual revocation")
+        grant = self._guarded(
+            lambda: commands.revoke_for_request(
+                tenant_id=context.tenant_id,
+                request_id=request_id,
+                actor_id=context.actor_id,
+                expected_revision=command.expected_revision,
+                reason=command.reason,
+            )
+        )
+        return self._access_lifecycle_view(context, request, grant)
 
     def retry_operation(
         self,
@@ -1583,6 +2548,173 @@ class GovernedConsoleBackend:
             )
         )
 
+    def _reviewer_view(
+        self,
+        context: TrustedActorContext,
+        request_id: str,
+        authority_ref: str,
+    ) -> ReviewerRequestView:
+        fulfillment = self._require_fulfillment()
+        return self._guarded(
+            lambda: fulfillment.reviewer_view(
+                tenant_id=context.tenant_id,
+                request_id=request_id,
+                actor_id=context.actor_id,
+                authority_ref=authority_ref,
+            )
+        )
+
+    def _reviewer_request_detail_view(
+        self,
+        context: TrustedActorContext,
+        request: InboxRequest,
+    ) -> RequestDetailView:
+        kind = self._request_kind(request)
+        if kind is None:
+            raise _not_delivered("a console vocabulary for this request kind")
+        authority_ref = self._principal_ref(context)
+        view = self._reviewer_view(context, request.request_id, authority_ref)
+        subject = view.subject
+        if subject is None:
+            raise ConsoleNotFound()
+        satisfied = any(decision.decision == "approve" for decision in view.own_decisions)
+        approval = ProposalApprovalView(
+            authority_ref=authority_ref,
+            authority_label=self._reviewer_authority_label(authority_ref),
+            reason=view.requirement.reason_code,
+            satisfied=satisfied,
+        )
+        authorization_summary = (
+            "Your required approval is recorded."
+            if satisfied
+            else "Your approval is required for this proposal."
+        )
+        proposal, quality_summary, freshness = self._reviewer_proposal(
+            request=request,
+            subject=subject,
+            approval=approval,
+            authorization_summary=authorization_summary,
+        )
+        history = self._guarded(
+            lambda: self._require_request_commands().list_transition_history(
+                context.tenant_id, request.request_id
+            )
+        )
+        return RequestDetailView(
+            request_id=request.request_id,
+            kind=kind,
+            state=_REQUEST_STATES[request.state],
+            title=self._request_title(request),
+            purpose=request.payload.purpose,
+            revision=request.revision,
+            proposal_digest=view.requirement.subject_digest,
+            proposal=proposal,
+            conversation=self._conversation_view(
+                request, self._conversation_entries(context, request.request_id)
+            ),
+            lifecycle=tuple(
+                LifecycleEventView(
+                    event_id=event.event_id,
+                    state=_REQUEST_STATES[event.to_state],
+                    summary=(
+                        f"The request moved from {event.from_state.value} to "
+                        f"{event.to_state.value}."
+                    ),
+                    occurred_at=event.created_at,
+                )
+                for event in history
+            ),
+            evidence=EvidenceContextView(
+                freshness=freshness,
+                quality_summary=quality_summary,
+                lineage_summary="Only the governed proposal references are shown.",
+                authorization_summary=authorization_summary,
+            ),
+            available_actions=(
+                ("approve", "reject", "request_changes")
+                if request.state is RequestState.AWAITING_APPROVAL and not view.own_decisions
+                else ()
+            ),
+        )
+
+    @classmethod
+    def _reviewer_proposal(
+        cls,
+        *,
+        request: InboxRequest,
+        subject: StakeholderAnswerDraft | AccessScopePreview | DisclosureDenial,
+        approval: ProposalApprovalView,
+        authorization_summary: str,
+    ) -> tuple[RequestProposalView, str, FreshnessState]:
+        if isinstance(subject, AccessScopePreview):
+            return (
+                AccessPreviewProposalView(
+                    kind="access_preview",
+                    purpose=request.payload.purpose,
+                    data_product_ref=f"artifact-{digest(subject.data_product_ref)}",
+                    data_product_reference=cls._artifact_view(subject.data_product_ref),
+                    effective_object_references=tuple(
+                        cls._artifact_view(item) for item in subject.effective_object_refs
+                    ),
+                    access_mode=subject.access_mode,
+                    requested_fields=subject.requested_fields,
+                    effective_scope=subject.effective_fields,
+                    exclusions=subject.excluded_scopes,
+                    expires_at=subject.expires_at,
+                    authority_summary=authorization_summary,
+                    required_approvals=(approval,),
+                ),
+                (
+                    f"{len(subject.effective_fields)} field(s) remain in scope and "
+                    f"{len(subject.excluded_scopes)} scope(s) were excluded."
+                ),
+                "not_applicable",
+            )
+        if isinstance(subject, StakeholderAnswerDraft):
+            return (
+                StakeholderAnswerProposalView(
+                    kind="stakeholder_answer",
+                    purpose=request.payload.purpose,
+                    candidate=subject.answer_text,
+                    metric_version=(
+                        "See exact metric references" if subject.metric_refs else "No metric cited"
+                    ),
+                    metric_references=tuple(
+                        cls._artifact_view(item) for item in subject.metric_refs
+                    ),
+                    lineage_references=tuple(
+                        cls._artifact_view(item) for item in subject.lineage_refs
+                    ),
+                    quality_references=tuple(
+                        cls._artifact_view(item) for item in subject.material_quality_limitations
+                    ),
+                    as_of=subject.as_of,
+                    freshness=subject.freshness_disposition,
+                    lineage_summary="Only the governed references shown here are in scope.",
+                    authorization_summary=authorization_summary,
+                    required_approvals=(approval,),
+                ),
+                "Review the governed answer and cited references.",
+                subject.freshness_disposition,
+            )
+        return (
+            DisclosureDenialProposalView(
+                kind="disclosure_denial",
+                explanation=subject.requester_safe_explanation,
+                reason_code=subject.reason_code,
+                required_approvals=(approval,),
+            ),
+            "Review the proposed disclosure denial.",
+            "not_applicable",
+        )
+
+    @staticmethod
+    def _reviewer_authority_label(authority_ref: str) -> str:
+        role_prefix = "role:"
+        if authority_ref.startswith(role_prefix):
+            return authority_ref[len(role_prefix) :].replace("_", " ").capitalize()
+        return "Required approver"
+
     def _require_held_requirement(
         self,
         proposals: tuple[FulfillmentProposal, ...],
@@ -1631,6 +2763,15 @@ class GovernedConsoleBackend:
             approval.actor_id == context.actor_id and approval.authority_ref == authority_ref
             for approval in view.approvals
         )
+        reviewed_proposal_digest = (
+            requirement.subject_digest
+            if requirement is not None
+            else (
+                digest(proposal.subject)
+                if proposal is not None and context.active_role == "data_architect"
+                else None
+            )
+        )
         return RequestDetailView(
             request_id=request.request_id,
             kind=kind,
@@ -1638,7 +2779,7 @@ class GovernedConsoleBackend:
             title=self._request_title(request),
             purpose=request.payload.purpose,
             revision=request.revision,
-            proposal_digest=None if requirement is None else requirement.subject_digest,
+            proposal_digest=reviewed_proposal_digest,
             proposal=self._proposal_view(
                 view, lambda authority_ref: self._authority_label(view, authority_ref)
             ),
@@ -1678,6 +2819,90 @@ class GovernedConsoleBackend:
                 if isinstance(request.payload, StakeholderQuestion)
                 else None
             ),
+            product_intent=self._product_intent_review_view(context, request),
+            access_lifecycle=self._access_lifecycle(context, request),
+        )
+
+    def _product_intent_candidate(
+        self, context: TrustedActorContext, request: InboxRequest
+    ) -> ProductIntentCandidate | None:
+        reader = self._product_intent_reviews
+        if reader is None:
+            return None
+        candidate = self._guarded(
+            lambda: reader.current_candidate(context.tenant_id, request.request_id)
+        )
+        if candidate is None:
+            return None
+        if (
+            candidate.tenant_id != context.tenant_id
+            or candidate.request_id != request.request_id
+            or candidate.request_revision != request.revision
+            or candidate.intent.request_id != request.request_id
+        ):
+            return None
+        return candidate
+
+    def _product_intent_review_view(
+        self, context: TrustedActorContext, request: InboxRequest
+    ) -> ProductIntentReviewView | None:
+        candidate = self._product_intent_candidate(context, request)
+        if candidate is None:
+            return None
+        commands = self._product_intent_commands
+        approvals = (
+            ()
+            if commands is None
+            else self._guarded(
+                lambda: commands.list_for_request(context.tenant_id, request.request_id)
+            )
+        )
+        matching_approval = next(
+            (
+                approval
+                for approval in reversed(approvals)
+                if approval.request_revision == request.revision
+                and approval.intent_digest == digest(candidate.intent)
+            ),
+            None,
+        )
+        intent = candidate.intent
+        return ProductIntentReviewView(
+            reviewed_digest=digest(intent),
+            approved=matching_approval is not None,
+            approved_intent_revision=(
+                None if matching_approval is None else matching_approval.intent_revision
+            ),
+            title=intent.title,
+            business_outcome=intent.business_outcome,
+            source_coverage=tuple(
+                ProductIntentSourceCoverageView(
+                    source_ref=coverage.source_ref,
+                    covered_fields=coverage.covered_fields,
+                    authorized=coverage.authorized,
+                )
+                for coverage in candidate.source_coverage
+            ),
+            grain=intent.grain.keys,
+            measures=tuple(
+                ProductIntentMeasureView(
+                    metric_ref=measure.metric_ref,
+                    aggregation=measure.aggregation,
+                )
+                for measure in intent.measures
+            ),
+            dimensions=tuple(dimension.dimension_ref for dimension in intent.dimensions),
+            filters=tuple(
+                ProductIntentFilterView(
+                    dimension_ref=filter_intent.dimension_ref,
+                    operator=filter_intent.operator,
+                    value=filter_intent.value,
+                )
+                for filter_intent in intent.filters
+            ),
+            freshness_seconds=intent.freshness.maximum_age_seconds,
+            outputs=intent.delivery.outputs,
+            unresolved_constraints=candidate.unresolved_constraints,
         )
 
     @staticmethod
@@ -2049,7 +3274,11 @@ class GovernedConsoleBackend:
 
     @staticmethod
     def _stage_states(
-        binding: WarehouseBinding | None, catalog_binding: CatalogBinding | None
+        binding: WarehouseBinding | None,
+        catalog_binding: CatalogBinding | None,
+        *,
+        process_package_available: bool,
+        process_package_recorded: bool,
     ) -> dict[SetupStage, SetupStageState]:
         foundation: SetupStageState = (
             "complete"
@@ -2067,6 +3296,14 @@ class GovernedConsoleBackend:
         }
         for stage in _UNDELIVERED_STAGES:
             states[stage] = "blocked"
+        prerequisites_ready = foundation == "complete" and managed == "complete"
+        states["business_process"] = (
+            "complete"
+            if process_package_recorded
+            else "current"
+            if process_package_available and prerequisites_ready
+            else "blocked"
+        )
         return states
 
     def _review_view(
@@ -2153,6 +3390,7 @@ class GovernedConsoleBackend:
         kind = self._request_kind(request)
         if kind is None:
             raise _not_delivered("a console vocabulary for this request kind")
+        access_lifecycle = self._access_lifecycle(context, request)
         return RequesterRequestView(
             request_id=request.request_id,
             kind=kind,
@@ -2161,6 +3399,7 @@ class GovernedConsoleBackend:
             requested_outcome=request.payload.purpose,
             revision=request.revision,
             updated_at=request.updated_at,
+            result_page_available=self._result_page_available(context, request),
             own_decisions=tuple(
                 OwnDecisionView(
                     decision=self._decision(decision.decision),
@@ -2202,7 +3441,101 @@ class GovernedConsoleBackend:
                     delivery_ref=view.delivery_id,
                 )
             ),
+            delivered_access=(
+                None
+                if view.delivered_access is None
+                or access_lifecycle is None
+                or access_lifecycle.state != "active"
+                else DeliveredAccessView(
+                    access_mode=view.delivered_access.access_mode,
+                    fields=view.delivered_access.fields,
+                    effective_at=view.delivered_access.effective_at,
+                    expires_at=view.delivered_access.expires_at,
+                    permissions=view.delivered_access.permissions,
+                )
+            ),
+            access_lifecycle=access_lifecycle,
         )
+
+    def _access_lifecycle(
+        self, context: TrustedActorContext, request: InboxRequest
+    ) -> AccessLifecycleView | None:
+        reader = self._access_grants
+        if reader is None or not isinstance(request.payload, DataAccessRequest):
+            return None
+        grant = self._guarded(
+            lambda: reader.load_current_for_request(context.tenant_id, request.request_id)
+        )
+        if grant is None:
+            return None
+        return self._access_lifecycle_view(context, request, grant)
+
+    def _access_lifecycle_view(
+        self,
+        context: TrustedActorContext,
+        request: InboxRequest,
+        grant: AccessGrant,
+    ) -> AccessLifecycleView:
+        if grant.tenant_id != context.tenant_id or grant.request_id != request.request_id:
+            raise console_error_for(
+                AccessGrantIntegrityError("access grant returned a different scope")
+            )
+        title, summary = self._access_lifecycle_copy(grant)
+        return AccessLifecycleView(
+            state=grant.state,
+            title=title,
+            summary=summary,
+            effective_at=grant.effective_at,
+            expires_at=grant.expires_at,
+            revision=grant.revision,
+            can_revoke=grant.state == "active",
+        )
+
+    @staticmethod
+    def _access_lifecycle_copy(grant: AccessGrant) -> tuple[str, str]:
+        if grant.state == "pending":
+            return (
+                "Access is being set up",
+                "Your approved access is being applied to each destination.",
+            )
+        if grant.state == "active":
+            return (
+                "Access is active",
+                f"Your approved access is available until {grant.expires_at.isoformat()}.",
+            )
+        if grant.state == "expired":
+            return (
+                "Access has expired",
+                "This access can no longer be used while destination cleanup finishes.",
+            )
+        if grant.state == "revocation_pending":
+            return (
+                "Access removal is in progress",
+                "Your access is already unavailable while destination cleanup finishes.",
+            )
+        if grant.state == "revoked":
+            return (
+                "Access has been removed",
+                "This access can no longer be used.",
+            )
+        action = "setup" if grant.failed_action == "apply" else "removal"
+        return (
+            f"Access {action} needs attention",
+            "Access remains unavailable while an administrator resolves the failure.",
+        )
+
+    def _result_page_available(self, context: TrustedActorContext, request: InboxRequest) -> bool:
+        if (
+            request.state is not RequestState.DELIVERED
+            or self._verified_answers is None
+            or self._answer_results is None
+        ):
+            return False
+        try:
+            _, answer, receipt = self._answer_result_authority(context, request.request_id)
+        except ConsoleNotFound:
+            return False
+        return receipt.outcome == "succeeded" and answer.result_ref is not None
 
     def _clarified_outcome(
         self, context: TrustedActorContext, request: InboxRequest

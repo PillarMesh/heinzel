@@ -2,12 +2,18 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from pillarmesh_contract_model import ArtifactReference, digest
 from pillarmesh_request_management import (
+    AccessGrantAdmissionBinding,
+    AccessGrantDeliveryObservation,
+    AccessGrantEffectTarget,
     AccessScopePreview,
+    FulfillmentAuthorityError,
     FulfillmentGroundingSnapshot,
     FulfillmentPolicyCompiler,
     FulfillmentPolicySnapshot,
+    FulfillmentReadService,
     FulfillmentService,
     InboxRequest,
     RequestManagementService,
@@ -108,7 +114,47 @@ class RoleResolver:
             ("requester-a", "principal:requester-a"),
             ("architect-a", "role:data_engineering_architect"),
             ("policy-a", "role:policy_authority"),
+            ("owner-a", "owner:product-revenue"),
         }
+
+
+class GrantAdmissionResolver:
+    def bind(
+        self,
+        *,
+        tenant_id: str,
+        request: InboxRequest,
+        proposal: object,
+        policy: FulfillmentPolicySnapshot,
+    ) -> AccessGrantAdmissionBinding:
+        assert tenant_id == request.tenant_id == policy.tenant_id == "tenant-a"
+        return AccessGrantAdmissionBinding(
+            grant_id="grant-request-1",
+            proposal_digest=digest(proposal),
+            entitlement_snapshot_digest="e" * 64,
+            policy_revision=4,
+            effective_at=NOW,
+            permissions=("query", "view"),
+            targets=(
+                AccessGrantEffectTarget(
+                    surface="result", provider_resource_ref="result:product-revenue"
+                ),
+                AccessGrantEffectTarget(
+                    surface="warehouse", provider_resource_ref="relation:product-revenue"
+                ),
+            ),
+        )
+
+
+class GrantActivationReader:
+    def __init__(self, observation: AccessGrantDeliveryObservation | None = None) -> None:
+        self.observation = observation
+
+    def read_active(
+        self, *, tenant_id: str, request_id: str, grant_id: str
+    ) -> AccessGrantDeliveryObservation | None:
+        del tenant_id, request_id, grant_id
+        return self.observation
 
 
 class UnusedAnswerProvider:
@@ -121,7 +167,12 @@ class CurrentFreshness:
         return "unknown"
 
 
-def setup(*, permitted: bool = True):
+def setup(
+    *,
+    permitted: bool = True,
+    configure_grant_resolver: bool = True,
+    grant_activation_reader: GrantActivationReader | None = None,
+):
     request_repository = SQLiteRequestRepository.open(":memory:")
     requests = RequestManagementService(request_repository, clock=lambda: NOW)
     repository = SQLiteFulfillmentRepository(request_repository)
@@ -133,6 +184,10 @@ def setup(*, permitted: bool = True):
         access_candidate_provider=PreviewProvider(),
         data_product_owner_resolver=OwnerResolver(),
         authority_role_resolver=RoleResolver(),
+        access_grant_admission_resolver=(
+            GrantAdmissionResolver() if configure_grant_resolver else None
+        ),
+        access_grant_activation_reader=grant_activation_reader,
         policy_compiler=FulfillmentPolicyCompiler(freshness_evaluator=CurrentFreshness()),
         clock=lambda: NOW,
     )
@@ -157,6 +212,131 @@ def setup(*, permitted: bool = True):
     return fulfillment, requests, repository, requests.get("tenant-a", submitted.request_id)
 
 
+def _admit_access(fulfillment: FulfillmentService, investigating: InboxRequest):
+    proposal = fulfillment.propose_access(
+        tenant_id="tenant-a",
+        request_id=investigating.request_id,
+        actor_id="architect-a",
+        expected_revision=investigating.revision,
+    )
+    awaiting = fulfillment.submit_proposal(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="architect-a",
+        expected_revision=proposal.request_revision,
+    )
+    actors = {
+        "owner:product-revenue": "owner-a",
+        "principal:requester-a": "requester-a",
+        "role:policy_authority": "policy-a",
+    }
+    for requirement in proposal.required_approvals:
+        fulfillment.record_approval(
+            tenant_id="tenant-a",
+            request_id=proposal.request_id,
+            actor_id=actors[requirement.authority_ref],
+            authority_ref=requirement.authority_ref,
+            subject_digest=requirement.subject_digest,
+            decision="approve",
+            expected_revision=awaiting.revision,
+        )
+    return proposal, fulfillment.admit(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="architect-a",
+        expected_revision=awaiting.revision,
+    )
+
+
+def test_active_access_grant_delivers_the_request_with_requester_safe_terms() -> None:
+    activation = GrantActivationReader()
+    fulfillment, requests, repository, investigating = setup(grant_activation_reader=activation)
+    proposal, admission = _admit_access(fulfillment, investigating)
+    activation.observation = AccessGrantDeliveryObservation(
+        grant_id="grant-request-1",
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        proposal_digest=digest(proposal),
+        entitlement_snapshot_digest="e" * 64,
+        policy_revision=4,
+        effective_at=NOW,
+        expires_at=NOW + timedelta(days=1),
+        permissions=("query", "view"),
+        targets=(
+            AccessGrantEffectTarget(
+                surface="result", provider_resource_ref="result:product-revenue"
+            ),
+            AccessGrantEffectTarget(
+                surface="warehouse", provider_resource_ref="relation:product-revenue"
+            ),
+        ),
+        effect_receipt_refs=(reference("effect-result"), reference("effect-warehouse")),
+    )
+
+    delivery = fulfillment.execute_access(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="pillarmesh-access-control",
+        expected_revision=admission.resulting_request_revision,
+    )
+
+    assert delivery.access_mode == "query"
+    assert delivery.fields == ("invoice_id",)
+    assert delivery.expires_at == NOW + timedelta(days=1)
+    assert requests.get("tenant-a", proposal.request_id).state is RequestState.DELIVERED
+    assert repository.list_access_deliveries("tenant-a", proposal.request_id) == (delivery,)
+    requester_view = FulfillmentReadService(
+        request_service=requests,
+        repository=repository,
+        authority_role_resolver=RoleResolver(),
+    ).requester_view(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="requester-a",
+    )
+    assert requester_view.delivered_access is not None
+    assert requester_view.delivered_access.access_mode == "query"
+    assert requester_view.delivered_access.fields == ("invoice_id",)
+    assert "grant_id" not in requester_view.delivered_access.model_dump()
+
+
+def test_access_delivery_rejects_activation_that_does_not_match_admission() -> None:
+    activation = GrantActivationReader()
+    fulfillment, requests, repository, investigating = setup(grant_activation_reader=activation)
+    proposal, admission = _admit_access(fulfillment, investigating)
+    activation.observation = AccessGrantDeliveryObservation(
+        grant_id="grant-request-1",
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        proposal_digest=digest(proposal),
+        entitlement_snapshot_digest="f" * 64,
+        policy_revision=4,
+        effective_at=NOW,
+        expires_at=NOW + timedelta(days=1),
+        permissions=("query", "view"),
+        targets=(
+            AccessGrantEffectTarget(
+                surface="result", provider_resource_ref="result:product-revenue"
+            ),
+            AccessGrantEffectTarget(
+                surface="warehouse", provider_resource_ref="relation:product-revenue"
+            ),
+        ),
+        effect_receipt_refs=(reference("effect-result"), reference("effect-warehouse")),
+    )
+
+    with pytest.raises(FulfillmentAuthorityError, match="active access authority does not match"):
+        fulfillment.execute_access(
+            tenant_id="tenant-a",
+            request_id=proposal.request_id,
+            actor_id="pillarmesh-access-control",
+            expected_revision=admission.resulting_request_revision,
+        )
+
+    assert requests.get("tenant-a", proposal.request_id).state is RequestState.EXECUTING
+    assert repository.list_access_deliveries("tenant-a", proposal.request_id) == ()
+
+
 def test_access_proposal_is_narrowed_and_requires_exact_owner_and_policy() -> None:
     fulfillment, requests, _, investigating = setup()
 
@@ -175,6 +355,94 @@ def test_access_proposal_is_narrowed_and_requires_exact_owner_and_policy() -> No
         "role:policy_authority",
     )
     assert requests.get("tenant-a", investigating.request_id).state is RequestState.PROPOSED
+
+
+def test_access_admission_persists_current_grant_authority_with_the_approved_proposal() -> None:
+    fulfillment, _, repository, investigating = setup()
+    proposal = fulfillment.propose_access(
+        tenant_id="tenant-a",
+        request_id=investigating.request_id,
+        actor_id="architect-a",
+        expected_revision=investigating.revision,
+    )
+    awaiting = fulfillment.submit_proposal(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="architect-a",
+        expected_revision=proposal.request_revision,
+    )
+    actors = {
+        "owner:product-revenue": "owner-a",
+        "principal:requester-a": "requester-a",
+        "role:policy_authority": "policy-a",
+    }
+    for requirement in proposal.required_approvals:
+        fulfillment.record_approval(
+            tenant_id="tenant-a",
+            request_id=proposal.request_id,
+            actor_id=actors[requirement.authority_ref],
+            authority_ref=requirement.authority_ref,
+            subject_digest=requirement.subject_digest,
+            decision="approve",
+            expected_revision=awaiting.revision,
+        )
+
+    admission = fulfillment.admit(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="architect-a",
+        expected_revision=awaiting.revision,
+    )
+
+    assert admission.access_grant_binding is not None
+    assert admission.access_grant_binding.proposal_digest == digest(proposal)
+    assert admission.access_grant_binding.permissions == ("query", "view")
+    assert tuple(target.surface for target in admission.access_grant_binding.targets) == (
+        "result",
+        "warehouse",
+    )
+    assert repository.list_admissions("tenant-a", proposal.request_id) == (admission,)
+
+
+def test_access_admission_fails_closed_without_current_grant_authority() -> None:
+    fulfillment, _, repository, investigating = setup(configure_grant_resolver=False)
+    proposal = fulfillment.propose_access(
+        tenant_id="tenant-a",
+        request_id=investigating.request_id,
+        actor_id="architect-a",
+        expected_revision=investigating.revision,
+    )
+    awaiting = fulfillment.submit_proposal(
+        tenant_id="tenant-a",
+        request_id=proposal.request_id,
+        actor_id="architect-a",
+        expected_revision=proposal.request_revision,
+    )
+    actors = {
+        "owner:product-revenue": "owner-a",
+        "principal:requester-a": "requester-a",
+        "role:policy_authority": "policy-a",
+    }
+    for requirement in proposal.required_approvals:
+        fulfillment.record_approval(
+            tenant_id="tenant-a",
+            request_id=proposal.request_id,
+            actor_id=actors[requirement.authority_ref],
+            authority_ref=requirement.authority_ref,
+            subject_digest=requirement.subject_digest,
+            decision="approve",
+            expected_revision=awaiting.revision,
+        )
+
+    with pytest.raises(FulfillmentAuthorityError, match="resolver is not configured"):
+        fulfillment.admit(
+            tenant_id="tenant-a",
+            request_id=proposal.request_id,
+            actor_id="architect-a",
+            expected_revision=awaiting.revision,
+        )
+
+    assert repository.list_admissions("tenant-a", proposal.request_id) == ()
 
 
 def test_unentitled_access_creates_denial_without_dependency() -> None:

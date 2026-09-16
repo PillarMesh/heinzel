@@ -1,30 +1,56 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import runpy
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from pillarmesh_bi_control import (
+    DashboardAnswerAuthority,
+    DashboardControlService,
+    DashboardDesiredState,
+    DashboardProductGenerationReference,
+    SQLiteDashboardRepository,
+)
 from pillarmesh_console.contracts import (
+    AccessRevocationCommand,
     AdmissionCommand,
     CreateRequestCommand,
+    DecisionCommand,
     ProposalPreparationCommand,
     RequestClarificationCommand,
     WarehouseBindingCommand,
 )
-from pillarmesh_console.errors import ConsoleUnavailable
 from pillarmesh_console.governed_backend import _catalog_classification_label
 from pillarmesh_console.request_intake import request_intake_content
 from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import RequestState, SQLiteRequestRepository
+from pillarmesh_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
+from pillarmesh_request_management import (
+    DeliveryIntent,
+    DimensionIntent,
+    FreshnessObjective,
+    Grain,
+    MeasureIntent,
+    ProductIntent,
+    ProductIntentConstraints,
+    ProductIntentSourceCoverage,
+    RequestState,
+    SQLiteRequestRepository,
+)
+from pillarmesh_warehouse_control import EngineKind
 from starlette.testclient import TestClient
 
 import tests.acceptance.console_postgresql_engine as postgresql_engine
 from tests.acceptance.run_console_governed import (
     ARCHITECT,
     ARCHITECT_PRINCIPAL,
+    DATA_OWNER,
+    IMPACT_OWNER,
+    POLICY_APPROVER,
     REQUESTER,
     REQUESTER_PRINCIPAL,
     TENANT,
@@ -36,6 +62,19 @@ from tests.acceptance.run_console_governed import (
 from tests.acceptance.run_plan3b import ScenarioAnswerProvider
 
 _NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
+
+
+class _AcceptanceDashboardProvider:
+    provider_kind = "superset"
+
+    def apply(self, definition: BiDashboardDefinition) -> BiApplyResult:
+        return BiApplyResult(
+            stable_external_key=definition.stable_external_key,
+            desired_digest=definition.desired_digest,
+            lifecycle_state=definition.lifecycle_state,
+            external_url=f"https://superset.invalid/dashboard/{definition.stable_external_key}",
+            provider_version="acceptance-v1",
+        )
 
 
 class _RecordingAnswerProvider(ScenarioAnswerProvider):
@@ -108,6 +147,25 @@ def test_the_deployment_composes_the_supplied_answer_provider(tmp_path: Path) ->
         running.close()
 
     assert provider.calls == 1
+
+
+def test_deployment_projects_bound_impact_with_safe_labels(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    seeded = deployment.seed()
+
+    with TestClient(deployment.build_app(actor=ARCHITECT)) as client:
+        response = client.get(f"/api/v1/inbox/{seeded.request_id}/impact")
+
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["subject_label"] == "Net revenue"
+    assert payload["validated_impacts"][0]["label"] == "Revenue data product"
+    assert payload["validated_impacts"][0]["owner_label"] == "Finance data owner"
+    assert payload["added_approvers"][0]["authority_label"] == "Finance data owner"
+    serialized = response.text
+    assert "context-graph" not in serialized
+    assert "contract-revenue" not in serialized
 
 
 def test_published_semantic_term_resolves_without_an_exact_scenario_string(
@@ -318,7 +376,7 @@ def test_interactive_transactions_use_the_wall_clock(tmp_path: Path) -> None:
     assert before <= request.updated_at <= after
 
 
-def test_governed_runtime_refuses_unfulfillable_data_access_intake(
+def test_governed_runtime_accepts_data_access_intake_for_owned_fulfillment(
     deployment: GovernedConsoleDeployment,
 ) -> None:
     command = CreateRequestCommand.model_validate(
@@ -331,16 +389,319 @@ def test_governed_runtime_refuses_unfulfillable_data_access_intake(
                 "kind": "data_access",
                 "purpose": "Prepare the quarterly review.",
                 "data_product_ref": "product-revenue",
-                "requested_fields": ["net_revenue"],
-                "access_mode": "export",
-                "expires_at": "2026-10-01T00:00:00Z",
+                "requested_fields": ["net-revenue"],
+                "access_mode": "query",
+                "expires_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
             },
         }
     )
     command = command.model_copy(update={"request_digest": digest(request_intake_content(command))})
 
-    with pytest.raises(ConsoleUnavailable, match="Data access requests are not available"):
-        deployment.backend.create_request(_context(REQUESTER), command)
+    created = deployment.backend.create_request(_context(REQUESTER), command)
+
+    assert created.kind == "data_access"
+    assert created.state == "submitted"
+
+
+def test_governed_runtime_applies_and_delivers_approved_access(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    intent, _, _ = deployment.publication_repository.load_publication(
+        tenant_id=TENANT,
+        publication_id=deployment.active_publication_id,
+    )
+    _, contract = deployment.publication_repository.load_inputs(
+        tenant_id=TENANT,
+        operation_id=intent.operation_id,
+    )
+    field = intent.semantic_objects[0].object_id
+    expires_at = datetime.now(UTC) + timedelta(days=1)
+    command = CreateRequestCommand.model_validate(
+        {
+            "expected_revision": 1,
+            "request_digest": "0" * 64,
+            "active_role": "requester",
+            "title": "Governed revenue access",
+            "request": {
+                "kind": "data_access",
+                "purpose": "Review the governed revenue definition.",
+                "data_product_ref": contract.destination_product.product_name,
+                "requested_fields": [field, "unpublished-field"],
+                "access_mode": "query",
+                "expires_at": expires_at.isoformat(),
+            },
+        }
+    )
+    command = command.model_copy(update={"request_digest": digest(request_intake_content(command))})
+    created = deployment.backend.create_request(_context(REQUESTER), command)
+    request = deployment.requests.get(TENANT, created.request_id)
+    deployment.fulfillment.clarify_outcome(
+        tenant_id=TENANT,
+        request_id=request.request_id,
+        actor_id=ARCHITECT,
+        restated_request="Provide query access to the published revenue field.",
+        in_scope_summary="The published revenue field.",
+        out_of_scope_summary="Unpublished fields.",
+        expected_revision=request.revision,
+    )
+    investigating = deployment.requests.get(TENANT, request.request_id)
+    proposal = deployment.fulfillment.propose_access(
+        tenant_id=TENANT,
+        request_id=request.request_id,
+        actor_id=ARCHITECT,
+        expected_revision=investigating.revision,
+    )
+    awaiting = deployment.fulfillment.submit_proposal(
+        tenant_id=TENANT,
+        request_id=request.request_id,
+        actor_id=ARCHITECT,
+        expected_revision=proposal.request_revision,
+    )
+    actors = {
+        REQUESTER_PRINCIPAL: REQUESTER,
+        IMPACT_OWNER: DATA_OWNER,
+        "role:policy_authority": POLICY_APPROVER,
+    }
+    for requirement in proposal.required_approvals:
+        deployment.fulfillment.record_approval(
+            tenant_id=TENANT,
+            request_id=request.request_id,
+            actor_id=actors[requirement.authority_ref],
+            authority_ref=requirement.authority_ref,
+            subject_digest=requirement.subject_digest,
+            decision="approve",
+            expected_revision=awaiting.revision,
+        )
+    detail = deployment.backend.get_request_detail(_context(ARCHITECT), request.request_id)
+    assert detail.proposal_digest is not None
+
+    delivered = deployment.backend.admit_request(
+        _context(ARCHITECT),
+        request.request_id,
+        AdmissionCommand(
+            expected_revision=awaiting.revision,
+            reviewed_digest=detail.proposal_digest,
+            active_role="data_architect",
+        ),
+    )
+    requester = next(
+        item
+        for item in deployment.backend.get_requester_requests(_context(REQUESTER))
+        if item.request_id == request.request_id
+    )
+
+    assert delivered.state == "delivered"
+    assert requester.delivered_access is not None
+    assert requester.delivered_access.fields == (field,)
+    assert "grant_id" not in requester.delivered_access.model_dump()
+    assert requester.access_lifecycle is not None
+    assert requester.access_lifecycle.state == "active"
+    assert requester.access_lifecycle.title == "Access is active"
+    assert "grant-" not in requester.model_dump_json()
+
+    revoked = deployment.backend.revoke_access(
+        _context(REQUESTER),
+        request.request_id,
+        AccessRevocationCommand(
+            expected_revision=requester.access_lifecycle.revision,
+            active_role="requester",
+            reason="The governed review is complete.",
+        ),
+    )
+    refreshed = next(
+        item
+        for item in deployment.backend.get_requester_requests(_context(REQUESTER))
+        if item.request_id == request.request_id
+    )
+    architect_detail = deployment.backend.get_request_detail(
+        _context(ARCHITECT), request.request_id
+    )
+
+    assert revoked.state == "revoked"
+    assert not revoked.can_revoke
+    assert refreshed.access_lifecycle == revoked
+    assert architect_detail.access_lifecycle == revoked
+    assert "grant-" not in revoked.model_dump_json()
+
+
+def test_requester_dashboard_disappears_after_authoritative_access_revocation(
+    tmp_path: Path,
+) -> None:
+    dashboard_repository = SQLiteDashboardRepository(str(tmp_path / "dashboards.sqlite3"))
+    dashboard_control = DashboardControlService(
+        dashboard_repository,
+        _AcceptanceDashboardProvider(),
+        clock=lambda: _NOW,
+    )
+    deployment = GovernedConsoleDeployment(tmp_path, dashboards=dashboard_control)
+    try:
+        intent, _, _ = deployment.publication_repository.load_publication(
+            tenant_id=TENANT,
+            publication_id=deployment.active_publication_id,
+        )
+        _, contract = deployment.publication_repository.load_inputs(
+            tenant_id=TENANT,
+            operation_id=intent.operation_id,
+        )
+        field = intent.semantic_objects[0].object_id
+        command = CreateRequestCommand.model_validate(
+            {
+                "expected_revision": 1,
+                "request_digest": "0" * 64,
+                "active_role": "requester",
+                "title": "Governed revenue dashboard",
+                "request": {
+                    "kind": "data_access",
+                    "purpose": "Review the governed revenue dashboard.",
+                    "data_product_ref": contract.destination_product.product_name,
+                    "requested_fields": [field],
+                    "access_mode": "dashboard",
+                    "expires_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+                },
+            }
+        )
+        command = command.model_copy(
+            update={"request_digest": digest(request_intake_content(command))}
+        )
+        created = deployment.backend.create_request(_context(REQUESTER), command)
+        request = deployment.requests.get(TENANT, created.request_id)
+        deployment.fulfillment.clarify_outcome(
+            tenant_id=TENANT,
+            request_id=request.request_id,
+            actor_id=ARCHITECT,
+            restated_request="Provide dashboard access to the published revenue field.",
+            in_scope_summary="The published revenue field.",
+            out_of_scope_summary="Unpublished fields.",
+            expected_revision=request.revision,
+        )
+        investigating = deployment.requests.get(TENANT, request.request_id)
+        proposal = deployment.fulfillment.propose_access(
+            tenant_id=TENANT,
+            request_id=request.request_id,
+            actor_id=ARCHITECT,
+            expected_revision=investigating.revision,
+        )
+        awaiting = deployment.fulfillment.submit_proposal(
+            tenant_id=TENANT,
+            request_id=request.request_id,
+            actor_id=ARCHITECT,
+            expected_revision=proposal.request_revision,
+        )
+        actors = {
+            REQUESTER_PRINCIPAL: REQUESTER,
+            ARCHITECT_PRINCIPAL: ARCHITECT,
+            IMPACT_OWNER: DATA_OWNER,
+            "role:policy_authority": POLICY_APPROVER,
+        }
+        for requirement in proposal.required_approvals:
+            deployment.fulfillment.record_approval(
+                tenant_id=TENANT,
+                request_id=request.request_id,
+                actor_id=actors[requirement.authority_ref],
+                authority_ref=requirement.authority_ref,
+                subject_digest=requirement.subject_digest,
+                decision="approve",
+                expected_revision=awaiting.revision,
+            )
+        detail = deployment.backend.get_request_detail(_context(ARCHITECT), request.request_id)
+        assert detail.proposal_digest is not None
+        deployment.backend.admit_request(
+            _context(ARCHITECT),
+            request.request_id,
+            AdmissionCommand(
+                expected_revision=awaiting.revision,
+                reviewed_digest=detail.proposal_digest,
+                active_role="data_architect",
+            ),
+        )
+        grant = deployment.access_grants.load_current_for_request(TENANT, request.request_id)
+        assert grant is not None
+
+        metric_ref = ArtifactReference(artifact_id=field, version=1, digest="3" * 64)
+        dashboard_control.apply(
+            DashboardDesiredState(
+                tenant_id=TENANT,
+                dashboard_id="governed-revenue",
+                version=1,
+                revision=1,
+                prior_desired_digest=None,
+                title="Governed revenue dashboard",
+                contract_digest="4" * 64,
+                contract_key_id="acceptance-key",
+                contract_signature="acceptance-signature",
+                source_answer=DashboardAnswerAuthority(
+                    tenant_id=TENANT,
+                    request_id=request.request_id,
+                    request_revision=grant.revision,
+                    answer_id="answer-dashboard-access",
+                    title="Governed revenue dashboard",
+                    execution_receipt_ref="execution-dashboard-access",
+                    result_ref="result-dashboard-access",
+                    result_digest="5" * 64,
+                    product_generation_refs=(
+                        DashboardProductGenerationReference(
+                            product_ref=grant.data_product_version_ref,
+                            generation=1,
+                        ),
+                    ),
+                    metric_version_refs=(metric_ref,),
+                    as_of=_NOW,
+                    freshness_disposition="current",
+                    delivered_at=_NOW,
+                ),
+                dataset_product_ref=grant.data_product_version_ref,
+                dataset_generation=1,
+                consumption_object_ref=ArtifactReference(
+                    artifact_id="consumption:governed-revenue", version=1, digest="6" * 64
+                ),
+                materialization_receipt_ref=ArtifactReference(
+                    artifact_id="materialization:governed-revenue", version=1, digest="7" * 64
+                ),
+                product_publication_ref=ArtifactReference(
+                    artifact_id="publication:governed-revenue", version=1, digest="8" * 64
+                ),
+                dataset_namespace="analytics",
+                dataset_relation_name="governed_revenue",
+                warehouse_binding_id="warehouse-governed",
+                warehouse_binding_revision=1,
+                warehouse_binding_digest="9" * 64,
+                connection_secret_ref="secret://governed/superset",
+                metric_refs=(metric_ref,),
+                dimension_refs=(),
+                filter_refs=(),
+                visual_intents=("table",),
+                lifecycle_state="active",
+            )
+        )
+
+        with TestClient(deployment.build_app(actor=REQUESTER)) as client:
+            current = client.get("/api/v1/dashboards")
+            lifecycle = next(
+                item
+                for item in deployment.backend.get_requester_requests(_context(REQUESTER))
+                if item.request_id == request.request_id
+            ).access_lifecycle
+            assert lifecycle is not None
+            deployment.backend.revoke_access(
+                _context(REQUESTER),
+                request.request_id,
+                AccessRevocationCommand(
+                    expected_revision=lifecycle.revision,
+                    active_role="requester",
+                    reason="The dashboard review is complete.",
+                ),
+            )
+            revoked = client.get("/api/v1/dashboards")
+
+        assert current.status_code == 200
+        assert [item["display_name"] for item in current.json()["data"]["dashboards"]] == [
+            "Governed revenue dashboard"
+        ]
+        assert revoked.status_code == 200
+        assert revoked.json()["data"]["dashboards"] == []
+    finally:
+        deployment.close()
+        dashboard_repository.close()
 
 
 def test_interactive_actor_identifiers_are_projected_as_display_names(
@@ -557,6 +918,7 @@ def test_the_seeded_decision_reaches_the_architect_inbox(
     assert {approval["authority_ref"]: approval["authority_label"] for approval in approvals} == {
         REQUESTER_PRINCIPAL: "Requester",
         ARCHITECT_PRINCIPAL: "Data engineering architect",
+        IMPACT_OWNER: "Finance data owner",
     }
 
 
@@ -654,6 +1016,7 @@ def test_admission_executes_and_delivers_the_admitted_answer(
     actors = {
         REQUESTER_PRINCIPAL: REQUESTER,
         ARCHITECT_PRINCIPAL: ARCHITECT,
+        IMPACT_OWNER: DATA_OWNER,
     }
     for requirement in proposal.required_approvals:
         deployment.fulfillment.record_approval(
@@ -693,7 +1056,11 @@ def test_a_delivery_that_fails_after_admission_can_be_retried(
     seeded = deployment.seed()
     proposal = deployment.fulfillment_repository.list_proposals(TENANT, seeded.request_id)[-1]
     request = deployment.requests.get(TENANT, seeded.request_id)
-    actors = {REQUESTER_PRINCIPAL: REQUESTER, ARCHITECT_PRINCIPAL: ARCHITECT}
+    actors = {
+        REQUESTER_PRINCIPAL: REQUESTER,
+        ARCHITECT_PRINCIPAL: ARCHITECT,
+        IMPACT_OWNER: DATA_OWNER,
+    }
     for requirement in proposal.required_approvals:
         deployment.fulfillment.record_approval(
             tenant_id=TENANT,
@@ -764,7 +1131,8 @@ def test_data_access_intake_availability_is_published_as_a_capability(
     }
 
     # The browser gates intake on this capability, so it must say what the server will accept.
-    assert governed["data-access-intake"].state == "not_delivered"
+    assert governed["data-access-intake"].state == "ready"
+    assert "expires automatically" in governed["data-access-intake"].detail
     assert fixture["data-access-intake"].state == "ready"
 
 
@@ -816,6 +1184,104 @@ def test_the_actor_header_selects_the_requester_surface(
     assert unknown.json()["data"]["active_role"] == "data_architect"
 
 
+def test_access_approvers_can_open_the_request_their_authority_must_decide(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    command = CreateRequestCommand.model_validate(
+        {
+            "expected_revision": 1,
+            "request_digest": "0" * 64,
+            "active_role": "requester",
+            "title": "Governed revenue access",
+            "request": {
+                "kind": "data_access",
+                "purpose": "Review the governed revenue definition.",
+                "data_product_ref": "product-revenue",
+                "requested_fields": ["net-revenue"],
+                "access_mode": "query",
+                "expires_at": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
+            },
+        }
+    )
+    command = command.model_copy(update={"request_digest": digest(request_intake_content(command))})
+    created = deployment.backend.create_request(_context(REQUESTER), command)
+    clarified = deployment.backend.clarify_request(
+        _context(ARCHITECT),
+        created.request_id,
+        RequestClarificationCommand(
+            expected_revision=created.revision,
+            active_role="data_architect",
+            restated_request="Provide query access to the published revenue field.",
+            in_scope_summary="The published revenue field.",
+            out_of_scope_summary="Unpublished fields.",
+        ),
+    )
+    prepared = deployment.backend.prepare_request_proposal(
+        _context(ARCHITECT),
+        created.request_id,
+        ProposalPreparationCommand(
+            expected_revision=clarified.revision,
+            active_role="data_architect",
+        ),
+    )
+    deployment.backend.submit_request_proposal(
+        _context(ARCHITECT),
+        created.request_id,
+        ProposalPreparationCommand(
+            expected_revision=prepared.revision,
+            active_role="data_architect",
+        ),
+    )
+
+    with TestClient(deployment.build_app()) as client:
+        owner = client.get(
+            f"/api/v1/inbox/{created.request_id}",
+            headers={"x-pillarmesh-actor": DATA_OWNER},
+        )
+        policy = client.get(
+            f"/api/v1/inbox/{created.request_id}",
+            headers={"x-pillarmesh-actor": POLICY_APPROVER},
+        )
+
+    assert owner.status_code == 200
+    assert owner.json()["data"]["proposal"]["required_approvals"][0]["authority_label"] == (
+        "Finance data owner"
+    )
+    assert policy.status_code == 200
+    assert policy.json()["data"]["proposal"]["required_approvals"][0]["authority_label"] == (
+        "Policy authority"
+    )
+
+    owner_view = deployment.backend.get_request_detail(_context(DATA_OWNER), created.request_id)
+    policy_view = deployment.backend.get_request_detail(
+        _context(POLICY_APPROVER), created.request_id
+    )
+    assert owner_view.proposal_digest is not None
+    assert policy_view.proposal_digest is not None
+    deployment.backend.decide_request(
+        _context(DATA_OWNER),
+        created.request_id,
+        DecisionCommand(
+            expected_revision=owner_view.revision,
+            reviewed_digest=owner_view.proposal_digest,
+            active_role="data_owner",
+            decision="approve",
+        ),
+    )
+    decided_policy = deployment.backend.decide_request(
+        _context(POLICY_APPROVER),
+        created.request_id,
+        DecisionCommand(
+            expected_revision=policy_view.revision,
+            reviewed_digest=policy_view.proposal_digest,
+            active_role="policy_approver",
+            decision="approve",
+        ),
+    )
+
+    assert decided_policy.available_actions == ()
+
+
 def test_the_catalog_capability_is_delivered_rather_than_reported_as_unwired(
     deployment: GovernedConsoleDeployment,
 ) -> None:
@@ -835,6 +1301,167 @@ def test_the_catalog_capability_is_delivered_rather_than_reported_as_unwired(
         if capability["capability_id"] == "catalog-binding"
     )
     assert catalog["state"] != "not_delivered"
+
+
+def test_markdown_process_package_is_persisted_and_invalid_shapes_are_denied(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    narrative = "# Revenue to cash\n\nInvoice settlement closes the process.\n"
+    manifest = {
+        "process_name": "Revenue to cash",
+        "owner": "Finance operations",
+        "participants": ["Billing", "Finance"],
+        "outcomes": ["Settled invoice"],
+        "entities": ["Invoice"],
+        "events": ["Invoice settled"],
+        "states": ["settled"],
+        "rules": ["Only settled invoices close"],
+        "source_references": ["billing-postgresql"],
+        "unresolved_questions": [],
+    }
+
+    with TestClient(deployment.build_app()) as client:
+        session = client.get("/api/v1/session").json()["data"]
+        headers = {
+            "Origin": "http://127.0.0.1:8000",
+            "X-CSRF-Token": session["csrf_token"],
+            "Idempotency-Key": "process-package-acceptance-1",
+        }
+        payload = {
+            "expected_revision": 1,
+            "package_digest": hashlib.sha256(narrative.encode()).hexdigest(),
+            "active_role": "data_architect",
+            "file_name": "revenue-to-cash.md",
+            "media_type": "text/markdown; charset=utf-8",
+            "narrative_markdown": narrative,
+            "manifest": manifest,
+        }
+        accepted = client.post("/api/v1/setup/process-packages", headers=headers, json=payload)
+        invalid_manifest = client.post(
+            "/api/v1/setup/process-packages",
+            headers=headers | {"Idempotency-Key": "process-package-invalid-manifest"},
+            json=payload | {"manifest": manifest | {"invented_authority": True}},
+        )
+        unsupported_media = client.post(
+            "/api/v1/setup/process-packages",
+            headers=headers | {"Idempotency-Key": "process-package-unsupported-media"},
+            json=payload | {"media_type": "application/pdf", "file_name": "process.pdf"},
+        )
+
+    assert accepted.status_code == 200
+    operation = accepted.json()["data"]
+    assert operation["state"] == "succeeded"
+    assert operation["revision"] == 1
+    latest = deployment.process_packages.latest(TENANT)
+    assert latest is not None
+    package_id = latest.receipt.package_id
+    assert operation["summary"] == "Business process package saved."
+    assert package_id not in operation["summary"]
+    assert deployment.process_packages.get_original(TENANT, package_id, 1) == narrative.encode()
+    stored_manifest = deployment.process_packages.get_manifest(TENANT, package_id, 1)
+    assert json.loads(stored_manifest) == manifest | {"schema_version": "1"}
+    with sqlite3.connect(deployment.process_package_path) as persisted:
+        receipt = persisted.execute(
+            "SELECT package_id, version, tenant_id, media_type, original_digest, uploader_id "
+            "FROM process_packages WHERE package_id = ? AND version = ?",
+            (package_id, 1),
+        ).fetchone()
+        receipt_count = persisted.execute("SELECT COUNT(*) FROM process_packages").fetchone()[0]
+    assert receipt == (
+        package_id,
+        1,
+        TENANT,
+        "text/markdown; charset=utf-8",
+        hashlib.sha256(narrative.encode()).hexdigest(),
+        ARCHITECT,
+    )
+    assert receipt_count == 1
+    assert invalid_manifest.status_code == 422
+    assert invalid_manifest.json()["error"]["code"] == "invalid_request"
+    assert invalid_manifest.json()["error"]["field"] == "manifest"
+    assert unsupported_media.status_code == 422
+    assert unsupported_media.json()["error"]["code"] == "invalid_request"
+    assert unsupported_media.json()["error"]["field"] == "file_name"
+
+
+def test_external_interpreter_candidate_is_projected_and_approved_by_owning_service(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    request = deployment.requests.submit_question(
+        tenant_id=TENANT,
+        requester_id=REQUESTER,
+        purpose="Quarterly finance reporting",
+        question="What is quarterly net revenue?",
+    )
+    candidates = deployment.product_intent_candidates
+    intent = ProductIntent(
+        request_id=request.request_id,
+        title="Quarterly net revenue",
+        business_outcome="Give finance one governed quarterly view.",
+        source_refs=("billing-catalog",),
+        grain=Grain(keys=("fiscal_quarter",)),
+        measures=(MeasureIntent(metric_ref="net_revenue", aggregation="sum"),),
+        dimensions=(DimensionIntent(dimension_ref="fiscal_quarter"),),
+        filters=(),
+        freshness=FreshnessObjective(maximum_age_seconds=86_400),
+        delivery=DeliveryIntent(outputs=("table", "dashboard")),
+    )
+    constraints = ProductIntentConstraints(
+        approved_source_refs=("billing-catalog",),
+        approved_metric_refs=("net_revenue",),
+        approved_dimension_refs=("fiscal_quarter",),
+        minimum_source_interval_seconds=86_400,
+    )
+
+    with TestClient(deployment.build_app()) as client:
+        assert (
+            client.get(f"/api/v1/inbox/{request.request_id}").json()["data"]["product_intent"]
+            is None
+        )
+        candidate = candidates.propose(
+            tenant_id=TENANT,
+            request_id=request.request_id,
+            request_revision=request.revision,
+            idempotency_key="external-interpreter-candidate-1",
+            proposed_by="external-interpreter",
+            intent=intent,
+            constraints=constraints,
+            source_coverage=(
+                ProductIntentSourceCoverage(
+                    source_ref="billing-catalog",
+                    covered_fields=("fiscal_quarter", "net_revenue"),
+                    authorized=True,
+                ),
+            ),
+            unresolved_constraints=(),
+        )
+        projected = client.get(f"/api/v1/inbox/{request.request_id}")
+        session = client.get("/api/v1/session").json()["data"]
+        approved = client.post(
+            f"/api/v1/inbox/{request.request_id}/product-intent/approval",
+            headers={
+                "Origin": "http://127.0.0.1:8000",
+                "X-CSRF-Token": session["csrf_token"],
+                "Idempotency-Key": "approve-product-intent-1",
+            },
+            json={
+                "expected_revision": request.revision,
+                "reviewed_digest": intent.canonical_digest(),
+                "active_role": "data_architect",
+            },
+        )
+
+    assert projected.status_code == 200
+    assert projected.json()["data"]["product_intent"]["reviewed_digest"] == digest(intent)
+    assert projected.json()["data"]["product_intent"]["source_coverage"] == [
+        {
+            "source_ref": "billing-catalog",
+            "covered_fields": ["fiscal_quarter", "net_revenue"],
+            "authorized": True,
+        }
+    ]
+    assert approved.status_code == 200
+    assert approved.json()["data"]["intent_digest"] == candidate.intent.canonical_digest()
 
 
 def test_the_meaning_review_capability_is_delivered_rather_than_reported_as_unwired(
@@ -931,6 +1558,38 @@ def test_the_default_state_directory_stays_out_of_the_repository() -> None:
     default = default_state_directory()
 
     assert not default.is_relative_to(repository_root)
+
+
+def test_fresh_postgresql_workspaces_allocate_distinct_warehouse_bindings(
+    tmp_path: Path,
+) -> None:
+    """Separate acceptance workspaces must never address the same Docker resources.
+
+    A fresh SQLite repository starts every tenant's binding sequence at one. The
+    PostgreSQL provider derives its container, networks, and volume from that binding,
+    so two local workspaces with the fixed acceptance tenant otherwise collide even
+    though neither workspace has authority over the other's retained resources.
+    """
+    first = GovernedConsoleDeployment(tmp_path / "first", engine="postgresql")
+    second = GovernedConsoleDeployment(tmp_path / "second", engine="postgresql")
+    try:
+        first_binding = first.control.create_draft(
+            tenant_id=TENANT,
+            engine_kind=EngineKind.POSTGRESQL,
+            region="us-west-2",
+            capacity_profile="mvp-fixed",
+        )
+        second_binding = second.control.create_draft(
+            tenant_id=TENANT,
+            engine_kind=EngineKind.POSTGRESQL,
+            region="us-west-2",
+            capacity_profile="mvp-fixed",
+        )
+
+        assert first_binding.binding_id != second_binding.binding_id
+    finally:
+        first.close()
+        second.close()
 
 
 def test_a_non_loopback_host_is_refused() -> None:
@@ -1073,6 +1732,38 @@ def test_a_tenant_with_no_acquisitions_reads_an_empty_receipt_listing(
     assert response.json()["data"]["receipts"] == []
 
 
+def test_run_now_performs_a_fresh_composed_source_acquisition(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    command = {
+        "active_role": "data_architect",
+        "contract_ref": "contract:managed-business-data:v1",
+        "trigger_window": "2026-09-14T12:00:00Z/2026-09-14T13:00:00Z",
+        "acquisition_mode": "snapshot",
+    }
+
+    with TestClient(deployment.build_app()) as client:
+        session = client.get("/api/v1/session").json()["data"]
+        headers = {
+            "Origin": "http://127.0.0.1:8000",
+            "X-CSRF-Token": session["csrf_token"],
+            "Idempotency-Key": "run-managed-source-2026-09-14-12",
+        }
+        first = client.post("/api/v1/acquisitions/run-now", headers=headers, json=command)
+        replay = client.post("/api/v1/acquisitions/run-now", headers=headers, json=command)
+        receipts = client.get("/api/v1/acquisition-receipts")
+
+    assert first.status_code == 200
+    assert replay.status_code == 200
+    assert first.json()["data"]["outcome"] == "prepared"
+    assert replay.json()["data"]["outcome"] == "prepared"
+    assert deployment.source_acquisition.source_provider_resolutions == 1
+    assert deployment.source_acquisition.artifact_count() > 0
+    assert first.json()["data"]["evidence_id"] in {
+        receipt["evidence_id"] for receipt in receipts.json()["data"]["receipts"]
+    }
+
+
 def test_a_receipt_the_acquisition_runtime_recorded_reaches_the_console(
     deployment: GovernedConsoleDeployment,
 ) -> None:
@@ -1143,7 +1834,7 @@ def test_a_receipt_belonging_to_another_tenant_is_not_listed(
     assert body == []
 
 
-def test_the_acquisition_evidence_capability_is_ready_in_the_governed_workspace(
+def test_acquisition_evidence_and_execution_are_ready_in_the_governed_workspace(
     deployment: GovernedConsoleDeployment,
 ) -> None:
     with TestClient(deployment.build_app()) as client:
@@ -1153,8 +1844,8 @@ def test_the_acquisition_evidence_capability_is_ready_in_the_governed_workspace(
 
     assert by_id["acquisition-evidence"]["state"] == "ready"
     assert by_id["acquisition-evidence"]["dependency"] is None
-    # Retaining receipts is not the same capability as performing an acquisition.
-    assert by_id["source-acquisition"]["state"] == "not_delivered"
+    assert by_id["source-acquisition"]["state"] == "ready"
+    assert by_id["source-acquisition"]["dependency"] is None
 
 
 @pytest.mark.parametrize("path", ("/api/v1/acquisition-receipts", "/api/v1/runs"))

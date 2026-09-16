@@ -4,6 +4,7 @@ import json
 import sqlite3
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -181,6 +182,40 @@ def concurrent_repository(
             timeout=5,
         ),
     )
+
+
+def test_concurrent_repository_initialization_converges_on_one_schema(tmp_path: Path) -> None:
+    barrier = threading.Barrier(2)
+
+    class RacingConnection(sqlite3.Connection):
+        def execute(self, sql: str, parameters: object = ()) -> sqlite3.Cursor:
+            if sql == "BEGIN IMMEDIATE":
+                barrier.wait(timeout=5)
+            sqlite_parameters = cast(
+                tuple[str | bytes | int | float | None, ...]
+                | dict[str, str | bytes | int | float | None],
+                parameters,
+            )
+            return super().execute(sql, sqlite_parameters)
+
+    def connect(path: str) -> sqlite3.Connection:
+        return sqlite3.connect(
+            path,
+            check_same_thread=False,
+            factory=RacingConnection,
+        )
+
+    database_path = str(tmp_path / "concurrent-initialization.sqlite")
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = tuple(
+            executor.submit(repository, database_path, connection_factory=connect)
+            for _index in range(2)
+        )
+        repositories = tuple(future.result() for future in futures)
+
+    assert len(repositories) == 2
+    for state in repositories:
+        state.close()
 
 
 def prepare(

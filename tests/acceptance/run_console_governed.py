@@ -30,54 +30,105 @@ import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
+from typing import Literal, cast
 from urllib.parse import urlsplit
 
+from pillarmesh_access_control import (
+    AccessGrantApplicationService,
+    CurrentEntitlementSnapshot,
+    EntitlementPermission,
+    RequestManagementAccessDeliveryReader,
+    RequestManagementAdmittedAccessProposalReader,
+    SQLiteAccessGrantRepository,
+)
 from pillarmesh_catalog_control import CatalogControlService, SQLiteCatalogRepository
 from pillarmesh_console.app import create_app
 from pillarmesh_console.auth import TrustedActorContext
+from pillarmesh_console.contracts import ActorRole
 from pillarmesh_console.governed_adapters import (
+    CatalogBindingReader,
     CatalogControlBindingReader,
     CatalogSearchHealthReader,
+    DashboardPublicationReader,
     DerivedTenantRunReader,
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceActorDirectory,
     InMemoryWorkspaceBindingDirectory,
     InMemoryWorkspacePrincipalDirectory,
     PolicyPermittedDataProductReader,
+    ProductPublicationDefinitionReader,
+    WarehouseBindingReader,
     WarehouseControlBindingReader,
     WarehouseControlLifecycleCommands,
     WarehouseRepositoryOperationReader,
 )
 from pillarmesh_console.governed_backend import GovernedConsoleBackend
+from pillarmesh_console.impact_projection import (
+    ImpactViewProjector,
+    RequestImpactProjectionReader,
+)
 from pillarmesh_console.operation_handles import InMemoryOperationHandleRepository
 from pillarmesh_contract_model import (
     ApprovedSemanticVersion,
     ArtifactReference,
+    ImpactSubject,
     ManagedIntegrationContract,
     SemanticObject,
     digest,
 )
 from pillarmesh_contract_service import (
+    AcquisitionActivationApproval,
+    ProcessPackageService,
     SQLiteAcquisitionContractLifecycleRepository,
+    SQLiteProcessPackageRepository,
+    ValidatedSourceBinding,
 )
-from pillarmesh_evidence import SQLiteStore
+from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
+from pillarmesh_knowledge_graph import (
+    ContextEdge,
+    ContextGraphProjector,
+    ContextGraphRepository,
+    ContextNode,
+    ImpactAnalyzer,
+    SourceRecordObservation,
+)
 from pillarmesh_provider_openmetadata import CatalogObjectRef, CatalogObjectSnapshot
+from pillarmesh_provider_sdk import (
+    AccessEffectCommand,
+    AccessEffectProviderError,
+    AccessEffectResult,
+)
 from pillarmesh_request_management import (
+    AccessGrantAdmissionBinding,
+    AccessGrantEffectTarget,
+    AccessScopePreview,
     AnswerCandidateProvider,
+    DataAccessRequest,
     FulfillmentAdmissionReceipt,
     FulfillmentGroundingSnapshot,
+    FulfillmentImpactBindingReader,
     FulfillmentPolicyCompiler,
     FulfillmentProposal,
     FulfillmentReadService,
     FulfillmentService,
+    GraphImpactAdmissionResolver,
     InboxRequest,
+    ProductIntentApprovalService,
+    ProductIntentCandidateService,
     RequestManagementService,
     ResolutionFailure,
     SQLiteFulfillmentRepository,
     SQLiteRequestRepository,
     StakeholderAnswerDraft,
     StakeholderQuestion,
+)
+from pillarmesh_runtime import (
+    AnswerResultAccessEffectProvider,
+    AnswerResultAccessTarget,
+    compose_acquisition_application,
+    opaque_reference_factory,
 )
 from pillarmesh_semantic_registry import (
     FulfillmentAuthorityObservation,
@@ -112,16 +163,25 @@ from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
 from starlette.applications import Starlette
 from starlette.requests import Request
 
+from tests.acceptance.console_answer_runtime import (
+    GovernedAnswerRuntime,
+    GovernedAnswerRuntimeConfiguration,
+)
 from tests.acceptance.run_plan3b import (
     ScenarioFreshness,
     published_repository,
 )
+from tests.acceptance.run_plan4a import OfflinePlan4AHarness
 
 TENANT = "tenant-a"
 ARCHITECT = "architect-a"
 REQUESTER = "requester-a"
+DATA_OWNER = "data-owner-a"
+POLICY_APPROVER = "policy-approver-a"
+IMPACT_OWNER = "role:finance_data_owner"
 REQUESTER_PRINCIPAL = f"principal:{REQUESTER}"
 ARCHITECT_PRINCIPAL = "role:data_engineering_architect"
+POLICY_AUTHORITY = "role:policy_authority"
 ACTOR_HEADER = "x-pillarmesh-actor"
 
 _DEFAULT_PORT = 8000
@@ -295,7 +355,72 @@ class _DeploymentRoleResolver:
         return tenant_id == TENANT and (actor_id, authority_ref) in {
             (REQUESTER, REQUESTER_PRINCIPAL),
             (ARCHITECT, ARCHITECT_PRINCIPAL),
+            (DATA_OWNER, IMPACT_OWNER),
+            (POLICY_APPROVER, POLICY_AUTHORITY),
         }
+
+
+class _DeploymentAccessRevocationAuthority:
+    def __init__(self, requests: RequestManagementService) -> None:
+        self._requests = requests
+
+    def may_revoke(self, *, tenant_id: str, request_id: str, actor_id: str) -> bool:
+        try:
+            request = self._requests.get(tenant_id, request_id)
+        except KeyError:
+            return False
+        return actor_id in (request.requester_id, ARCHITECT)
+
+
+class _PublishedMetricImpactSubjectResolver:
+    def resolve(
+        self,
+        *,
+        tenant_id: str,
+        proposal: FulfillmentProposal,
+    ) -> ImpactSubject | None:
+        subject = proposal.subject
+        if not isinstance(subject, StakeholderAnswerDraft) or len(subject.metric_refs) != 1:
+            return None
+        return ImpactSubject(
+            subject_kind="metric_version_change",
+            subject_ref=subject.metric_refs[0].artifact_id,
+            change_subject_digest=digest(subject),
+        )
+
+
+class _GovernedLocalImpactVisibility:
+    def can_view(
+        self,
+        *,
+        tenant_id: str,
+        actor_id: str,
+        active_role: ActorRole,
+        node: ContextNode,
+    ) -> bool:
+        return tenant_id == TENANT and actor_id == ARCHITECT and active_role == "data_architect"
+
+
+class _PublishedImpactLabels:
+    def __init__(self, *, subject_labels: dict[str, str], product_ref: str) -> None:
+        self._subject_labels = dict(subject_labels)
+        self._product_ref = product_ref
+
+    def subject_label(self, tenant_id: str, subject_ref: str) -> str | None:
+        return self._subject_labels.get(subject_ref) if tenant_id == TENANT else None
+
+    def impact_label(self, tenant_id: str, node_id: str) -> str | None:
+        if tenant_id != TENANT or node_id != self._product_ref:
+            return None
+        return "Revenue data product"
+
+    def owner_label(self, tenant_id: str, owner_ref: str) -> str | None:
+        if tenant_id == TENANT and owner_ref == IMPACT_OWNER:
+            return "Finance data owner"
+        return None
+
+    def authority_label(self, tenant_id: str, authority_ref: str) -> str | None:
+        return self.owner_label(tenant_id, authority_ref)
 
 
 def _words(text: str) -> tuple[str, ...]:
@@ -447,37 +572,6 @@ class _PublishedAuthorityResolver:
     def resolve(
         self, *, tenant_id: str, request: InboxRequest
     ) -> FulfillmentAuthorityObservation | ResolutionFailure:
-        matches = _semantic_matches(
-            publications=self._publications,
-            tenant_id=tenant_id,
-            publication_id=self._publication_id,
-            request=request,
-        )
-        if len(matches) > 1:
-            return ResolutionFailure(
-                reason_codes=("published_semantic_term_ambiguous",),
-                constraint_refs=(),
-                smallest_changes=(
-                    "Ask about exactly one term in the workspace's current approved semantic "
-                    "publication.",
-                ),
-                requester_safe_explanation=(
-                    "This question names more than one term in the current governed catalog. "
-                    "Ask about one term at a time."
-                ),
-            )
-        if not matches:
-            return ResolutionFailure(
-                reason_codes=("published_semantic_term_not_found",),
-                constraint_refs=(),
-                smallest_changes=(
-                    "Ask about one term in the workspace's current approved semantic publication.",
-                ),
-                requester_safe_explanation=(
-                    "The current governed catalog does not contain one unambiguous term for "
-                    "this question."
-                ),
-            )
         intent, _, _ = self._publications.load_publication(
             tenant_id=tenant_id,
             publication_id=self._publication_id,
@@ -486,6 +580,50 @@ class _PublishedAuthorityResolver:
             tenant_id=tenant_id,
             operation_id=intent.operation_id,
         )
+        product = integration_contract.destination_product
+        if isinstance(request.payload, DataAccessRequest):
+            if request.payload.data_product_id != product.product_name:
+                return ResolutionFailure(
+                    reason_codes=("published_data_product_not_found",),
+                    constraint_refs=(),
+                    smallest_changes=("Choose the current governed data product.",),
+                    requester_safe_explanation=(
+                        "The selected data product is not in the current governed catalog."
+                    ),
+                )
+        else:
+            matches = _semantic_matches(
+                publications=self._publications,
+                tenant_id=tenant_id,
+                publication_id=self._publication_id,
+                request=request,
+            )
+            if len(matches) > 1:
+                return ResolutionFailure(
+                    reason_codes=("published_semantic_term_ambiguous",),
+                    constraint_refs=(),
+                    smallest_changes=(
+                        "Ask about exactly one term in the workspace's current approved semantic "
+                        "publication.",
+                    ),
+                    requester_safe_explanation=(
+                        "This question names more than one term in the current governed catalog. "
+                        "Ask about one term at a time."
+                    ),
+                )
+            if not matches:
+                return ResolutionFailure(
+                    reason_codes=("published_semantic_term_not_found",),
+                    constraint_refs=(),
+                    smallest_changes=(
+                        "Ask about one term in the workspace's current approved semantic "
+                        "publication.",
+                    ),
+                    requester_safe_explanation=(
+                        "The current governed catalog does not contain one unambiguous term for "
+                        "this question."
+                    ),
+                )
         now = self._clock()
         policy_ref = ArtifactReference(
             artifact_id=f"policy-{integration_contract.contract_id}",
@@ -505,7 +643,6 @@ class _PublishedAuthorityResolver:
             for classification_id in integration_contract.access_policy.classification_refs
             if classification_id in classifications_by_id
         )
-        product = integration_contract.destination_product
         return FulfillmentAuthorityObservation(
             tenant_id=tenant_id,
             catalog_publication_id=self._publication_id,
@@ -530,7 +667,7 @@ class _PublishedAuthorityResolver:
                     digest=digest(product),
                 ),
             ),
-            permitted_access_modes=("query",),
+            permitted_access_modes=("dashboard", "query"),
             maximum_expiry=now + timedelta(days=2),
             policy_authority_classifications=(
                 integration_contract.access_policy.classification_refs
@@ -577,6 +714,265 @@ class _PublishedAnswerProvider:
             material_quality_limitations=(),
             lineage_refs=grounding.lineage_refs,
             disclosure_classifications=(),
+        )
+
+
+class _PublishedAccessProvider:
+    def __init__(self, *, publications: CatalogPublicationRepository, publication_id: str) -> None:
+        self._publications = publications
+        self._publication_id = publication_id
+
+    def propose(
+        self,
+        *,
+        request: InboxRequest,
+        grounding: FulfillmentGroundingSnapshot,
+        policy: object,
+    ) -> AccessScopePreview:
+        del policy
+        if not isinstance(request.payload, DataAccessRequest):
+            raise ValueError("access preview requires a data access request")
+        intent, _, _ = self._publications.load_publication(
+            tenant_id=request.tenant_id,
+            publication_id=self._publication_id,
+        )
+        available_fields = frozenset(item.object_id for item in intent.semantic_objects)
+        effective_fields = tuple(
+            field for field in request.payload.requested_fields if field in available_fields
+        )
+        if not effective_fields:
+            raise ValueError("none of the requested fields are published semantic terms")
+        return AccessScopePreview(
+            requester_principal_ref=f"principal:{request.requester_id}",
+            data_product_ref=grounding.governed_dataset_refs[0],
+            access_mode=request.payload.access_mode,
+            requested_fields=request.payload.requested_fields,
+            effective_object_refs=grounding.governed_dataset_refs,
+            effective_fields=effective_fields,
+            excluded_scopes=tuple(
+                field for field in request.payload.requested_fields if field not in available_fields
+            ),
+            classifications=grounding.classification_refs,
+            expires_at=request.payload.expires_at,
+        )
+
+
+class _PublishedProductOwnerResolver:
+    def resolve(self, *, tenant_id: str, data_product_ref: ArtifactReference) -> str:
+        if tenant_id != TENANT or not data_product_ref.artifact_id:
+            raise ValueError("data product owner authority is unavailable")
+        return IMPACT_OWNER
+
+
+class _GovernedLocalEntitlementAuthority:
+    def __init__(
+        self,
+        *,
+        product_ref: ArtifactReference,
+        semantic_refs: tuple[ArtifactReference, ...],
+    ) -> None:
+        self._product_ref = product_ref
+        self._semantic_refs = semantic_refs
+
+    def resolve_current(
+        self, *, tenant_id: str, principal_ref: str, purpose_digest: str
+    ) -> CurrentEntitlementSnapshot:
+        values: dict[str, object] = {
+            "schema_version": "1",
+            "tenant_id": tenant_id,
+            "principal_ref": principal_ref,
+            "purpose_digest": purpose_digest,
+            "connected_authority_ref": "governed-local-policy-authority",
+            "source_revision": 1,
+            "source_payload_digest": digest(
+                {
+                    "product_ref": self._product_ref,
+                    "semantic_refs": self._semantic_refs,
+                }
+            ),
+            "product_version_refs": (self._product_ref,),
+            "semantic_refs": self._semantic_refs,
+            "filter_domains": (),
+            "permissions": ("dashboard", "query", "view"),
+            "effective_at": datetime(2026, 1, 1, tzinfo=UTC),
+            "valid_until": datetime(2030, 1, 1, tzinfo=UTC),
+        }
+        snapshot_digest = digest(values)
+        return CurrentEntitlementSnapshot.model_validate(
+            {
+                **values,
+                "snapshot_id": f"entitlement-{snapshot_digest[:24]}",
+                "snapshot_digest": snapshot_digest,
+                "observation_id": f"observation-{snapshot_digest[:24]}",
+                "resolved_at": _clock(),
+            },
+            strict=True,
+        )
+
+
+class _GovernedLocalGrantAdmissionResolver:
+    def __init__(self, entitlements: _GovernedLocalEntitlementAuthority) -> None:
+        self._entitlements = entitlements
+
+    def bind(
+        self,
+        *,
+        tenant_id: str,
+        request: InboxRequest,
+        proposal: FulfillmentProposal,
+        policy: object,
+    ) -> AccessGrantAdmissionBinding:
+        del policy
+        if not isinstance(request.payload, DataAccessRequest) or not isinstance(
+            proposal.subject, AccessScopePreview
+        ):
+            raise ValueError("grant admission requires an access proposal")
+        entitlement = self._entitlements.resolve_current(
+            tenant_id=tenant_id,
+            principal_ref=proposal.subject.requester_principal_ref,
+            purpose_digest=digest(request.payload.purpose),
+        )
+        permissions: tuple[EntitlementPermission, ...] = (
+            ("dashboard", "view")
+            if request.payload.access_mode == "dashboard"
+            else ("query", "view")
+        )
+        targets = [
+            AccessGrantEffectTarget(
+                surface="result",
+                provider_resource_ref=f"result:{proposal.subject.data_product_ref.artifact_id}",
+            ),
+            AccessGrantEffectTarget(
+                surface="warehouse",
+                provider_resource_ref=f"relation:{proposal.subject.data_product_ref.artifact_id}",
+            ),
+        ]
+        if request.payload.access_mode == "dashboard":
+            targets.append(
+                AccessGrantEffectTarget(
+                    surface="superset",
+                    provider_resource_ref=(
+                        f"dashboard:{proposal.subject.data_product_ref.artifact_id}"
+                    ),
+                )
+            )
+        return AccessGrantAdmissionBinding(
+            grant_id="grant-" + digest((tenant_id, request.request_id, digest(proposal)))[:24],
+            proposal_digest=digest(proposal),
+            entitlement_snapshot_digest=entitlement.snapshot_digest,
+            policy_revision=entitlement.source_revision,
+            effective_at=_clock(),
+            permissions=permissions,
+            targets=tuple(targets),
+        )
+
+
+def _access_command_matches_grant(
+    command: AccessEffectCommand,
+    grants: SQLiteAccessGrantRepository,
+) -> bool:
+    grant = grants.load_current(command.tenant_id, command.grant_id)
+    expected_state = "pending" if command.action == "apply" else "revocation_pending"
+    if grant is None or grant.state != expected_state or grant.revision != command.grant_revision:
+        return False
+    target = next(
+        (item for item in grant.effect_targets if item.surface == command.surface),
+        None,
+    )
+    scope = {
+        "domain": "pillarmesh-access-effect-scope-v1",
+        "tenant_id": grant.tenant_id,
+        "grant_id": grant.grant_id,
+        "principal_ref": grant.principal_ref,
+        "provider_resource_ref": command.provider_resource_ref,
+        "fields": grant.fields,
+        "permissions": command.permissions,
+        "effective_at": grant.effective_at,
+        "expires_at": grant.expires_at,
+    }
+    return bool(
+        target is not None
+        and target.provider_resource_ref == command.provider_resource_ref
+        and command.principal_ref == grant.principal_ref
+        and command.fields == grant.fields
+        and command.effective_at == grant.effective_at
+        and command.expires_at == grant.expires_at
+        and command.scope_digest == digest(scope)
+    )
+
+
+class _GovernedLocalResultTargetAuthority:
+    def __init__(self, grants: SQLiteAccessGrantRepository) -> None:
+        self._grants = grants
+
+    def resolve(self, command: AccessEffectCommand) -> AnswerResultAccessTarget | None:
+        if command.surface != "result" or not _access_command_matches_grant(command, self._grants):
+            return None
+        return AnswerResultAccessTarget(
+            tenant_id=command.tenant_id,
+            grant_id=command.grant_id,
+            grant_revision=command.grant_revision,
+            principal_ref=command.principal_ref,
+            result_ref=command.provider_resource_ref,
+            fields=command.fields,
+            permissions=cast(tuple[Literal["download", "view"], ...], command.permissions),
+            effective_at=command.effective_at,
+            expires_at=command.expires_at,
+            scope_digest=command.scope_digest,
+        )
+
+
+class _GovernedLocalWarehouseAccessProvider:
+    surface: Literal["warehouse"] = "warehouse"
+
+    def __init__(self, grants: SQLiteAccessGrantRepository) -> None:
+        self._grants = grants
+
+    def enact(self, command: AccessEffectCommand) -> AccessEffectResult:
+        if command.surface != self.surface or not _access_command_matches_grant(
+            command, self._grants
+        ):
+            raise AccessEffectProviderError(
+                outcome="permanent_failure",
+                provider_receipt_digest=digest(command),
+            )
+        return AccessEffectResult(
+            surface=command.surface,
+            action=command.action,
+            idempotency_key=command.idempotency_key,
+            provider_receipt_digest=digest(
+                {
+                    "domain": "pillarmesh.governed-local-warehouse-access.v1",
+                    "command": command,
+                }
+            ),
+        )
+
+
+class _GovernedLocalDashboardAccessProvider:
+    surface: Literal["superset"] = "superset"
+
+    def __init__(self, grants: SQLiteAccessGrantRepository) -> None:
+        self._grants = grants
+
+    def enact(self, command: AccessEffectCommand) -> AccessEffectResult:
+        if command.surface != self.surface or not _access_command_matches_grant(
+            command, self._grants
+        ):
+            raise AccessEffectProviderError(
+                outcome="permanent_failure",
+                provider_receipt_digest=digest(command),
+            )
+        return AccessEffectResult(
+            surface=command.surface,
+            action=command.action,
+            idempotency_key=command.idempotency_key,
+            provider_receipt_digest=digest(
+                {
+                    "domain": "pillarmesh.governed-local-dashboard-access.v1",
+                    "command": command,
+                }
+            ),
         )
 
 
@@ -660,12 +1056,18 @@ def _context(actor: str) -> TrustedActorContext:
             active_role="requester",
             session_id="session-requester",
         )
+    contexts = {
+        ARCHITECT: ("data_architect", "session-architect"),
+        DATA_OWNER: ("data_owner", "session-data-owner"),
+        POLICY_APPROVER: ("policy_approver", "session-policy-approver"),
+    }
+    role, session_id = contexts.get(actor, contexts[ARCHITECT])
     return TrustedActorContext(
         tenant_id=TENANT,
-        actor_id=ARCHITECT,
-        roles=("data_architect",),
-        active_role="data_architect",
-        session_id="session-architect",
+        actor_id=actor if actor in contexts else ARCHITECT,
+        roles=(cast(ActorRole, role),),
+        active_role=cast(ActorRole, role),
+        session_id=session_id,
     )
 
 
@@ -744,6 +1146,11 @@ class GovernedConsoleDeployment:
         answer_candidate_provider: AnswerCandidateProvider | None = None,
         publication_repository: CatalogPublicationRepository | None = None,
         catalog_search_health: CatalogSearchHealthReader | None = None,
+        warehouse_binding_reader: WarehouseBindingReader | None = None,
+        catalog_binding_reader: CatalogBindingReader | None = None,
+        answer_runtime_configuration: GovernedAnswerRuntimeConfiguration | None = None,
+        product_publications: ProductPublicationDefinitionReader | None = None,
+        dashboards: DashboardPublicationReader | None = None,
     ) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         self.directory = directory
@@ -751,7 +1158,20 @@ class GovernedConsoleDeployment:
         self.warehouse_path = str(directory / "warehouse.sqlite3")
         self.request_path = str(directory / "requests.sqlite3")
         self._warehouse_connection = _worker_thread_connection(self.warehouse_path)
-        self.warehouse_repository = SQLiteWarehouseRepository(connection=self._warehouse_connection)
+        self.warehouse_repository: SQLiteWarehouseRepository
+        if engine == "postgresql":
+            from tests.acceptance.console_postgresql_engine import (
+                PostgreSQLAcceptanceWarehouseRepository,
+            )
+
+            self.warehouse_repository = PostgreSQLAcceptanceWarehouseRepository(
+                connection=self._warehouse_connection,
+                workspace_directory=directory,
+            )
+        else:
+            self.warehouse_repository = SQLiteWarehouseRepository(
+                connection=self._warehouse_connection
+            )
         # `CatalogControlBindingReader` has been built since Plan 2 and was never
         # composed, so the console reported the capability as unwired rather than
         # undelivered. The catalog binding is created here rather than by a console
@@ -776,7 +1196,20 @@ class GovernedConsoleDeployment:
             provider=self._provider(engine),
             clock=_clock,
         )
-        self.requests = RequestManagementService(self.request_repository, clock=_clock)
+        request_clock = (
+            answer_runtime_configuration.clock
+            if answer_runtime_configuration is not None
+            else _clock
+        )
+        self.requests = RequestManagementService(self.request_repository, clock=request_clock)
+        self.product_intent_candidates = ProductIntentCandidateService(
+            self.request_repository,
+            clock=_clock,
+        )
+        self.product_intent_approvals = ProductIntentApprovalService(
+            self.request_repository,
+            clock=_clock,
+        )
         # Both semantic-review seams existed on the governed backend and neither was
         # wired, so the console reported the capability as unwired for a service that
         # has been implemented since Plan 2. The reader is the repository, because
@@ -825,6 +1258,136 @@ class GovernedConsoleDeployment:
         receipt = publications[0]
         self.publication_repository = publication_repository
         self.active_publication_id = receipt.publication_id
+        publication_intent, _, _ = publication_repository.load_publication(
+            tenant_id=TENANT,
+            publication_id=receipt.publication_id,
+        )
+        semantic_version, integration_contract = publication_repository.load_inputs(
+            tenant_id=TENANT,
+            operation_id=publication_intent.operation_id,
+        )
+        self.context_graph_repository = ContextGraphRepository(directory / "context-graph.sqlite3")
+        contract_reference = ArtifactReference(
+            artifact_id=integration_contract.contract_id,
+            version=integration_contract.version,
+            digest=digest(integration_contract),
+        )
+        product_node_id = f"data-product:{integration_contract.destination_product.product_name}"
+        metric_references = tuple(
+            ArtifactReference(
+                artifact_id=metric.object_id,
+                version=semantic_version.version,
+                digest=digest(metric),
+            )
+            for metric in semantic_version.metrics
+        )
+        product_observation = SourceRecordObservation(
+            tenant_id=TENANT,
+            source_record_ref=contract_reference,
+            producer="contract-service",
+            observed_at=semantic_version.created_at,
+            validity="valid",
+        )
+        metric_nodes = tuple(
+            ContextNode(
+                tenant_id=TENANT,
+                node_id=reference.artifact_id,
+                node_kind="metric_version",
+                owner_ref=IMPACT_OWNER,
+                provenance=SourceRecordObservation(
+                    tenant_id=TENANT,
+                    source_record_ref=reference,
+                    producer="semantic-registry",
+                    observed_at=semantic_version.created_at,
+                    validity="valid",
+                ),
+            )
+            for reference in metric_references
+        )
+        impact_snapshot = ContextGraphProjector().rebuild(
+            tenant_id=TENANT,
+            nodes=(
+                *metric_nodes,
+                ContextNode(
+                    tenant_id=TENANT,
+                    node_id=product_node_id,
+                    node_kind="data_product",
+                    owner_ref=IMPACT_OWNER,
+                    provenance=product_observation,
+                ),
+            ),
+            edges=tuple(
+                ContextEdge(
+                    tenant_id=TENANT,
+                    edge_id=f"metric-to-product:{reference.artifact_id}",
+                    source_node_id=reference.artifact_id,
+                    target_node_id=product_node_id,
+                    relationship="materializes",
+                    evidence_kind="validated",
+                    confidence=Decimal("1"),
+                    evidence_refs=(reference, contract_reference),
+                    provenance=product_observation,
+                )
+                for reference in metric_references
+            ),
+        )
+        self.context_graph_repository.replace(impact_snapshot)
+        self.impact_resolver = GraphImpactAdmissionResolver(
+            repository=self.context_graph_repository,
+            analyzer=ImpactAnalyzer(),
+            subject_resolver=_PublishedMetricImpactSubjectResolver(),
+            clock=_clock,
+        )
+        impact_labels = _PublishedImpactLabels(
+            subject_labels={metric.object_id: metric.name for metric in semantic_version.metrics},
+            product_ref=product_node_id,
+        )
+        product_ref = ArtifactReference(
+            artifact_id=integration_contract.destination_product.product_name,
+            version=integration_contract.version,
+            digest=digest(integration_contract.destination_product),
+        )
+        semantic_refs = tuple(
+            ArtifactReference(
+                artifact_id=semantic_object.object_id,
+                version=semantic_version.version,
+                digest=digest(semantic_object),
+            )
+            for semantic_object in publication_intent.semantic_objects
+        )
+        self.access_path = str(directory / "access.sqlite3")
+        self.access_grants = SQLiteAccessGrantRepository(
+            _worker_thread_connection(self.access_path)
+        )
+        self.access_entitlements = _GovernedLocalEntitlementAuthority(
+            product_ref=product_ref,
+            semantic_refs=semantic_refs,
+        )
+        admitted_access = RequestManagementAdmittedAccessProposalReader(
+            requests=self.requests,
+            fulfillment=self.fulfillment_repository,
+        )
+        self.result_access = AnswerResultAccessEffectProvider(
+            _worker_thread_connection(str(directory / "result-access.sqlite3")),
+            targets=_GovernedLocalResultTargetAuthority(self.access_grants),
+            clock=_clock,
+        )
+        self.access_application = AccessGrantApplicationService(
+            grants=self.access_grants,
+            admitted_proposals=admitted_access,
+            entitlements=self.access_entitlements,
+            providers=(
+                self.result_access,
+                _GovernedLocalDashboardAccessProvider(self.access_grants),
+                _GovernedLocalWarehouseAccessProvider(self.access_grants),
+            ),
+            clock=_clock,
+            revocation_authority=_DeploymentAccessRevocationAuthority(self.requests),
+        )
+        access_delivery_reader = RequestManagementAccessDeliveryReader(
+            grants=self.access_grants,
+            fulfillment=self.fulfillment_repository,
+        )
         self.fulfillment = FulfillmentService(
             request_service=self.requests,
             repository=self.fulfillment_repository,
@@ -850,7 +1413,17 @@ class GovernedConsoleDeployment:
                 warehouse=self.control,
                 bindings=self.bindings,
             ),
+            access_candidate_provider=_PublishedAccessProvider(
+                publications=publication_repository,
+                publication_id=receipt.publication_id,
+            ),
+            data_product_owner_resolver=_PublishedProductOwnerResolver(),
+            access_grant_admission_resolver=_GovernedLocalGrantAdmissionResolver(
+                self.access_entitlements
+            ),
+            access_grant_activation_reader=access_delivery_reader,
             authority_role_resolver=_DeploymentRoleResolver(),
+            impact_admission_resolver=self.impact_resolver,
             policy_compiler=FulfillmentPolicyCompiler(freshness_evaluator=ScenarioFreshness()),
             clock=_clock,
         )
@@ -865,8 +1438,58 @@ class GovernedConsoleDeployment:
         # delivered rather than merely built.
         self.lifecycle_path = str(directory / "acquisition-lifecycle.sqlite3")
         self.lifecycles = SQLiteAcquisitionContractLifecycleRepository(self.lifecycle_path)
+        self.process_package_path = str(directory / "process-packages.sqlite3")
+        self.process_package_repository = SQLiteProcessPackageRepository(self.process_package_path)
+        self.process_packages = ProcessPackageService(
+            self.process_package_repository,
+            clock=_clock,
+        )
         self.evidence_path = directory / "evidence.sqlite3"
         self.evidence = SQLiteStore.open(self.evidence_path, check_same_thread=False)
+        # The governed-local UI drives the same composed acquisition boundary as a
+        # deployment. Its PostgreSQL session is the deterministic Plan 4A source so
+        # browser testing remains offline, while lifecycle, state, artifacts, and
+        # evidence use their durable implementations.
+        self.source_acquisition = OfflinePlan4AHarness(
+            directory / "source-acquisition",
+            check_same_thread=False,
+        )
+        source_authority = self.source_acquisition.register_tenant(TENANT)
+        source_contract = source_authority.contract
+        source_binding = source_authority.binding
+        self.lifecycles.activate_contract(
+            idempotency_key="governed-local-managed-source-v1",
+            contract=source_contract,
+            approval=AcquisitionActivationApproval(
+                tenant_id=TENANT,
+                process_package_ref=source_contract.process_package_ref,
+                product_intent_ref=source_contract.product_intent_ref,
+                destination_product_ref=source_contract.destination_product_ref,
+                approved_by=source_contract.activated_by,
+                approved_at=source_contract.activated_at,
+            ),
+            source_validation=ValidatedSourceBinding(
+                tenant_id=TENANT,
+                source_binding_ref=source_binding.binding_id,
+                source_binding_revision=source_binding.revision,
+                credential_revision=source_binding.credential_revision,
+                capability_profile_digest=source_contract.capability_profile_digest,
+                source_observation_ref=source_contract.source_observation_ref,
+                source_observation_digest=source_contract.source_observation_digest,
+                validated_at=source_contract.activated_at,
+            ),
+        )
+        self.acquisition = compose_acquisition_application(
+            contract_repository=self.lifecycles,
+            binding_repository=self.source_acquisition,
+            observation_resolver=self.source_acquisition.load_observation,
+            provider_resolver=self.source_acquisition.resolve_provider,
+            state_store=self.source_acquisition.state,
+            artifact_store=self.source_acquisition.artifact_store,
+            evidence_writer=SQLiteAcquisitionEvidenceWriter(self.evidence),
+            reference_factory=opaque_reference_factory(),
+            clock=self.source_acquisition.clock,
+        )
         if self.bindings.catalog_binding_id(TENANT) is None:
             # Only when the workspace has none: catalog-control publishes no way to
             # ask whether a tenant already has a binding, so minting one per
@@ -888,9 +1511,38 @@ class GovernedConsoleDeployment:
             role="data_architect",
             principal_ref=ARCHITECT_PRINCIPAL,
         )
+        principals.bind_principal(
+            tenant_id=TENANT,
+            actor_id=DATA_OWNER,
+            role="data_owner",
+            principal_ref=IMPACT_OWNER,
+        )
+        principals.bind_principal(
+            tenant_id=TENANT,
+            actor_id=POLICY_APPROVER,
+            role="policy_approver",
+            principal_ref=POLICY_AUTHORITY,
+        )
+        self.answer_runtime = (
+            GovernedAnswerRuntime(
+                directory / "answer-runtime",
+                requests=self.request_repository,
+                request_service=self.requests,
+                principals=principals,
+                configuration=answer_runtime_configuration,
+            )
+            if answer_runtime_configuration is not None
+            else None
+        )
         actors = InMemoryWorkspaceActorDirectory()
         actors.bind_actor(tenant_id=TENANT, actor_id=REQUESTER, display_name="Requester")
         actors.bind_actor(tenant_id=TENANT, actor_id=ARCHITECT, display_name="Data architect")
+        actors.bind_actor(tenant_id=TENANT, actor_id=DATA_OWNER, display_name="Finance data owner")
+        actors.bind_actor(
+            tenant_id=TENANT,
+            actor_id=POLICY_APPROVER,
+            display_name="Policy approver",
+        )
         self.backend = GovernedConsoleBackend(
             identity=GovernedWorkspaceIdentity(
                 tenant_ref="tenant-governed",
@@ -899,12 +1551,10 @@ class GovernedConsoleDeployment:
                 workspace_display_name="Revenue to cash",
             ),
             operation_handles=InMemoryOperationHandleRepository(),
-            warehouse_bindings=WarehouseControlBindingReader(
-                service=self.control, directory=self.bindings
-            ),
-            catalog_bindings=CatalogControlBindingReader(
-                service=self.catalog, directory=self.bindings
-            ),
+            warehouse_bindings=warehouse_binding_reader
+            or WarehouseControlBindingReader(service=self.control, directory=self.bindings),
+            catalog_bindings=catalog_binding_reader
+            or CatalogControlBindingReader(service=self.catalog, directory=self.bindings),
             catalog_search_health=catalog_search_health,
             catalog_publications=_ActivePublicationCatalog(
                 self.publication_repository, self.active_publication_id
@@ -921,20 +1571,46 @@ class GovernedConsoleDeployment:
             ),
             request_commands=self.requests,
             fulfillment_commands=self.fulfillment,
-            fulfillment_execution_commands=self.fulfillment,
+            fulfillment_execution_commands=self.answer_runtime or self.fulfillment,
+            fulfillment_access_execution_commands=self.fulfillment,
+            access_grant_commands=self.access_application,
+            access_grants=self.access_grants,
+            access_revocation_commands=self.access_application,
             fulfillment_preparation_commands=self.fulfillment,
+            product_intent_reviews=self.product_intent_candidates,
+            product_intent_commands=self.product_intent_approvals,
+            process_package_commands=self.process_packages,
             semantic_reviews=self.semantic_repository,
             semantic_review_commands=self.semantic_reviews,
             runs=DerivedTenantRunReader(lifecycles=self.lifecycles, evidence=self.evidence),
+            incidents=(self.answer_runtime.incidents if self.answer_runtime is not None else None),
+            impact_reader=RequestImpactProjectionReader(
+                bindings=FulfillmentImpactBindingReader(self.fulfillment_repository),
+                analyzer=self.impact_resolver,
+                visibility=_GovernedLocalImpactVisibility(),
+                projector=ImpactViewProjector(impact_labels),
+            ),
             # The store satisfies the receipt reader directly: a receipt records its
             # own tenant, so unlike a run there is nothing to derive and no adapter
             # whose only purpose would be to rename the call.
             acquisition_receipts=self.evidence,
+            acquisition_commands=self.acquisition,
             actors=actors,
             data_products=PolicyPermittedDataProductReader(
                 repository=self.fulfillment_repository, requests=self.requests
             ),
-            data_access_intake_available=False,
+            product_publications=product_publications,
+            dashboards=dashboards,
+            answer_results=(
+                self.answer_runtime.results if self.answer_runtime is not None else None
+            ),
+            verified_answers=(
+                self.answer_runtime.answers if self.answer_runtime is not None else None
+            ),
+            answer_downloads=(
+                self.answer_runtime.downloads if self.answer_runtime is not None else None
+            ),
+            data_access_intake_available=True,
         )
 
     def _provider(self, engine: str) -> WarehouseProvider:
@@ -982,8 +1658,10 @@ class GovernedConsoleDeployment:
     def build_app(
         self, *, origin: str | None = None, dist: Path | None = None, actor: str | None = None
     ) -> Starlette:
-        if actor is not None and actor not in (ARCHITECT, REQUESTER):
-            raise ValueError("local actor must be the architect or requester")
+        if actor is not None and actor not in (ARCHITECT, REQUESTER, DATA_OWNER, POLICY_APPROVER):
+            raise ValueError(
+                "local actor must be the architect, requester, data owner, or policy approver"
+            )
         return create_app(
             backend=self.backend,
             context_provider=self._actor_for if actor is None else lambda request: _context(actor),
@@ -1081,15 +1759,19 @@ class GovernedConsoleDeployment:
         runs while still surfacing the failure.
         """
         failure: BaseException | None = None
-        for closing in (
+        closings = (
+            *((self.answer_runtime,) if self.answer_runtime is not None else ()),
             self.warehouse_repository,
             self.request_repository,
             self.catalog_repository,
             self.semantic_repository,
             self.publication_repository,
+            self.source_acquisition,
             self.lifecycles,
+            self.process_package_repository,
             self.evidence,
-        ):
+        )
+        for closing in closings:
             try:
                 closing.close()
             except BaseException as error:
@@ -1099,7 +1781,8 @@ class GovernedConsoleDeployment:
 
     def _actor_for(self, request: Request) -> TrustedActorContext:
         requested = request.headers.get(ACTOR_HEADER, ARCHITECT)
-        return _context(requested if requested in (ARCHITECT, REQUESTER) else ARCHITECT)
+        allowed = (ARCHITECT, REQUESTER, DATA_OWNER, POLICY_APPROVER)
+        return _context(requested if requested in allowed else ARCHITECT)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1120,7 +1803,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-seed", action="store_true")
     parser.add_argument(
         "--actor",
-        choices=(ARCHITECT, REQUESTER),
+        choices=(ARCHITECT, REQUESTER, DATA_OWNER, POLICY_APPROVER),
         help="Fixed local browser identity; ignores actor headers",
     )
     parser.add_argument(

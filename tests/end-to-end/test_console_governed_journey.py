@@ -12,6 +12,7 @@ from __future__ import annotations
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from typing import Any
 
@@ -850,14 +851,29 @@ def test_every_unsupported_capability_reports_not_delivered_rather_than_a_substi
 ) -> None:
     journey.as_actor(_ARCHITECT)
 
+    narrative = "# Revenue to cash\n"
     package = journey.post(
         "/api/v1/setup/process-packages",
         {
             "expected_revision": 1,
-            "package_digest": "0" * 64,
+            "package_digest": sha256(narrative.encode()).hexdigest(),
             "active_role": "data_architect",
-            "file_name": "revenue-to-cash.pdf",
-            "media_type": "application/pdf",
+            "file_name": "revenue-to-cash.md",
+            "media_type": "text/markdown; charset=utf-8",
+            "narrative_markdown": narrative,
+            "manifest": {
+                "schema_version": "1",
+                "process_name": "Revenue to cash",
+                "owner": "Finance operations",
+                "participants": [],
+                "outcomes": [],
+                "entities": [],
+                "events": [],
+                "states": [],
+                "rules": [],
+                "source_references": [],
+                "unresolved_questions": [],
+            },
         },
         key="process-package-1",
     )

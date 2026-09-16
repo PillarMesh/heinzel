@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 
 import pytest
 from pillarmesh_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
-from pillarmesh_contract_model import digest
+from pillarmesh_contract_model import ArtifactReference, digest
 from pillarmesh_provider_sdk import (
     AcquisitionField,
     AcquisitionObjectSchema,
@@ -113,10 +113,19 @@ def _schema(logical_object_ref: str = "orders") -> AcquisitionObjectSchema:
 def _declared(**changes: object) -> AcquisitionDeclaredActivation:
     values: dict[str, object] = {
         "contract_ref": "contract:orders:v1",
+        "process_package_ref": ArtifactReference(
+            artifact_id="process:orders", version=1, digest="1" * 64
+        ),
+        "product_intent_ref": ArtifactReference(
+            artifact_id="intent:orders", version=1, digest="2" * 64
+        ),
+        "destination_product_ref": "product:orders",
         "acknowledgement_consumer_ref": "strict-consumer",
         "object_schemas": (_schema(),),
         "record_ceiling": 100,
         "encoded_byte_ceiling": 1_000_000,
+        "activated_by": "architect-a",
+        "activated_at": NOW,
     }
     values.update(changes)
     return AcquisitionDeclaredActivation.model_validate(values)
@@ -237,8 +246,8 @@ def test_declared_schemas_must_describe_exactly_the_observed_objects() -> None:
         _compose(declared=_declared(object_schemas=(_schema("orders"), _schema("payments"))))
 
 
-def test_the_declared_half_is_named_as_declared_rather_than_asserted() -> None:
-    """Five fields have no owning publisher, and the type says so.
+def test_the_declared_half_names_every_field_not_derived_from_source_authority() -> None:
+    """Compatibility composition requires every non-source field explicitly.
 
     `object_schemas` is the substantive one: `open_session` takes it as an input and
     no provider returns it, so nothing in the estate can assert what a source's
@@ -249,10 +258,15 @@ def test_the_declared_half_is_named_as_declared_rather_than_asserted() -> None:
 
     assert set(type(declared).model_fields) == {
         "contract_ref",
+        "process_package_ref",
+        "product_intent_ref",
+        "destination_product_ref",
         "acknowledgement_consumer_ref",
         "object_schemas",
         "record_ceiling",
         "encoded_byte_ceiling",
+        "activated_by",
+        "activated_at",
     }
 
 

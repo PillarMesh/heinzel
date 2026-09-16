@@ -1,4 +1,4 @@
-import {act, render, screen, waitFor} from "@testing-library/react"
+import {act, fireEvent, render, screen, waitFor} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import {MemoryRouter} from "react-router-dom"
 import {beforeEach, expect, test, vi} from "vitest"
@@ -201,7 +201,7 @@ test("confirms an immutable server option and presents acceptance without claimi
     },
   )
   expect(await screen.findByRole("status", {name: "Warehouse operation"})).toHaveTextContent(
-    "Provisioning accepted",
+    "Request accepted",
   )
   expect(screen.queryByText(/Provisioning succeeded/i)).not.toBeInTheDocument()
 })
@@ -408,8 +408,11 @@ test("polls a pending operation with the exact capped sequence until terminal su
   expect(setupClient.getOperation).toHaveBeenCalledTimes(6)
   expect(setupClient.getOperation).toHaveBeenCalledWith("operation-warehouse")
   expect(screen.getByRole("status", {name: "Warehouse operation"})).toHaveTextContent(
-    "Provisioning succeeded",
+    "Completed",
   )
+  expect(screen.getByText("operation-warehouse")).not.toBeVisible()
+  await user.click(screen.getByText("Technical details"))
+  expect(screen.getByText("operation-warehouse")).toBeVisible()
 })
 
 test("cancels a pending operation poll when the workbench unmounts", async () => {
@@ -501,10 +504,10 @@ test("reconciles an ambiguous confirmation with the original idempotency key", a
     setupClient.confirmWarehouseBinding.mock.calls[0],
   )
   expect(idempotencyKeyFactory).toHaveBeenCalledTimes(1)
-  expect(await screen.findByText("operation-reconciled")).toBeVisible()
+  expect(await screen.findByText("operation-reconciled")).not.toBeVisible()
 })
 
-test("rejects unsupported and zero-byte process packages without inventing a size maximum", async () => {
+test("accepts only nonempty Markdown narratives and explains the strict JSON manifest", async () => {
   const user = userEvent.setup({applyAccept: false})
   render(
     <SetupWorkbench
@@ -516,19 +519,77 @@ test("rejects unsupported and zero-byte process packages without inventing a siz
 
   const input = screen.getByLabelText("Process package")
   expect(
-    screen.getByText("Accepted files: PDF or DOCX. Empty files are not accepted."),
+    screen.getByText("Accepted narrative: UTF-8 Markdown (.md). Add the matching JSON manifest below."),
   ).toBeVisible()
   expect(screen.queryByText(/maximum|max file size/i)).not.toBeInTheDocument()
 
   await user.upload(input, new File(["plain text"], "process.txt", {type: "text/plain"}))
-  expect(screen.getByRole("alert")).toHaveTextContent("Choose a PDF or DOCX file.")
+  expect(screen.getByRole("alert")).toHaveTextContent("Choose a Markdown (.md) file.")
 
-  await user.upload(input, new File([], "empty.pdf", {type: "application/pdf"}))
-  expect(screen.getByRole("alert")).toHaveTextContent("Choose a non-empty PDF or DOCX file.")
+  await user.upload(input, new File([], "empty.md", {type: "text/markdown"}))
+  expect(screen.getByRole("alert")).toHaveTextContent("Choose a non-empty Markdown file.")
+
+  await user.upload(input, new File(["# Revenue to cash"], "process.md", {type: "text/markdown"}))
+
+  fireEvent.change(screen.getByLabelText("Business process manifest (JSON)"), {
+    target: {
+      value: JSON.stringify({
+        process_name: "Revenue to cash",
+        owner: "Finance operations",
+        participants: [],
+        outcomes: [],
+        entities: [],
+        events: [],
+        states: [],
+        rules: [],
+        source_references: [],
+        unresolved_questions: [],
+        invented_authority: true,
+      }),
+    },
+  })
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "manifest.invented_authority is not allowed.",
+  )
   expect(setupClient.submitProcessPackage).not.toHaveBeenCalled()
 })
 
-test("submits only process metadata and the SHA-256 of the original file bytes", async () => {
+test("lets an architect reopen a completed business process from setup progress", async () => {
+  const user = userEvent.setup()
+  render(
+    <SetupWorkbench
+      client={setupClient}
+      session={sessionEnvelope.data}
+      setupEnvelope={{
+        ...setupEnvelope,
+        data: {
+          ...setup,
+          active_stage: "sources",
+          stages: [
+            setup.stages[0],
+            ...setup.stages.slice(1).map((stage) =>
+              stage.stage === "business_process" ? {...stage, state: "complete" as const} : stage,
+            ),
+          ],
+          process_package: {
+            package_ref: "bpp-current-process",
+            version: 1,
+            content_digest: "a".repeat(64),
+            state: "ready",
+            candidate_summary: "Revenue to cash",
+          },
+        },
+      }}
+    />,
+  )
+
+  await user.click(screen.getByRole("button", {name: /Business process/}))
+
+  expect(screen.getByRole("heading", {name: "Current process package"})).toBeVisible()
+  expect(screen.getByText("Revenue to cash")).toBeVisible()
+})
+
+test("submits the exact Markdown narrative and strict manifest with its SHA-256", async () => {
   const user = userEvent.setup()
   const expectedDigest = "52c3935626c104b2cbc9031291a1c4d56614c38f52072a361d658a58a9c48698"
   setupClient.submitProcessPackage.mockResolvedValueOnce({
@@ -551,13 +612,28 @@ test("submits only process metadata and the SHA-256 of the original file bytes",
 
   await user.upload(
     screen.getByLabelText("Process package"),
-    new File(["original bytes"], "revenue-process.pdf", {type: "application/pdf"}),
+    new File(["original bytes"], "revenue-process.md", {type: "text/markdown"}),
   )
+  const manifest = {
+    process_name: "Revenue to cash",
+    owner: "Finance operations",
+    participants: ["Billing", "Finance"],
+    outcomes: ["Settled invoice"],
+    entities: ["Invoice"],
+    events: ["Invoice settled"],
+    states: ["settled"],
+    rules: ["Only settled invoices close"],
+    source_references: ["billing-postgresql"],
+    unresolved_questions: [],
+  }
+  fireEvent.change(screen.getByLabelText("Business process manifest (JSON)"), {
+    target: {value: JSON.stringify(manifest)},
+  })
 
   expect(await screen.findByText(expectedDigest)).toBeVisible()
   expect(
     screen.getByText(
-      "This material edit creates a new setup revision and invalidates downstream approvals whose exact input changes.",
+      "Saving changes creates a new process version. Approvals based on earlier content must be reviewed again.",
     ),
   ).toBeVisible()
   await user.click(screen.getByRole("button", {name: "Submit process package"}))
@@ -567,16 +643,15 @@ test("submits only process metadata and the SHA-256 of the original file bytes",
       expected_revision: 4,
       package_digest: expectedDigest,
       active_role: "data_architect",
-      file_name: "revenue-process.pdf",
-      media_type: "application/pdf",
+      file_name: "revenue-process.md",
+      media_type: "text/markdown; charset=utf-8",
+      narrative_markdown: "original bytes",
+      manifest,
     },
     {
       csrfToken: "csrf-token-with-at-least-thirty-two-characters",
       idempotencyKey: "idempotency-process-0001",
     },
-  )
-  expect(JSON.stringify(setupClient.submitProcessPackage.mock.calls[0]?.[0])).not.toContain(
-    "original bytes",
   )
 })
 
@@ -613,8 +688,24 @@ test("reconciles an ambiguous process submission with the original command and k
   )
   await user.upload(
     screen.getByLabelText("Process package"),
-    new File(["process"], "process.pdf", {type: "application/pdf"}),
+    new File(["process"], "process.md", {type: "text/markdown"}),
   )
+  fireEvent.change(screen.getByLabelText("Business process manifest (JSON)"), {
+    target: {
+      value: JSON.stringify({
+        process_name: "Process",
+        owner: "Operations",
+        participants: [],
+        outcomes: [],
+        entities: [],
+        events: [],
+        states: [],
+        rules: [],
+        source_references: [],
+        unresolved_questions: [],
+      }),
+    },
+  })
   await user.click(await screen.findByRole("button", {name: "Submit process package"}))
 
   expect(await screen.findByText("The process submission outcome is unknown.")).toBeVisible()
@@ -625,14 +716,15 @@ test("reconciles an ambiguous process submission with the original command and k
     setupClient.submitProcessPackage.mock.calls[0],
   )
   expect(idempotencyKeyFactory).toHaveBeenCalledTimes(1)
-  expect(await screen.findByText("operation-process-reconciled")).toBeVisible()
+  expect(await screen.findByText("Fixture operation completed.")).toBeVisible()
+  expect(screen.getByText("operation-process-reconciled")).not.toBeVisible()
 })
 
 test("asks the shell to re-read its projections once provisioning settles", async () => {
   // The command changes the workspace, the governance spine and the stage list, and
   // none of them are this component's state. Without this the page kept offering the
   // engine choice and kept showing "Managed warehouse: Blocked" beside its own
-  // "Provisioning succeeded", which reads as a failure rather than a stale view.
+  // "Completed", which reads as a failure rather than a stale view.
   const user = userEvent.setup()
   const onProjectionsChanged = vi.fn()
   setupClient.confirmWarehouseBinding.mockResolvedValueOnce({

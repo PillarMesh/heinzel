@@ -53,6 +53,12 @@ which defaults to `http://127.0.0.1:8000`. To serve another port, set
 factory takes no arguments, so the environment is how the port reaches it, and a mismatch turns
 every command into `same_origin_required`.
 
+Managed-service links are disabled unless `PILLARMESH_CONSOLE_MANAGED_LINK_ORIGIN` names one exact
+HTTPS origin. Configure its canonical ASCII hostname, including an explicit non-default port when
+needed. Internationalized hostnames must use their ASCII `xn--` form. The server reauthorizes an
+opaque link reference before redirecting and rejects every absolute target outside that origin;
+configuring the origin alone does not enable dashboard links or supply managed-service SSO.
+
 The compiled bundle executes under the Content-Security-Policy the server sends
 (`default-src 'self'`). Response validation does not compile schemas in the browser: Ajv is run
 at build time and `scripts/generate-contracts.mjs` writes standalone validator modules to

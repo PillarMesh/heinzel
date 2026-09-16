@@ -14,8 +14,20 @@ from enum import StrEnum
 from pathlib import Path
 
 import pytest
+from pillarmesh_access_control import (
+    ConnectedAuthorityProvenance,
+    CurrentEntitlementSnapshot,
+    EnterpriseEntitlementAssertion,
+    EnterpriseEntitlementObservation,
+    EntitlementFilterDomain,
+    EntitlementLookupRequest,
+    SignedEntitlementBody,
+    SignedEntitlementEnvelope,
+)
+from pillarmesh_bi_control import DashboardContract
 from pillarmesh_catalog_control import CatalogBinding
 from pillarmesh_catalog_control.service import _TRANSITIONS as CATALOG_TRANSITIONS
+from pillarmesh_compiler import GovernedQueryPlan
 from pillarmesh_connection_broker import (
     SourceBindingValidationEvidence,
     SourceConnectionBinding,
@@ -26,6 +38,7 @@ from pillarmesh_contract_model import (
     InformationKind,
     ManagedIntegrationContract,
 )
+from pillarmesh_contract_service import SourceFreshnessObservation
 from pillarmesh_provider_sdk import (
     AcquisitionAcknowledgement,
     AcquisitionBatchManifest,
@@ -45,6 +58,9 @@ from pillarmesh_provider_sdk import (
 )
 from pillarmesh_request_management import (
     AccessScopePreview,
+    AnswerIntentValidation,
+    AnswerQuestionIntent,
+    AnswerScopePolicy,
     ApprovalRequirement,
     ClarifiedOutcomeStatement,
     DataProductChangeRequest,
@@ -57,12 +73,15 @@ from pillarmesh_request_management import (
     FulfillmentGroundingSnapshot,
     FulfillmentPolicySnapshot,
     FulfillmentProposal,
+    PolicyAdmissionReceipt,
     RequestDependency,
     RequestNoValidPlan,
     StakeholderAnswerDraft,
 )
 from pillarmesh_request_management.service import _TRANSITIONS as REQUEST_TRANSITIONS
+from pillarmesh_runtime import AnswerExecutionReceipt
 from pillarmesh_semantic_registry import (
+    ApprovedProductVersionMetadata,
     AuthorityObservation,
     OntologyReviewBundle,
     OntologyReviewItem,
@@ -94,6 +113,32 @@ ADDENDUM = (
     / "specifications"
     / "managed-data-engineering-platform-addendum-v0.1.md"
 )
+
+
+@pytest.mark.parametrize(
+    ("artifact", "heading"),
+    [
+        (ConnectedAuthorityProvenance, "#### ConnectedAuthorityProvenance"),
+        (EntitlementFilterDomain, "#### EntitlementFilterDomain"),
+        (EnterpriseEntitlementAssertion, "#### EnterpriseEntitlementAssertion"),
+        (EnterpriseEntitlementObservation, "#### EnterpriseEntitlementObservation"),
+        (CurrentEntitlementSnapshot, "#### CurrentEntitlementSnapshot"),
+        (EntitlementLookupRequest, "#### EntitlementLookupRequest"),
+        (SignedEntitlementBody, "#### SignedEntitlementBody"),
+        (SignedEntitlementEnvelope, "#### SignedEntitlementEnvelope"),
+    ],
+)
+def test_access_control_artifact_fields_match_section_18_2(
+    artifact: type[BaseModel], heading: str
+) -> None:
+    assert _fenced_fields(heading) == [artifact.__name__, *artifact.model_fields]
+
+
+def test_dashboard_contract_fields_match_section_16_3() -> None:
+    assert _fenced_fields("### 16.3 Dashboard contract") == [
+        DashboardContract.__name__,
+        *DashboardContract.model_fields,
+    ]
 
 
 def _section(heading: str, *, addendum: Path = ADDENDUM) -> str:
@@ -226,6 +271,25 @@ def test_request_terminal_states_match_section_13_3_1_prose() -> None:
     ),
 )
 def test_plan3b_artifact_fields_match_section_13_7(artifact: type[BaseModel], heading: str) -> None:
+    assert _fenced_fields(heading) == [artifact.__name__, *artifact.model_fields]
+
+
+@pytest.mark.parametrize(
+    ("artifact", "heading"),
+    (
+        (AnswerScopePolicy, "#### AnswerScopePolicy"),
+        (AnswerQuestionIntent, "#### AnswerQuestionIntent"),
+        (AnswerIntentValidation, "#### AnswerIntentValidation"),
+        (GovernedQueryPlan, "#### GovernedQueryPlan"),
+        (PolicyAdmissionReceipt, "#### PolicyAdmissionReceipt"),
+        (SourceFreshnessObservation, "#### SourceFreshnessObservation"),
+        (ApprovedProductVersionMetadata, "#### ApprovedProductVersionMetadata"),
+        (AnswerExecutionReceipt, "#### AnswerExecutionReceipt"),
+    ),
+)
+def test_governed_answer_artifact_fields_match_section_13_8(
+    artifact: type[BaseModel], heading: str
+) -> None:
     assert _fenced_fields(heading) == [artifact.__name__, *artifact.model_fields]
 
 
@@ -416,7 +480,17 @@ def test_warehouse_principal_classes_match_section_18_1() -> None:
     documented = _fenced_fields("### 18.1")
     implemented = [member.value for member in WarehousePrincipalClass]
 
-    assert documented == implemented
+    expected = [
+        "administration",
+        "ingestion_runtime",
+        "transformation_runtime",
+        "answer_runtime",
+        "backup_restore",
+        "customer_sql",
+        "catalog",
+        "bi",
+    ]
+    assert documented == implemented == expected
 
 
 def test_warehouse_validation_vocabulary_matches_section_6_2() -> None:

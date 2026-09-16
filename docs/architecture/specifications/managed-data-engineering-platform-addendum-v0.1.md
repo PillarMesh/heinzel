@@ -22,9 +22,9 @@
   - 13.9: an agent interface over the same request boundary.
   - 17.1: post-MVP scouts that monitor and brief.
 
-  Two planned items are not yet implemented: section 18.1 defines an eighth principal class,
-  `answer_runtime`, and section 13.8 defines an `investigating → executing` transition for policy
-  admission. Each joins its pinned list or table in the change that implements it. Sections 3.4,
+  Section 18.1's `answer_runtime` principal class and section 13.8's `investigating → executing`
+  transition for policy admission are both implemented and pinned in their list and table. The
+  transition is restricted to a request with a recorded `PolicyAdmissionReceipt`. Sections 3.4,
   4.2, 4.3, 5, 13.1, 13.4, 13.6, 13.7, 17, 18, 19, 20, 21, and 22 are updated to match.
 
   Section 13.7 now requires a factual `StakeholderAnswerDraft.answer_text` to describe the
@@ -35,6 +35,13 @@
   rows for context exposure, knowledge graph, request management, and runtime. The
   managed-warehouse boundary of ADR-0003 is unchanged: a read-only overlay over a customer-managed
   warehouse is deferred and requires a new product-boundary decision.
+- 2026-09-11 — Section 18.1 now names the dedicated `answer_runtime` principal used for
+  admitted governed queries. It can read explicitly approved consumption objects and has no
+  warehouse write authority.
+- 2026-09-12 — Section 18.2 separates authenticated observations from the connected enterprise
+  policy authority, PillarMesh-applied access grants, and warehouse principal provisioning. It
+  defines the durable entitlement records required for current requester rechecks.
+
 - 2026-08-28 — Section 6.4 now defines the fail-closed response to version drift after a
   warehouse becomes `ready` and distinguishes Plan 3A local lifecycle proof from the future
   continuously-ready production revalidation loop. Closes correction 11 of the Plan 3A design
@@ -1526,7 +1533,7 @@ For the MVP, request lifecycle transitions are fixed as follows. Persisted value
 ```text
 submitted        → clarifying, investigating
 clarifying       → investigating, submitted
-investigating    → proposed, no_valid_plan
+investigating    → proposed, executing, no_valid_plan
 proposed         → awaiting_approval, investigating
 awaiting_approval → executing, rejected, investigating
 executing        → verifying, failed
@@ -1683,6 +1690,7 @@ StakeholderAnswerDraft
   material_quality_limitations
   lineage_refs
   disclosure_classifications
+  plan_digest
 ```
 
 All citations must appear in the grounding snapshot. `current` and `stale` are derived from a
@@ -1747,10 +1755,15 @@ FulfillmentProposal
   clarified_outcome_digest
   grounding_snapshot_digest
   policy_snapshot_digest
+  impact_admission_binding
   subject
   required_approvals
   created_at
 ```
+
+`impact_admission_binding` is optional when the proposal does not change an existing governed data
+product. When present, it binds the impact subject, source graph digest, and service-derived
+approval authorities that admission must revalidate.
 
 The first revision has no prior digest. Every material edit creates a new immutable revision whose
 `prior_proposal_digest` names the exact preceding proposal; old approvals remain history but cannot
@@ -1792,12 +1805,15 @@ FulfillmentAdmissionReceipt
   grounding_snapshot_digest
   policy_snapshot_digest
   approval_ids
+  access_grant_binding
   admitted_at
   execution_status
 ```
 
-`execution_status` is only `ready_for_execution`. The receipt proves authorization, not a data-plane
-effect.
+`execution_status` is only `ready_for_execution`. For an admitted access proposal,
+`access_grant_binding` carries the owning grant identity, current entitlement snapshot, policy
+revision, effective time, permissions, and provider targets. It is absent for other proposal kinds.
+The receipt proves authorization, not a data-plane effect.
 
 #### DenialDispositionReceipt
 
@@ -2125,7 +2141,7 @@ is an injected port, so tests and acceptance runs can supply scripted candidates
 
 ```text
 AnswerIntentValidation
-  schema_version
+  schema_version = "2"
   validation_id
   tenant_id
   request_id
@@ -2150,6 +2166,14 @@ Validation is deterministic and runs in `submitted`. A reference binds only to a
 in the approved semantic version, or to an approved glossary alias for one. A model can neither add
 an alias nor choose between bindings. `restatement` is rendered from the bound identifiers, never
 from model text.
+
+Each selected product must resolve to exactly one immutable `product_ref` and positive `generation`.
+Missing, duplicate, or conflicting selected-product generation authority produces
+`authority_conflict` and no executable generation reference. Generation observations for products
+that the interpreted question did not select are excluded from the validation without causing a
+conflict. Version `1` validation payloads did not bind product identity to generation and cannot be
+reinterpreted as version `2`; repositories reject them as stored authority conflicts, and callers
+must produce a new validation.
 
 Each check below runs in order. `reason_codes` records every check that did not pass, and
 `outcome` is the first failing check's outcome, or `admitted` when all pass.
@@ -2183,10 +2207,13 @@ GovernedQueryPlan
   consumption_object_refs
   product_generation_refs
   minimum_group_size
+  statement
+  parameters
   statement_digest
   parameter_digest
   estimated_scan
   ceilings
+  routing
   plan_digest
   signature
 ```
@@ -2197,9 +2224,7 @@ engine's pinned estimator cannot produce `estimated_scan`, the plan cannot be po
 goes to per-question review.
 
 A reviewed factual answer binds its plan through its Plan 3B proposal: the `StakeholderAnswerDraft`
-cites the plan digest, so approvers review the exact computation. That citation is a planned
-`StakeholderAnswerDraft` field. It joins the pinned field list in the change that implements
-reviewed factual answers. Until then, only policy-admitted answers compute values.
+cites the plan digest, so approvers review the exact computation. The optional `plan_digest` field binds that citation. Verified factual delivery requires it for a reviewed admission; definition drafts may omit it. Runtime composition and end-to-end admission remain separate acceptance gates.
 
 The statement text and bound parameters live only in the plan artifact. They never enter evidence,
 tickets, prompts, logs, or agent-interface results; evidence carries only digests. The readers are
@@ -2252,6 +2277,48 @@ verification checks them once more before delivery.
 Policy admission is recorded and displayed as policy admission, never as a reviewed approval. It
 never satisfies a Plan 3B approval requirement, and a `FulfillmentApprovalBinding` never satisfies a
 policy admission.
+
+#### SourceFreshnessObservation
+
+```text
+SourceFreshnessObservation
+  schema_version
+  observation_id
+  tenant_id
+  version
+  source_ref
+  input_generation_digest
+  data_observation_ref
+  watermark_at
+  observed_at
+```
+
+This is a measured source watermark for one immutable acquisition generation. `watermark_at` comes
+from source records or an equivalent provider-owned change boundary and cannot follow `observed_at`.
+A materialization timestamp is not source freshness. The exact data observation remains attached so
+the watermark cannot be reused for another generation.
+
+#### ApprovedProductVersionMetadata
+
+```text
+ApprovedProductVersionMetadata
+  schema_version
+  tenant_id
+  product_ref
+  generation
+  contract_ref
+  semantic_version_ref
+  materialization_receipt_ref
+  lineage_digest
+  approved_narrative_terms
+  recorded_at
+```
+
+The semantic registry derives this record from the exact approved semantic version and integration
+contract after materialization. Its product revision, generation, contract digest, receipt, and
+lineage must agree. Narrative terms come from those approved records. A dbt invocation is quality
+evidence only when its durable receipt reports at least one actual quality assertion; an untested
+run remains unavailable for a factual answer.
 
 #### AnswerExecutionReceipt
 
@@ -2350,11 +2417,9 @@ GovernedAnswer
 
 #### Answer lifecycle
 
-Policy admission needs a transition that section 13.3.1 does not yet have: `investigating →
-executing`. Like `answer_runtime`, it is planned. The change that adds it to the request service
-also adds it to the pinned table, restricted to a request with a recorded `PolicyAdmissionReceipt`.
-Until then, policy-admitted answers are not implemented. Every other answer path uses existing
-transitions.
+Policy admission adds `investigating → executing`, restricted to a request with a recorded
+`PolicyAdmissionReceipt`. Direct use of that transition is rejected. Every other answer path uses
+the existing transitions.
 
 1. In `submitted`, the interpreter proposes an intent and validation runs.
    - `clarification_required` moves to `clarifying`. A reply returns to `submitted` for a new
@@ -2649,6 +2714,7 @@ never answers outside its policy.
 administration
 ingestion_runtime
 transformation_runtime
+answer_runtime
 backup_restore
 customer_sql
 catalog
@@ -2660,6 +2726,7 @@ bi
 | Administration | Provisions namespaces, roles, and engine configuration; it is never used by ingestion, transformation, catalog, BI, or customer queries. |
 | Ingestion runtime | Writes only source-aligned `raw` generations and its bounded ledger records; it cannot administer roles, write `conformed`, `product`, `consumption`, or read customer and BI paths. |
 | Transformation runtime | Reads `raw`; writes `conformed`, `product`, and `quarantine`; publishes approved `consumption` objects; it cannot administer, back up, or mutate the control ledger outside its allowlist. |
+| Answer runtime | Reads only explicitly approved `consumption` objects for admitted governed queries; it cannot write any warehouse object or access `raw`, `conformed`, `product`, quarantine, ledger, role, or backup surfaces. |
 | Backup and restore | Reads only what engine-native backup requires and drives approved backup and restore through the private backup command boundary; it cannot write, author schemas, administer roles, access customers, or resolve its credential outside that boundary. Restore execution uses a throwaway bootstrap administrator confined to the isolated target; the `backup_restore` principal never receives write or administration authority on the primary. |
 | Customer SQL | Reads only explicitly granted `consumption` objects through a non-shared identity; it cannot access `raw`, `conformed`, `product`, quarantine, ledger, role, or backup surfaces. |
 | Catalog | Inspects approved schemas, object metadata, and lineage-supporting metadata; it cannot read rows, write the warehouse, administer roles, or access backups. |
@@ -2667,9 +2734,168 @@ bi
 
 Non-administration principals do not inherit another capability class. Administration remains
 the private control path for provisioning and role management and is never substituted for an
-ingestion, transformation, backup, catalog, BI, or customer identity. Each class carries positive
-and denial probes in the destination conformance suite, and a provisioned warehouse is not `ready`
-until both pass for every class.
+ingestion, transformation, answer, backup, catalog, BI, or customer identity. Each class carries
+positive and denial probes in the destination conformance suite, and a provisioned warehouse is
+not `ready` until both pass for every class.
+
+### 18.2 Connected entitlement and access-grant authority
+
+The connected enterprise policy system remains authoritative for requester entitlement.
+Access-control persists authenticated observations from it, derives current snapshots, and owns
+the separate lifecycle of access grants that PillarMesh applies. Request and contract approvals do
+not become entitlement observations. Warehouse principals are effect identities provisioned by
+warehouse-control and do not become user grants.
+
+#### ConnectedAuthorityProvenance
+
+```text
+ConnectedAuthorityProvenance
+  connected_authority_ref
+  connection_binding_ref
+  source_revision
+  source_payload_digest
+  authentication_method
+  authentication_key_ref
+  authentication_evidence_digest
+  adapter_ref
+```
+
+#### EntitlementFilterDomain
+
+```text
+EntitlementFilterDomain
+  dimension_ref
+  values
+```
+
+#### EnterpriseEntitlementAssertion
+
+```text
+EnterpriseEntitlementAssertion
+  schema_version
+  tenant_id
+  principal_ref
+  purpose_digest
+  decision
+  product_version_refs
+  semantic_refs
+  filter_domains
+  permissions
+  effective_at
+  valid_until
+  provenance
+```
+
+#### EnterpriseEntitlementObservation
+
+```text
+EnterpriseEntitlementObservation
+  schema_version
+  tenant_id
+  principal_ref
+  purpose_digest
+  decision
+  product_version_refs
+  semantic_refs
+  filter_domains
+  permissions
+  effective_at
+  valid_until
+  provenance
+  observation_id
+  recorded_at
+```
+
+#### CurrentEntitlementSnapshot
+
+```text
+CurrentEntitlementSnapshot
+  schema_version
+  snapshot_id
+  snapshot_digest
+  tenant_id
+  principal_ref
+  purpose_digest
+  connected_authority_ref
+  source_revision
+  source_payload_digest
+  observation_id
+  product_version_refs
+  semantic_refs
+  filter_domains
+  permissions
+  effective_at
+  valid_until
+  resolved_at
+```
+
+#### EntitlementLookupRequest
+
+```text
+EntitlementLookupRequest
+  schema_version
+  tenant_id
+  principal_ref
+  purpose_digest
+```
+
+#### SignedEntitlementBody
+
+```text
+SignedEntitlementBody
+  schema_version
+  tenant_id
+  principal_ref
+  purpose_digest
+  decision
+  product_version_refs
+  semantic_refs
+  filter_domains
+  permissions
+  effective_at
+  valid_until
+  source_revision
+  source_payload_digest
+```
+
+#### SignedEntitlementEnvelope
+
+```text
+SignedEntitlementEnvelope
+  schema_version
+  key_ref
+  body
+  signature
+```
+
+The snapshot digest binds the authority reference, source revision and payload digest, exact scope,
+effective time, and expiry. It excludes observation, snapshot, and read-time identities so a fresh
+read of unchanged authority remains equal. The observation repository rejects source-revision
+rollback and equivocation. Revocation and expiry fail closed. A missing or unavailable connected
+authority never falls back to the historical SQLite ledger.
+
+The normalized signed-response protocol sends an `EntitlementLookupRequest` with `POST` to the
+configured HTTPS `/entitlements/current` endpoint using a separately configured read-only bearer
+credential, TLS trust bundle, timeout, authority reference, connection-binding reference, signing
+key reference, and Ed25519 public key. Unknown fields are invalid. The body payload digest covers
+the canonical `SignedEntitlementBody` claims excluding `source_payload_digest`. The hexadecimal
+signature covers canonical bytes of
+`{"domain":"pillarmesh-enterprise-entitlement-v1","body":body}`. Authentication provenance is
+derived from verified bytes and local adapter configuration; response-supplied authentication
+claims have no authority. Missing, unavailable, malformed, incorrectly scoped, unknown-key, or
+invalid-signature responses fail closed.
+
+A live current check requires a concrete authenticated adapter for the tenant's declared connected
+policy authority. The adapter verifies the upstream response, supplies the source revision and
+payload digest, and normalizes exact artifact references and filter domains. Fixture assertions do
+not satisfy this boundary. Access-control rechecks this source for validation, admission, runtime
+execution, result disclosure, downloads, dashboards, agents, and standing access.
+
+An applied `AccessGrant` is authorized by an admitted request-management proposal and narrowed by a
+current entitlement snapshot. Access-control owns its application, synchronous denial on expiry or
+revocation, and provider-effect receipts. State may materialize its expiry intent. Runtime executes
+authorized work and holds no grant state. Warehouse-control provisions and probes service and user
+principal classes and retains their private credentials.
 
 Governed answers (section 12.4) require an eighth class, `answer_runtime`. It is planned, not yet
 implemented, so it is not in the list above. The list stays pinned to the implemented principal

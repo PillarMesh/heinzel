@@ -19,7 +19,7 @@ cd ../..
 ```
 
 Choose a new private directory for this test run. Start the architect first, then the
-requester in another terminal, using the same directory:
+requester and approval roles in separate terminals, using the same directory:
 
 ```sh
 uv run python -m tests.acceptance.run_console_governed \
@@ -33,13 +33,27 @@ uv run python -m tests.acceptance.run_console_governed \
   --port 8131 --actor requester-a --no-seed
 ```
 
+```sh
+uv run python -m tests.acceptance.run_console_governed \
+  --directory /private/tmp/pillarmesh-ui-test-session \
+  --port 8132 --actor data-owner-a --no-seed
+```
+
+```sh
+uv run python -m tests.acceptance.run_console_governed \
+  --directory /private/tmp/pillarmesh-ui-test-session \
+  --port 8133 --actor policy-approver-a --no-seed
+```
+
 - Requester: <http://127.0.0.1:8131/requests>
 - Architect: <http://127.0.0.1:8130/inbox>
 - Architect setup: <http://127.0.0.1:8130/setup>
+- Finance data owner: <http://127.0.0.1:8132/inbox>
+- Policy approver: <http://127.0.0.1:8133/inbox>
 
 These are fixed local sessions, not production authentication. The selected actor cannot
 be changed by request headers. The harness refuses non-loopback binding. Do not expose
-these servers through a tunnel or public interface. Both sessions read and write the
+these servers through a tunnel or public interface. All sessions read and write the
 same durable state. Restarting preserves it; choose a fresh directory to repeat a fresh
 approval scenario. Stop each server with Ctrl-C when finished.
 
@@ -65,17 +79,26 @@ approval scenario. Stop each server with Ctrl-C when finished.
    keyboard-only navigation. An unavailable capability must explain its status rather
    than pretend to complete an effect.
 
+For data access, submit `product-revenue` with the published `net-revenue` field and a
+future expiry. The architect records clarification, prepares the access proposal, and
+submits it. The requester accepts the clarified scope; the finance data owner and policy
+approver each review the proposal in their own session and approve it. The architect then
+admits it. The requester must see **Access is ready**, only the approved fields and
+permissions, and the automatic expiry. Grant IDs and provider-effect references must not
+appear. If current authority changes, admission supersedes the proposal and every role must
+review the replacement revision.
+
 ## Limits to record
 
-- Data access request intake is unavailable until grant application, expiry, and
-  revocation are composed.
+- Data access is composed against strict local result and warehouse surfaces. These are
+  acceptance providers; they do not prove a live PostgreSQL, ClickHouse, or Superset grant.
 - Missing governed data produces an explicit dependency. No Valid Plan includes the
   owning refusal reasons and required changes; neither outcome invents an answer.
 - Source acquisition needs a composed runtime and approved live binding.
 - Process document upload, analyst dashboards, catalog asset previews, and operation
   retry remain unavailable in governed mode.
-- Grant application, expiry/revocation, and downstream transformation effects remain
-  outside this semantic-definition journey.
+- Manual revocation controls and intermediate provider-cleanup state remain outside the
+  browser journey. Access-control still denies expired or revoked authority immediately.
 - Interactive transactions use wall-clock UTC. Semantic facts come from the selected
   approved publication; the default publication is local test data unless
   `--publication-database` selects a live publication store.

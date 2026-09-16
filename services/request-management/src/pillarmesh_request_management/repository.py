@@ -4,7 +4,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime
-from typing import Protocol, Self
+from typing import TYPE_CHECKING, Protocol, Self
 
 from pillarmesh_contract_model import canonical_bytes, digest
 
@@ -17,6 +17,15 @@ from .models import (
     RequestState,
     TransitionEvent,
 )
+
+if TYPE_CHECKING:
+    from .product_intent import (
+        ApprovedProductIntent,
+        ProductIntent,
+        ProductIntentCandidate,
+        ProductIntentConstraints,
+        ProductIntentSourceCoverage,
+    )
 
 
 class RequestRepository(Protocol):
@@ -150,6 +159,33 @@ class SQLiteRequestRepository:
             "artifact_kind TEXT NOT NULL, "
             "next_sequence INTEGER NOT NULL, "
             "PRIMARY KEY (tenant_id, artifact_kind)"
+            ")"
+        )
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS product_intent_approvals ("
+            "approval_id TEXT PRIMARY KEY, "
+            "request_id TEXT NOT NULL, "
+            "request_revision INTEGER NOT NULL, "
+            "intent_revision INTEGER NOT NULL, "
+            "tenant_id TEXT NOT NULL, "
+            "approved_at TEXT NOT NULL, "
+            "intent_digest TEXT NOT NULL, "
+            "payload BLOB NOT NULL, "
+            "UNIQUE (request_id, request_revision), "
+            "UNIQUE (request_id, intent_revision)"
+            ")"
+        )
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS product_intent_candidates ("
+            "candidate_id TEXT PRIMARY KEY, "
+            "tenant_id TEXT NOT NULL, "
+            "request_id TEXT NOT NULL, "
+            "request_revision INTEGER NOT NULL, "
+            "idempotency_key TEXT NOT NULL, "
+            "input_digest TEXT NOT NULL, "
+            "payload BLOB NOT NULL, "
+            "UNIQUE (tenant_id, idempotency_key), "
+            "UNIQUE (tenant_id, request_id, request_revision)"
             ")"
         )
         self._connection.commit()
@@ -443,6 +479,183 @@ class SQLiteRequestRepository:
         ).fetchall()
         return tuple(DecisionBinding.model_validate_json(row[0]) for row in rows)
 
+    def record_product_intent_candidate(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        request_revision: int,
+        idempotency_key: str,
+        input_digest: str,
+        proposed_by: str,
+        proposed_at: datetime,
+        intent: ProductIntent,
+        constraints: ProductIntentConstraints,
+        source_coverage: tuple[ProductIntentSourceCoverage, ...],
+        unresolved_constraints: tuple[str, ...],
+    ) -> ProductIntentCandidate:
+        from .product_intent import (
+            ProductIntentCandidate,
+            ProductIntentCandidateConflictError,
+            ProductIntentCandidateStaleRevisionError,
+        )
+
+        with _transaction(self._connection):
+            existing_row = self._connection.execute(
+                "SELECT input_digest, payload FROM product_intent_candidates "
+                "WHERE tenant_id = ? AND idempotency_key = ?",
+                (tenant_id, idempotency_key),
+            ).fetchone()
+            if existing_row is not None:
+                if existing_row[0] != input_digest:
+                    raise ProductIntentCandidateConflictError(
+                        "idempotency key already proposed a different product intent candidate"
+                    )
+                return ProductIntentCandidate.model_validate_json(existing_row[1])
+
+            try:
+                request = self._load_owned_request(tenant_id, request_id)
+            except KeyError:
+                raise KeyError("request is unavailable") from None
+            if request.revision != request_revision:
+                raise ProductIntentCandidateStaleRevisionError("request revision is stale")
+            existing_revision = self._connection.execute(
+                "SELECT input_digest, payload FROM product_intent_candidates "
+                "WHERE tenant_id = ? AND request_id = ? AND request_revision = ?",
+                (tenant_id, request_id, request_revision),
+            ).fetchone()
+            if existing_revision is not None:
+                if existing_revision[0] == input_digest:
+                    return ProductIntentCandidate.model_validate_json(existing_revision[1])
+                raise ProductIntentCandidateConflictError(
+                    "request revision already has a different product intent candidate"
+                )
+            sequence = self._allocate_artifact_sequence(tenant_id, "product-intent-candidate")
+            candidate = ProductIntentCandidate(
+                candidate_id=self._artifact_id("product-intent-candidate", tenant_id, sequence),
+                tenant_id=tenant_id,
+                request_id=request_id,
+                request_revision=request_revision,
+                intent=intent,
+                constraints=constraints,
+                source_coverage=source_coverage,
+                unresolved_constraints=unresolved_constraints,
+                proposed_by=proposed_by,
+                proposed_at=proposed_at,
+            )
+            self._connection.execute(
+                "INSERT INTO product_intent_candidates "
+                "(candidate_id, tenant_id, request_id, request_revision, idempotency_key, "
+                "input_digest, payload) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    candidate.candidate_id,
+                    tenant_id,
+                    request_id,
+                    request_revision,
+                    idempotency_key,
+                    input_digest,
+                    canonical_bytes(candidate),
+                ),
+            )
+        return candidate
+
+    def load_current_product_intent_candidate(
+        self, tenant_id: str, request_id: str
+    ) -> ProductIntentCandidate | None:
+        from .product_intent import ProductIntentCandidate
+
+        try:
+            request = self._load_owned_request(tenant_id, request_id)
+        except KeyError:
+            raise KeyError("request is unavailable") from None
+        row = self._connection.execute(
+            "SELECT payload FROM product_intent_candidates "
+            "WHERE tenant_id = ? AND request_id = ? AND request_revision = ?",
+            (tenant_id, request_id, request.revision),
+        ).fetchone()
+        return None if row is None else ProductIntentCandidate.model_validate_json(row[0])
+
+    def record_product_intent_approval(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        request_revision: int,
+        approved_by: str,
+        approved_at: datetime,
+        intent: ProductIntent,
+    ) -> ApprovedProductIntent:
+        from .product_intent import ApprovedProductIntent, ProductIntent
+
+        approved_intent = ProductIntent.model_validate(intent)
+        intent_digest = digest(approved_intent)
+        try:
+            with _transaction(self._connection):
+                request = self._load_owned_request(tenant_id, request_id)
+                if request.revision != request_revision:
+                    raise StaleRevisionError("request revision was not advanced")
+                existing_row = self._connection.execute(
+                    "SELECT payload FROM product_intent_approvals "
+                    "WHERE tenant_id = ? AND request_id = ? AND request_revision = ?",
+                    (tenant_id, request_id, request_revision),
+                ).fetchone()
+                if existing_row is not None:
+                    existing = ApprovedProductIntent.model_validate_json(existing_row[0])
+                    if existing.intent_digest != intent_digest:
+                        raise ValueError("request revision already has a different approved intent")
+                    return existing
+                revision_row = self._connection.execute(
+                    "SELECT COALESCE(MAX(intent_revision), 0) + 1 "
+                    "FROM product_intent_approvals WHERE tenant_id = ? AND request_id = ?",
+                    (tenant_id, request_id),
+                ).fetchone()
+                if revision_row is None:
+                    raise RuntimeError("intent revision allocation failed")
+                intent_revision = int(revision_row[0])
+                sequence = self._allocate_artifact_sequence(tenant_id, "product-intent")
+                approval = ApprovedProductIntent(
+                    approval_id=self._artifact_id("product-intent", tenant_id, sequence),
+                    intent_revision=intent_revision,
+                    tenant_id=tenant_id,
+                    request_id=request_id,
+                    request_revision=request_revision,
+                    intent=approved_intent,
+                    intent_digest=intent_digest,
+                    approved_by=approved_by,
+                    approved_at=approved_at,
+                )
+                self._connection.execute(
+                    "INSERT INTO product_intent_approvals "
+                    "(approval_id, request_id, request_revision, intent_revision, tenant_id, "
+                    "approved_at, intent_digest, payload) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        approval.approval_id,
+                        request_id,
+                        request_revision,
+                        intent_revision,
+                        tenant_id,
+                        approved_at.isoformat(),
+                        intent_digest,
+                        canonical_bytes(approval),
+                    ),
+                )
+        except sqlite3.IntegrityError as error:
+            raise StaleRevisionError("product intent approval conflicted") from error
+        return approval
+
+    def list_product_intent_approvals(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[ApprovedProductIntent, ...]:
+        from .product_intent import ApprovedProductIntent
+
+        self._load_owned_request(tenant_id, request_id)
+        rows = self._connection.execute(
+            "SELECT payload FROM product_intent_approvals "
+            "WHERE tenant_id = ? AND request_id = ? ORDER BY intent_revision",
+            (tenant_id, request_id),
+        ).fetchall()
+        return tuple(ApprovedProductIntent.model_validate_json(row[0]) for row in rows)
+
     def discard_unapproved_semantic_request(
         self, tenant_id: str, request_id: str, review_bundle_digest: str
     ) -> None:
@@ -694,7 +907,13 @@ class SQLiteRequestRepository:
         identity_digest = digest({"domain": domain, "tenant_id": tenant_id, "sequence": sequence})[
             :24
         ]
-        prefix = {"conversation": "con", "decision": "dec", "transition": "trn"}[artifact_kind]
+        prefix = {
+            "conversation": "con",
+            "decision": "dec",
+            "product-intent": "pin",
+            "product-intent-candidate": "pic",
+            "transition": "trn",
+        }[artifact_kind]
         return f"{prefix}-{sequence:020d}-{identity_digest}"
 
     def _save_request_revision(self, request: InboxRequest) -> None:

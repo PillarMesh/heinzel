@@ -37,7 +37,7 @@ from pillarmesh_provider_sdk import (
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from .client import (
-    UPSTREAM_IMAGES,
+    CORE_UPSTREAM_IMAGES,
     OpenMetadataClient,
     OpenMetadataSettings,
     _OpenMetadataCredentials,
@@ -56,7 +56,7 @@ from .models import (
 
 _MYSQL_DUMP_DIRECTORY = "/tmp/pillarmesh-openmetadata-dump"
 _MYSQL_SOCKET = "/var/lib/mysql/mysql.sock"
-_OPENMETADATA_COMPOSE_TIMEOUT_SECONDS = 300.0
+_OPENMETADATA_COMPOSE_TIMEOUT_SECONDS = 600.0
 _OPENMETADATA_TERMINATION_GRACE_SECONDS = 5.0
 _LOCAL_PROVISIONING_LOCKS_GUARD = Lock()
 _LOCAL_PROVISIONING_LOCKS: dict[tuple[str, str], Lock] = {}
@@ -486,7 +486,7 @@ class DockerComposeController:
             if image is None:
                 raise RuntimeError("OpenMetadata container image observation failed")
             observed_images.add(image)
-        if observed_images != set(UPSTREAM_IMAGES):
+        if observed_images != set(CORE_UPSTREAM_IMAGES):
             raise RuntimeError("OpenMetadata container image set differs from the approved set")
         return digest(tuple(sorted(observed_images)))
 
@@ -573,6 +573,8 @@ class DockerComposeController:
         deadline = time.monotonic() + 120
         while time.monotonic() < deadline:
             try:
+                # The image's temporary initializer accepts its Unix socket but has TCP disabled.
+                # mysqladmin ping therefore distinguishes the durable server before the import.
                 self._process.exec(
                     project_name=project_name,
                     arguments=(
@@ -581,10 +583,9 @@ class DockerComposeController:
                         "mysql",
                         "sh",
                         "-c",
-                        'exec mysql --user=root --password="$MYSQL_ROOT_PASSWORD" '
-                        '--silent --execute "SELECT 1"',
+                        "exec mysqladmin --protocol=TCP --host=127.0.0.1 ping >/dev/null",
                     ),
-                    environment=self._database_environment(environment),
+                    environment=self._compose_environment(environment),
                 )
             except ComposeCommandError:
                 time.sleep(1)
@@ -1443,9 +1444,10 @@ class OpenMetadataProvisioner:
             failure = self._cleanup_resource(binding, resource)
             if failure is not None:
                 failures.append(failure)
-        compose_failure = self._cleanup_compose_project(binding, compose_resources)
-        if compose_failure is not None:
-            failures.append(compose_failure)
+        if not failures:
+            compose_failure = self._cleanup_compose_project(binding, compose_resources)
+            if compose_failure is not None:
+                failures.append(compose_failure)
         if failures:
             raise failures[0]
         completed_resources = self._repository.load_resources(binding.tenant_id, binding.binding_id)
@@ -1928,13 +1930,14 @@ class OpenMetadataProvisioner:
                 selected_client = selected_client or self._client_for(binding)
             self._remove_exact_resource(binding, resource, client=selected_client)
         except CatalogProviderError as error:
-            with suppress(Exception):
-                self._repository.fail_cleanup(
-                    binding.tenant_id,
-                    resource.resource_id,
-                    status="failed",
-                    failure_classification=error.classification,
-                )
+            if error.classification not in {"transient", "throttled"}:
+                with suppress(Exception):
+                    self._repository.fail_cleanup(
+                        binding.tenant_id,
+                        resource.resource_id,
+                        status="failed",
+                        failure_classification=error.classification,
+                    )
             return error
         try:
             absent = self._exact_resource_is_absent(binding, resource, client=selected_client)

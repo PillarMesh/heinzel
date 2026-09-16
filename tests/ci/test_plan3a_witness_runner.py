@@ -79,7 +79,7 @@ def _plan3a_environment(private_parent: Path) -> dict[str, str]:
         ),
         "PILLARMESH_PLAN3A_RETENTION_DEADLINE": "2026-08-28T12:00:00Z",
         "PILLARMESH_PLAN3A_CREDENTIAL_CANARIES": json.dumps(
-            [f"private-credential-marker-{index}" for index in range(7)]
+            [f"private-credential-marker-{index}" for index in range(8)]
         ),
         "PILLARMESH_PLAN3A_STATE_ENCRYPTION_KEY": "private-state-encryption-marker",
         "PILLARMESH_PLAN3A_EVIDENCE_SIGNING_KEY": "private-evidence-signing-marker",

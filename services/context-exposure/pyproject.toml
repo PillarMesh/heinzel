@@ -1,0 +1,24 @@
+[project]
+name = "pillarmesh-context-exposure"
+version = "0.1.0"
+requires-python = "==3.13.*"
+dependencies = [
+  "mcp>=2,<3",
+  "pillarmesh-access-control",
+  "pillarmesh-contract-model",
+  "pillarmesh-request-management",
+  "pydantic>=2.11,<3",
+  "pydantic-settings>=2.10,<3",
+]
+
+[project.scripts]
+pillarmesh-agent-mcp = "pillarmesh_context_exposure.mcp_server:main"
+
+[tool.uv.sources]
+pillarmesh-access-control = { workspace = true }
+pillarmesh-contract-model = { workspace = true }
+pillarmesh-request-management = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

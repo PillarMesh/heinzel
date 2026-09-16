@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from threading import Event, Lock
 
 import pytest
@@ -10,6 +12,8 @@ from pillarmesh_console import create_app
 from pillarmesh_console.auth import TrustedActorContext
 from pillarmesh_console.backend import AuthorizedLink, PreviewContent
 from pillarmesh_console.contracts import (
+    AccessLifecycleView,
+    AccessRevocationCommand,
     ActorRole,
     OperationState,
     OperationView,
@@ -49,12 +53,14 @@ def _client(
     *,
     backend: FixtureConsoleBackend | None = None,
     context: TrustedActorContext | None = None,
+    managed_link_origin: str | None = None,
 ) -> Iterator[TestClient]:
     with TestClient(
         create_app(
             backend=backend or FixtureConsoleBackend(),
             context_provider=lambda _: context or _context(),
             allowed_origin="http://testserver",
+            managed_link_origin=managed_link_origin,
         )
     ) as client:
         yield client
@@ -102,15 +108,21 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/reviews/{review_id}", "GET"),
         ("/api/v1/inbox", "GET"),
         ("/api/v1/inbox/{request_id}", "GET"),
+        ("/api/v1/inbox/{request_id}/impact", "GET"),
         ("/api/v1/requests/mine", "GET"),
         ("/api/v1/requests/{request_id}/conversation", "GET"),
+        ("/api/v1/requests/{request_id}/result", "GET"),
+        ("/api/v1/requests/{request_id}/result.csv", "GET"),
         ("/api/v1/requests/{request_id}/clarified-outcome", "GET"),
         ("/api/v1/data-products", "GET"),
         ("/api/v1/data-products/{data_product_id}", "GET"),
         ("/api/v1/runs", "GET"),
+        ("/api/v1/incidents", "GET"),
         ("/api/v1/acquisition-receipts", "GET"),
+        ("/api/v1/acquisitions/run-now", "POST"),
         ("/api/v1/catalog", "GET"),
         ("/api/v1/catalog/{asset_ref}", "GET"),
+        ("/api/v1/dashboards", "GET"),
         ("/api/v1/dashboards/{dashboard_ref}", "GET"),
         ("/api/v1/evidence/{evidence_ref}", "GET"),
         ("/api/v1/operations/{operation_id}", "GET"),
@@ -120,6 +132,7 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/setup/process-packages", "POST"),
         ("/api/v1/reviews/{review_id}/decisions", "POST"),
         ("/api/v1/inbox/{request_id}/decisions", "POST"),
+        ("/api/v1/inbox/{request_id}/product-intent/approval", "POST"),
         ("/api/v1/inbox/{request_id}/admission", "POST"),
         ("/api/v1/inbox/{request_id}/clarification", "POST"),
         ("/api/v1/inbox/{request_id}/proposal", "POST"),
@@ -128,7 +141,9 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/requests/{request_id}/conversation", "POST"),
         ("/api/v1/requests/{request_id}/clarified-outcome/acceptance", "POST"),
         ("/api/v1/requests/{request_id}/withdrawal", "POST"),
+        ("/api/v1/requests/{request_id}/access/revocation", "POST"),
         ("/api/v1/operations/{operation_id}/retry", "POST"),
+        ("/api/v1/incidents/{incident_id}/recovery", "POST"),
         ("/api/v1/demo/reset", "POST"),
         # The not-found boundary for every other API path. It serves no resource: it keeps the
         # browser shell from answering an unknown API path with 200 HTML.
@@ -154,6 +169,7 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/acquisition-receipts", "receipts", None),
         ("/api/v1/catalog/asset-revenue", "asset_ref", "asset-revenue"),
         ("/api/v1/catalog", "assets", None),
+        ("/api/v1/dashboards", "dashboards", None),
         ("/api/v1/dashboards/dashboard-revenue", "state", "not_delivered"),
     ),
 )
@@ -185,6 +201,48 @@ def test_requester_reads_only_their_projection_and_clarified_outcome() -> None:
     assert "candidate" not in serialized
     assert "effective_scope" not in serialized
     assert outcome.json()["data"]["accepted"] is False
+
+
+def test_impact_route_exposes_safe_labels_and_never_internal_graph_authority() -> None:
+    with _client() as client:
+        response = client.get("/api/v1/inbox/request-answer/impact")
+
+    assert response.status_code == 200
+    assert response.json()["data"]["subject_label"] == "Net revenue v2"
+    assert response.json()["data"]["validated_impacts"][0]["label"] == "Revenue overview"
+    serialized = response.text
+    for internal_name in (
+        "node_id",
+        "owner_ref",
+        "authority_ref",
+        "graph_snapshot_digest",
+        "source_record_ref",
+        "provider",
+    ):
+        assert internal_name not in serialized
+
+
+def test_impact_route_filters_role_private_assets_without_weakening_added_approvers() -> None:
+    architect_context = _context(active_role="data_architect")
+    owner_context = _context(actor_id="actor-owner", active_role="data_owner")
+    with _client(context=architect_context) as architect_client:
+        architect = architect_client.get("/api/v1/inbox/request-answer/impact")
+    with _client(context=owner_context) as owner_client:
+        owner = owner_client.get("/api/v1/inbox/request-answer/impact")
+
+    assert len(owner.json()["data"]["possible_impacts"]) < len(
+        architect.json()["data"]["possible_impacts"]
+    )
+    assert owner.json()["data"]["added_approvers"] == architect.json()["data"]["added_approvers"]
+    assert "Quarterly forecast" not in owner.text
+
+
+def test_requester_cannot_probe_impact_analysis() -> None:
+    context = _context(actor_id="actor-requester", active_role="requester")
+    with _client(context=context) as client:
+        response = client.get("/api/v1/inbox/request-answer/impact")
+
+    assert response.status_code == 404
 
 
 def test_long_running_command_returns_202_and_operation_poll_uses_opaque_handle() -> None:
@@ -457,6 +515,7 @@ def test_same_idempotency_key_serializes_in_flight_calls_without_caching_a_respo
 
 def test_remaining_reviewed_commands_return_authoritative_typed_projections() -> None:
     backend = FixtureConsoleBackend()
+    narrative = "# Revenue to cash\n"
     with _client(backend=backend) as client:
         warehouse = client.post(
             "/api/v1/setup/warehouse-binding",
@@ -468,10 +527,23 @@ def test_remaining_reviewed_commands_return_authoritative_typed_projections() ->
             headers=_command_headers(client, "idem-flow-package"),
             json={
                 "expected_revision": 2,
-                "package_digest": "f" * 64,
+                "package_digest": hashlib.sha256(narrative.encode()).hexdigest(),
                 "active_role": "data_architect",
-                "file_name": "revenue-to-cash.pdf",
-                "media_type": "application/pdf",
+                "file_name": "revenue-to-cash.md",
+                "media_type": "text/markdown; charset=utf-8",
+                "narrative_markdown": narrative,
+                "manifest": {
+                    "process_name": "Revenue to cash",
+                    "owner": "Finance operations",
+                    "participants": [],
+                    "outcomes": [],
+                    "entities": [],
+                    "events": [],
+                    "states": [],
+                    "rules": [],
+                    "source_references": [],
+                    "unresolved_questions": [],
+                },
             },
         )
         review = client.post(
@@ -583,6 +655,49 @@ def test_requester_commands_create_request_and_accept_clarified_outcome() -> Non
     assert accepted.json()["data"]["accepted"] is True
 
 
+def test_requester_access_revocation_route_returns_the_authoritative_lifecycle() -> None:
+    class AccessRevocationBackend(FixtureConsoleBackend):
+        def __init__(self) -> None:
+            super().__init__()
+            self.calls: list[tuple[str, str, AccessRevocationCommand]] = []
+
+        def revoke_access(
+            self,
+            context: TrustedActorContext,
+            request_id: str,
+            command: AccessRevocationCommand,
+        ) -> AccessLifecycleView:
+            self.calls.append((context.actor_id, request_id, command))
+            return AccessLifecycleView(
+                state="revocation_pending",
+                title="Access removal is in progress",
+                summary="Access is already unavailable while cleanup completes.",
+                effective_at=datetime(2026, 9, 1, 12, tzinfo=UTC),
+                expires_at=datetime(2026, 10, 1, 12, tzinfo=UTC),
+                revision=3,
+                can_revoke=False,
+            )
+
+    backend = AccessRevocationBackend()
+    requester = _context(actor_id="actor-requester", active_role="requester")
+    with _client(backend=backend, context=requester) as client:
+        response = client.post(
+            "/api/v1/requests/request-access/access/revocation",
+            headers=_command_headers(client, "idem-access-revocation"),
+            json={
+                "expected_revision": 2,
+                "active_role": "requester",
+                "reason": "The analysis is complete.",
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["data"]["state"] == "revocation_pending"
+    assert response.json()["data"]["can_revoke"] is False
+    assert backend.calls[0][0:2] == ("actor-requester", "request-access")
+    assert backend.calls[0][2].expected_revision == 2
+
+
 def test_retry_uses_a_fixture_failure_and_returns_new_accepted_operation() -> None:
     with _client() as client:
         operation = client.get("/api/v1/operations/operation-retryable").json()["data"]
@@ -602,6 +717,23 @@ def test_retry_uses_a_fixture_failure_and_returns_new_accepted_operation() -> No
     assert retry.json()["data"]["state"] == "accepted"
 
 
+def test_run_now_route_requires_a_composed_acquisition_application() -> None:
+    with _client() as client:
+        response = client.post(
+            "/api/v1/acquisitions/run-now",
+            headers=_command_headers(client, "idem-acquisition-run-now"),
+            json={
+                "active_role": "data_architect",
+                "contract_ref": "contract:orders:v4",
+                "trigger_window": "2026-09-01T12:00:00Z/2026-09-01T13:00:00Z",
+                "acquisition_mode": "snapshot",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "capability_not_delivered"
+
+
 def test_fixture_preview_and_authorized_link_use_opaque_references() -> None:
     with _client() as client:
         preview = client.get("/api/v1/previews/preview-dashboard-revenue")
@@ -619,6 +751,85 @@ def test_fixture_preview_and_authorized_link_use_opaque_references() -> None:
     assert link.headers["location"] == "/demo/catalog/revenue"
     assert link.headers["x-correlation-id"].startswith("correlation-")
     assert link.headers["x-pillarmesh-data-provenance"] == "demo_fixture"
+
+
+def test_authorized_external_link_requires_the_exact_configured_https_origin() -> None:
+    class ManagedLinkBackend(FixtureConsoleBackend):
+        def authorize_link(self, context: TrustedActorContext, link_ref: str) -> AuthorizedLink:
+            return AuthorizedLink(
+                location="https://bi.example.test:443/superset/dashboard/7/?standalone=1"
+            )
+
+    with _client(
+        backend=ManagedLinkBackend(),
+        managed_link_origin="https://BI.EXAMPLE.TEST",
+    ) as client:
+        response = client.get(
+            "/api/v1/links/link-dashboard-revenue",
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 307
+    assert response.headers["location"] == (
+        "https://bi.example.test:443/superset/dashboard/7/?standalone=1"
+    )
+
+
+@pytest.mark.parametrize(
+    "location",
+    (
+        "https://bi.example.test.attacker.invalid/private-canary",
+        "https://bi.example.test@attacker.invalid/private-canary",
+        "https://attacker.invalid@bi.example.test/private-canary",
+        "http://bi.example.test/private-canary",
+        "https://bi.example.test:444/private-canary",
+        "https://bi.example.test:bad/private-canary",
+        "https://faß.de/private-canary",
+        "//bi.example.test/private-canary",
+        "https:\\bi.example.test\\private-canary",
+        "https://bi.example.test/private-canary#fragment",
+        "https://bi.example.test/private-canary#",
+    ),
+)
+def test_authorized_external_link_rejects_origin_confusion_without_reflecting_target(
+    location: str,
+) -> None:
+    class UnsafeManagedLinkBackend(FixtureConsoleBackend):
+        def authorize_link(self, context: TrustedActorContext, link_ref: str) -> AuthorizedLink:
+            return AuthorizedLink(location=location)
+
+    with _client(
+        backend=UnsafeManagedLinkBackend(),
+        managed_link_origin=(
+            "https://fass.de"
+            if location == "https://faß.de/private-canary"
+            else "https://bi.example.test"
+        ),
+    ) as client:
+        response = client.get(
+            "/api/v1/links/link-dashboard-revenue",
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "unsafe_link_response"
+    assert location not in response.text
+
+
+def test_authorized_external_link_fails_closed_without_a_configured_origin() -> None:
+    class ManagedLinkBackend(FixtureConsoleBackend):
+        def authorize_link(self, context: TrustedActorContext, link_ref: str) -> AuthorizedLink:
+            return AuthorizedLink(location="https://bi.example.test/private-canary")
+
+    with _client(backend=ManagedLinkBackend()) as client:
+        response = client.get(
+            "/api/v1/links/link-dashboard-revenue",
+            follow_redirects=False,
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "unsafe_link_response"
+    assert "bi.example.test" not in response.text
 
 
 @pytest.mark.parametrize(

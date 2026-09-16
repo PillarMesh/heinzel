@@ -5,14 +5,18 @@ requires-python = "==3.13.*"
 dependencies = [
   "httpx>=0.28,<1",
   "pillarmesh-contract-model",
+  "pillarmesh-dbt-adapter",
   "pillarmesh-provider-sdk",
+  "pillarmesh-runtime",
   "pillarmesh-warehouse-control",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
 pillarmesh-contract-model = { workspace = true }
+pillarmesh-dbt-adapter = { workspace = true }
 pillarmesh-provider-sdk = { workspace = true }
+pillarmesh-runtime = { workspace = true }
 pillarmesh-warehouse-control = { workspace = true }
 
 [build-system]

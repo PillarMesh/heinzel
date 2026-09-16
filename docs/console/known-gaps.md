@@ -10,12 +10,16 @@ and its corresponding route fails closed with the error code
 `capability_not_delivered`. Closed entries remain here as the implementation record.
 No governed failure ever falls back to fixture content.
 
+The integrated release status for this journey is maintained in
+`docs/delivery/request-to-data-product-acceptance.md`. That ledger distinguishes a
+requester-visible narrative from an answer computed from current warehouse facts.
+
 ## Commands that are wired
 
 | Console command | Owning transaction |
 | --- | --- |
 | `POST /api/v1/setup/warehouse-binding` | `WarehouseControlService.create_draft` then `WarehouseLifecycleOrchestrator.provision` |
-| `POST /api/v1/requests` | `RequestManagementService.submit_question`; data-access intake is gated |
+| `POST /api/v1/requests` | `RequestManagementService.submit_question` or `submit_data_access` |
 | `POST /api/v1/requests/{id}/conversation` | `RequestManagementService.append_conversation` |
 | `POST /api/v1/requests/{id}/clarified-outcome/acceptance` | `FulfillmentService.record_approval` under the requester principal |
 | `POST /api/v1/requests/{id}/withdrawal` | `FulfillmentService.cancel`, admitted only before execution (see wiring defect 3) |
@@ -53,13 +57,13 @@ graph admission, and destination writes remain outside this component.
 
 ### Superset render, analyst dashboards and analyst embedding (`analyst-dashboard`)
 
-`GET /api/v1/dashboards/{ref}` and `GET /api/v1/previews/{ref}` are undelivered. The
-governed Superset embedding surface is a separate, explicit MVP obligation. The
-architect surface offers previews and authenticated deep links only, and the deep-link
-issuer (`GET /api/v1/links/{ref}`) is itself undelivered because no owning service
-issues server-side managed-service links yet.
+**Closed for dashboard lifecycle and console projection.** Governed-local dashboard list and
+detail reads project BI-control's desired state and provider receipt without exposing Superset
+object IDs. Live acceptance covers deterministic Superset create/read/archive and chart membership.
+The preview body and server-authorized deep-link issuer remain undelivered because no owning
+service yet establishes browser access authority for either surface.
 
-### Stakeholder answer text delivery
+### Stakeholder answer proposal delivery
 
 **Closed.** `POST /api/v1/inbox/{id}/admission` calls
 `FulfillmentService.admit`, which promotes an approved proposal to execution and writes
@@ -70,17 +74,33 @@ that answer and its governed references. Questions resolve against one unambiguo
 in the active approved semantic publication; unsupported questions still terminate as
 `No Valid Plan` before candidate generation.
 
-### Access proposal preparation
+### Governed factual answer execution
 
-Access candidate generation, grant application, expiry, and revocation are not composed.
-Governed-local intake labels data access unavailable and the server rejects a crafted
-submission, so no request can enter an unprocessable submitted state.
+The closed proposal path above does not execute a query against the warehouse or re-read the
+catalog at delivery time. It can publish an approved definition with governed references, but
+it cannot yet compute an answer from current facts. Restricted query compilation, read-only
+execution, bounded result artifacts, and evidence-bound answer delivery remain undelivered.
 
-### Access grant application, expiry and revocation
+### Access proposal preparation and delivery
 
-An approved `AccessScopePreview` is a decision record, not an applied grant. Nothing in
-the console applies, expires, or revokes a grant, and no owning service publishes those
-transactions today.
+**Closed for governed-local composition.** A data-access request resolves its candidate scope
+from the current published product, records product-owner and policy approvals, and admits the
+exact grant identity that request-management owns. Admission applies the access-control grant to
+the configured result and warehouse surfaces, verifies every provider receipt, then records the
+request as delivered. The requester projection shows the approved fields, permissions, effective
+time, and expiry without exposing the grant identity or provider-effect references.
+
+### Access expiry and revocation
+
+**Closed at the owning service boundary.** Access-control denies use at the expiry boundary even
+when provider cleanup is pending, and reconciliation revokes only effects that remain outstanding.
+The governed-local warehouse surface is a strict acceptance provider rather than an external
+database account, so a fresh PostgreSQL or ClickHouse grant and revocation remains part of the live
+acceptance work. The requester and architect consoles project every authoritative access-control
+state in plain language without exposing grant or provider identities. While a grant is active,
+either the owning requester or the workspace architect can submit a reasoned manual revocation
+against the displayed grant revision. Access-control records that command before provider cleanup,
+denies access immediately, and reconciles any incomplete cleanup on exact replay.
 
 ### Acquisition evidence (`acquisition-evidence`)
 

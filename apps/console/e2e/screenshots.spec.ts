@@ -71,7 +71,7 @@ test("provisioning-progress", async ({page}) => {
     .check()
   await page.getByRole("button", {name: "Confirm warehouse binding"}).click()
   await expect(page.getByRole("status", {name: "Warehouse operation"})).toContainText(
-    "Provisioning accepted",
+    "Request accepted",
   )
 
   await captureRoute(page, "provisioning-progress")

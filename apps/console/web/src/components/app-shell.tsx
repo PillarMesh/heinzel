@@ -10,9 +10,11 @@ import {SkipLink} from "./skip-link"
 type LayoutMode = "wide" | "drawer" | "queue-detail"
 
 const productNavigation = [
+  {label: "Workspace setup", to: "/setup"},
   {label: "Inbox", to: "/inbox"},
   {label: "Data products", to: "/data-products"},
   {label: "Runs", to: "/runs"},
+  {label: "Incidents", to: "/operations"},
   {label: "Acquisition", to: "/acquisition-receipts"},
   {label: "Catalog", to: "/catalog"},
   {label: "Dashboards", to: "/dashboards"},

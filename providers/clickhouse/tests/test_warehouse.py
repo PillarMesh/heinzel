@@ -76,6 +76,7 @@ _ROLE_CLASSES_FOR_TEST = (
     "administration",
     "ingestion_runtime",
     "transformation_runtime",
+    "answer_runtime",
     "backup_restore",
     "customer_sql",
     "catalog",
@@ -488,6 +489,7 @@ class _RecordingClient:
                 "administration",
                 "ingestion_runtime",
                 "transformation_runtime",
+                "answer_runtime",
                 "customer_sql",
                 "catalog",
                 "bi",
@@ -499,6 +501,9 @@ class _RecordingClient:
             "administration": lambda: privilege == "CREATE USER ON *.*",
             "ingestion_runtime": lambda: privilege.startswith("INSERT ON `"),
             "transformation_runtime": lambda: privilege.startswith(("SELECT ON `", "INSERT ON `")),
+            "answer_runtime": lambda: (
+                privilege.startswith("SELECT ON ") and privilege.endswith(".`customer_probe`")
+            ),
             "customer_sql": lambda: privilege.endswith(".`customer_probe`"),
             "catalog": lambda: privilege == "SELECT ON system.tables",
             "bi": lambda: privilege.endswith(".`certified_probe`"),
@@ -650,6 +655,7 @@ def _provider(
         administration_secret=ordinary,
         ingestion_runtime_secret=ordinary,
         transformation_runtime_secret=ordinary,
+        answer_runtime_secret=ordinary,
         customer_sql_secret=ordinary,
         catalog_secret=ordinary,
         bi_secret=ordinary,
@@ -3100,7 +3106,7 @@ def test_clickhouse_classifies_backup_authentication_failure_as_integrity_failur
     )
 
 
-def test_clickhouse_grant_plan_uses_seven_separate_roles_and_six_scoped_databases() -> None:
+def test_clickhouse_grant_plan_uses_eight_separate_roles_and_six_scoped_databases() -> None:
     private_handle = "customer-private-handle-never-in-sql"
 
     plan = derive_clickhouse_grant_plan(private_handle)
@@ -3117,15 +3123,16 @@ def test_clickhouse_grant_plan_uses_seven_separate_roles_and_six_scoped_database
         "administration",
         "ingestion_runtime",
         "transformation_runtime",
+        "answer_runtime",
         "backup_restore",
         "customer_sql",
         "catalog",
         "bi",
     )
     assert tuple(plan.users) == tuple(plan.roles)
-    assert len(set(plan.users.values())) == 7
+    assert len(set(plan.users.values())) == 8
     assert len(set(plan.databases.values())) == 6
-    assert len(set(plan.roles.values())) == 7
+    assert len(set(plan.roles.values())) == 8
     assert private_handle not in "\n".join(plan.statements)
 
 
@@ -3186,6 +3193,17 @@ def test_clickhouse_customer_and_bi_grants_are_explicit_certified_objects() -> N
         not statement.startswith(f"GRANT SELECT ON `{consumption}`.*")
         for statement in plan.statements
     )
+
+
+def test_clickhouse_answer_runtime_has_select_without_any_write_grant() -> None:
+    plan = derive_clickhouse_grant_plan("private-handle")
+    role = plan.roles["answer_runtime"]
+    consumption = plan.databases["consumption"]
+    answer_grants = tuple(
+        statement for statement in plan.statements if statement.endswith(f"TO `{role}`")
+    )
+
+    assert answer_grants == (f"GRANT SELECT ON `{consumption}`.`customer_probe` TO `{role}`",)
 
 
 @pytest.mark.parametrize(

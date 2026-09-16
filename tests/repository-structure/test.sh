@@ -33,22 +33,36 @@ assert_fails_with() {
     fi
 }
 
+copy_repository_fixture() {
+    destination=$1
+    mkdir -p "$destination"
+    COPYFILE_DISABLE=1 tar -C "$REPOSITORY_ROOT" \
+        --exclude='./.git' \
+        --exclude='./.mypy_cache' \
+        --exclude='./.pytest_cache' \
+        --exclude='./.ruff_cache' \
+        --exclude='./.venv' \
+        --exclude='*/__pycache__' \
+        --exclude='*/node_modules' \
+        -cf - . | tar -xf - -C "$destination"
+}
+
 [ -x "$VALIDATOR" ] || fail "validator is missing or not executable: $VALIDATOR"
 
 "$VALIDATOR" "$REPOSITORY_ROOT" >/dev/null
 
-cp -R "$REPOSITORY_ROOT" "$TEMP_ROOT/complete"
+copy_repository_fixture "$TEMP_ROOT/complete"
 "$VALIDATOR" "$TEMP_ROOT/complete" >/dev/null
 
-cp -R "$TEMP_ROOT/complete" "$TEMP_ROOT/missing"
+cp -R -l "$TEMP_ROOT/complete" "$TEMP_ROOT/missing"
 rm "$TEMP_ROOT/missing/README.md"
 assert_fails_with "$TEMP_ROOT/missing" "MISSING: README.md"
 
-cp -R "$TEMP_ROOT/complete" "$TEMP_ROOT/unexpected-top-level"
+cp -R -l "$TEMP_ROOT/complete" "$TEMP_ROOT/unexpected-top-level"
 mkdir "$TEMP_ROOT/unexpected-top-level/scheduler"
 assert_fails_with "$TEMP_ROOT/unexpected-top-level" "UNEXPECTED: scheduler"
 
-cp -R "$TEMP_ROOT/complete" "$TEMP_ROOT/unexpected-component"
+cp -R -l "$TEMP_ROOT/complete" "$TEMP_ROOT/unexpected-component"
 mkdir "$TEMP_ROOT/unexpected-component/services/scheduler"
 assert_fails_with "$TEMP_ROOT/unexpected-component" "UNEXPECTED: services/scheduler"
 
@@ -56,14 +70,14 @@ assert_fails_with "$TEMP_ROOT/unexpected-component" "UNEXPECTED: services/schedu
 # `.gitignore` alone cannot achieve that: this validator enumerates the filesystem
 # and never reads it, so an ignored directory was still reported UNEXPECTED and the
 # gate failed for anyone whose tooling created one.
-cp -R "$TEMP_ROOT/complete" "$TEMP_ROOT/ignored-tool-directory"
+cp -R -l "$TEMP_ROOT/complete" "$TEMP_ROOT/ignored-tool-directory"
 mkdir "$TEMP_ROOT/ignored-tool-directory/.superpowers"
 "$VALIDATOR" "$TEMP_ROOT/ignored-tool-directory" >/dev/null \
     || fail "validator rejected an ignored local tool directory"
 
 # The gate still exists to catch stray top-level directories, so widening it for one
 # tool must not have widened it for everything.
-cp -R "$TEMP_ROOT/complete" "$TEMP_ROOT/still-strict"
+cp -R -l "$TEMP_ROOT/complete" "$TEMP_ROOT/still-strict"
 mkdir "$TEMP_ROOT/still-strict/.superpowers-not-really"
 assert_fails_with "$TEMP_ROOT/still-strict" "UNEXPECTED: .superpowers-not-really"
 

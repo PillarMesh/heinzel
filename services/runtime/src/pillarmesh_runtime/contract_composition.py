@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, Protocol, get_args
 
 from pillarmesh_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
-from pillarmesh_contract_model import ArtifactModel, digest
+from pillarmesh_contract_model import ArtifactModel, ArtifactReference, digest
 from pillarmesh_provider_sdk import AcquisitionObjectSchema
 from pillarmesh_provider_sdk.acquisition_models import AcquisitionMode
 from pillarmesh_provider_sdk.acquisition_protocols import AcquisitionSourceObservation
@@ -34,26 +35,30 @@ class ContractActivationLifecycle(Protocol):
 
 
 class AcquisitionDeclaredActivation(ArtifactModel):
-    """The half of an activated contract that no service in this estate publishes.
+    """Explicit non-source inputs for the legacy contract composition helper.
 
-    Everything else is composed from what contract-service, connection-broker and
-    the provider each assert. These five have no owning publisher, so they are
-    named here rather than derived: a composition that invented them would read as
-    authority while resting on nothing.
+    Contract service now persists the resulting v2 artifact and is its authority.
+    This helper still requires every field that cannot be derived from connection-
+    broker and provider observations instead of inventing values.
 
     `object_schemas` is the substantive one. `AcquisitionSession.open` takes schemas
     as an input and no provider returns them, and the observation publishes only
     `ColumnObservation` -- a name, a raw source type and nullability -- which cannot
     reconstruct the closed `AcquisitionValueType` vocabulary an
-    `AcquisitionObjectSchema` field requires. The ceilings are policy, and the two
+    `AcquisitionObjectSchema` field requires. The ceilings are policy, and the
     references are identity the activating authority chooses.
     """
 
     contract_ref: str = Field(min_length=1)
+    process_package_ref: ArtifactReference
+    product_intent_ref: ArtifactReference
+    destination_product_ref: str = Field(min_length=1)
     acknowledgement_consumer_ref: str = Field(min_length=1)
     object_schemas: tuple[AcquisitionObjectSchema, ...] = Field(min_length=1)
     record_ceiling: int = Field(gt=0)
     encoded_byte_ceiling: int = Field(gt=0)
+    activated_by: str = Field(min_length=1)
+    activated_at: datetime
 
 
 def compose_activated_acquisition_contract(
@@ -63,12 +68,11 @@ def compose_activated_acquisition_contract(
     observation: AcquisitionSourceObservation,
     declared: AcquisitionDeclaredActivation,
 ) -> ActivatedAcquisitionContract:
-    """Assemble an activated acquisition contract from its owning services.
+    """Assemble a v2 candidate for contract service to validate and persist.
 
-    No service publishes this artifact, so it is composed rather than read. Each
-    field is taken from whichever service asserts it, and the sources are required
-    to agree first: a contract that reconciled a disagreement silently would carry
-    an authority none of them granted.
+    Runtime execution reads the persisted contract-service record. This helper is
+    retained for existing activation callers and requires its inputs to agree
+    before contract service accepts the candidate.
     """
     if lifecycle.tenant_id != binding.tenant_id or observation.tenant_id != binding.tenant_id:
         raise AcquisitionContractError("composition_tenant_mismatch")
@@ -98,6 +102,9 @@ def compose_activated_acquisition_contract(
         tenant_id=binding.tenant_id,
         contract_ref=declared.contract_ref,
         contract_digest=lifecycle.contract_digest,
+        process_package_ref=declared.process_package_ref,
+        product_intent_ref=declared.product_intent_ref,
+        destination_product_ref=declared.destination_product_ref,
         source_binding_ref=binding.binding_id,
         source_binding_revision=binding.revision,
         credential_revision=binding.credential_revision,
@@ -112,6 +119,8 @@ def compose_activated_acquisition_contract(
         ),
         record_ceiling=declared.record_ceiling,
         encoded_byte_ceiling=declared.encoded_byte_ceiling,
+        activated_by=declared.activated_by,
+        activated_at=declared.activated_at,
     )
 
 

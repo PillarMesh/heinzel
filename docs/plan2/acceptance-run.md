@@ -94,6 +94,25 @@ under `PILLARMESH_PLAN2_OUTPUT_DIR` and a private ledger under
 `PILLARMESH_PLAN2_CLEANUP_LEDGER_PATH`. A process that reaches `ready`, prints an
 HTTP 200, or leaves a `processing` marker is not successful.
 
+### Focused live product-catalog publication
+
+Use the managed lifecycle integration test when the narrower claim is that a fresh
+approved product authority can be published through the OpenMetadata product adapter.
+It provisions and validates a new managed binding with the same approved emulator
+lifecycle, publishes the native Domain and DataProduct plus the immutable snapshot,
+observes them with a fresh client, verifies exact replay, deletes the exact discovered
+product objects, and retires the binding with terminal cleanup verification:
+
+```sh
+tests/emulators/openmetadata/run.sh pytest \
+  tests/integration/test_openmetadata_product_catalog_live.py -q
+```
+
+The launcher supplies credentials from the operator's existing environment. The test
+does not accept an endpoint or credential argument, attach to an unrecorded catalog,
+or leave the managed binding running after completion. A skipped, interrupted, or
+cleanup-failed invocation is not live publication evidence.
+
 ## Required witnessed transaction
 
 The runner must print or persist only opaque run and tenant pseudonyms. It must record

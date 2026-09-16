@@ -4,11 +4,13 @@ version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
   "pillarmesh-contract-model",
+  "pillarmesh-knowledge-graph",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
 pillarmesh-contract-model = { workspace = true }
+pillarmesh-knowledge-graph = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

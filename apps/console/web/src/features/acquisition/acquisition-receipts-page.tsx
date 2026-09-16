@@ -1,10 +1,17 @@
-import {useEffect, useState} from "react"
+import {type FormEvent, useEffect, useState} from "react"
 
 import type {
+  AcquisitionRunNowCommand,
   AcquisitionReceiptView,
+  ConsoleEnvelopeAcquisitionReceiptView,
   ConsoleEnvelopeAcquisitionReceiptsView,
+  SessionView,
 } from "../../api/generated"
-import {ConsoleApiError} from "../../api/client"
+import {
+  ConsoleApiError,
+  ConsoleMutationOutcomeUnknown,
+  type MutationRequestContext,
+} from "../../api/client"
 
 /*
  * A receipt is shown as the acquisition runtime recorded it.
@@ -24,15 +31,46 @@ const outcomeLabels = {
 
 export interface AcquisitionReceiptsClient {
   getAcquisitionReceipts(): Promise<ConsoleEnvelopeAcquisitionReceiptsView>
+  runAcquisitionNow?(
+    command: AcquisitionRunNowCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeAcquisitionReceiptView>
 }
 
 interface AcquisitionReceiptsPageProps {
   readonly client: AcquisitionReceiptsClient
+  readonly idempotencyKeyFactory?: () => string
+  readonly session?: SessionView
+  readonly triggerWindowFactory?: () => string
 }
 
-export function AcquisitionReceiptsPage({client}: AcquisitionReceiptsPageProps) {
+function defaultIdempotencyKey(): string {
+  return `acquisition-${globalThis.crypto.randomUUID()}`
+}
+
+function currentUtcHourWindow(): string {
+  const start = new Date()
+  start.setUTCMinutes(0, 0, 0)
+  const end = new Date(start.getTime() + 60 * 60 * 1_000)
+  return `${start.toISOString()}/${end.toISOString()}`
+}
+
+export function AcquisitionReceiptsPage({
+  client,
+  idempotencyKeyFactory = defaultIdempotencyKey,
+  session,
+  triggerWindowFactory = currentUtcHourWindow,
+}: AcquisitionReceiptsPageProps) {
   const [receipts, setReceipts] = useState<readonly AcquisitionReceiptView[] | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  const [contractRef, setContractRef] = useState("")
+  const [runFailure, setRunFailure] = useState<string | null>(null)
+  const [runMessage, setRunMessage] = useState<string | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const [uncertainRun, setUncertainRun] = useState<{
+    readonly idempotencyKey: string
+    readonly triggerWindow: string
+  } | null>(null)
 
   useEffect(() => {
     let abandoned = false
@@ -55,6 +93,64 @@ export function AcquisitionReceiptsPage({client}: AcquisitionReceiptsPageProps) 
     }
   }, [client])
 
+  const activeRole =
+    session?.active_role === "data_architect" || session?.active_role === "data_owner"
+      ? session.active_role
+      : null
+  const canRun = client.runAcquisitionNow !== undefined && activeRole !== null
+
+  const runAcquisition = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (
+      !canRun ||
+      activeRole === null ||
+      session === undefined ||
+      client.runAcquisitionNow === undefined
+    )
+      return
+    const normalizedContractRef = contractRef.trim()
+    if (normalizedContractRef.length === 0) return
+    const idempotencyKey = uncertainRun?.idempotencyKey ?? idempotencyKeyFactory()
+    const triggerWindow = uncertainRun?.triggerWindow ?? triggerWindowFactory()
+    setSubmitting(true)
+    setRunFailure(null)
+    setRunMessage(null)
+    try {
+      const response = await client.runAcquisitionNow(
+        {
+          acquisition_mode: "snapshot",
+          active_role: activeRole,
+          contract_ref: normalizedContractRef,
+          trigger_window: triggerWindow,
+        },
+        {csrfToken: session.csrf_token, idempotencyKey},
+      )
+      setReceipts((current) => {
+        const withoutReplay = (current ?? []).filter(
+          (item) => item.evidence_id !== response.data.evidence_id,
+        )
+        return [response.data, ...withoutReplay]
+      })
+      setUncertainRun(null)
+      setRunMessage(
+        response.data.outcome === "prepared"
+          ? "Acquisition prepared. Its verified artifacts and evidence are ready for the next stage."
+          : `Acquisition recorded: ${outcomeLabels[response.data.outcome]}.`,
+      )
+    } catch (error: unknown) {
+      if (error instanceof ConsoleMutationOutcomeUnknown) {
+        setUncertainRun({idempotencyKey, triggerWindow})
+      }
+      setRunFailure(
+        error instanceof ConsoleApiError || error instanceof ConsoleMutationOutcomeUnknown
+          ? error.message
+          : "The acquisition could not be started.",
+      )
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <section aria-labelledby="acquisition-receipts-title" className="summary-page">
       <p className="eyebrow">Governed capability</p>
@@ -63,6 +159,33 @@ export function AcquisitionReceiptsPage({client}: AcquisitionReceiptsPageProps) 
         Receipts recorded by acquisitions run for this tenant. A receipt records the work
         an acquisition performed; it does not assert that data was delivered anywhere.
       </p>
+      {canRun ? (
+        <form className="summary-page__action" onSubmit={(event) => void runAcquisition(event)}>
+          <label htmlFor="acquisition-contract-ref">Activated contract reference</label>
+          <input
+            autoComplete="off"
+            disabled={submitting || uncertainRun !== null}
+            id="acquisition-contract-ref"
+            onChange={(event) => setContractRef(event.target.value)}
+            placeholder="contract:managed-business-data:v1"
+            required
+            value={contractRef}
+          />
+          <button disabled={submitting || contractRef.trim().length === 0} type="submit">
+            {submitting
+              ? "Running acquisition…"
+              : uncertainRun === null
+                ? "Run acquisition"
+                : "Reconcile acquisition"}
+          </button>
+          <p className="summary-page__guidance">
+            Runs the current activated revision for this UTC hour. Repeating the same hour is
+            replay safe.
+          </p>
+          {runFailure === null ? null : <p role="alert">{runFailure}</p>}
+          {runMessage === null ? null : <p role="status">{runMessage}</p>}
+        </form>
+      ) : null}
       {failure === null ? null : <p role="alert">{failure}</p>}
       {failure !== null || receipts === null ? null : receipts.length === 0 ? (
         <p className="summary-page__guidance">
@@ -73,25 +196,30 @@ export function AcquisitionReceiptsPage({client}: AcquisitionReceiptsPageProps) 
           {receipts.map((receipt) => (
             <li className="capability-ledger__item" key={receipt.evidence_id}>
               <div>
-                <h2>{receipt.evidence_id}</h2>
-                <p className="capability-ledger__dependency">
-                  <span>Contract</span> <code>{receipt.contract_ref}</code>
-                </p>
-                <p className="capability-ledger__dependency">
-                  <span>Source binding</span> <code>{receipt.source_binding_ref}</code>
-                </p>
-                <p className="capability-ledger__dependency">
-                  <span>Objects</span> <code>{receipt.logical_object_refs.join(", ")}</code>
-                </p>
+                <h2>
+                  {outcomeLabels[receipt.outcome]} {receipt.acquisition_mode} acquisition
+                </h2>
                 <p>
-                  {receipt.acquisition_mode} acquisition recorded{" "}
-                  {new Date(receipt.created_at).toISOString()}
+                  {receipt.logical_object_refs.join(", ")} · recorded{" "}
+                  {new Date(receipt.created_at).toLocaleString()}
                 </p>
-                {receipt.reason_codes === undefined || receipt.reason_codes.length === 0 ? null : (
+                <details className="responsive-disclosure">
+                  <summary>Technical references</summary>
                   <p className="capability-ledger__dependency">
-                    <span>Reasons</span> <code>{receipt.reason_codes.join(", ")}</code>
+                    <span>Evidence</span> <code>{receipt.evidence_id}</code>
                   </p>
-                )}
+                  <p className="capability-ledger__dependency">
+                    <span>Contract</span> <code>{receipt.contract_ref}</code>
+                  </p>
+                  <p className="capability-ledger__dependency">
+                    <span>Source binding</span> <code>{receipt.source_binding_ref}</code>
+                  </p>
+                  {receipt.reason_codes === undefined || receipt.reason_codes.length === 0 ? null : (
+                    <p className="capability-ledger__dependency">
+                      <span>Reasons</span> <code>{receipt.reason_codes.join(", ")}</code>
+                    </p>
+                  )}
+                </details>
               </div>
               <span>{outcomeLabels[receipt.outcome]}</span>
             </li>

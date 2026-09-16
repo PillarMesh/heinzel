@@ -593,14 +593,27 @@ class DashboardContract(BaseModel):
 
 Field names and order follow addendum §16.3. Add a conformance test that pins them together.
 
-- [ ] Write and approve the ADR defining BI-control authority, dependencies, lifecycle, and why provider effects do not belong in the console or request service.
-- [ ] Add service and provider conformance tests for create, no-op replay, update, archive, transient failure, conflicting external mutation, and missing dataset.
-- [ ] Implement deterministic stable external keys from tenant, dashboard ID, and version; never match dashboards by display title.
-- [ ] Provision the Superset database connection through a secret reference, dataset over the stable consumption object, charts from approved semantic fields, and dashboard from the signed contract.
-- [ ] Persist desired state and provider receipt before exposing the dashboard link. Reconcile drift without overwriting unrecognized external changes; surface conflict for operator action.
-- [ ] Put Superset on the governed-local network, configure health checks, and prove the application can invoke it after cold start.
+- [x] Write and approve the ADR defining BI-control authority, dependencies, lifecycle, and why provider effects do not belong in the console or request service.
+- [x] Add service and provider conformance tests for create, no-op replay, update, archive, transient failure, conflicting external mutation, and missing dataset.
+- [x] Implement deterministic stable external keys from tenant, dashboard ID, and version; never match dashboards by display title.
+- [x] Provision the Superset database connection through a secret reference, dataset over the stable consumption object, charts from approved semantic fields, and dashboard from the signed contract.
+- [x] Persist desired state and provider receipt before exposing the dashboard link. Reconcile drift without overwriting unrecognized external changes; surface conflict for operator action.
+- [x] Put Superset on the governed-local network, configure health checks, and prove the application can invoke it after cold start.
 - [ ] Add a console dashboard card with title, freshness, access state, and deep link. Hide internal Superset object IDs.
 - [ ] Commit: `feat(bi): manage Superset dashboards`
+
+Dashboard list/detail and BI-control receipt projection are delivered, and live Superset acceptance
+covers create/read/archive and chart membership. Dashboard cards now project the governed answer's
+as-of time and freshness, plus either a freshly authorized requester grant or workspace-role access.
+The remaining card work is preview content and a usable deep link. BI-control now owns session-bound, expiring link references
+and rechecks current access and provider receipts at issue and resolution. The console now rechecks
+access-control for every requester-visible dashboard and hides revoked, expired, mismatched, and
+unreceipted publications without exposing provider identifiers. A browser launch remains blocked
+until the deployment composes BI-control's link service into the console and binds the requester
+identity into Superset through SSO. `DashboardAccessAuthorization.access_request_id` now keeps the
+access request distinct from `DashboardPublication.source_request_id`, and the console adapter
+translates a freshly authorized access-control grant into that BI-control contract. An absolute
+provider URL or a guest token whose JWT remains usable after revocation does not satisfy this item.
 
 **Replay test:** lose the local response after Superset creates every object; the retry must find them by stable external keys and must not create duplicates.
 
@@ -647,14 +660,16 @@ class AccessGrant(BaseModel):
 
 The grant carries everything addendum §13.6 binds to an access request: requester, purpose, product, fields, classification, mode, duration, and approving authority, through its admission receipt.
 
-- [ ] Write and approve the ADR for policy authority, provider adapters, expiry, revocation, and denial behavior. The ADR must also resolve the boundary with `services/runtime`, which the repository layout currently assigns grants, and with warehouse-control principal provisioning.
-- [ ] Add tests for approval, apply, replay, partial provider application, expiry, manual revocation, superseded policy, and clock skew.
-- [ ] Require an approved request-management access proposal before creating a grant. Persist the grant before applying provider effects.
-- [ ] Apply least-privilege roles to the consumption schema/result endpoint/Superset dashboard and record one receipt per effect.
-- [ ] Drive expiry from state-owned time-based intent. A grant is unusable once expired even if provider cleanup is pending; reconciliation must finish revocation.
-- [ ] Recheck the authoritative grant on every result page, download, query, and dashboard-link issuance.
-- [ ] Show pending, active, expired, revocation-pending, revoked, and failed states in plain language.
-- [ ] Commit: `feat(access): enforce governed grant lifecycle`
+- [x] Write and approve the ADR for policy authority, provider adapters, expiry, revocation, and denial behavior. The ADR must also resolve the boundary with `services/runtime`, which the repository layout currently assigns grants, and with warehouse-control principal provisioning.
+- [x] Add tests for approval, apply, replay, partial provider application, expiry, manual revocation, superseded policy, and clock skew.
+- [x] Require an approved request-management access proposal before creating a grant. Persist the grant before applying provider effects.
+- [x] Apply least-privilege roles to the consumption schema/result endpoint/Superset dashboard and record one receipt per effect.
+- [x] Drive expiry from state-owned time-based intent. A grant is unusable once expired even if provider cleanup is pending; reconciliation must finish revocation.
+- [x] Recheck the authoritative grant on every result page, download, query, and dashboard-link issuance.
+- [x] Show pending, active, expired, revocation-pending, revoked, and failed states in plain language.
+- [x] Let the owning requester or workspace architect manually revoke active access against its
+  authoritative revision and persist the reason before reconciling provider cleanup.
+- [x] Commit the governed grant lifecycle as reviewable access-control, provider, console, and live-test changes.
 
 **Fault test:** make Superset revocation fail after warehouse revocation succeeds; user-facing authorization must still deny access, and reconciliation must retry only the missing Superset effect.
 
@@ -669,12 +684,12 @@ The grant carries everything addendum §13.6 binds to an access request: request
 - Create: `services/state/tests/test_incident_models.py`
 - Create: `docs/runbooks/request-to-data-product.md`
 
-- [ ] Define typed incidents for stuck lease, source unavailable, checkpoint conflict, schema drift, no valid plan, transform rejection, catalog pending, query failure, dashboard drift, and revocation pending.
-- [ ] Expose only state-valid actions: retry transient attempt, cancel unstarted work, approve a compatible replan, reconcile an external effect, or supersede a contract.
-- [ ] Require optimistic revision and actor reason for every recovery command. Record it in evidence without sensitive payloads.
-- [ ] Display the last successful stage, exact failed stage, classification, user impact, next automatic action, and operator option.
-- [ ] Add the runbook with diagnosis queries, log correlation, replay rules, provider-specific ambiguity handling, and rollback limits.
-- [ ] Commit: `feat(console): expose governed operations recovery`
+- [x] Define typed incidents for stuck lease, source unavailable, checkpoint conflict, schema drift, no valid plan, transform rejection, catalog pending, query failure, dashboard drift, and revocation pending.
+- [ ] Expose only state-valid actions: retry transient attempt, cancel unstarted work, approve a compatible replan, reconcile an external effect, or supersede a contract. Retry, pre-start cancellation, and external-effect reconciliation are delivered; compatible replan and contract supersession still require owning-workflow command composition.
+- [x] Require optimistic revision and actor reason for every recovery command. Record it in evidence without sensitive payloads.
+- [x] Display the last successful stage, exact failed stage, classification, user impact, next automatic action, and operator option.
+- [x] Add the runbook with diagnosis queries, log correlation, replay rules, provider-specific ambiguity handling, and rollback limits.
+- [x] Commit governed operations recovery as typed state, console projection, recovery commands, and operator documentation changes.
 
 **State test:** attempt a generic retry after a permanent compiler rejection; reject the command and preserve the terminal `No Valid Plan` decision.
 
@@ -698,13 +713,13 @@ The grant carries everything addendum §13.6 binds to an access request: request
 
 Implement addendum §9.5. The graph is a rebuildable projection and never holds authority.
 
-- [ ] Add a projection test proving that the graph rebuilds byte-identically from authoritative records, and that every node and edge names its source record, digest, and validity.
-- [ ] Add a traversal test for each `subject_kind`: source drift, metric-version change, contract supersession, generation failure, policy change, grant change, and retirement.
-- [ ] Traverse under service authority and filter only the presented result. Test that a restricted reader sees fewer assets while the derived approval requirements stay identical.
-- [ ] Derive approval requirements only from validated edges. They add to the owning service's requirements and never remove one. Inferred edges yield advisory reviewers only.
-- [ ] Bind `graph_snapshot_digest` in proposals. Before admission, re-derive requirements from the cited source records, and supersede the proposal when they changed.
-- [ ] Show validated and possible impacts, affected owners, and added approvers in the decision workspace.
-- [ ] Commit: `feat(knowledge-graph): analyze change impact`
+- [x] Add a projection test proving that the graph rebuilds byte-identically from authoritative records, and that every node and edge names its source record, digest, and validity.
+- [x] Add a traversal test for each `subject_kind`: source drift, metric-version change, contract supersession, generation failure, policy change, grant change, and retirement.
+- [x] Traverse under service authority and filter only the presented result. Test that a restricted reader sees fewer assets while the derived approval requirements stay identical.
+- [x] Derive approval requirements only from validated edges. They add to the owning service's requirements and never remove one. Inferred edges yield advisory reviewers only.
+- [x] Bind `graph_snapshot_digest` in proposals. Before admission, re-derive requirements from the cited source records, and supersede the proposal when they changed.
+- [x] Show validated and possible impacts, affected owners, and added approvers in the decision workspace.
+- [x] Commit the deterministic knowledge-graph projection, impact analysis, admission binding, and console projection.
 
 **Rebuild test:** delete the graph store and rebuild it; every admission decision and derived requirement must be unchanged. Then change a metric version after a proposal binds its snapshot; admission must supersede the proposal.
 
@@ -730,13 +745,13 @@ Implement addendum §9.5. The graph is a rebuildable projection and never holds 
 
 Implement addendum §13.9 as a separate service. Use the same `mcp` dependency and host-neutral server pattern as `services/authoring-mcp`. The tools are `search_catalog`, `describe_metric`, `ask_question`, `reply_to_clarification`, `get_answer`, `explain_answer`, `get_impact`, and `list_my_requests`.
 
-- [ ] Add a failing test for each tool proving that every call rechecks the delegating principal's current entitlements and the policy's `agent_access`.
-- [ ] Delegate `ask_question` and `reply_to_clarification` to request management's native commands. Context exposure holds no request state.
-- [ ] Record the principal and the agent client on every request and evidence record.
-- [ ] Return the same provenance as the native answer. `explain_answer` never returns statement text.
-- [ ] Deny every approval or admission attempt, even from a principal who holds that authority. Apply per-principal rate and scan ceilings.
-- [ ] Treat tool arguments, catalog metadata, and result values as untrusted data. Add a test where a question and a catalog description both contain instructions, and assert that the only effect is a normal validated question.
-- [ ] Commit: `feat(context-exposure): serve governed answers to agents`
+- [x] Add a failing test for each tool proving that every call rechecks the delegating principal's current entitlements and the policy's `agent_access`.
+- [x] Delegate `ask_question` and `reply_to_clarification` to request management's native commands. Context exposure holds no request state.
+- [x] Record the principal and the agent client on every request and evidence record.
+- [x] Return the same provenance as the native answer. `explain_answer` never returns statement text.
+- [x] Deny every approval or admission attempt, even from a principal who holds that authority. Apply per-principal rate and scan ceilings.
+- [x] Treat tool arguments, catalog metadata, and result values as untrusted data. Add a test where a question and a catalog description both contain instructions, and assert that the only effect is a normal validated question.
+- [x] Commit the delegated authorization guard, governed tools, request adapters, MCP server, and end-to-end agent interface.
 
 **Revocation test:** revoke the delegation between two calls. The second call is denied and creates no request.
 
@@ -775,6 +790,14 @@ Implement addendum §13.9 as a separate service. Use the same `mcp` dependency a
 - [ ] Commit: `test: prove request-to-data-product delivery`
 
 **Terminal acceptance:** a reviewer starts with a new business request and no pre-created product, then reaches a correct table and dashboard whose values reconcile to the newly inserted source cohort. An in-scope question, asked natively and through the agent interface, returns the same reconciled values with policy admission visible in its history. After grant expiry, the same user cannot query, download, or obtain a usable dashboard link.
+
+Current partial evidence: the native PostgreSQL acceptance creates a fresh governed answer from newly
+inserted rows, verifies the exact result and CSV, publishes a dashboard from that answer, and exposes
+its title, as-of time, freshness, and workspace access without provider IDs. A separate composed
+acceptance creates a dashboard-mode access request and grant, shows the dashboard to that requester,
+revokes the authoritative grant, and proves the same requester endpoint immediately hides it. The
+single no-precreated-product transaction, ClickHouse parity, fault-boundary matrix, backup/restore,
+sanitized evidence bundle, usable SSO dashboard launch, and independent review remain open.
 
 ## Task 17 (post-MVP): Run Scouts
 

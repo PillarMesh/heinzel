@@ -10,6 +10,7 @@ from .fulfillment_models import (
     ApprovalRequirement,
     ClarifiedOutcomeStatement,
     DenialDispositionReceipt,
+    FulfillmentAccessDeliveryReceipt,
     FulfillmentAdmissionReceipt,
     FulfillmentApprovalBinding,
     FulfillmentDeliveryReceipt,
@@ -33,6 +34,14 @@ class OwnDecisionView(ArtifactModel):
     created_at: datetime
 
 
+class RequesterAccessDeliveryView(ArtifactModel):
+    access_mode: Literal["query", "dashboard", "export"]
+    fields: tuple[str, ...]
+    effective_at: datetime
+    expires_at: datetime
+    permissions: tuple[Literal["dashboard", "download", "query", "view"], ...]
+
+
 class RequesterRequestView(ArtifactModel):
     request_id: str
     state: RequestState
@@ -45,6 +54,7 @@ class RequesterRequestView(ArtifactModel):
     denial_explanation: str | None
     no_valid_plan_explanation: str | None
     delivered_answer: StakeholderAnswerDraft | None = None
+    delivered_access: RequesterAccessDeliveryView | None = None
     delivery_id: str | None = None
 
 
@@ -69,6 +79,7 @@ class ArchitectRequestView(ArtifactModel):
     approvals: tuple[FulfillmentApprovalBinding, ...]
     admissions: tuple[FulfillmentAdmissionReceipt, ...]
     deliveries: tuple[FulfillmentDeliveryReceipt, ...] = ()
+    access_deliveries: tuple[FulfillmentAccessDeliveryReceipt, ...] = ()
     dependencies: tuple[RequestDependency, ...]
     no_valid_plans: tuple[RequestNoValidPlan, ...]
     denials: tuple[DenialDispositionReceipt, ...]
@@ -98,6 +109,24 @@ class FulfillmentReadService:
         if request.requester_id != actor_id:
             raise FulfillmentNotVisible("request is not visible to this actor")
         approvals = self._repository.list_approvals(tenant_id, request_id)
+        current_approvals = approvals
+        if request.state is RequestState.AWAITING_APPROVAL:
+            proposals = self._repository.list_proposals(tenant_id, request_id)
+            proposal = proposals[-1] if proposals else None
+            current_approvals = tuple(
+                approval
+                for approval in approvals
+                if proposal is not None
+                and approval.request_revision == request.revision
+                and approval.proposal_id == proposal.proposal_id
+                and approval.proposal_revision == proposal.revision
+                and approval.proposal_digest == digest(proposal)
+                and any(
+                    requirement.authority_ref == approval.authority_ref
+                    and requirement.subject_digest == approval.subject_digest
+                    for requirement in proposal.required_approvals
+                )
+            )
         own_decisions = tuple(
             OwnDecisionView(
                 lifecycle="semantic_review",
@@ -114,7 +143,7 @@ class FulfillmentReadService:
                 authority_ref=approval.authority_ref,
                 created_at=approval.created_at,
             )
-            for approval in approvals
+            for approval in current_approvals
             if approval.actor_id == actor_id
         )
         denials = self._repository.list_denials(tenant_id, request_id)
@@ -133,7 +162,9 @@ class FulfillmentReadService:
             else None
         )
         deliveries = self._repository.list_deliveries(tenant_id, request_id)
+        access_deliveries = self._repository.list_access_deliveries(tenant_id, request_id)
         current_delivery = deliveries[-1] if deliveries else None
+        current_access_delivery = access_deliveries[-1] if access_deliveries else None
         delivered_answer = (
             current_delivery.answer
             if request.state is RequestState.DELIVERED
@@ -151,7 +182,28 @@ class FulfillmentReadService:
             denial_explanation=denial_explanation,
             no_valid_plan_explanation=no_valid_plan_explanation,
             delivered_answer=delivered_answer,
-            delivery_id=current_delivery.delivery_id if current_delivery is not None else None,
+            delivered_access=(
+                RequesterAccessDeliveryView(
+                    access_mode=current_access_delivery.access_mode,
+                    fields=current_access_delivery.fields,
+                    effective_at=current_access_delivery.effective_at,
+                    expires_at=current_access_delivery.expires_at,
+                    permissions=current_access_delivery.permissions,
+                )
+                if request.state is RequestState.DELIVERED
+                and current_access_delivery is not None
+                and current_access_delivery.resulting_request_revision == request.revision
+                else None
+            ),
+            delivery_id=(
+                current_delivery.delivery_id
+                if current_delivery is not None
+                else (
+                    current_access_delivery.delivery_id
+                    if current_access_delivery is not None
+                    else None
+                )
+            ),
         )
 
     def reviewer_view(
@@ -187,7 +239,13 @@ class FulfillmentReadService:
                 created_at=approval.created_at,
             )
             for approval in self._repository.list_approvals(tenant_id, request_id)
-            if approval.actor_id == actor_id and approval.authority_ref == authority_ref
+            if approval.actor_id == actor_id
+            and approval.authority_ref == authority_ref
+            and approval.request_revision == request.revision
+            and approval.proposal_id == proposal.proposal_id
+            and approval.proposal_revision == proposal.revision
+            and approval.proposal_digest == digest(proposal)
+            and approval.subject_digest == requirements[0].subject_digest
         )
         requirement = requirements[0]
         # Holding a requirement is not authority over the candidate. The requester's
@@ -231,6 +289,7 @@ class FulfillmentReadService:
             approvals=self._repository.list_approvals(tenant_id, request_id),
             admissions=self._repository.list_admissions(tenant_id, request_id),
             deliveries=self._repository.list_deliveries(tenant_id, request_id),
+            access_deliveries=self._repository.list_access_deliveries(tenant_id, request_id),
             dependencies=self._repository.list_dependencies(tenant_id, request_id),
             no_valid_plans=self._repository.list_no_valid_plans(tenant_id, request_id),
             denials=self._repository.list_denials(tenant_id, request_id),

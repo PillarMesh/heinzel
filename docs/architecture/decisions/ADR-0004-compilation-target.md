@@ -56,3 +56,46 @@ Addendum v0.1 §12.4 adds a second, read-only class to the same allowlist: gover
 Query constructs are governed exactly as transformation constructs are: per-engine semantics pinned across D1-D8, a reviewed proof note, positive and negative per-engine fixtures, and an independent reviewer. A construct outside the allowlist produces `No Valid Plan` naming it.
 
 Governed queries are not dbt models. The runtime executes them directly through the `answer_runtime` principal and records an execution receipt. The compiler still never parses SQL it did not generate, and no AI-authored or question-derived text reaches a statement.
+
+## Implementation dependency record 2026-09-15
+
+`services/dbt-adapter` pins `dbt-clickhouse==1.10.2` alongside `dbt-core==1.10.13` and
+`dbt-postgres==1.10.2`. The ClickHouse adapter is required because the existing subprocess boundary
+selects a provider-specific dbt target and must load that target without adding provider behavior to
+the compiler or runtime. Release 1.10.2 is maintained by ClickHouse, declares support for dbt Core
+1.10 and ClickHouse 25.8, and is licensed under Apache-2.0. The lockfile also pins its transitive
+drivers. A pinned-engine live test executes a compiler-signed table model before this dependency is
+accepted as evidence for ClickHouse materialization.
+
+## Amendment 2026-09-15: per-engine activation of the product SQL rule
+
+The emittable-construct allowlist already pins semantics separately for PostgreSQL and
+ClickHouse. This amendment records that an allowlist entry is therefore **activated per engine**,
+and that activating it for one engine makes no claim about any other.
+
+The product SQL rule `PRODUCT-SQL-V2-PROJECT-SUM-001` is activated for `postgresql` only. That
+activation:
+
+- rests on PostgreSQL evidence alone: the D1-D8 proof and fixtures, the mutation regression, the
+  provider-owned observation, and the live checked-SUM run on the pinned engine;
+- **does not claim cross-engine result equivalence.** The original wording of its precondition 17
+  asserted equivalence "on both pinned engines"; under single-engine activation that precondition
+  is reworded to single-engine admission that explicitly withholds the equivalence claim. An
+  approval of the original wording does not authorize this activation;
+- **does not admit ClickHouse.** Compiler admission checks are keyed on the requested engine and on
+  a per-engine activation record. A ClickHouse compilation continues to produce `No Valid Plan`
+  while no ClickHouse activation exists, and a negative test pins that behavior.
+
+ClickHouse activation of the same rule requires its own runtime magnitude authority, its own
+D1-D8 fixtures, a live cross-engine equivalence run, and a second independent review.
+
+Restrictions that exist because the engines diverge remain in force under single-engine
+activation. Excess-scale decimal input stays inadmissible although PostgreSQL alone rounds
+predictably, and numeric JSON input for a declared string field stays inadmissible although
+PostgreSQL alone coerces it predictably. Widening an activated rule later is ordinary governance;
+narrowing one after activation invalidates evidence already accepted for it.
+
+Consequence for the product: the addendum defines the MVP as a two-engine portability proof in
+its scope rule, exit criteria, and success measure. A PostgreSQL-only product engine does not pass
+that definition and is not called the MVP. It is Gate A, and the addendum MVP remains unpassed
+until ClickHouse activation completes.

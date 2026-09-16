@@ -143,7 +143,7 @@ def _parse_canaries(raw_value: str) -> tuple[str, ...]:
         raise Plan3AHarnessError("credential canaries must be a JSON array") from None
     if (
         not isinstance(values, list)
-        or len(values) < 7
+        or len(values) < 8
         or any(not isinstance(value, str) or len(value) < 12 for value in values)
     ):
         raise Plan3AHarnessError("credential canaries must be nonempty private markers")

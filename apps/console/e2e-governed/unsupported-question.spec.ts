@@ -45,10 +45,10 @@ test("unsupported MRR question stops at No Valid Plan and can seed a new request
   await page.getByRole("button", {name: "Prepare answer proposal"}).click()
 
   const detail = page.getByRole("region", {name: "Request detail"})
-  await expect(detail).toContainText("local_scenario_not_supported")
-  await expect(detail).toContainText("No Valid Plan: local_scenario_not_supported.")
+  await expect(detail).toContainText("published_semantic_term_not_found")
+  await expect(detail).toContainText("No Valid Plan: published_semantic_term_not_found.")
   await expect(detail).toContainText(
-    "Required change: Configure an authoritative source for this question",
+    "Required change: Ask about one term in the workspace's current approved semantic publication.",
   )
   await expect(detail).not.toContainText(FIXED_ANSWER)
 
@@ -57,11 +57,11 @@ test("unsupported MRR question stops at No Valid Plan and can seed a new request
   await expect(page.getByText("What is the current MRR")).toBeVisible()
   await expect(
     page.getByText(
-      "This local environment has no authoritative source configured for that question.",
+      "The current governed catalog does not contain one unambiguous term for this question.",
     ),
   ).toBeVisible()
-  await expect(page.getByText(/local_scenario_not_supported/)).toHaveCount(0)
-  await expect(page.getByText(/Configure an authoritative source/)).toHaveCount(0)
+  await expect(page.getByText(/published_semantic_term_not_found/)).toHaveCount(0)
+  await expect(page.getByText(/Ask about one term/)).toHaveCount(0)
   await expect(page.getByText(FIXED_ANSWER)).toHaveCount(0)
 
   await page.getByRole("button", {name: "Start revised request"}).click()

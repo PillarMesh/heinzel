@@ -2,11 +2,13 @@ import {useCallback, useEffect, useState} from "react"
 
 import type {MutationRequestContext} from "../../api/client"
 import type {
+  AccessRevocationCommand,
   ClarifiedOutcomeAcceptanceCommand,
   ConsoleEnvelopeClarifiedOutcomeView,
   ConsoleEnvelopeConversationView,
   ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView,
   ConsoleEnvelopeRequesterRequestView,
+  ConsoleEnvelopeAccessLifecycleView,
   ConversationMessageCommand,
   CreateRequestCommand,
   DataProvenance,
@@ -41,6 +43,11 @@ export interface RequesterClient {
   getClarifiedOutcome(requestId: string): Promise<ConsoleEnvelopeClarifiedOutcomeView>
   getConversation(requestId: string): Promise<ConsoleEnvelopeConversationView>
   getRequesterRequests(): Promise<ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView>
+  revokeAccess(
+    requestId: string,
+    command: AccessRevocationCommand,
+    context: MutationRequestContext,
+  ): Promise<ConsoleEnvelopeAccessLifecycleView>
   withdrawRequest(
     requestId: string,
     command: RequestWithdrawalCommand,
@@ -144,6 +151,121 @@ function DeliveredAnswer({request}: {readonly request: RequesterRequestView}) {
           ))}
         </ul>
       )}
+    </section>
+  )
+}
+
+function DeliveredAccess({request}: {readonly request: RequesterRequestView}) {
+  const delivery = request.delivered_access
+  if (
+    delivery === null ||
+    delivery === undefined ||
+    request.access_lifecycle?.state !== "active"
+  ) {
+    return null
+  }
+  return (
+    <section aria-labelledby="delivered-access-title" className="delivered-answer">
+      <p className="eyebrow">Governed delivery</p>
+      <h2 id="delivered-access-title">Access is ready</h2>
+      <p className="delivered-answer__text">
+        You can {delivery.access_mode} the approved fields: {delivery.fields.join(", ")}.
+      </p>
+      <p className="delivered-answer__context">
+        Available until {delivery.expires_at}. Access expires automatically.
+      </p>
+      <p className="delivered-answer__context">
+        Permissions: {delivery.permissions.join(", ")}.
+      </p>
+    </section>
+  )
+}
+
+interface AccessLifecycleProps {
+  readonly client: RequesterClient
+  readonly idempotencyKeyFactory: IdempotencyKeyFactory
+  readonly onRevoked: () => void
+  readonly request: RequesterRequestView
+  readonly session: SessionView
+}
+
+function AccessLifecycle({
+  client,
+  idempotencyKeyFactory,
+  onRevoked,
+  request,
+  session,
+}: AccessLifecycleProps) {
+  const lifecycle = request.access_lifecycle
+  const [confirming, setConfirming] = useState(false)
+  const [reason, setReason] = useState("")
+  const [submitting, setSubmitting] = useState(false)
+  const [failure, setFailure] = useState<string | null>(null)
+  if (lifecycle === null || lifecycle === undefined) {
+    return null
+  }
+  const expectedRevision = lifecycle.revision
+
+  async function revoke(): Promise<void> {
+    const explanatoryReason = reason.trim()
+    if (explanatoryReason.length === 0) {
+      setFailure("Explain why access should be removed.")
+      return
+    }
+    setSubmitting(true)
+    setFailure(null)
+    try {
+      await client.revokeAccess(
+        request.request_id,
+        {
+          expected_revision: expectedRevision,
+          active_role: "requester",
+          reason: explanatoryReason,
+        },
+        {csrfToken: session.csrf_token, idempotencyKey: idempotencyKeyFactory()},
+      )
+      onRevoked()
+    } catch {
+      setFailure("Access removal could not be confirmed. Reload the request before trying again.")
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section aria-labelledby="access-lifecycle-title" className="access-lifecycle">
+      <p className="eyebrow">Access status</p>
+      <h2 id="access-lifecycle-title">{lifecycle.title}</h2>
+      <p className="access-lifecycle__summary">{lifecycle.summary}</p>
+      <p className="access-lifecycle__term">
+        Approved term: {lifecycle.effective_at} to {lifecycle.expires_at}.
+      </p>
+      {lifecycle.can_revoke ? (
+        confirming ? (
+          <div className="access-lifecycle__revocation">
+            <label htmlFor="requester-access-revocation-reason">Reason for removing access</label>
+            <textarea
+              disabled={submitting}
+              id="requester-access-revocation-reason"
+              maxLength={512}
+              onChange={(event) => setReason(event.target.value)}
+              rows={3}
+              value={reason}
+            />
+            <button disabled={submitting} onClick={() => void revoke()} type="button">
+              {submitting ? "Removing access…" : "Confirm access removal"}
+            </button>
+            <button disabled={submitting} onClick={() => setConfirming(false)} type="button">
+              Keep access
+            </button>
+          </div>
+        ) : (
+          <button onClick={() => setConfirming(true)} type="button">
+            Remove access
+          </button>
+        )
+      ) : null}
+      {failure === null ? null : <p role="alert">{failure}</p>}
     </section>
   )
 }
@@ -302,7 +424,9 @@ export function MyRequests({
       (selected.denial_explanation === null || selected.denial_explanation === undefined) &&
       (selected.no_valid_plan_explanation === null ||
         selected.no_valid_plan_explanation === undefined) &&
-      (selected.delivered_answer === null || selected.delivered_answer === undefined)
+      (selected.delivered_answer === null || selected.delivered_answer === undefined) &&
+      (selected.delivered_access === null || selected.delivered_access === undefined) &&
+      (selected.access_lifecycle === null || selected.access_lifecycle === undefined)
     return (
       <div className="requester-surface">
         <section aria-labelledby="request-title" className="request-summary">
@@ -316,9 +440,17 @@ export function MyRequests({
             </div>
           )}
           <p className="request-summary__state">
-            Lifecycle state: <strong>{stateLabel(selected)}</strong> · revision{" "}
-            {selected.revision} · updated {selected.updated_at}
+            Lifecycle state: <strong>{stateLabel(selected)}</strong> · updated {selected.updated_at}
           </p>
+          <details>
+            <summary>Technical details</summary>
+            <dl>
+              <dt>Request reference</dt>
+              <dd>{selected.request_id}</dd>
+              <dt>Revision</dt>
+              <dd>Revision {selected.revision}</dd>
+            </dl>
+          </details>
           {selected.denial_explanation === null ||
           selected.denial_explanation === undefined ? null : (
             <p className="request-summary__denial">{selected.denial_explanation}</p>
@@ -352,7 +484,20 @@ export function MyRequests({
             </button>
           ) : null}
         </section>
+        <AccessLifecycle
+          client={client}
+          idempotencyKeyFactory={idempotencyKeyFactory}
+          onRevoked={reload}
+          request={selected}
+          session={session}
+        />
         <DeliveredAnswer request={selected} />
+        <DeliveredAccess request={selected} />
+        {selected.result_page_available ? (
+          <p>
+            <a href={`/requests/${encodeURIComponent(selected.request_id)}/result`}>View results</a>
+          </p>
+        ) : null}
         {revisedRequestDraft !== null && revisingRequest ? (
           <RequestIntake
             client={client}
@@ -426,7 +571,12 @@ export function MyRequests({
                   <p className="request-list__denial">{request.denial_explanation}</p>
                 )}
                 <OwnDecisions request={request} />
-                <a href={`/requests/${request.request_id}`}>Open request</a>
+                <a
+                  aria-label={`Open ${request.title}`}
+                  href={`/requests/${request.request_id}`}
+                >
+                  Open request
+                </a>
               </li>
             ))}
           </ul>
