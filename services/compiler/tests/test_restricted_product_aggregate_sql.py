@@ -4,7 +4,7 @@ import json
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -85,7 +85,8 @@ def test_revenue_by_region_candidate_stays_closed_after_the_static_bound_proof()
         "bind the contributing row ceiling to owning-service cardinality evidence",
         "enforce checked Decimal(57,9) result magnitude on every engine at runtime",
         "authenticate the observation with provider-owned provenance authority",
-        "review live cross-engine checked SUM equivalence on both pinned engines",
+        "review live checked SUM on the pinned PostgreSQL engine; "
+        "cross-engine equivalence is not claimed",
         "independent legality review has not approved this rule",
     )
     assert result.execution_occurred is False
@@ -1212,3 +1213,38 @@ def _revenue_by_region_iir() -> ProductIntentIR:
         grain=(region,),
         freshness_seconds=3_600,
     )
+
+
+@pytest.mark.parametrize(
+    ("engine", "expected_reason"),
+    (
+        (
+            "postgresql",
+            "review live checked SUM on the pinned PostgreSQL engine; "
+            "cross-engine equivalence is not claimed",
+        ),
+        (
+            "clickhouse",
+            "activate this rule for ClickHouse with its own live checked SUM evidence and review",
+        ),
+    ),
+)
+def test_live_sum_review_is_worded_per_engine_and_stays_unsatisfied(
+    engine: Literal["postgresql", "clickhouse"], expected_reason: str
+) -> None:
+    """PostgreSQL activation withholds the cross-engine claim and never admits ClickHouse.
+
+    Precondition 17 stays unsatisfied on both engines: satisfying it is the independent
+    reviewer's decision, not something live evidence or the compiler can grant.
+    """
+    result = compile_product_iir(
+        _revenue_by_region_iir(),
+        engine=engine,
+        engine_version="0",
+        capabilities=_CAPABILITIES,
+    )
+
+    review = next(item for item in result.preconditions if item.number == 17)
+    assert review.reason == expected_reason
+    assert review.status == "unsatisfied"
+    assert "both pinned engines" not in review.reason

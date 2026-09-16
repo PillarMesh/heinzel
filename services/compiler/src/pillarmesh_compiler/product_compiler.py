@@ -44,6 +44,18 @@ _ENGINE_IMAGE_DIGESTS = {
     "clickhouse": "7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0",
 }
 _MAX_OBSERVATION_AGE = timedelta(minutes=10)
+# Precondition 17 is activated per engine (ADR-0004 amendment 2026-09-15). PostgreSQL
+# activation rests on PostgreSQL evidence alone and withholds any cross-engine claim, and it
+# never admits ClickHouse, which needs its own evidence and its own review.
+_LIVE_SUM_REVIEW_REASONS = {
+    "postgresql": (
+        "review live checked SUM on the pinned PostgreSQL engine; "
+        "cross-engine equivalence is not claimed"
+    ),
+    "clickhouse": (
+        "activate this rule for ClickHouse with its own live checked SUM evidence and review"
+    ),
+}
 
 
 def compile_product_iir(
@@ -246,7 +258,7 @@ def compile_product_iir(
         PreconditionResult(
             number=17,
             status="unsatisfied",
-            reason="review live cross-engine checked SUM equivalence on both pinned engines",
+            reason=_LIVE_SUM_REVIEW_REASONS[engine],
         ),
         PreconditionResult(
             number=18,

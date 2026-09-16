@@ -45,7 +45,8 @@ def test_user_approval_precedes_product_compilation_and_no_execution_occurs(
         "bind the contributing row ceiling to owning-service cardinality evidence",
         "enforce checked Decimal(57,9) result magnitude on every engine at runtime",
         "authenticate the observation with provider-owned provenance authority",
-        "review live cross-engine checked SUM equivalence on both pinned engines",
+        "review live checked SUM on the pinned PostgreSQL engine; "
+        "cross-engine equivalence is not claimed",
         "independent legality review has not approved this rule",
     )
 

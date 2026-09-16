@@ -195,8 +195,20 @@ message, naming a constraint the product never reached. The check now requires b
 An earlier bounded run against the compiler bound precondition killed both generated mutants.
 The numeric proof has direct tests
 at zero, one, the signed-ledger maximum, negative, boolean, and over-maximum boundaries. The emitter
-syntax has exact dialect-specific regression tests. Activation additionally requires composing the
-runtime-signed cardinality artifact into the request journey, ClickHouse materialization and answer
-integration for the new magnitude observer, an execution authorization bound to the exact candidate,
-the live D1-D8 JSON-decoding fixtures on both pinned images, live result-equivalence review on
-both pinned engines, and approval by an independent reviewer.
+syntax has exact dialect-specific regression tests.
+
+**Live checked SUM evidence for PostgreSQL** is recorded in
+`PRODUCT-SQL-V2-PROJECT-SUM-001-POSTGRESQL-LIVE-EVIDENCE.md`, with its bundle in
+`fixtures/postgresql-live-checked-sum-evidence.json`. Against the pinned PostgreSQL 18.6 image, two
+maximum-magnitude Decimal(38,9) inputs sum past Decimal(38,9) and return exactly, the measure column
+is declared `numeric(57,9)`, and both the input bound and the Decimal(57,9) result bound refuse with
+SQLSTATE `22003` rather than rounding or wrapping. The result bound is observed on the exact cast
+the statement applies, not reached through a real SUM; the integer proof above is what shows a SUM
+bounded by the signed ledger ceiling cannot reach it. Precondition 17, now worded per engine, stays
+unsatisfied until the independent reviewer accepts that evidence.
+
+PostgreSQL activation additionally requires composing the runtime-signed cardinality artifact into
+the request journey, an execution authorization bound to the exact candidate, an accepted
+enforcement point for D7 literal typing, and approval by an independent reviewer. ClickHouse
+activation separately requires ClickHouse materialization and answer integration for the new
+magnitude observer, its own live D1-D8 fixtures and checked SUM evidence, and its own review.

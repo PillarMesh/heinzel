@@ -1,0 +1,328 @@
+{
+  "schema_version": "1",
+  "rule_id": "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE",
+  "activation_scope": "postgresql",
+  "cross_engine_equivalence_claimed": false,
+  "engine": {
+    "engine": "postgresql",
+    "engine_version": "18.6",
+    "engine_image": "postgres:18.6-bookworm",
+    "engine_image_digest": "33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935",
+    "engine_build_digest": "37b575bed7f1f55dc90308c50dc9ec6d4d8a9362d1c3d9d4643501d8c8274bab",
+    "database_encoding": "UTF8",
+    "sum_semantics": {
+      "input_physical_type": "NUMERIC(38,9)",
+      "accumulator_physical_type": "INTERNAL",
+      "result_physical_type": "NUMERIC",
+      "overflow_behavior": "promote",
+      "null_input_behavior": "exclude",
+      "empty_group_behavior": "no_row"
+    }
+  },
+  "statement_digest": "b6e557d525b10edc3d7615483723d6938e52159bc597506e59a34b724dcf85ab",
+  "statement": "SELECT \"revenue_events\".\"region\" AS \"region\", CAST(SUM(CAST(\"revenue_events\".\"revenue\" AS NUMERIC(57,9))) AS NUMERIC(57,9)) AS \"total_revenue\" FROM (SELECT \"payload\" ->> 'region' AS \"region\", CAST(\"payload\" ->> 'revenue' AS NUMERIC(38,9)) AS \"revenue\" FROM \"raw\".\"raw_sales\" WHERE \"generation_id\" = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS \"revenue_events\" GROUP BY \"revenue_events\".\"region\"",
+  "output_column_type": "numeric(57,9)",
+  "cases": [
+    {
+      "case_id": "zero",
+      "kind": "statement",
+      "claim": "a zero input sums to exactly zero",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "0"
+        }
+      ],
+      "input_digest": "01c3ce71ae3c99afbab004d2fe3176a0d52daf252f9bc98d62b3d618fce737a7",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "0.000000000"
+          ]
+        ]
+      },
+      "result_digest": "c869ae1bbaaf442abd46df2f14bfe039393178ac343abcf288c2c0c630f20160"
+    },
+    {
+      "case_id": "negative",
+      "kind": "statement",
+      "claim": "a negative input is preserved with its sign",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "-42.125000000"
+        }
+      ],
+      "input_digest": "e5432c2b16938ddacfe05ba39b88896ceb8c33e040056ee8fdca5f607e6948d3",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "-42.125000000"
+          ]
+        ]
+      },
+      "result_digest": "ac78bfbcd7d7d145cde23644625423293ecb13c436d2ab169f6c8bcd2e6b4579"
+    },
+    {
+      "case_id": "exact_scale_nine",
+      "kind": "statement",
+      "claim": "nine fractional digits survive the widening cast unchanged",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "0.123456789"
+        }
+      ],
+      "input_digest": "9d58131d808bf3a7b7eff880f244d9d39bd7df58f6186112282a865e914174d6",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "0.123456789"
+          ]
+        ]
+      },
+      "result_digest": "cdd914f9ebd333cb1c588fce0e29449e78f19df35285a5d913ca4b1895b5e326"
+    },
+    {
+      "case_id": "maximum_positive_input",
+      "kind": "statement",
+      "claim": "the largest Decimal(38,9) input is accepted and summed exactly",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "99999999999999999999999999999.999999999"
+        }
+      ],
+      "input_digest": "1a59af4577e642d86e6834f93b4aa61865e865c1b54edd928fd5a86fb2d3babd",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "99999999999999999999999999999.999999999"
+          ]
+        ]
+      },
+      "result_digest": "b0b8096d0341854d31570e27de731172209e1fd854da8221b069dc4477a08eb5"
+    },
+    {
+      "case_id": "maximum_negative_input",
+      "kind": "statement",
+      "claim": "the smallest Decimal(38,9) input is accepted and summed exactly",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "-99999999999999999999999999999.999999999"
+        }
+      ],
+      "input_digest": "4a7950fbcc9979ea1bebc51eedb80d28907bce282a286d6dc41189bab013dcd8",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "-99999999999999999999999999999.999999999"
+          ]
+        ]
+      },
+      "result_digest": "3d596fb286d994a5f9c4d010ce0d71a8a5ba6916fc03c9d11675fa0667543ba6"
+    },
+    {
+      "case_id": "safe_two_row_maximum_sum",
+      "kind": "statement",
+      "claim": "two maximum inputs sum past Decimal(38,9) and fit the widened Decimal(57,9) result",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "99999999999999999999999999999.999999999"
+        },
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "99999999999999999999999999999.999999999"
+        }
+      ],
+      "input_digest": "4be39226c9fac644d27b7f9833478eed23066287afa296151cd059e9c53385bd",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "199999999999999999999999999999.999999998"
+          ]
+        ]
+      },
+      "result_digest": "14a6c4e96b1e34df0e6b58ebfeac4c986839c6370a3505014f9daa716ad20ee5"
+    },
+    {
+      "case_id": "safe_two_row_minimum_sum",
+      "kind": "statement",
+      "claim": "two minimum inputs sum past Decimal(38,9) and fit the widened Decimal(57,9) result",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "-99999999999999999999999999999.999999999"
+        },
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "-99999999999999999999999999999.999999999"
+        }
+      ],
+      "input_digest": "13d3b7747ab2665ddb6f367bb5e82f6d47ef52e5c9f9a1b4fec18afa942273cf",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "-199999999999999999999999999999.999999998"
+          ]
+        ]
+      },
+      "result_digest": "c19b75cff3e9ba1b7a06827ac16107e262dfea1553031a312c79863eff1af655"
+    },
+    {
+      "case_id": "input_at_exclusive_upper_bound",
+      "kind": "statement",
+      "claim": "an input of 10^29 exceeds Decimal(38,9) and the statement is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "100000000000000000000000000000"
+        }
+      ],
+      "input_digest": "6921b97a6d0729fffaa2a4b9d869a1470d8e74232e874161001981e66d61ee3f",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22003"
+      },
+      "result_digest": "f9f805730adff70f90ddfa304c63f14bfe66f7c6831fcdc5862a54ba7637232f"
+    },
+    {
+      "case_id": "input_at_exclusive_lower_bound",
+      "kind": "statement",
+      "claim": "an input of -10^29 exceeds Decimal(38,9) and the statement is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "-100000000000000000000000000000"
+        }
+      ],
+      "input_digest": "afc3d867219e3f7255a3f5f66bdf460f91aba0a585260cb52fbd74baefa9a6a6",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22003"
+      },
+      "result_digest": "f9f805730adff70f90ddfa304c63f14bfe66f7c6831fcdc5862a54ba7637232f"
+    },
+    {
+      "case_id": "empty_group",
+      "kind": "statement",
+      "claim": "a selected generation with no rows yields no group, not a zero-valued group",
+      "input": [
+        {
+          "generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "region": "g",
+          "revenue": "999"
+        }
+      ],
+      "input_digest": "4499ecd0d2b41ae643fa81b555c13b479aeab7abf0c6ef07c175c179db0c558b",
+      "observed": {
+        "classification": "rows",
+        "rows": []
+      },
+      "result_digest": "57926c1b92cc429770621ac16cc2f3967a2a406f6ab8b654b603148deb470922"
+    },
+    {
+      "case_id": "excluded_generation",
+      "kind": "statement",
+      "claim": "rows from another generation never contribute to the selected generation's sum",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "region": "g",
+          "revenue": "1"
+        },
+        {
+          "generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "region": "g",
+          "revenue": "999"
+        }
+      ],
+      "input_digest": "aa4818ade09754313bd310c5327c51c233b2bb50c807afe994327cf42af9acca",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "1.000000000"
+          ]
+        ]
+      },
+      "result_digest": "34811dcef1714644dadfc58974a24e6aab0c20358fc7814d2850b55a61826c09"
+    },
+    {
+      "case_id": "result_cast_at_maximum",
+      "kind": "result_cast_probe",
+      "claim": "the largest Decimal(57,9) value is accepted by the result cast",
+      "input": "999999999999999999999999999999999999999999999999.999999999",
+      "input_digest": "1b7654e44fdeb6ed7a71cd35523a56d083f98c88b5ddad97e7b9706648eae7f2",
+      "observed": {
+        "classification": "accepted",
+        "value": "999999999999999999999999999999999999999999999999.999999999"
+      },
+      "result_digest": "26f15306cade5db752b8ec8c5867699e56d3007337f9f87019c61ca88ea76b9f"
+    },
+    {
+      "case_id": "result_cast_at_minimum",
+      "kind": "result_cast_probe",
+      "claim": "the smallest Decimal(57,9) value is accepted by the result cast",
+      "input": "-999999999999999999999999999999999999999999999999.999999999",
+      "input_digest": "961b0179eb8266d8a88e9b3bfda00d77fc75655a9263d232e2f8f7798e48d86a",
+      "observed": {
+        "classification": "accepted",
+        "value": "-999999999999999999999999999999999999999999999999.999999999"
+      },
+      "result_digest": "c9d86e82a0a05f8d2cebc7c278f2eba346b2d4de6c12654da247abed375e7780"
+    },
+    {
+      "case_id": "result_cast_at_exclusive_upper_bound",
+      "kind": "result_cast_probe",
+      "claim": "10^48 overflows the Decimal(57,9) result cast and is refused",
+      "input": "1000000000000000000000000000000000000000000000000",
+      "input_digest": "ca30c1e1a1366bda10c374996d18c16eac7ab70d7e9bb965feb813b448a6aebc",
+      "observed": {
+        "classification": "cast_rejected",
+        "sqlstate": "22003"
+      },
+      "result_digest": "b3d59dc68c907a8b62f5af4a85fc225d2175edb3177de0b1169ba95d89ebc62c"
+    },
+    {
+      "case_id": "result_cast_at_exclusive_lower_bound",
+      "kind": "result_cast_probe",
+      "claim": "-10^48 overflows the Decimal(57,9) result cast and is refused",
+      "input": "-1000000000000000000000000000000000000000000000000",
+      "input_digest": "a5d5da2091fcc135e75c08fb06c17b65392173cacf377d942fdd733807ff6070",
+      "observed": {
+        "classification": "cast_rejected",
+        "sqlstate": "22003"
+      },
+      "result_digest": "b3d59dc68c907a8b62f5af4a85fc225d2175edb3177de0b1169ba95d89ebc62c"
+    }
+  ]
+}

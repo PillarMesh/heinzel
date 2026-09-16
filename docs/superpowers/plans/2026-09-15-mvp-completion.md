@@ -237,17 +237,17 @@ report. This is the document the reviewer reads first.
 
 ### M3 -- Close precondition 17: reword, then prove
 
-- [ ] **Reword precondition 17 (R2)** from cross-engine equivalence on both pinned engines to
+- [x] **Reword precondition 17 (R2)** from cross-engine equivalence on both pinned engines to
       single-engine admission for PostgreSQL that explicitly does not claim cross-engine
       equivalence. The wording change lands with the ADR amendment from M0, and the reviewer
       approves the reworded text at M4.
-- [ ] Stand up PostgreSQL at its exact pinned image and build digests.
-- [ ] Run the semantic fixture and capture results: zero, negative, exact scale-nine, maximum
+- [x] Stand up PostgreSQL at its exact pinned image and build digests.
+- [x] Run the semantic fixture and capture results: zero, negative, exact scale-nine, maximum
       positive and negative inputs, the safe two-row maximum sum, overflow at the exclusive
       bounds, empty group, and excluded generation.
-- [ ] Prove the widened Decimal(57,9) cast behaves as the proof note argues, against the real
+- [x] Prove the widened Decimal(57,9) cast behaves as the proof note argues, against the real
       engine. The note's integer proof establishes the bound; this run is the observation.
-- [ ] Write the sanitized evidence bundle: engine version, image and build digests, canonical
+- [x] Write the sanitized evidence bundle: engine version, image and build digests, canonical
       input digests, result digests.
 - [ ] Commit: `test(compiler): record live checked SUM evidence for postgresql activation`
 
