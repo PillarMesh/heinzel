@@ -14,7 +14,6 @@ outcome, and the completed run cannot be claimed again.
 
 from __future__ import annotations
 
-import asyncio
 import os
 import secrets
 from datetime import timedelta
@@ -29,6 +28,7 @@ from pillarmesh_runtime import (
     RunLease,
     RunLeaseLostError,
     RunStage,
+    compose_acquisition_run_stages,
 )
 from pillarmesh_state import RunAttemptClaim, RunService
 from pillarmesh_state.run_repository import SQLiteRunRepository
@@ -43,7 +43,6 @@ from tests.integration.test_postgresql_acquisition_land_live import (
     _TRIGGER_WINDOW,
     _composed_acquisition,
     _DestinationBindings,
-    _intent,
     _land_receipt_count,
     _landing,
     _raw_rows,
@@ -109,53 +108,35 @@ def test_a_due_run_resumes_from_its_durable_boundary_after_lease_loss(tmp_path: 
             land_application = _landing(
                 composed, landing_dsn, destination_bindings, ledger, acquisition_clock
             )
+            # The product's own stages for this run: prepare, then land and acknowledge.
+            prepared, acknowledged = compose_acquisition_run_stages(
+                application=composed.application,
+                landing=land_application,
+                tenant_id=_TENANT,
+                contract_ref=_CONTRACT_REF,
+                trigger_window=trigger_window,
+                acquisition_mode="snapshot",
+            )
             preparations: list[int] = []
+            stalled_claims: list[RunAttemptClaim] = []
 
             def prepare(lease: RunLease) -> str:
                 preparations.append(lease.claim.epoch)
-                preparation = composed.application.run_now(
-                    tenant_id=_TENANT,
-                    contract_ref=_CONTRACT_REF,
-                    trigger_window=trigger_window,
-                    acquisition_mode="snapshot",
-                )
-                assert preparation.prepared_receipt is not None
-                return preparation.prepared_receipt.prepared_receipt_id
+                return prepared.execute(lease)
 
-            def land(_lease: RunLease) -> str:
-                preparation = composed.application.run_now(
-                    tenant_id=_TENANT,
-                    contract_ref=_CONTRACT_REF,
-                    trigger_window=trigger_window,
-                    acquisition_mode="snapshot",
-                )
-                landed = asyncio.run(
-                    land_application.land(
-                        trigger_window=trigger_window,
-                        intent=_intent(composed, preparation),
-                        preparation=preparation,
-                    )
-                )
-                return landed.checkpoint_receipt.checkpoint_receipt_id
-
-            def prepare_then_crash(lease: RunLease) -> str:
+            def crash_after_preparing(lease: RunLease) -> str:
+                stalled_claims.append(lease.claim)
                 receipt = prepare(lease)
                 run_clock.value += timedelta(seconds=_LEASE_SECONDS + 1)
                 return receipt
-
-            stalled_claims: list[RunAttemptClaim] = []
-
-            def record_claim(lease: RunLease) -> str:
-                stalled_claims.append(lease.claim)
-                return prepare_then_crash(lease)
 
             with pytest.raises(RunLeaseLostError, match="run lease expired") as lost:
                 LeasedRunExecutor(runs, worker_id="worker-a", lease_seconds=_LEASE_SECONDS).execute(
                     tenant_id=_TENANT,
                     run_id=run.run_id,
                     stages=(
-                        RunStage("acquisition_prepared", record_claim),
-                        RunStage("land_acknowledged", land),
+                        RunStage(prepared.boundary, crash_after_preparing),
+                        acknowledged,
                     ),
                 )
             rows_after_crash = _raw_rows(bootstrap_dsn)
@@ -173,10 +154,7 @@ def test_a_due_run_resumes_from_its_durable_boundary_after_lease_loss(tmp_path: 
             ).execute(
                 tenant_id=_TENANT,
                 run_id=run.run_id,
-                stages=(
-                    RunStage("acquisition_prepared", prepare),
-                    RunStage("land_acknowledged", land),
-                ),
+                stages=(RunStage(prepared.boundary, prepare), acknowledged),
             )
             rows_after_resume = _raw_rows(bootstrap_dsn)
             receipts_after_resume = _land_receipt_count(bootstrap_dsn)

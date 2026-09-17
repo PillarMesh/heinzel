@@ -566,3 +566,69 @@ def test_a_routing_cannot_be_mutated_after_it_is_stated() -> None:
     with pytest.raises(ValidationError):
         routing.routes[0].table_ref = "raw_elsewhere"  # type: ignore[misc]
     assert {route.table_ref for route in routing.routes} == {"raw_accounts", "raw_orders"}
+
+
+class _StubApplication:
+    def __init__(
+        self, preparation: AcquisitionPreparationResult, intent: AcquisitionIntent
+    ) -> None:
+        self._preparation = preparation
+        self._intent = intent
+        self.calls: list[tuple[str, str, str, str]] = []
+
+    def prepare_now(
+        self, *, tenant_id: str, contract_ref: str, trigger_window: str, acquisition_mode: str
+    ) -> runtime.AcquisitionRunPreparation:
+        self.calls.append((tenant_id, contract_ref, trigger_window, acquisition_mode))
+        return runtime.AcquisitionRunPreparation(intent=self._intent, result=self._preparation)
+
+
+class _StubLanding:
+    def __init__(self, result: runtime.AcquisitionLandingResult) -> None:
+        self._result = result
+        self.landed: list[tuple[str, str]] = []
+
+    async def land(
+        self,
+        *,
+        trigger_window: str,
+        intent: AcquisitionIntent,
+        preparation: AcquisitionPreparationResult,
+    ) -> runtime.AcquisitionLandingResult:
+        self.landed.append((trigger_window, intent.intent_key))
+        return self._result
+
+
+def test_composed_run_stages_prepare_then_land_the_prepared_batch() -> None:
+    intent = _intent()
+    preparation, artifacts = _preparation(intent)
+    landing = _Landing()
+    acknowledger = _RecordingAcknowledger()
+    landed = asyncio.run(
+        _composed(artifacts, landing, acknowledger).land(
+            trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation
+        )
+    )
+    application = _StubApplication(preparation, intent)
+    stub_landing = _StubLanding(landed)
+
+    stages = runtime.compose_acquisition_run_stages(
+        application=application,
+        landing=stub_landing,
+        tenant_id=_TENANT,
+        contract_ref=_CONTRACT_REF,
+        trigger_window=_TRIGGER_WINDOW,
+        acquisition_mode="snapshot",
+    )
+
+    assert [stage.boundary for stage in stages] == ["acquisition_prepared", "land_acknowledged"]
+    lease = object()
+    assert preparation.prepared_receipt is not None
+    assert stages[0].execute(lease) == preparation.prepared_receipt.prepared_receipt_id  # type: ignore[arg-type]
+    assert stages[1].execute(lease) == landed.checkpoint_receipt.checkpoint_receipt_id  # type: ignore[arg-type]
+    # The landing stage lands the batch preparation replayed, under the run's own window.
+    assert stub_landing.landed == [(_TRIGGER_WINDOW, intent.intent_key)]
+    assert application.calls == [
+        (_TENANT, _CONTRACT_REF, _TRIGGER_WINDOW, "snapshot"),
+        (_TENANT, _CONTRACT_REF, _TRIGGER_WINDOW, "snapshot"),
+    ]

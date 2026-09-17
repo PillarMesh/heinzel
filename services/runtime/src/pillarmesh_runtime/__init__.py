@@ -12,6 +12,7 @@ from .acquisition import (
 from .acquisition_application import (
     AcquisitionApplication,
     AcquisitionPreparer,
+    AcquisitionRunPreparation,
     CheckpointResolver,
     ContractRecordResolver,
     acquisition_run_now_reference,
@@ -45,6 +46,10 @@ from .acquisition_landing import (
     AcquisitionLandingResult,
     AcquisitionSegmentArtifactStore,
     AcquisitionTargetResolver,
+)
+from .acquisition_run_stages import (
+    AcquisitionRunStageError,
+    compose_acquisition_run_stages,
 )
 from .answer_composition import (
     AnswerQueryBindingAuthority,
@@ -195,6 +200,8 @@ __all__ = [
     "AcquisitionOwnershipError",
     "AcquisitionPreparationResult",
     "AcquisitionPreparer",
+    "AcquisitionRunPreparation",
+    "AcquisitionRunStageError",
     "AcquisitionRunner",
     "AcquisitionRuntimeError",
     "AcquisitionSegmentArtifactStore",
@@ -310,6 +317,7 @@ __all__ = [
     "classify_run_stage_failure",
     "compose_acquisition_application",
     "compose_acquisition_landing",
+    "compose_acquisition_run_stages",
     "compose_activated_acquisition_contract",
     "compose_authoritative_product_catalog",
     "landing_contract_resolver",
