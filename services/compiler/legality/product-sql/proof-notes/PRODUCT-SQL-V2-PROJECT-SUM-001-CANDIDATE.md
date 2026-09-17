@@ -246,10 +246,19 @@ SUM; the integer proof above is what shows a SUM bounded by the signed ledger ce
 it. Preconditions 15 and 17, both worded per engine, stay unsatisfied until the independent reviewer
 decides them.
 
-The runtime magnitude evidence has a limit worth stating: the live source-to-answer journey that
-exercises the PostgreSQL magnitude check runs with a placeholder legality decision digest, because no
-compiler admission exists yet. It proves the check executes before publication; it does not prove
-the check is bound to a compiler decision.
+**Live compiled journey on the pinned engine.**
+`tests/integration/test_postgresql_compiled_product_journey_live.py` runs on the pinned PostgreSQL
+18.6 image with every compiler input produced by its owning service: rows are acquired and landed
+through the real providers and generation ledger, the landing relation is observed and signed by
+the provider observer, the physical plan is composed from a generation authority built on the
+committed LAND receipt, and input cardinality is resolved from the ledger and signed by the runtime.
+The compiler leaves exactly preconditions 15, 17 and 18 unsatisfied; removing the signed cardinality
+makes precondition 14 fail. The compiler's guarded statement then materializes through dbt, the
+runtime magnitude check runs before publication, and the product reconciles to the inserted source
+rows. Nothing is admitted: the execution authorization uses a legality decision digest derived from
+the compiler's refusal, so the run proves the check executes, not that it is bound to an approval.
+The older native journeys that start PostgreSQL from local binaries ran on PostgreSQL 14.17 when last
+exercised for this note and are not evidence about the pinned engine.
 
 PostgreSQL activation additionally requires composing the runtime-signed cardinality artifact into
 the request journey, an execution authorization bound to the exact candidate, a per-engine

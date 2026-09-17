@@ -246,3 +246,57 @@ def test_postgresql_canonical_decimal_pattern_refuses_every_permissive_numeric_f
     from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
 
     assert re.fullmatch(_POSTGRESQL_CANONICAL_DECIMAL, value) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "0",
+        "0E-9",
+        "-0.00",
+        "10.00",
+        "1E+3",
+        "0.000000001",
+        "-42.125",
+        "99999999999999999999999999999.999999999",
+        "-99999999999999999999999999999.999999999",
+    ),
+)
+def test_every_in_range_decimal_the_landing_encoder_writes_passes_the_decode_guard(
+    value: str,
+) -> None:
+    """The landing encoder and the decode guard are two halves of one contract.
+
+    Acquired rows are landed as canonical JSON, which encodes a Decimal with format(value, "f").
+    If that encoder could ever emit exponent notation or another form the guard refuses, every
+    genuinely landed row with that value would refuse the product statement.
+    """
+    from decimal import Decimal
+
+    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+    from pillarmesh_contract_model import canonical_value
+
+    encoded = canonical_value({"revenue": Decimal(value)})
+    assert isinstance(encoded, dict)
+    landed = encoded["revenue"]
+
+    assert isinstance(landed, str)
+    assert re.fullmatch(_POSTGRESQL_CANONICAL_DECIMAL, landed) is not None, landed
+
+
+@pytest.mark.parametrize(
+    "value",
+    ("NaN", "Infinity", "-Infinity", "0.0000000001", "100000000000000000000000000000"),
+)
+def test_the_decode_guard_refuses_what_the_landing_encoder_writes_for_inadmissible_decimals(
+    value: str,
+) -> None:
+    from decimal import Decimal
+
+    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+    from pillarmesh_contract_model import canonical_value
+
+    encoded = canonical_value({"revenue": Decimal(value)})
+    assert isinstance(encoded, dict)
+
+    assert re.fullmatch(_POSTGRESQL_CANONICAL_DECIMAL, str(encoded["revenue"])) is None

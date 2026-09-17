@@ -111,10 +111,18 @@ result and overflow observations. Section 5 lists each.
 8. **PostgreSQL runtime magnitude enforcement** (relevant to Q1).
    `providers/postgresql/tests/test_product_materialization.py::test_signed_decimal_magnitude_check_rejects_exclusive_bounds`,
    `providers/postgresql/tests/test_product_materialization.py::test_switch_rejects_post_execute_magnitude_mutation_before_publication_effect`,
-   and live `tests/integration/test_postgresql_product_materialization_live.py::test_fresh_source_acquisition_land_and_dbt_materialization_commit_one_generation`.
-   **Limit:** that live journey runs with a placeholder legality decision digest, because no
-   compiler admission exists yet. It proves the magnitude check runs before publication; it does
-   not prove the check is bound to a compiler decision.
+   and, on the pinned PostgreSQL 18.6 image,
+   `tests/integration/test_postgresql_compiled_product_journey_live.py::test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on_the_pinned_engine`.
+   That journey acquires and lands real rows, observes and signs the landing relation, composes the
+   physical plan with the compiler, signs cardinality from the generation ledger, and compiles: only
+   preconditions 15, 17 and 18 remain. It then materializes the compiler's guarded statement through
+   dbt, running the magnitude check before publication, and the product reconciles to the source
+   rows. **Limit:** nothing is admitted, so the materialization is authorized with a legality
+   decision digest derived from the compiler's refusal; it proves the check runs, not that it is
+   bound to an approval. The older
+   `tests/integration/test_postgresql_product_materialization_live.py::test_fresh_source_acquisition_land_and_dbt_materialization_commit_one_generation`
+   starts PostgreSQL from local binaries (PostgreSQL 14.17 when it was last run for this packet),
+   not the pinned image, and uses hand-written SQL; it is not evidence about the pinned engine.
 
 ## 6. Questions that need your decision
 
