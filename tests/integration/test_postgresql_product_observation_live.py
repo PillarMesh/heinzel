@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import secrets
 from datetime import UTC, datetime, timedelta
@@ -8,8 +9,25 @@ from typing import cast
 
 import psycopg
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 from pillarmesh_contract_model import digest
-from pillarmesh_dbt_adapter import CompiledDbtModel, DbtInvoker, SignedCompiledDbtModel
+from pillarmesh_dbt_adapter import (
+    CompiledDbtModel,
+    DbtDecimalMagnitudeCheck,
+    DbtInvoker,
+    SignedCompiledDbtModel,
+    compiled_dbt_model_signing_bytes,
+)
+from pillarmesh_execution_graph import (
+    Decimal57OutputCheck,
+    GenerationScopedProductSource,
+    ProductJsonFieldBinding,
+    ProductPhysicalPlan,
+    ProductTarget,
+)
 from pillarmesh_provider_postgresql import (
     PostgreSQLMaterializationSettings,
     PostgreSQLMaterializationWarehouse,
@@ -28,10 +46,94 @@ from pydantic import SecretStr
 
 from tests.integration.test_postgresql_answer_query_live import _fresh_postgresql_cluster
 
+_TENANT_ID = "tenant-live-a"
+_PRODUCT_ID = "product-revenue"
+_PRODUCT_REVISION = 2
+_CONTRACT_DIGEST = "1" * 64
+_INPUT_GENERATION_DIGESTS = ("2" * 64,)
+_COMPILER_KEY_ID = "compiler-key-live"
+_COMPILER_PRIVATE_KEY = Ed25519PrivateKey.from_private_bytes(b"\x02" * 32)
+_OUTPUT_SCHEMA_DIGEST = postgresql_materialized_schema_digest(
+    (
+        PostgreSQLMaterializedColumn(ordinal=1, name="region", data_type="text", nullable=False),
+        PostgreSQLMaterializedColumn(
+            ordinal=2, name="total_revenue", data_type="numeric", nullable=False
+        ),
+    )
+)
+
 
 class _DbtMustNotRun:
     def invoke(self, **_kwargs: object) -> object:
         raise AssertionError("dbt must not overwrite a retained product generation")
+
+
+def _signed_model(*, product_generation: int) -> SignedCompiledDbtModel:
+    model = CompiledDbtModel(
+        model_name=f"product_revenue_g{product_generation}",
+        contract_digest=_CONTRACT_DIGEST,
+        provider="postgresql",
+        input_generation_digests=_INPUT_GENERATION_DIGESTS,
+        target_schema=f"product_generation_{product_generation}",
+        output_columns=("region", "total_revenue"),
+        output_magnitude_checks=(DbtDecimalMagnitudeCheck(column_name="total_revenue"),),
+        compiled_sql="SELECT region, total_revenue FROM raw.revenue",
+    )
+    return SignedCompiledDbtModel(
+        model=model,
+        model_digest=digest(model),
+        key_id=_COMPILER_KEY_ID,
+        signature=base64.b64encode(
+            _COMPILER_PRIVATE_KEY.sign(compiled_dbt_model_signing_bytes(model))
+        ).decode("ascii"),
+    )
+
+
+def _trusted_compiler_keys() -> dict[str, Ed25519PublicKey]:
+    return {_COMPILER_KEY_ID: _COMPILER_PRIVATE_KEY.public_key()}
+
+
+def _physical_plan(signed_model: SignedCompiledDbtModel) -> ProductPhysicalPlan:
+    model = signed_model.model
+    return ProductPhysicalPlan(
+        compiler_version="compiler-live-1",
+        legality_rule_id="R-PRODUCT-AGGREGATE",
+        legality_rule_version="1",
+        tenant_id=_TENANT_ID,
+        product_id=_PRODUCT_ID,
+        product_revision=_PRODUCT_REVISION,
+        contract_ref="contract-revenue",
+        contract_revision=1,
+        contract_digest=model.contract_digest,
+        iir_digest="8" * 64,
+        provider="postgresql",
+        warehouse_binding_id="warehouse-live",
+        warehouse_binding_revision=1,
+        provider_observation_digest="9" * 64,
+        source=GenerationScopedProductSource(
+            namespace="raw",
+            relation_name="revenue",
+            generation_column="generation_id",
+            payload_column="payload",
+            generation_id=digest("postgresql-live-observation-source-generation"),
+            landing_receipt_digest=model.input_generation_digests[0],
+            observed_source_schema_digest="3" * 64,
+            field_bindings=(
+                ProductJsonFieldBinding(
+                    logical_field="total_revenue", json_field="revenue", scalar_type="decimal"
+                ),
+            ),
+        ),
+        target=ProductTarget(namespace=model.target_schema, relation_name=model.model_name),
+        emitted_statement=model.compiled_sql,
+        statement_digest=digest(model.compiled_sql),
+        output_columns=model.output_columns,
+        expected_output_schema_digest=_OUTPUT_SCHEMA_DIGEST,
+        decimal_output_checks=tuple(
+            Decimal57OutputCheck(column_name=check.column_name)
+            for check in model.output_magnitude_checks
+        ),
+    )
 
 
 def _cardinality_evidence_digest(
@@ -46,26 +148,82 @@ def _cardinality_evidence_digest(
     )
 
 
-def _materialization_receipt(commit_reference: str) -> ProductMaterializationReceipt:
-    now = datetime.now(UTC)
-    plan_digest = "b" * 64
-    input_generation_digests = ("2" * 64,)
-    return ProductMaterializationReceipt(
-        run_id="run-live-observation",
-        tenant_id="tenant-live-a",
-        product_id="product-revenue",
-        product_revision=2,
-        product_generation=3,
-        contract_digest="1" * 64,
-        input_generation_digests=input_generation_digests,
+def _materialization_request(
+    signed_model: SignedCompiledDbtModel,
+    *,
+    run_id: str,
+    product_generation: int,
+    retention_seconds: int,
+) -> MaterializationRequest:
+    model = signed_model.model
+    physical_plan = _physical_plan(signed_model)
+    return MaterializationRequest(
+        run_id=run_id,
+        tenant_id=_TENANT_ID,
+        product_id=_PRODUCT_ID,
+        product_revision=_PRODUCT_REVISION,
+        product_generation=product_generation,
+        retention_seconds=retention_seconds,
+        contract_digest=model.contract_digest,
+        physical_plan=physical_plan,
+        physical_plan_digest=digest(physical_plan),
+        compiled_model_digest=signed_model.model_digest,
+        input_generation_digests=model.input_generation_digests,
         input_cardinality_evidence_digest=_cardinality_evidence_digest(
-            plan_digest=plan_digest,
-            input_generation_digests=input_generation_digests,
+            plan_digest=digest(physical_plan),
+            input_generation_digests=model.input_generation_digests,
         ),
+        expected_output_schema_digest=physical_plan.expected_output_schema_digest,
+    )
+
+
+def _commit_reference(
+    signed_model: SignedCompiledDbtModel,
+    *,
+    product_generation: int,
+    relation_identity: tuple[object, ...],
+) -> str:
+    return digest(
+        {
+            "domain": "pillarmesh-postgresql-product-generation-v1",
+            "tenant_id": _TENANT_ID,
+            "product_id": _PRODUCT_ID,
+            "product_revision": _PRODUCT_REVISION,
+            "product_generation": product_generation,
+            "model_digest": signed_model.model_digest,
+            "relation_identity": relation_identity,
+            "output_magnitude_checks": tuple(
+                {"declaration": check.model_dump(mode="python"), "violation_count": 0}
+                for check in signed_model.model.output_magnitude_checks
+            ),
+        }
+    )
+
+
+def _materialization_receipt(
+    signed_model: SignedCompiledDbtModel, commit_reference: str
+) -> ProductMaterializationReceipt:
+    now = datetime.now(UTC)
+    request = _materialization_request(
+        signed_model,
+        run_id="run-live-observation",
+        product_generation=3,
+        retention_seconds=3600,
+    )
+    return ProductMaterializationReceipt(
+        run_id=request.run_id,
+        tenant_id=request.tenant_id,
+        product_id=request.product_id,
+        product_revision=request.product_revision,
+        product_generation=request.product_generation,
+        contract_digest=request.contract_digest,
+        input_generation_digests=request.input_generation_digests,
+        input_cardinality_evidence_digest=request.input_cardinality_evidence_digest,
         execution_authorization_digest="7" * 64,
         legality_decision_digest="8" * 64,
-        plan_digest=plan_digest,
-        output_schema_digest="3" * 64,
+        physical_plan_digest=request.physical_plan_digest,
+        compiled_model_digest=request.compiled_model_digest,
+        output_schema_digest=request.expected_output_schema_digest,
         output_row_count=1,
         provider_commit_reference=commit_reference,
         dbt_manifest_digest="4" * 64,
@@ -74,38 +232,23 @@ def _materialization_receipt(commit_reference: str) -> ProductMaterializationRec
         quality_assertion_count=0,
         quality_disposition="not_asserted",
         committed_at=now,
-        retained_until=now + timedelta(hours=1),
+        retained_until=now + timedelta(seconds=request.retention_seconds),
     )
 
 
 def _materialization_observation(
+    signed_model: SignedCompiledDbtModel,
     *,
-    request: MaterializationRequest,
-    model_digest: str,
+    product_generation: int,
     relation_identity: tuple[object, ...],
 ) -> MaterializationObservation:
     return MaterializationObservation(
-        provider_commit_reference=digest(
-            {
-                "domain": "pillarmesh-postgresql-product-generation-v1",
-                "tenant_id": request.tenant_id,
-                "product_id": request.product_id,
-                "product_revision": request.product_revision,
-                "product_generation": request.product_generation,
-                "model_digest": model_digest,
-                "relation_identity": relation_identity,
-            }
+        provider_commit_reference=_commit_reference(
+            signed_model,
+            product_generation=product_generation,
+            relation_identity=relation_identity,
         ),
-        output_schema_digest=postgresql_materialized_schema_digest(
-            (
-                PostgreSQLMaterializedColumn(
-                    ordinal=1, name="region", data_type="text", nullable=False
-                ),
-                PostgreSQLMaterializedColumn(
-                    ordinal=2, name="total_revenue", data_type="numeric", nullable=False
-                ),
-            )
-        ),
+        output_schema_digest=_OUTPUT_SCHEMA_DIGEST,
         output_row_count=1,
         dbt_manifest_digest="4" * 64,
         dbt_run_results_digest="5" * 64,
@@ -172,16 +315,10 @@ def _provision_observed_generation(bootstrap_dsn: str, password: str) -> tuple[s
             "AND relation.relname = 'product_revenue_g3'"
         ).fetchone()
         assert relation_identity is not None
-        commit_reference = digest(
-            {
-                "domain": "pillarmesh-postgresql-product-generation-v1",
-                "tenant_id": "tenant-live-a",
-                "product_id": "product-revenue",
-                "product_revision": 2,
-                "product_generation": 3,
-                "model_digest": "b" * 64,
-                "relation_identity": relation_identity,
-            }
+        commit_reference = _commit_reference(
+            _signed_model(product_generation=3),
+            product_generation=3,
+            relation_identity=relation_identity,
         )
         connection.execute(
             "CREATE TABLE product_control.product_generations ("
@@ -254,8 +391,13 @@ def test_fresh_postgresql_observation_reads_actual_context_and_owned_generation(
             generation_table_name="product_generations",
             generation_pointer_table_name="product_generation_pointers",
         )
-        observer = PostgreSQLProductSemanticObserver(settings)
-        request = _materialization_receipt(commit_reference)
+        signed_model = _signed_model(product_generation=3)
+        observer = PostgreSQLProductSemanticObserver(
+            settings,
+            signed_model=signed_model,
+            trusted_compiler_keys=_trusted_compiler_keys(),
+        )
+        request = _materialization_receipt(signed_model, commit_reference)
 
         observation = observer.observe(request)
 
@@ -351,32 +493,11 @@ def test_fresh_postgresql_observation_reads_actual_context_and_owned_generation(
             observer.observe(request)
         assert replaced.value.classification == "integrity_failure"
 
-        model = CompiledDbtModel(
-            model_name="product_revenue_g3",
-            contract_digest=request.contract_digest,
-            provider="postgresql",
-            input_generation_digests=request.input_generation_digests,
-            target_schema="product_generation_3",
-            compiled_sql="SELECT 1",
-        )
-        signed_model = SignedCompiledDbtModel(
-            model=model,
-            model_digest=request.plan_digest,
-            key_id="compiler",
-            signature="unused-during-publication",
-        )
-        publication_request = MaterializationRequest(
+        publication_request = _materialization_request(
+            signed_model,
             run_id="run-live-replaced-publication",
-            tenant_id=request.tenant_id,
-            product_id=request.product_id,
-            product_revision=request.product_revision,
             product_generation=request.product_generation,
             retention_seconds=3600,
-            contract_digest=request.contract_digest,
-            plan_digest=request.plan_digest,
-            input_generation_digests=request.input_generation_digests,
-            input_cardinality_evidence_digest=request.input_cardinality_evidence_digest,
-            expected_output_schema_digest=request.output_schema_digest,
         )
         warehouse = PostgreSQLMaterializationWarehouse(
             settings=settings.model_copy(update={"dsn": SecretStr(bootstrap_dsn)}),
@@ -385,16 +506,7 @@ def test_fresh_postgresql_observation_reads_actual_context_and_owned_generation(
         )
         committed_output = MaterializationObservation(
             provider_commit_reference=commit_reference,
-            output_schema_digest=postgresql_materialized_schema_digest(
-                (
-                    PostgreSQLMaterializedColumn(
-                        ordinal=1, name="region", data_type="text", nullable=False
-                    ),
-                    PostgreSQLMaterializedColumn(
-                        ordinal=2, name="total_revenue", data_type="numeric", nullable=False
-                    ),
-                )
-            ),
+            output_schema_digest=request.output_schema_digest,
             output_row_count=1,
             dbt_manifest_digest=request.dbt_manifest_digest,
             dbt_run_results_digest=request.dbt_run_results_digest,
@@ -420,20 +532,7 @@ def test_fresh_postgresql_materialization_refuses_a_retained_output_relation(
         observer_dsn, _relation_oid, _commit_reference = _provision_observed_generation(
             bootstrap_dsn, password
         )
-        model = CompiledDbtModel(
-            model_name="product_revenue_g3",
-            contract_digest="1" * 64,
-            provider="postgresql",
-            input_generation_digests=("2" * 64,),
-            target_schema="product_generation_3",
-            compiled_sql="SELECT 1",
-        )
-        signed_model = SignedCompiledDbtModel(
-            model=model,
-            model_digest=digest(model),
-            key_id="compiler",
-            signature="unused-before-dbt",
-        )
+        signed_model = _signed_model(product_generation=3)
         warehouse = PostgreSQLMaterializationWarehouse(
             settings=PostgreSQLMaterializationSettings(
                 tenant_id="tenant-live-a",
@@ -447,21 +546,11 @@ def test_fresh_postgresql_materialization_refuses_a_retained_output_relation(
             signed_model=signed_model,
             invoker=cast(DbtInvoker, _DbtMustNotRun()),
         )
-        request = MaterializationRequest(
+        request = _materialization_request(
+            signed_model,
             run_id="run-live-reused-target",
-            tenant_id="tenant-live-a",
-            product_id="product-revenue",
-            product_revision=2,
             product_generation=3,
             retention_seconds=3600,
-            contract_digest=model.contract_digest,
-            plan_digest=digest(model),
-            input_generation_digests=model.input_generation_digests,
-            input_cardinality_evidence_digest=_cardinality_evidence_digest(
-                plan_digest=digest(model),
-                input_generation_digests=model.input_generation_digests,
-            ),
-            expected_output_schema_digest="3" * 64,
         )
 
         with pytest.raises(ProviderError) as caught:
@@ -522,35 +611,12 @@ def test_fresh_postgresql_materialization_preserves_exact_and_refuses_stale_repl
             generation_table_name="product_generations",
             generation_pointer_table_name="product_generation_pointers",
         )
-        current_model = CompiledDbtModel(
-            model_name="product_revenue_g3",
-            contract_digest="1" * 64,
-            provider="postgresql",
-            input_generation_digests=("2" * 64,),
-            target_schema="product_generation_3",
-            compiled_sql="SELECT 1",
-        )
-        current_signed_model = SignedCompiledDbtModel(
-            model=current_model,
-            model_digest="b" * 64,
-            key_id="compiler",
-            signature="unused-during-publication",
-        )
-        current_request = MaterializationRequest(
+        current_signed_model = _signed_model(product_generation=3)
+        current_request = _materialization_request(
+            current_signed_model,
             run_id="run-live-exact-pointer-replay",
-            tenant_id="tenant-live-a",
-            product_id="product-revenue",
-            product_revision=2,
             product_generation=3,
             retention_seconds=7200,
-            contract_digest=current_model.contract_digest,
-            plan_digest=current_signed_model.model_digest,
-            input_generation_digests=current_model.input_generation_digests,
-            input_cardinality_evidence_digest=_cardinality_evidence_digest(
-                plan_digest=current_signed_model.model_digest,
-                input_generation_digests=current_model.input_generation_digests,
-            ),
-            expected_output_schema_digest="3" * 64,
         )
         current_warehouse = PostgreSQLMaterializationWarehouse(
             settings=settings,
@@ -561,8 +627,8 @@ def test_fresh_postgresql_materialization_preserves_exact_and_refuses_stale_repl
         current_warehouse.switch_consumption_view(
             current_request,
             _materialization_observation(
-                request=current_request,
-                model_digest=current_signed_model.model_digest,
+                current_signed_model,
+                product_generation=current_request.product_generation,
                 relation_identity=current_relation_identity,
             ),
         )
@@ -574,25 +640,12 @@ def test_fresh_postgresql_materialization_preserves_exact_and_refuses_stale_repl
             ).fetchone()
         assert retained_after == retained_before
 
-        stale_model = current_model.model_copy(
-            update={"model_name": "product_revenue_g2", "target_schema": "product_generation_2"}
-        )
-        stale_signed_model = SignedCompiledDbtModel(
-            model=stale_model,
-            model_digest="c" * 64,
-            key_id="compiler",
-            signature="unused-during-publication",
-        )
-        stale_request = current_request.model_copy(
-            update={
-                "run_id": "run-live-stale-pointer",
-                "product_generation": 2,
-                "plan_digest": stale_signed_model.model_digest,
-                "input_cardinality_evidence_digest": _cardinality_evidence_digest(
-                    plan_digest=stale_signed_model.model_digest,
-                    input_generation_digests=stale_model.input_generation_digests,
-                ),
-            }
+        stale_signed_model = _signed_model(product_generation=2)
+        stale_request = _materialization_request(
+            stale_signed_model,
+            run_id="run-live-stale-pointer",
+            product_generation=2,
+            retention_seconds=7200,
         )
         stale_warehouse = PostgreSQLMaterializationWarehouse(
             settings=settings,
@@ -604,8 +657,8 @@ def test_fresh_postgresql_materialization_preserves_exact_and_refuses_stale_repl
             stale_warehouse.switch_consumption_view(
                 stale_request,
                 _materialization_observation(
-                    request=stale_request,
-                    model_digest=stale_signed_model.model_digest,
+                    stale_signed_model,
+                    product_generation=stale_request.product_generation,
                     relation_identity=stale_relation_identity,
                 ),
             )
