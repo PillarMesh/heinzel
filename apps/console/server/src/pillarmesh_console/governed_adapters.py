@@ -412,6 +412,30 @@ class GovernedProductIntentAuthority:
         )
 
 
+class ApprovedProductIntentResolver(Protocol):
+    def resolve(
+        self, tenant_id: str, reference: ArtifactReference
+    ) -> ApprovedProductIntent | None: ...
+
+
+class GovernedApprovedProductIntentSources:
+    """Lets contract-service ask request management which sources an approved intent covers.
+
+    An activation cites the product intent it serves by reference. Only an approval recorded for
+    the tenant at exactly that reference answers; anything else answers None and activation is
+    refused.
+    """
+
+    def __init__(self, approvals: ApprovedProductIntentResolver) -> None:
+        self._approvals = approvals
+
+    def approved_source_refs(
+        self, *, tenant_id: str, product_intent_ref: ArtifactReference
+    ) -> tuple[str, ...] | None:
+        approval = self._approvals.resolve(tenant_id, product_intent_ref)
+        return None if approval is None else approval.intent.source_refs
+
+
 class ProcessPackageCommands(Protocol):
     def upload(
         self,

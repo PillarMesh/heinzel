@@ -11,6 +11,7 @@ from pillarmesh_contract_service import (
     AcquisitionContractActivationDeniedError,
     AcquisitionContractLifecycleNotFoundError,
     ActivatedAcquisitionContract,
+    ProductIntentBoundActivationService,
     SQLiteAcquisitionContractLifecycleRepository,
     StaleAcquisitionContractLifecycleError,
     ValidatedSourceBinding,
@@ -319,3 +320,81 @@ def test_a_tenant_with_no_activated_contracts_lists_empty() -> None:
     repository = SQLiteAcquisitionContractLifecycleRepository(":memory:")
 
     assert repository.list_activated("tenant-unknown") == ()
+
+
+class _ProductIntents:
+    """Grants one approved intent for one tenant, with the given sources."""
+
+    def __init__(self, reference: ArtifactReference, tenant_id: str, sources: tuple[str, ...]):
+        self._reference, self._tenant_id, self._sources = reference, tenant_id, sources
+
+    def approved_source_refs(
+        self, *, tenant_id: str, product_intent_ref: ArtifactReference
+    ) -> tuple[str, ...] | None:
+        if tenant_id != self._tenant_id or product_intent_ref != self._reference:
+            return None
+        return self._sources
+
+
+def _service(
+    repository: SQLiteAcquisitionContractLifecycleRepository,
+    *,
+    sources: tuple[str, ...] = ("source-binding-a",),
+    reference: ArtifactReference | None = None,
+) -> ProductIntentBoundActivationService:
+    contract, _, _ = _activation_inputs()
+    return ProductIntentBoundActivationService(
+        repository,
+        product_intents=_ProductIntents(
+            reference or contract.product_intent_ref, "tenant-a", sources
+        ),
+    )
+
+
+def test_activation_of_an_approved_intent_is_recorded_and_replays() -> None:
+    repository = SQLiteAcquisitionContractLifecycleRepository(":memory:")
+    contract, approval, validation = _activation_inputs()
+    service = _service(repository)
+
+    first = service.activate(
+        idempotency_key="activate-1",
+        contract=contract,
+        approval=approval,
+        source_validation=validation,
+    )
+    replay = service.activate(
+        idempotency_key="activate-1",
+        contract=contract,
+        approval=approval,
+        source_validation=validation,
+    )
+
+    assert first.revision == 1
+    assert replay == first
+    assert repository.list_contracts("tenant-a") == (first,)
+
+
+@pytest.mark.parametrize("case", ("unapproved-intent", "other-tenant", "source-not-approved"))
+def test_activation_is_refused_without_an_approved_intent_for_the_source(case: str) -> None:
+    repository = SQLiteAcquisitionContractLifecycleRepository(":memory:")
+    contract, approval, validation = _activation_inputs()
+    if case == "unapproved-intent":
+        service = _service(
+            repository,
+            reference=ArtifactReference(artifact_id="never-approved", version=1, digest="9" * 64),
+        )
+    elif case == "other-tenant":
+        service = _service(repository)
+        contract, approval, validation = _activation_inputs(tenant_id="tenant-b")
+    else:
+        service = _service(repository, sources=("some-other-source",))
+
+    with pytest.raises(AcquisitionContractActivationDeniedError):
+        service.activate(
+            idempotency_key=f"activate-{case}",
+            contract=contract,
+            approval=approval,
+            source_validation=validation,
+        )
+
+    assert repository.list_contracts(contract.tenant_id) == ()

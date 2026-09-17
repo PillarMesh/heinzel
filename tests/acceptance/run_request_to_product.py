@@ -5,12 +5,24 @@ from contextlib import closing
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from pillarmesh_compiler import NoValidPlan, compile_product_iir
-from pillarmesh_console.governed_adapters import GovernedProductIntentAuthority
+from pillarmesh_console.governed_adapters import (
+    GovernedApprovedProductIntentSources,
+    GovernedProductIntentAuthority,
+)
 from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import SourceObservation, SQLiteSourceObservationRepository
+from pillarmesh_contract_service import (
+    AcquisitionActivationApproval,
+    ActivatedAcquisitionContract,
+    ActivatedAcquisitionContractRecord,
+    ProductIntentBoundActivationService,
+    SourceObservation,
+    SQLiteAcquisitionContractLifecycleRepository,
+    SQLiteSourceObservationRepository,
+    ValidatedSourceBinding,
+)
 from pillarmesh_iir import (
     AggregateMeasure,
     AggregateOperation,
@@ -21,6 +33,7 @@ from pillarmesh_iir import (
     ProjectOperation,
     SourceRelation,
 )
+from pillarmesh_provider_sdk import AcquisitionField, AcquisitionObjectSchema
 from pillarmesh_request_management import (
     ApprovedProductIntent,
     DeliveryIntent,
@@ -80,6 +93,8 @@ class RequestToProductCompilation:
     product_publications_after_compilation: int
     candidate: ProductIntentCandidate
     approved_intent: ApprovedProductIntent
+    activation: ActivatedAcquisitionContractRecord
+    activation_replay: ActivatedAcquisitionContractRecord
     product_iir: ProductIntentIR
     compiler_outcome: NoValidPlan
 
@@ -226,6 +241,71 @@ def _seed_governed_authority(directory: Path) -> ProductIntentAuthorityRefs:
     )
 
 
+def _activation_inputs(
+    approval: ApprovedProductIntent, authority_refs: ProductIntentAuthorityRefs
+) -> dict[str, Any]:
+    """Acquisition activation for the approved intent, citing the observation approval used."""
+    source_observation = authority_refs.source_observations[0]
+    process_ref = SEMANTIC_VERSION.process_package_ref
+    fields = (
+        AcquisitionField(name="region", value_type="string", nullable=False),
+        AcquisitionField(name="amount", value_type="decimal", nullable=False),
+    )
+    activated_at = _NOW
+    return {
+        "contract": ActivatedAcquisitionContract.model_validate(
+            {
+                "tenant_id": TENANT,
+                "contract_ref": "acquisition-contract-revenue",
+                "contract_digest": digest({"domain": "request-to-product", "approval": approval}),
+                "process_package_ref": process_ref,
+                "product_intent_ref": approval.artifact_reference,
+                "destination_product_ref": _PRODUCT_REF,
+                "source_binding_ref": _SOURCE_REF,
+                "source_binding_revision": 1,
+                "credential_revision": 1,
+                "acknowledgement_consumer_ref": "runtime-request-to-product",
+                "capability_profile_digest": "d" * 64,
+                "source_observation_ref": source_observation.artifact_id,
+                "source_observation_digest": source_observation.digest,
+                "lifecycle_state": "activated",
+                "acquisition_modes": ("snapshot",),
+                "object_schemas": (
+                    AcquisitionObjectSchema(
+                        logical_object_ref=_SOURCE_RELATION,
+                        schema_digest=digest(fields),
+                        fields=fields,
+                        record_key_fields=("region",),
+                        source_updated_at_field=None,
+                    ),
+                ),
+                "record_ceiling": 10_000,
+                "encoded_byte_ceiling": 10_000_000,
+                "activated_by": ARCHITECT,
+                "activated_at": activated_at,
+            }
+        ),
+        "approval": AcquisitionActivationApproval(
+            tenant_id=TENANT,
+            process_package_ref=process_ref,
+            product_intent_ref=approval.artifact_reference,
+            destination_product_ref=_PRODUCT_REF,
+            approved_by=ARCHITECT,
+            approved_at=approval.approved_at,
+        ),
+        "source_validation": ValidatedSourceBinding(
+            tenant_id=TENANT,
+            source_binding_ref=_SOURCE_REF,
+            source_binding_revision=1,
+            credential_revision=1,
+            capability_profile_digest="d" * 64,
+            source_observation_ref=source_observation.artifact_id,
+            source_observation_digest=source_observation.digest,
+            validated_at=activated_at,
+        ),
+    }
+
+
 def execute_postgresql_request_to_product(directory: Path) -> RequestToProductCompilation:
     directory.mkdir(parents=True, exist_ok=True)
     authority_refs = _seed_governed_authority(directory)
@@ -318,6 +398,24 @@ def execute_postgresql_request_to_product(directory: Path) -> RequestToProductCo
             if approvals.list_for_request(TENANT, request.request_id) != (approval,):
                 raise AssertionError("product intent approval was not durably recorded")
 
+            activation_inputs = _activation_inputs(approval, authority_refs)
+            contracts = SQLiteAcquisitionContractLifecycleRepository(
+                str(directory / "acquisition-lifecycle.sqlite3")
+            )
+            try:
+                activations = ProductIntentBoundActivationService(
+                    contracts,
+                    product_intents=GovernedApprovedProductIntentSources(approvals),
+                )
+                activation = activations.activate(
+                    idempotency_key="request-to-product-activation-1", **activation_inputs
+                )
+                activation_replay = activations.activate(
+                    idempotency_key="request-to-product-activation-1", **activation_inputs
+                )
+            finally:
+                contracts.close()
+
             before_compilation = require_empty_product_publication_authority(
                 publication_inventory, tenant_id=TENANT
             )
@@ -339,6 +437,8 @@ def execute_postgresql_request_to_product(directory: Path) -> RequestToProductCo
                 product_publications_after_compilation=after_compilation,
                 candidate=candidate,
                 approved_intent=approval,
+                activation=activation,
+                activation_replay=activation_replay,
                 product_iir=product_iir,
                 compiler_outcome=compiler_outcome,
             )

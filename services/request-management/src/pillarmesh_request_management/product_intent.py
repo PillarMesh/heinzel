@@ -211,6 +211,10 @@ class ProductIntentRepository(Protocol):
         self, tenant_id: str, request_id: str
     ) -> tuple[ApprovedProductIntent, ...]: ...
 
+    def load_product_intent_approval(
+        self, tenant_id: str, approval_id: str
+    ) -> ApprovedProductIntent | None: ...
+
 
 class ProductIntentCandidateRepository(Protocol):
     def record_product_intent_candidate(
@@ -372,6 +376,21 @@ class ProductIntentApprovalService:
             return self._repository.list_product_intent_approvals(tenant_id, request_id)
         except KeyError:
             raise KeyError("request is unavailable") from None
+
+    def resolve(self, tenant_id: str, reference: ArtifactReference) -> ApprovedProductIntent | None:
+        """Return the tenant's approval that exactly matches `reference`, or None.
+
+        Downstream authorities cite an approval by reference. A reference whose identity, revision,
+        or digest does not match a recorded approval for this tenant resolves to nothing.
+        """
+        approval = self._repository.load_product_intent_approval(tenant_id, reference.artifact_id)
+        if (
+            approval is None
+            or approval.tenant_id != tenant_id
+            or approval.artifact_reference != reference
+        ):
+            return None
+        return approval
 
 
 def _authority_refusal(

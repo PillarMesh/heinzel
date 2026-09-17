@@ -28,6 +28,10 @@ from .process_service import (
     ProcessPackageService,
     SQLiteProcessPackageRepository,
 )
+from .product_intent_activation import (
+    ApprovedProductIntentSources,
+    ProductIntentBoundActivationService,
+)
 from .service import (
     AcquisitionContractAuthorityInvalidator,
     ContractAuthorityBoundaryError,
@@ -54,6 +58,7 @@ __all__ = [
     "ActivatedAcquisitionContract",
     "ActivatedAcquisitionContractRecord",
     "ActivationSummary",
+    "ApprovedProductIntentSources",
     "BusinessProcessManifest",
     "ContractAuthorityBoundaryError",
     "ContractService",
@@ -68,6 +73,7 @@ __all__ = [
     "ProcessPackageRepository",
     "ProcessPackageService",
     "ProcessPackageSnapshot",
+    "ProductIntentBoundActivationService",
     "SQLiteAcquisitionContractLifecycleRepository",
     "SQLiteProcessPackageRepository",
     "SQLiteSourceFreshnessObservationRepository",

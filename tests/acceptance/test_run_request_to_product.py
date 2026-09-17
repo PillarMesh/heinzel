@@ -35,6 +35,19 @@ def test_user_approval_precedes_product_compilation_and_no_execution_occurs(
     assert journey.approved_intent.constraints.approved_source_refs == ("source-live-a",)
     assert journey.approved_intent.constraints.approved_metric_refs == ("total-revenue",)
     assert journey.approved_intent.constraints.minimum_source_interval_seconds == 86_400
+    # The approved intent is activated as an acquisition contract that cites it exactly, over the
+    # same source observation approval was evaluated against, and replay is stable.
+    assert journey.activation.contract.product_intent_ref == (
+        journey.approved_intent.artifact_reference
+    )
+    assert journey.activation_replay == journey.activation
+    assert journey.approved_intent.authority_refs is not None
+    assert journey.activation.contract.source_observation_ref == (
+        journey.approved_intent.authority_refs.source_observations[0].artifact_id
+    )
+    assert journey.activation.contract.source_binding_ref in (
+        journey.approved_intent.intent.source_refs
+    )
     assert (
         tuple(item.status for item in journey.compiler_outcome.preconditions)
         == ("satisfied",) * 6 + ("unsatisfied",) * 5 + ("satisfied",) + ("unsatisfied",) * 6

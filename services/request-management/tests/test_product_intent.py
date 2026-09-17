@@ -641,3 +641,27 @@ def test_replaying_an_approval_against_different_authority_is_refused() -> None:
             intent=intent,
             authority_refs=_refs(semantic_version="semantic-version-2"),
         )
+
+
+def test_an_approval_resolves_only_by_its_exact_reference_and_tenant() -> None:
+    requests, approvals = _services()
+    request_id, revision = _submitted(requests)
+    approved = approvals.approve(
+        tenant_id="tenant-a",
+        request_id=request_id,
+        request_revision=revision,
+        approved_by="architect-a",
+        intent=_intent().model_copy(update={"request_id": request_id}),
+        authority_refs=_refs(),
+    )
+    assert isinstance(approved, ApprovedProductIntent)
+    reference = approved.artifact_reference
+
+    assert approvals.resolve("tenant-a", reference) == approved
+    assert approvals.resolve("tenant-b", reference) is None
+    assert approvals.resolve("tenant-a", reference.model_copy(update={"version": 2})) is None
+    assert approvals.resolve("tenant-a", reference.model_copy(update={"digest": "f" * 64})) is None
+    assert (
+        approvals.resolve("tenant-a", reference.model_copy(update={"artifact_id": "missing"}))
+        is None
+    )

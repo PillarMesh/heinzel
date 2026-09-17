@@ -239,3 +239,156 @@ def test_the_owning_sqlite_stores_serve_the_authority(tmp_path: Path) -> None:
     assert resolved is not None
     assert resolved.approved_metric_refs == ("total-revenue",)
     assert cross_tenant is None
+
+
+def test_activation_is_bound_to_a_recorded_approved_intent_and_its_sources() -> None:
+    """An approved intent from request management gates contract-service activation."""
+    import sqlite3
+
+    from pillarmesh_console.governed_adapters import GovernedApprovedProductIntentSources
+    from pillarmesh_contract_service import (
+        AcquisitionActivationApproval,
+        AcquisitionContractActivationDeniedError,
+        ActivatedAcquisitionContract,
+        ProductIntentBoundActivationService,
+        SQLiteAcquisitionContractLifecycleRepository,
+        ValidatedSourceBinding,
+    )
+    from pillarmesh_provider_sdk import AcquisitionField, AcquisitionObjectSchema
+    from pillarmesh_request_management import (
+        ApprovedProductIntent,
+        DeliveryIntent,
+        DimensionIntent,
+        FreshnessObjective,
+        Grain,
+        MeasureIntent,
+        ProductIntent,
+        ProductIntentApprovalService,
+        RequestManagementService,
+        SQLiteRequestRepository,
+    )
+
+    class _Granting:
+        def resolve_constraints(self, **_: object) -> ProductIntentConstraints:
+            return ProductIntentConstraints(
+                approved_source_refs=("source-live-a",),
+                approved_metric_refs=("total-revenue",),
+                approved_dimension_refs=("region",),
+                minimum_source_interval_seconds=86_400,
+            )
+
+    request_repository = SQLiteRequestRepository(sqlite3.connect(":memory:"))
+    requests = RequestManagementService(request_repository, clock=lambda: _NOW)
+    approvals = ProductIntentApprovalService(
+        request_repository, clock=lambda: _NOW, authority=_Granting()
+    )
+    request = requests.submit_question(
+        tenant_id=_TENANT,
+        requester_id="requester-a",
+        purpose="Revenue by region",
+        question="What is revenue by region?",
+    )
+    approved = approvals.approve(
+        tenant_id=_TENANT,
+        request_id=request.request_id,
+        request_revision=request.revision,
+        approved_by="architect-a",
+        intent=ProductIntent(
+            request_id=request.request_id,
+            title="Revenue by region",
+            business_outcome="Regional revenue.",
+            source_refs=("source-live-a",),
+            grain=Grain(keys=("region",)),
+            measures=(MeasureIntent(metric_ref="total-revenue", aggregation="sum"),),
+            dimensions=(DimensionIntent(dimension_ref="region"),),
+            filters=(),
+            freshness=FreshnessObjective(maximum_age_seconds=86_400),
+            delivery=DeliveryIntent(outputs=("dataset",)),
+        ),
+        authority_refs=ProductIntentAuthorityRefs(
+            semantic_version=ArtifactReference(artifact_id="s", version=1, digest="1" * 64),
+            source_observations=(ArtifactReference(artifact_id="o", version=1, digest="2" * 64),),
+        ),
+    )
+    assert isinstance(approved, ApprovedProductIntent)
+
+    fields = (AcquisitionField(name="region", value_type="string", nullable=False),)
+
+    def activation(
+        *, product_intent_ref: ArtifactReference, source_binding_ref: str = "source-live-a"
+    ) -> dict[str, object]:
+        process_ref = ArtifactReference(artifact_id="process-revenue", version=1, digest="1" * 64)
+        return {
+            "contract": ActivatedAcquisitionContract.model_validate(
+                {
+                    "tenant_id": _TENANT,
+                    "contract_ref": "acquisition-contract-revenue",
+                    "contract_digest": "c" * 64,
+                    "process_package_ref": process_ref,
+                    "product_intent_ref": product_intent_ref,
+                    "destination_product_ref": "product-revenue",
+                    "source_binding_ref": source_binding_ref,
+                    "source_binding_revision": 1,
+                    "credential_revision": 1,
+                    "acknowledgement_consumer_ref": "runtime-a",
+                    "capability_profile_digest": "d" * 64,
+                    "source_observation_ref": "source-observation-live-a",
+                    "source_observation_digest": "e" * 64,
+                    "lifecycle_state": "activated",
+                    "acquisition_modes": ("snapshot",),
+                    "object_schemas": (
+                        AcquisitionObjectSchema(
+                            logical_object_ref="sales",
+                            schema_digest=digest(fields),
+                            fields=fields,
+                            record_key_fields=("region",),
+                            source_updated_at_field=None,
+                        ),
+                    ),
+                    "record_ceiling": 100,
+                    "encoded_byte_ceiling": 100_000,
+                    "activated_by": "architect-a",
+                    "activated_at": _NOW,
+                }
+            ),
+            "approval": AcquisitionActivationApproval(
+                tenant_id=_TENANT,
+                process_package_ref=process_ref,
+                product_intent_ref=product_intent_ref,
+                destination_product_ref="product-revenue",
+                approved_by="architect-a",
+                approved_at=_NOW,
+            ),
+            "source_validation": ValidatedSourceBinding(
+                tenant_id=_TENANT,
+                source_binding_ref=source_binding_ref,
+                source_binding_revision=1,
+                credential_revision=1,
+                capability_profile_digest="d" * 64,
+                source_observation_ref="source-observation-live-a",
+                source_observation_digest="e" * 64,
+                validated_at=_NOW,
+            ),
+        }
+
+    contracts = SQLiteAcquisitionContractLifecycleRepository(":memory:")
+    service = ProductIntentBoundActivationService(
+        contracts, product_intents=GovernedApprovedProductIntentSources(approvals)
+    )
+    unapproved = approved.artifact_reference.model_copy(update={"digest": "f" * 64})
+
+    for denied in (
+        activation(product_intent_ref=unapproved),
+        activation(
+            product_intent_ref=approved.artifact_reference, source_binding_ref="source-other"
+        ),
+    ):
+        with pytest.raises(AcquisitionContractActivationDeniedError):
+            service.activate(idempotency_key="denied", **denied)  # type: ignore[arg-type]
+    activated = service.activate(
+        idempotency_key="activate-revenue",
+        **activation(product_intent_ref=approved.artifact_reference),  # type: ignore[arg-type]
+    )
+
+    assert activated.contract.product_intent_ref == approved.artifact_reference
+    assert contracts.list_contracts(_TENANT) == (activated,)

@@ -654,6 +654,17 @@ class SQLiteRequestRepository:
             raise StaleRevisionError("product intent approval conflicted") from error
         return approval
 
+    def load_product_intent_approval(
+        self, tenant_id: str, approval_id: str
+    ) -> ApprovedProductIntent | None:
+        from .product_intent import ApprovedProductIntent
+
+        row = self._connection.execute(
+            "SELECT payload FROM product_intent_approvals WHERE tenant_id = ? AND approval_id = ?",
+            (tenant_id, approval_id),
+        ).fetchone()
+        return None if row is None else ApprovedProductIntent.model_validate_json(row[0])
+
     def list_product_intent_approvals(
         self, tenant_id: str, request_id: str
     ) -> tuple[ApprovedProductIntent, ...]:
