@@ -24,6 +24,8 @@ build-backend = "hatchling.build"
 [tool.mutmut]
 source_paths = ["src/pillarmesh_compiler"]
 only_mutate = [
+  "src/pillarmesh_compiler/generation_sql.py",
+  "src/pillarmesh_compiler/numeric_bounds.py",
   "src/pillarmesh_compiler/product_compiler.py",
   "src/pillarmesh_compiler/restricted_sql.py",
 ]

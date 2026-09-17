@@ -73,8 +73,8 @@ The emittable-construct allowlist already pins semantics separately for PostgreS
 ClickHouse. This amendment records that an allowlist entry is therefore **activated per engine**,
 and that activating it for one engine makes no claim about any other.
 
-The product SQL rule `PRODUCT-SQL-V2-PROJECT-SUM-001` is activated for `postgresql` only. That
-activation:
+The product SQL rule `PRODUCT-SQL-V2-PROJECT-SUM-001` is to be activated for `postgresql` only, on
+independent approval. Nothing is activated yet. That activation:
 
 - rests on PostgreSQL evidence alone: the D1-D8 proof and fixtures, the mutation regression, the
   provider-owned observation, and the live checked-SUM run on the pinned engine;
@@ -82,9 +82,12 @@ activation:
   asserted equivalence "on both pinned engines"; under single-engine activation that precondition
   is reworded to single-engine admission that explicitly withholds the equivalence claim. An
   approval of the original wording does not authorize this activation;
-- **does not admit ClickHouse.** Compiler admission checks are keyed on the requested engine and on
-  a per-engine activation record. A ClickHouse compilation continues to produce `No Valid Plan`
-  while no ClickHouse activation exists, and a negative test pins that behavior.
+- **does not admit ClickHouse.** Compiler admission checks must be keyed on the requested engine
+  and on a per-engine activation record. A ClickHouse compilation must continue to produce
+  `No Valid Plan` while no ClickHouse activation exists, pinned by a negative test. The activation
+  record and its admission checks are built when the compiler gains a success path, after
+  independent review approves this scope; until then every compilation on either engine produces
+  `No Valid Plan`, and the precondition 17 wording is already keyed on the engine.
 
 ClickHouse activation of the same rule requires its own runtime magnitude authority, its own
 D1-D8 fixtures, a live cross-engine equivalence run, and a second independent review.

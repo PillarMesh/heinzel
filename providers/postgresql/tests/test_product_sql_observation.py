@@ -325,26 +325,36 @@ def test_observer_rejects_malformed_or_unsupported_column_observation() -> None:
     assert caught.value.classification == "invalid_provider_response"
 
 
-def test_observer_rejects_an_unsupported_physical_column_type() -> None:
+def test_observer_describes_a_whole_landing_relation_including_unread_columns() -> None:
+    """A real landing relation has JSON and bookkeeping columns a product statement never reads.
+
+    They are reported rather than refused, so the compiler can check the two columns the statement
+    does read. SUM semantics are observed for the statement's NUMERIC(38,9) input type, because a
+    landing relation has no decimal column of its own.
+    """
     results = _successful_results()
-    results[4][1] = (
-        2,
-        "revenue",
-        "double precision",
-        False,
-        "float8",
-        None,
-        None,
-        None,
-        None,
-        None,
-    )
+    results[4] = [
+        (1, "generation_id", "text", False, "text", None, None, "pg_catalog", "default", "UTF8"),
+        (2, "row_ordinal", "bigint", False, "int8", None, None, None, None, None),
+        (3, "payload", "jsonb", False, "jsonb", None, None, None, None, None),
+        (4, "score", "double precision", True, "float8", None, None, None, None, None),
+        (5, "amount", "numeric", True, "numeric", None, None, None, None, None),
+    ]
     observer = PostgreSQLProductSqlObserver(_settings(), connect=lambda _dsn: _Connection(results))
 
-    with pytest.raises(ProviderError) as caught:
-        observer.observe(_request(), warehouse_validation=_evidence())
+    observation = observer.observe(_request(), warehouse_validation=_evidence())
 
-    assert caught.value.classification == "statement_rejected"
+    assert tuple(
+        (c.name, c.logical_type, c.physical_type, c.nullable) for c in observation.columns
+    ) == (
+        ("generation_id", "string", "TEXT", False),
+        ("row_ordinal", "other", "BIGINT", False),
+        ("payload", "json", "JSONB", False),
+        ("score", "other", "DOUBLE PRECISION", True),
+        ("amount", "other", "NUMERIC", True),
+    )
+    assert observation.columns[0].collation == "default"
+    assert observation.sum_semantics.input_physical_type == "NUMERIC(38,9)"
 
 
 def test_observer_rejects_a_non_utc_execution_context() -> None:

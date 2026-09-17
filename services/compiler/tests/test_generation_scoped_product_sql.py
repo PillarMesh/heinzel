@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import pytest
 from pillarmesh_compiler.clickhouse_sql import emit_generation_scoped_clickhouse
 from pillarmesh_compiler.postgresql_sql import emit_generation_scoped_postgresql
@@ -75,15 +77,59 @@ def test_postgresql_emits_one_generation_scoped_json_source() -> None:
 
     assert emitted.statement == (
         'SELECT "revenue_events"."region" AS "region", '
-        'CAST(SUM(CAST("revenue_events"."revenue" AS NUMERIC(57,9))) AS '
-        'NUMERIC(57,9)) AS "total_revenue" FROM '
-        '(SELECT "payload" ->> \'region\' AS "region", '
-        'CAST("payload" ->> \'revenue\' AS NUMERIC(38,9)) AS "revenue" '
-        'FROM "raw"."raw_sales" WHERE "generation_id" = \'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
-        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\') AS "revenue_events" '
-        'GROUP BY "revenue_events"."region"'
+        'CAST(pg_catalog.sum(CAST("revenue_events"."revenue" AS NUMERIC(57,9))) AS '
+        'NUMERIC(57,9)) AS "total_revenue" FROM (SELECT (CASE WHEN '
+        "pg_catalog.jsonb_typeof(\"payload\" OPERATOR(pg_catalog.->) 'region') "
+        "OPERATOR(pg_catalog.=) 'string' THEN \"payload\" OPERATOR(pg_catalog.->>) 'region' "
+        "ELSE CAST(CAST('pillarmesh refused a string landing value in generation ' "
+        'OPERATOR(pg_catalog.||) "generation_id" AS NUMERIC) AS pg_catalog.text) END) COLLATE '
+        'pg_catalog."C" AS "region", CAST(CASE WHEN pg_catalog.jsonb_typeof("payload" '
+        "OPERATOR(pg_catalog.->) 'revenue') OPERATOR(pg_catalog.=) 'string' AND \"payload\" "
+        "OPERATOR(pg_catalog.->>) 'revenue' OPERATOR(pg_catalog.~) "
+        "'^-?(0|[1-9][0-9]{0,28})([.][0-9]{1,9})?$' THEN \"payload\" OPERATOR(pg_catalog.->>) "
+        "'revenue' ELSE 'pillarmesh refused a decimal landing value in generation ' "
+        'OPERATOR(pg_catalog.||) "generation_id" END AS NUMERIC(38,9)) AS "revenue" FROM '
+        '"raw"."raw_sales" WHERE "generation_id" OPERATOR(pg_catalog.=) '
+        "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS "
+        '"revenue_events" GROUP BY "revenue_events"."region"'
     )
     assert emitted.parameters == ()
+
+
+def test_postgresql_generation_statement_resolves_nothing_through_search_path() -> None:
+    """Every function, operator, type and collation in the admitted statement is pg_catalog.
+
+    An unqualified name resolves through the session search_path, so a hostile schema listed before
+    pg_catalog could replace jsonb_typeof or `~` and defeat the decode guard (verified live). This
+    test fails if any of those names appears unqualified.
+    """
+    statement = emit_generation_scoped_postgresql(_product(), _source()).statement
+
+    for unqualified in (
+        " jsonb_typeof(",
+        "(jsonb_typeof(",
+        " ->> ",
+        " -> ",
+        " ~ ",
+        " || ",
+        " = ",
+        "SUM(",
+        " AS TEXT)",
+        'COLLATE "C"',
+    ):
+        assert unqualified not in statement, unqualified
+    for qualified in (
+        "pg_catalog.jsonb_typeof(",
+        "OPERATOR(pg_catalog.->>)",
+        "OPERATOR(pg_catalog.->)",
+        "OPERATOR(pg_catalog.~)",
+        "OPERATOR(pg_catalog.||)",
+        "OPERATOR(pg_catalog.=)",
+        "pg_catalog.sum(",
+        "AS pg_catalog.text)",
+        'COLLATE pg_catalog."C"',
+    ):
+        assert qualified in statement, qualified
 
 
 def test_clickhouse_emits_one_generation_scoped_json_source() -> None:
@@ -145,3 +191,58 @@ def test_generation_source_rejects_hostile_physical_and_json_identifiers() -> No
     ):
         with pytest.raises(ValidationError):
             GenerationScopedProductSource(**(_source().model_dump() | update))
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "0",
+        "-0",
+        "7",
+        "-42.125",
+        "0.123456789",
+        "99999999999999999999999999999.999999999",
+        "-99999999999999999999999999999.999999999",
+    ),
+)
+def test_postgresql_canonical_decimal_pattern_admits_exact_decimal38_9_literals(value: str) -> None:
+    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+
+    assert re.fullmatch(_POSTGRESQL_CANONICAL_DECIMAL, value) is not None
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "NaN",
+        "Infinity",
+        "-Infinity",
+        "0x10",
+        "1_000",
+        "1e3",
+        "1E+28",
+        " 7",
+        "7 ",
+        "+5",
+        "007",
+        ".5",
+        "5.",
+        "-",
+        "",
+        "1.1234567895",
+        "100000000000000000000000000000",
+        "\uff11",
+        "1\n",
+    ),
+)
+def test_postgresql_canonical_decimal_pattern_refuses_every_permissive_numeric_form(
+    value: str,
+) -> None:
+    """PostgreSQL's numeric input accepts each of these; the statement must refuse them first.
+
+    Live against the pinned image the guarded statement refuses every one with SQLSTATE 22P02,
+    recorded in the checked SUM evidence. This test pins the pattern itself.
+    """
+    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+
+    assert re.fullmatch(_POSTGRESQL_CANONICAL_DECIMAL, value) is None

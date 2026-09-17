@@ -37,13 +37,14 @@ def test_user_approval_precedes_product_compilation_and_no_execution_occurs(
         "bind the provider observation to the expected tenant, warehouse, relation, and digest",
         "bind the pinned engine version, image, and build to the provider observation",
         "use a provider observation no older than ten minutes at evaluation time",
-        "observe the exact non-null binary string and Decimal(38,9) physical columns",
+        "observe the non-null text generation and jsonb payload columns of the landing "
+        "relation the statement reads",
         "observe the pinned engine-specific SUM input, accumulator, result, overflow, null, "
         "and empty-group semantics",
         "prove NUMERIC(38,9) sums fit exact Decimal(57,9) arithmetic at the signed ledger ceiling",
         "bind the physical source to exactly one authoritative generation and receipt digest",
         "bind the contributing row ceiling to owning-service cardinality evidence",
-        "enforce checked Decimal(57,9) result magnitude on every engine at runtime",
+        "enforce checked Decimal(57,9) result magnitude at runtime on the pinned PostgreSQL engine",
         "authenticate the observation with provider-owned provenance authority",
         "review live checked SUM on the pinned PostgreSQL engine; "
         "cross-engine equivalence is not claimed",

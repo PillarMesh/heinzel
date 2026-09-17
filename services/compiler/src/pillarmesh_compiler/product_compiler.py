@@ -44,6 +44,16 @@ _ENGINE_IMAGE_DIGESTS = {
     "clickhouse": "7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0",
 }
 _MAX_OBSERVATION_AGE = timedelta(minutes=10)
+# Precondition 15 is worded per engine for the same reason as 17: PostgreSQL's runtime magnitude
+# enforcement is not evidence that any other engine enforces it. ClickHouse wraps on overflow.
+_RUNTIME_MAGNITUDE_REASONS = {
+    "postgresql": (
+        "enforce checked Decimal(57,9) result magnitude at runtime on the pinned PostgreSQL engine"
+    ),
+    "clickhouse": (
+        "bind ClickHouse runtime Decimal(57,9) magnitude enforcement to its own activation"
+    ),
+}
 # Precondition 17 is activated per engine (ADR-0004 amendment 2026-09-15). PostgreSQL
 # activation rests on PostgreSQL evidence alone and withholds any cross-engine claim, and it
 # never admits ClickHouse, which needs its own evidence and its own review.
@@ -197,8 +207,11 @@ def compile_product_iir(
         ),
         _precondition(
             10,
-            _physical_relation_matches(product_iir, provider_observation, engine=engine),
-            "observe the exact non-null binary string and Decimal(38,9) physical columns",
+            _landing_relation_matches(
+                product_iir, physical_plan_authority, provider_observation, engine=engine
+            ),
+            "observe the non-null text generation and jsonb payload columns of the landing "
+            "relation the statement reads",
         ),
         _precondition(
             11,
@@ -228,7 +241,7 @@ def compile_product_iir(
         PreconditionResult(
             number=15,
             status="unsatisfied",
-            reason="enforce checked Decimal(57,9) result magnitude on every engine at runtime",
+            reason=_RUNTIME_MAGNITUDE_REASONS[engine],
         ),
         PreconditionResult(
             number=16,
@@ -302,6 +315,8 @@ def _compose_physical_candidate(
                 expected_relation_namespace=expected_relation_namespace,
             )
             or provider_observation.engine != engine
+            or provider_observation.relation_namespace != authority.source.namespace
+            or provider_observation.relation_name != authority.source.relation_name
             or authority.tenant_id != expected_tenant_id
             or authority.warehouse_binding_id != expected_warehouse_binding_id
             or authority.warehouse_binding_revision != expected_warehouse_binding_revision
@@ -462,51 +477,58 @@ def _observation_is_fresh(
     return timedelta(0) <= age <= _MAX_OBSERVATION_AGE
 
 
-def _physical_relation_matches(
+# The statement reads exactly two landing columns. Their physical types are fixed per engine;
+# every other column of the landing relation is irrelevant to the statement and not constrained.
+# Only PostgreSQL has a landing observation contract. ClickHouse has none until its own
+# activation, so its precondition 10 cannot be satisfied.
+_LANDING_COLUMN_TYPES: dict[str, tuple[tuple[str, str], tuple[str, str]]] = {
+    "postgresql": (("string", "TEXT"), ("json", "JSONB")),
+}
+# Generation equality must be bytewise. These collations are always deterministic.
+_DETERMINISTIC_GENERATION_COLLATIONS = frozenset({"C", "POSIX", "default"})
+
+
+def _landing_relation_matches(
     product_iir: ProductIntentIR,
+    authority: ProductPhysicalPlanAuthority | None,
     observation: ProductSqlProviderObservation | None,
     *,
     engine: Literal["postgresql", "clickhouse"],
 ) -> bool:
+    """Bind the observation to the relation the emitted statement actually reads.
+
+    The statement reads `authority.source` -- the generation-scoped landing relation -- and
+    decodes typed fields out of its JSON payload. The declared IIR source is a logical alias with
+    no physical existence, so an observation of it proves nothing about the statement. Field
+    typing, non-null keys and binary collation are enforced by the statement's own decode guard;
+    this precondition proves the two columns that guard reads exist with the expected types.
+    """
+    expected = _LANDING_COLUMN_TYPES.get(engine)
+    if authority is None or observation is None or expected is None:
+        return False
+    source = authority.source
     if (
-        observation is None
-        or observation.relation_namespace != product_iir.source.relation_namespace
-        or observation.relation_name != product_iir.source.relation_name
+        product_iir.source.relation_namespace != source.namespace
+        or observation.relation_namespace != source.namespace
+        or observation.relation_name != source.relation_name
     ):
         return False
-    expected_physical_types = {
-        "postgresql": {"string": "TEXT", "decimal": "NUMERIC(38,9)"},
-        "clickhouse": {"string": "String", "decimal": "Decimal(38, 9)"},
-    }[engine]
-    if len(observation.columns) != len(product_iir.source.columns):
+    columns = {column.name: column for column in observation.columns}
+    generation = columns.get(source.generation_column)
+    payload = columns.get(source.payload_column)
+    if generation is None or payload is None or generation.name == payload.name:
         return False
-    for declared, observed in zip(product_iir.source.columns, observation.columns, strict=True):
-        if (
-            observed.name != declared.name
-            or observed.logical_type != declared.value_type
-            or observed.nullable != declared.nullable
-            or observed.physical_type != expected_physical_types.get(declared.value_type)
-        ):
-            return False
-        if observed.logical_type == "decimal" and (
-            observed.decimal_precision != 38 or observed.decimal_scale != 9
-        ):
-            return False
-        if observed.logical_type == "string" and not _binary_string_semantics(
-            observed.collation, observed.encoding, engine=engine
-        ):
-            return False
-    return True
-
-
-def _binary_string_semantics(
-    collation: str | None,
-    encoding: str | None,
-    *,
-    engine: Literal["postgresql", "clickhouse"],
-) -> bool:
-    expected = {"postgresql": ("C", "UTF8"), "clickhouse": ("binary", "UTF-8")}
-    return (collation, encoding) == expected[engine]
+    (generation_kind, generation_type), (payload_kind, payload_type) = expected
+    return (
+        generation.logical_type == generation_kind
+        and generation.physical_type == generation_type
+        and not generation.nullable
+        and generation.collation in _DETERMINISTIC_GENERATION_COLLATIONS
+        and generation.encoding == "UTF8"
+        and payload.logical_type == payload_kind
+        and payload.physical_type == payload_type
+        and not payload.nullable
+    )
 
 
 def _sum_semantics_match(

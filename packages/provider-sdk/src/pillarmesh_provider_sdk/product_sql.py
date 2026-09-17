@@ -26,7 +26,9 @@ class _ProductSqlObservationModel(BaseModel):
 
 class ProductSqlColumnObservation(_ProductSqlObservationModel):
     name: str = Field(pattern=_IDENTIFIER_PATTERN)
-    logical_type: Literal["decimal", "string"]
+    # "json" and "other" let an observation describe a whole landing relation, including columns
+    # a product statement never reads. Only "decimal" and "string" carry type semantics.
+    logical_type: Literal["decimal", "string", "json", "other"]
     physical_type: str = Field(min_length=1, max_length=128)
     nullable: bool
     decimal_precision: int | None = Field(default=None, ge=1, le=76)
@@ -43,10 +45,21 @@ class ProductSqlColumnObservation(_ProductSqlObservationModel):
                 raise ValueError("decimal scale cannot exceed precision")
             if self.collation is not None or self.encoding is not None:
                 raise ValueError("decimal columns cannot declare collation or encoding")
-        elif self.collation is None or self.encoding is None:
-            raise ValueError("string columns require collation and encoding")
-        elif self.decimal_precision is not None or self.decimal_scale is not None:
-            raise ValueError("string columns cannot declare decimal precision or scale")
+        elif self.logical_type == "string":
+            if self.collation is None or self.encoding is None:
+                raise ValueError("string columns require collation and encoding")
+            if self.decimal_precision is not None or self.decimal_scale is not None:
+                raise ValueError("string columns cannot declare decimal precision or scale")
+        elif any(
+            value is not None
+            for value in (
+                self.decimal_precision,
+                self.decimal_scale,
+                self.collation,
+                self.encoding,
+            )
+        ):
+            raise ValueError(f"{self.logical_type} columns cannot declare type semantics")
         return self
 
 

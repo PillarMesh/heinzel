@@ -15,6 +15,8 @@ def test_decimal_sum_bound_proves_the_signed_ledger_ceiling() -> None:
     assert proof.output_precision == 57
     assert proof.output_scale == 9
     assert proof.contributing_row_ceiling == (2**63) - 1
+    assert proof.maximum_scaled_input == (10**38) - 1
+    assert proof.maximum_scaled_sum == proof.contributing_row_ceiling * proof.maximum_scaled_input
     assert proof.maximum_scaled_sum < 10**proof.output_precision
     assert proof.maximum_scaled_sum < 2**255
 

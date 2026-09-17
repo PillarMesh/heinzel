@@ -6,6 +6,7 @@
   "expected_engine_image_digest": "33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935",
   "expected_failed_preconditions": [
     4,
+    10,
     13,
     14,
     15,

@@ -46,6 +46,9 @@ from pillarmesh_iir import (
     ProjectOperation,
     SourceRelation,
 )
+from pillarmesh_provider_postgresql.product_materialization import (
+    _DECIMAL_57_9_EXCLUSIVE_BOUND,
+)
 from pillarmesh_provider_postgresql.product_sql_observation import (
     _observe_sum_semantics,
     _pinned_image_digest,
@@ -68,68 +71,159 @@ _OTHER_GENERATION = "d" * 64
 _MAX_INPUT = "99999999999999999999999999999.999999999"
 _MAX_RESULT = "9" * 48 + "." + "9" * 9
 
+
 # Statement cases run the emitted product statement over inserted landing rows. Each row is
-# (generation, region, revenue-as-JSON-string).
-_STATEMENT_CASES: tuple[tuple[str, str, tuple[tuple[str, str, str], ...]], ...] = (
-    ("zero", "a zero input sums to exactly zero", ((_SELECTED_GENERATION, "g", "0"),)),
-    (
-        "negative",
-        "a negative input is preserved with its sign",
-        ((_SELECTED_GENERATION, "g", "-42.125000000"),),
-    ),
+# (generation, raw JSON payload text), so a case can express a missing key, a JSON null, a JSON
+# number or any other value the landing contract forbids.
+def _row(
+    revenue: object, *, region: object = "g", generation: str = _SELECTED_GENERATION
+) -> tuple[str, str]:
+    return generation, json.dumps({"region": region, "revenue": revenue})
+
+
+_STATEMENT_CASES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
+    ("zero", "a zero input sums to exactly zero", (_row("0"),)),
+    ("negative", "a negative input is preserved with its sign", (_row("-42.125000000"),)),
     (
         "exact_scale_nine",
         "nine fractional digits survive the widening cast unchanged",
-        ((_SELECTED_GENERATION, "g", "0.123456789"),),
+        (_row("0.123456789"),),
     ),
     (
         "maximum_positive_input",
         "the largest Decimal(38,9) input is accepted and summed exactly",
-        ((_SELECTED_GENERATION, "g", _MAX_INPUT),),
+        (_row(_MAX_INPUT),),
     ),
     (
         "maximum_negative_input",
         "the smallest Decimal(38,9) input is accepted and summed exactly",
-        ((_SELECTED_GENERATION, "g", "-" + _MAX_INPUT),),
+        (_row("-" + _MAX_INPUT),),
     ),
     (
         "safe_two_row_maximum_sum",
         "two maximum inputs sum past Decimal(38,9) and fit the widened Decimal(57,9) result",
-        ((_SELECTED_GENERATION, "g", _MAX_INPUT), (_SELECTED_GENERATION, "g", _MAX_INPUT)),
+        (_row(_MAX_INPUT), _row(_MAX_INPUT)),
     ),
     (
         "safe_two_row_minimum_sum",
         "two minimum inputs sum past Decimal(38,9) and fit the widened Decimal(57,9) result",
-        (
-            (_SELECTED_GENERATION, "g", "-" + _MAX_INPUT),
-            (_SELECTED_GENERATION, "g", "-" + _MAX_INPUT),
-        ),
+        (_row("-" + _MAX_INPUT), _row("-" + _MAX_INPUT)),
     ),
     (
         "input_at_exclusive_upper_bound",
         "an input of 10^29 exceeds Decimal(38,9) and the statement is refused",
-        ((_SELECTED_GENERATION, "g", "1" + "0" * 29),),
+        (_row("1" + "0" * 29),),
     ),
     (
         "input_at_exclusive_lower_bound",
         "an input of -10^29 exceeds Decimal(38,9) and the statement is refused",
-        ((_SELECTED_GENERATION, "g", "-1" + "0" * 29),),
+        (_row("-1" + "0" * 29),),
     ),
     (
         "empty_group",
         "a selected generation with no rows yields no group, not a zero-valued group",
-        ((_OTHER_GENERATION, "g", "999"),),
+        (_row("999", generation=_OTHER_GENERATION),),
     ),
     (
         "excluded_generation",
         "rows from another generation never contribute to the selected generation's sum",
-        ((_SELECTED_GENERATION, "g", "1"), (_OTHER_GENERATION, "g", "999")),
+        (_row("1"), _row("999", generation=_OTHER_GENERATION)),
+    ),
+    (
+        "invalid_rows_in_another_generation_do_not_refuse",
+        "a malformed row outside the selected generation neither contributes nor refuses",
+        (_row("1"), _row("NaN", region=None, generation=_OTHER_GENERATION)),
+    ),
+    ("nan_measure", "NaN is refused before any cast", (_row("NaN"),)),
+    ("infinity_measure", "Infinity is refused before any cast", (_row("Infinity"),)),
+    ("hex_measure", "a hex literal PostgreSQL would read as 16 is refused", (_row("0x10"),)),
+    ("underscore_measure", "an underscore-grouped number is refused", (_row("1_000"),)),
+    ("exponent_measure", "exponent notation is refused", (_row("1e3"),)),
+    ("whitespace_measure", "surrounding whitespace is refused", (_row(" 7 "),)),
+    ("plus_sign_measure", "a leading plus sign is refused", (_row("+5"),)),
+    ("leading_zero_measure", "a leading zero is refused", (_row("007"),)),
+    (
+        "excess_scale_measure",
+        "a tenth fractional digit is refused instead of being rounded",
+        (_row("1.1234567895"),),
+    ),
+    ("json_number_measure", "a JSON number is refused instead of coerced", (_row(12.5),)),
+    ("null_measure", "a JSON null measure is refused", (_row(None),)),
+    (
+        "missing_measure",
+        "a missing measure key is refused",
+        ((_SELECTED_GENERATION, json.dumps({"region": "g"})),),
+    ),
+    ("null_group", "a JSON null group key is refused", (_row("1", region=None),)),
+    (
+        "missing_group",
+        "a missing group key is refused",
+        ((_SELECTED_GENERATION, json.dumps({"revenue": "1"})),),
+    ),
+    ("non_string_group", "a JSON number group key is refused", (_row("1", region=1),)),
+    (
+        "trailing_newline_measure",
+        "a trailing newline is refused; PostgreSQL's regex end anchor does not skip it",
+        (_row("1\n"),),
+    ),
+    (
+        "arabic_indic_digit_measure",
+        "a non-ASCII decimal digit is refused; the pattern's digit range is ASCII only",
+        (_row("\u0663"),),
+    ),
+    ("fullwidth_digit_measure", "a fullwidth digit is refused", (_row("\uff11"),)),
+    (
+        "binary_collation_groups",
+        "case variants are distinct groups ordered bytewise under the C collation",
+        (
+            _row("1", region="b"),
+            _row("1", region="A"),
+            _row("1", region="a"),
+            _row("1", region="B"),
+        ),
+    ),
+)
+
+# Shadowed-session cases run the same statement in a session whose search_path puts a hostile
+# schema before pg_catalog. That schema replaces jsonb_typeof, sum, and the ~, =, ->>, and ||
+# operators with versions that would accept anything. The statement names every one of them in
+# pg_catalog, so its results must be unaffected.
+_SHADOWING_SETUP = (
+    "CREATE SCHEMA shadow",
+    "CREATE FUNCTION shadow.jsonb_typeof(jsonb) RETURNS text LANGUAGE sql AS $$ SELECT 'string' $$",
+    "CREATE FUNCTION shadow.always(text, text) RETURNS boolean LANGUAGE sql AS $$ SELECT true $$",
+    "CREATE OPERATOR shadow.~ (LEFTARG = text, RIGHTARG = text, FUNCTION = shadow.always)",
+    "CREATE OPERATOR shadow.= (LEFTARG = text, RIGHTARG = text, FUNCTION = shadow.always)",
+    "CREATE FUNCTION shadow.get(jsonb, text) RETURNS text LANGUAGE sql AS $$ SELECT '1' $$",
+    "CREATE OPERATOR shadow.->> (LEFTARG = jsonb, RIGHTARG = text, FUNCTION = shadow.get)",
+    "CREATE FUNCTION shadow.cat(text, text) RETURNS text LANGUAGE sql AS $$ SELECT '1' $$",
+    "CREATE OPERATOR shadow.|| (LEFTARG = text, RIGHTARG = text, FUNCTION = shadow.cat)",
+    "CREATE FUNCTION shadow.acc(numeric, numeric) RETURNS numeric LANGUAGE sql AS $$ SELECT 999 $$",
+    "CREATE AGGREGATE shadow.sum(numeric) (SFUNC = shadow.acc, STYPE = numeric)",
+)
+_SHADOWED_CASES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
+    (
+        "shadowed_search_path_valid_rows",
+        "a hostile search_path does not change the result for valid rows",
+        (_row("10.25", region="east"), _row("2.75", region="east")),
+    ),
+    (
+        "shadowed_search_path_hex_measure",
+        "a hostile search_path cannot make the guard accept a hex literal",
+        (_row("0x10"),),
+    ),
+    (
+        "shadowed_search_path_other_generation",
+        "a hostile search_path cannot widen the generation filter",
+        (_row("1"), _row("999", generation=_OTHER_GENERATION)),
     ),
 )
 
 # Result-cast probes observe the exact expression the statement applies to its SUM,
 # CAST(value AS NUMERIC(57,9)), at its bounds. Driving the SUM itself to 10^48 would take on the
-# order of 10^19 maximum-valued rows, so the bound is observed on the cast directly.
+# order of 10^19 maximum-valued rows, so the bound is observed on the cast directly. The NaN probe
+# records that the cast alone does NOT refuse NaN; the statement's input guard is what keeps NaN
+# from reaching it.
 _CAST_PROBES: tuple[tuple[str, str, str], ...] = (
     (
         "result_cast_at_maximum",
@@ -151,10 +245,38 @@ _CAST_PROBES: tuple[tuple[str, str, str], ...] = (
         "-10^48 overflows the Decimal(57,9) result cast and is refused",
         "-1" + "0" * 48,
     ),
+    (
+        "result_cast_of_nan",
+        "the result cast alone accepts NaN, so NaN must be refused before it",
+        "NaN",
+    ),
+)
+
+# Runtime magnitude probes evaluate the PostgreSQL provider's post-materialization violation
+# predicate -- value IS NULL OR value <= -10^48 OR value >= 10^48 -- with its own bound constant.
+_MAGNITUDE_PROBES: tuple[tuple[str, str, str], ...] = (
+    (
+        "runtime_magnitude_accepts_maximum",
+        "the largest Decimal(57,9) value is not a runtime magnitude violation",
+        _MAX_RESULT,
+    ),
+    (
+        "runtime_magnitude_flags_exclusive_bound",
+        "10^48 is a runtime magnitude violation",
+        "1" + "0" * 48,
+    ),
+    (
+        "runtime_magnitude_flags_nan",
+        "NaN is a runtime magnitude violation, because PostgreSQL orders NaN above every number",
+        "NaN",
+    ),
 )
 
 _REQUIRED_CASE_IDS = frozenset(
-    {case_id for case_id, _, _ in _STATEMENT_CASES} | {case_id for case_id, _, _ in _CAST_PROBES}
+    {case_id for case_id, _, _ in _STATEMENT_CASES}
+    | {case_id for case_id, _, _ in _SHADOWED_CASES}
+    | {case_id for case_id, _, _ in _CAST_PROBES}
+    | {case_id for case_id, _, _ in _MAGNITUDE_PROBES}
 )
 
 
@@ -274,49 +396,55 @@ def _pinned_postgresql() -> Iterator[str]:
 
 def _run_statement_case(
     connection: psycopg.Connection[tuple[object, ...]],
-    rows: tuple[tuple[str, str, str], ...],
+    rows: tuple[tuple[str, str], ...],
+    *,
+    shadowed: bool = False,
 ) -> dict[str, object]:
     connection.execute("TRUNCATE raw.raw_sales")
     with connection.cursor() as cursor:
         cursor.executemany(
-            "INSERT INTO raw.raw_sales (generation_id, payload) VALUES (%s, %s::jsonb)",
-            tuple(
-                (generation, json.dumps({"region": region, "revenue": revenue}))
-                for generation, region, revenue in rows
-            ),
+            "INSERT INTO raw.raw_sales (generation_id, payload) VALUES (%s, %s::jsonb)", rows
         )
     connection.commit()
     try:
         with connection.cursor() as cursor:
+            if shadowed:
+                cursor.execute("SET LOCAL search_path = shadow, pg_catalog")
             cursor.execute(
-                f"SELECT region, total_revenue::text FROM ({_statement()}) AS result "
-                "ORDER BY region"
+                f"SELECT region, pg_catalog.textin(pg_catalog.numeric_out(total_revenue)) "
+                f'FROM ({_statement()}) AS result ORDER BY region COLLATE pg_catalog."C"'
             )
             observed_rows = [[row[0], row[1]] for row in cursor.fetchall()]
-            description = cursor.description
         connection.rollback()
     except psycopg.Error as error:
         connection.rollback()
         return {"classification": "statement_rejected", "sqlstate": error.sqlstate}
-    assert description is not None
     return {"classification": "rows", "rows": observed_rows}
 
 
-def _output_column_type(connection: psycopg.Connection[tuple[object, ...]]) -> str:
-    """Read the declared type of the statement's measure column from the real catalog."""
+def _output_shape(connection: psycopg.Connection[tuple[object, ...]]) -> dict[str, str]:
+    """Read the declared measure type and grouped-column collation from the real catalog."""
     connection.execute(
         f"CREATE TEMPORARY TABLE checked_sum_shape AS SELECT * FROM ({_statement()}) AS result "
         "WITH NO DATA"
     )
-    row = connection.execute(
-        "SELECT pg_catalog.format_type(attribute.atttypid, attribute.atttypmod) "
+    rows = connection.execute(
+        "SELECT attribute.attname, "
+        "pg_catalog.format_type(attribute.atttypid, attribute.atttypmod), "
+        "coalesce(column_collation.collname, '') "
         "FROM pg_catalog.pg_attribute AS attribute "
+        "LEFT JOIN pg_catalog.pg_collation AS column_collation "
+        "ON column_collation.oid = NULLIF(attribute.attcollation, 0) "
         "WHERE attribute.attrelid = 'pg_temp.checked_sum_shape'::regclass "
-        "AND attribute.attname = 'total_revenue'"
-    ).fetchone()
+        "AND attribute.attnum > 0"
+    ).fetchall()
     connection.rollback()
-    assert row is not None
-    return str(row[0])
+    columns = {str(row[0]): (str(row[1]), str(row[2])) for row in rows}
+    return {
+        "measure_column_type": columns["total_revenue"][0],
+        "group_column_type": columns["region"][0],
+        "group_column_collation": columns["region"][1],
+    }
 
 
 def _run_cast_probe(
@@ -331,6 +459,18 @@ def _run_cast_probe(
         return {"classification": "cast_rejected", "sqlstate": error.sqlstate}
     assert observed is not None
     return {"classification": "accepted", "value": observed[0]}
+
+
+def _run_magnitude_probe(
+    connection: psycopg.Connection[tuple[object, ...]], value: str
+) -> dict[str, object]:
+    row = connection.execute(
+        "SELECT v IS NULL OR v <= %s OR v >= %s FROM (SELECT %s::numeric AS v) AS probe",
+        (-_DECIMAL_57_9_EXCLUSIVE_BOUND, _DECIMAL_57_9_EXCLUSIVE_BOUND, value),
+    ).fetchone()
+    connection.rollback()
+    assert row is not None and type(row[0]) is bool
+    return {"classification": "violation" if row[0] else "within_bound"}
 
 
 def _observe_engine(
@@ -369,17 +509,35 @@ def _capture() -> dict[str, object]:
         )
         connection.commit()
         engine = _observe_engine(connection)
-        output_column_type = _output_column_type(connection)
+        output_shape = _output_shape(connection)
+        for setup in _SHADOWING_SETUP:
+            connection.execute(setup)
+        connection.commit()
         for case_id, claim, rows in _STATEMENT_CASES:
             landing_rows = [
-                {"generation_id": generation, "region": region, "revenue": revenue}
-                for generation, region, revenue in rows
+                {"generation_id": generation, "payload": payload} for generation, payload in rows
             ]
             observed = _run_statement_case(connection, rows)
             cases.append(
                 {
                     "case_id": case_id,
                     "kind": "statement",
+                    "claim": claim,
+                    "input": landing_rows,
+                    "input_digest": digest(landing_rows),
+                    "observed": observed,
+                    "result_digest": digest(observed),
+                }
+            )
+        for case_id, claim, rows in _SHADOWED_CASES:
+            landing_rows = [
+                {"generation_id": generation, "payload": payload} for generation, payload in rows
+            ]
+            observed = _run_statement_case(connection, rows, shadowed=True)
+            cases.append(
+                {
+                    "case_id": case_id,
+                    "kind": "shadowed_statement",
                     "claim": claim,
                     "input": landing_rows,
                     "input_digest": digest(landing_rows),
@@ -400,6 +558,19 @@ def _capture() -> dict[str, object]:
                     "result_digest": digest(observed),
                 }
             )
+        for case_id, claim, value in _MAGNITUDE_PROBES:
+            observed = _run_magnitude_probe(connection, value)
+            cases.append(
+                {
+                    "case_id": case_id,
+                    "kind": "runtime_magnitude_probe",
+                    "claim": claim,
+                    "input": value,
+                    "input_digest": digest(value),
+                    "observed": observed,
+                    "result_digest": digest(observed),
+                }
+            )
     statement = _statement()
     return {
         "schema_version": "1",
@@ -409,7 +580,7 @@ def _capture() -> dict[str, object]:
         "engine": engine,
         "statement_digest": digest(statement),
         "statement": statement,
-        "output_column_type": output_column_type,
+        "output_shape": output_shape,
         "cases": cases,
     }
 
@@ -425,7 +596,7 @@ def test_pinned_postgresql_checked_sum_matches_the_recorded_evidence() -> None:
 
     assert captured["engine"] == recorded["engine"]
     assert captured["statement_digest"] == recorded["statement_digest"]
-    assert captured["output_column_type"] == recorded["output_column_type"]
+    assert captured["output_shape"] == recorded["output_shape"]
     assert captured["cases"] == recorded["cases"]
 
 
@@ -498,6 +669,10 @@ def test_report_states_exactly_what_the_bundle_recorded() -> None:
             assert stated == f"refused, SQLSTATE `{observed['sqlstate']}`", case["case_id"]
         elif classification == "accepted":
             assert stated == f"accepted `{observed['value']}`", case["case_id"]
+        elif classification == "violation":
+            assert stated == "flagged as a violation", case["case_id"]
+        elif classification == "within_bound":
+            assert stated == "not flagged", case["case_id"]
         else:
             returned = cast(list[list[str]], observed["rows"])
             expected = (
@@ -506,3 +681,59 @@ def test_report_states_exactly_what_the_bundle_recorded() -> None:
                 else "no rows"
             )
             assert stated == expected, case["case_id"]
+
+
+def test_every_malformed_landing_value_is_refused_by_the_statement_guard() -> None:
+    """Refusals of malformed input must come from the decode guard (22P02), never from coercion.
+
+    If a malformed value produced rows, or were refused only by an overflow in a later cast, the
+    guard would not be doing what the proof note says.
+    """
+    refused = {
+        "input_at_exclusive_upper_bound",
+        "input_at_exclusive_lower_bound",
+        "nan_measure",
+        "infinity_measure",
+        "hex_measure",
+        "underscore_measure",
+        "exponent_measure",
+        "whitespace_measure",
+        "plus_sign_measure",
+        "leading_zero_measure",
+        "excess_scale_measure",
+        "json_number_measure",
+        "null_measure",
+        "missing_measure",
+        "null_group",
+        "missing_group",
+        "non_string_group",
+        "trailing_newline_measure",
+        "arabic_indic_digit_measure",
+        "fullwidth_digit_measure",
+        "shadowed_search_path_hex_measure",
+    }
+    observed = {case["case_id"]: case["observed"] for case in _bundle_cases()}
+
+    for case_id in refused:
+        assert observed[case_id] == {"classification": "statement_rejected", "sqlstate": "22P02"}, (
+            case_id
+        )
+
+
+def test_grouping_uses_the_binary_collation_the_rule_claims() -> None:
+    shape = _load_bundle()["output_shape"]
+    assert isinstance(shape, dict)
+
+    assert shape["group_column_collation"] == "C"
+    assert shape["measure_column_type"] == "numeric(57,9)"
+
+
+def test_a_hostile_search_path_does_not_change_the_statement_result() -> None:
+    """The same statement returns the same answer in a session with a shadowing search_path."""
+    observed = {case["case_id"]: case["observed"] for case in _bundle_cases()}
+
+    assert observed["shadowed_search_path_valid_rows"] == {
+        "classification": "rows",
+        "rows": [["east", "13.000000000"]],
+    }
+    assert observed["shadowed_search_path_other_generation"] == observed["excluded_generation"]

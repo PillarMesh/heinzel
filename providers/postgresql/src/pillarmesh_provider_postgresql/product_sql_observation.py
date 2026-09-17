@@ -126,16 +126,9 @@ class PostgreSQLProductSqlObserver:
                 relation_oid=relation_oid,
                 database_encoding=context.database_encoding,
             )
-            decimal_columns = tuple(
-                column for column in columns if column.logical_type == "decimal"
-            )
-            if len(decimal_columns) != 1:
-                raise ProviderError(
-                    "PostgreSQL product SQL observation failed", "statement_rejected"
-                )
             sum_semantics = _observe_sum_semantics(
                 connection,
-                decimal_column=decimal_columns[0],
+                decimal_column=_STATEMENT_DECIMAL_INPUT,
             )
             observation_id = (
                 "psqlobs-"
@@ -192,6 +185,19 @@ class _PostgreSQLContext(BaseModel):
     session_timezone: str = Field(min_length=1, max_length=128)
     session_timezone_offset_seconds: int
     observed_at: datetime
+
+
+# Product statements read a JSON landing relation and cast each decimal field to NUMERIC(38,9)
+# themselves, so SUM semantics are observed for that statement input type rather than for a
+# table column. A landing relation has no decimal column of its own.
+_STATEMENT_DECIMAL_INPUT = ProductSqlColumnObservation(
+    name="statement_decimal_input",
+    logical_type="decimal",
+    physical_type="NUMERIC(38,9)",
+    nullable=False,
+    decimal_precision=38,
+    decimal_scale=9,
+)
 
 
 def _require_authority(
@@ -312,7 +318,14 @@ def _read_columns(
     rows = connection.execute(
         "SELECT attribute.attnum, attribute.attname, "
         "pg_catalog.format_type(attribute.atttypid, attribute.atttypmod), "
-        "NOT attribute.attnotnull, type.typname, "
+        # PostgreSQL 18 sets attnotnull for a NOT NULL ... NOT VALID constraint, although existing
+        # rows may still be NULL, so a column is non-null only if no unvalidated not-null
+        # constraint stands behind attnotnull.
+        "NOT (attribute.attnotnull AND NOT EXISTS ("
+        "SELECT 1 FROM pg_catalog.pg_constraint AS not_null "
+        "WHERE not_null.conrelid = attribute.attrelid AND not_null.contype = 'n' "
+        "AND not_null.conkey = ARRAY[attribute.attnum] AND NOT not_null.convalidated)), "
+        "type.typname, "
         "information_schema._pg_numeric_precision(attribute.atttypid, attribute.atttypmod), "
         "information_schema._pg_numeric_scale(attribute.atttypid, attribute.atttypmod), "
         "collation_namespace.nspname, column_collation.collname, "
@@ -360,11 +373,25 @@ def _column(
         or type(nullable) is not bool
     ):
         raise ValueError("PostgreSQL column metadata is invalid")
+    if type_name in {"json", "jsonb"}:
+        return ProductSqlColumnObservation(
+            name=name,
+            logical_type="json",
+            physical_type=physical_type.upper(),
+            nullable=nullable,
+        )
+    if type_name == "numeric" and (type(row[5]) is not int or type(row[6]) is not int):
+        return ProductSqlColumnObservation(
+            name=name,
+            logical_type="other",
+            physical_type=physical_type.upper(),
+            nullable=nullable,
+        )
     if type_name == "numeric":
-        if type(row[5]) is not int or type(row[6]) is not int:
-            raise ProviderError("PostgreSQL product SQL observation failed", "statement_rejected")
         precision = row[5]
         scale = row[6]
+        if type(precision) is not int or type(scale) is not int:
+            raise ValueError("PostgreSQL numeric column metadata is invalid")
         if (
             not 1 <= precision <= 76
             or not 0 <= scale <= precision
@@ -382,7 +409,12 @@ def _column(
             encoding=None,
         )
     if type_name not in {"text", "varchar"}:
-        raise ProviderError("PostgreSQL product SQL observation failed", "statement_rejected")
+        return ProductSqlColumnObservation(
+            name=name,
+            logical_type="other",
+            physical_type=physical_type.upper(),
+            nullable=nullable,
+        )
     if (type_name == "text" and physical_type != "text") or (
         type_name == "varchar" and not physical_type.startswith("character varying")
     ):

@@ -23,11 +23,15 @@ def emit_generation_scoped_postgresql(
     source: GenerationScopedProductSource,
 ) -> SqlEmission:
     """Render a restricted candidate over one immutable raw generation."""
+    # The admitted statement must not depend on session state: every function is qualified to
+    # pg_catalog so no search_path entry can shadow it.
     statement = render_generation_scoped_select(
         product_iir,
         source,
         engine="postgresql",
-        aggregate_dialect=AggregateDialect(decimal_type="NUMERIC(57,9)", sum_function="SUM"),
+        aggregate_dialect=AggregateDialect(
+            decimal_type="NUMERIC(57,9)", sum_function="pg_catalog.sum"
+        ),
     )
     return SqlEmission(engine="postgresql", statement=statement, parameters=())
 

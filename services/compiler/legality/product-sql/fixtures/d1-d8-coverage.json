@@ -21,7 +21,10 @@
         "null_measure"
       ],
       "negatives_excluded_at_compiler_boundary": false,
-      "compiler_tests": []
+      "compiler_tests": [
+        "tests/integration/test_postgresql_checked_sum_evidence.py::test_every_malformed_landing_value_is_refused_by_the_statement_guard"
+      ],
+      "postgresql_enforcement": "The statement's decode guard refuses a missing or JSON-null group key or measure with SQLSTATE 22P02 before grouping, so no NULL group or NULL sum can be produced."
     },
     {
       "dimension": "D2",
@@ -43,11 +46,14 @@
       ],
       "negatives_excluded_at_compiler_boundary": false,
       "compiler_tests": [
-        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_physical_decimal_and_sum_overflow_semantics_fail_closed"
+        "services/compiler/tests/test_restricted_product_aggregate_sql.py::test_physical_decimal_and_sum_overflow_semantics_fail_closed",
+        "services/compiler/tests/test_generation_scoped_product_sql.py::test_postgresql_canonical_decimal_pattern_refuses_every_permissive_numeric_form",
+        "tests/integration/test_postgresql_checked_sum_evidence.py::test_every_malformed_landing_value_is_refused_by_the_statement_guard"
       ],
       "divergence_motivated_exclusions": [
-        "decimal_excess_scale stays inadmissible because PostgreSQL rounds excess scale where ClickHouse truncates it. This exclusion survives single-engine activation so ClickHouse can join the rule later without renegotiating it."
-      ]
+        "decimal_excess_scale stays inadmissible. PostgreSQL's decode guard now refuses it outright; without the guard PostgreSQL would round it where ClickHouse truncates. The exclusion survives single-engine activation so ClickHouse can join the rule later without renegotiating it."
+      ],
+      "postgresql_enforcement": "The decode guard admits only canonical Decimal(38,9) text, so excess scale and values of 10^29 or more are refused with 22P02 instead of being rounded or reaching a cast; finite Decimal(57,9) overflow is refused by the result cast with 22003."
     },
     {
       "dimension": "D3",
@@ -63,7 +69,10 @@
       "negative_cases": [],
       "negatives_excluded_at_compiler_boundary": false,
       "negative_not_applicable_reason": "Group strings use profile-specific binary semantics, so every distinct byte sequence is a distinct group and no input is inadmissible on collation grounds. Provider sort order differs for case variants, so result ordering is not claimed and the positive cases assert an equivalent row set rather than an equivalent row sequence.",
-      "compiler_tests": []
+      "compiler_tests": [
+        "tests/integration/test_postgresql_checked_sum_evidence.py::test_grouping_uses_the_binary_collation_the_rule_claims"
+      ],
+      "postgresql_enforcement": "The statement groups the decoded string under an explicit COLLATE \"C\", recorded on the result column in the live evidence, so grouping is bytewise regardless of the database's default collation."
     },
     {
       "dimension": "D4",
@@ -118,7 +127,7 @@
       "dimension": "D7",
       "title": "literal typing",
       "carried_by": "engine_cases",
-      "postgresql_status": "claimed_with_unenforced_exclusion",
+      "postgresql_status": "claimed",
       "clickhouse_status": "not_claimed",
       "positive_cases": [
         "valid_rows"
@@ -129,20 +138,14 @@
       ],
       "negatives_excluded_at_compiler_boundary": false,
       "compiler_tests": [
-        "services/compiler/tests/test_generation_scoped_product_sql.py::test_generation_emission_rejects_coercible_generation_identity"
+        "services/compiler/tests/test_generation_scoped_product_sql.py::test_generation_emission_rejects_coercible_generation_identity",
+        "services/compiler/tests/test_generation_scoped_product_sql.py::test_postgresql_canonical_decimal_pattern_refuses_every_permissive_numeric_form",
+        "tests/integration/test_postgresql_checked_sum_evidence.py::test_every_malformed_landing_value_is_refused_by_the_statement_guard"
       ],
       "divergence_motivated_exclusions": [
-        "wrong_type_decimal stays inadmissible because both pinned engines coerce a numeric JSON value into the declared decimal although the contract requires a JSON string. The exclusion is a contract requirement, not a PostgreSQL limitation, and survives single-engine activation."
+        "wrong_type_decimal stays inadmissible. PostgreSQL's decode guard refuses a JSON number; ClickHouse, which has no guard, still coerces it. The exclusion is a contract requirement, not a PostgreSQL limitation, and survives single-engine activation."
       ],
-      "unenforced_exclusions": [
-        {
-          "case_id": "wrong_type_decimal",
-          "claim": "the source contract requires the decimal field to arrive as a JSON string",
-          "enforced_by": null,
-          "live_evidence": "Verified against the pinned PostgreSQL 18.6 image on 2026-09-15: the emitted statement decodes the payload with `->>`, which stringifies a JSON number, so the numeric payload {\"revenue\": 12.5} yields the row (east, 12.500000000) instead of being rejected. Nothing in the compiler or the provider boundary refuses it; the fixture records the engine's behaviour, not a refusal.",
-          "consequence": "The D7 literal-typing claim is carried by the contract text alone. It must not be described as enforced until an accepted enforcement point exists."
-        }
-      ]
+      "postgresql_enforcement": "The decode guard requires every landing field to be a JSON string and the decimal field to match the canonical pattern; JSON numbers, booleans, arrays, objects, NaN, Infinity, hex, underscores, exponents, whitespace, signs and leading zeros are refused with 22P02."
     },
     {
       "dimension": "D8",

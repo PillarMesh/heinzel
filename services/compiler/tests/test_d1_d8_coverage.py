@@ -180,35 +180,34 @@ def test_postgresql_activation_claims_nothing_about_clickhouse() -> None:
         )
 
 
-def test_unenforced_exclusions_are_declared_rather_than_described_as_enforced() -> None:
-    """A recorded exclusion that nothing refuses must say so, with its evidence.
+def test_unenforced_exclusions_are_exactly_the_negatives_postgresql_still_accepts() -> None:
+    """Which exclusions are unenforced is derived from live results, not declared by hand.
 
-    D7's numeric-JSON exclusion is the live case: the pinned PostgreSQL image decodes a JSON
-    number into the declared decimal and returns a row, so the fixture documents engine
-    behaviour rather than a refusal. Keep that visible until an enforcement point is accepted.
+    A negative case whose recorded PostgreSQL outcome is still "rows" is an exclusion nothing
+    refuses. The pre-review found the map declared only one such case while excess-scale rounding
+    was a second, undeclared one; a hand-maintained list cannot notice that. Every such case must
+    be declared, nothing else may be, and a row's status must say whether it carries one.
     """
-    rows = {row["dimension"]: row for row in _coverage_rows()}
-
-    declared = rows["D7"].get("unenforced_exclusions")
-    assert isinstance(declared, list) and declared, (
-        "D7 must keep declaring that its numeric-JSON exclusion is unenforced"
-    )
-    assert rows["D7"]["postgresql_status"] == "claimed_with_unenforced_exclusion"
-
-    for dimension, row in rows.items():
-        for entry in row.get("unenforced_exclusions") or []:
+    unenforced_live = {
+        cast(str, case["case_id"])
+        for case in _conformance_cases()
+        if case["business_outcome"] in _NEGATIVE_OUTCOMES
+        and cast(dict[str, dict[str, object]], case["expected"])["postgresql"]["classification"]
+        == "rows"
+    }
+    declared: set[str] = set()
+    for row in _coverage_rows():
+        entries = row.get("unenforced_exclusions") or []
+        assert isinstance(entries, list)
+        for entry in entries:
             assert isinstance(entry, dict)
-            assert entry.get("case_id"), f"{dimension} unenforced exclusion names no case"
-            assert "enforced_by" in entry, (
-                f"{dimension} unenforced exclusion omits enforced_by; an absent key must not "
-                "read as an explicit null"
-            )
-            assert entry["enforced_by"] is None, (
-                f"{dimension} lists an enforced exclusion under unenforced_exclusions"
-            )
-            assert entry.get("live_evidence"), (
-                f"{dimension} claims an unenforced exclusion without live evidence"
-            )
+            assert "enforced_by" in entry and entry["enforced_by"] is None, row["dimension"]
+            assert entry.get("live_evidence"), row["dimension"]
+            declared.add(cast(str, entry["case_id"]))
+        expected_status = "claimed_with_unenforced_exclusion" if entries else "claimed"
+        assert row["postgresql_status"] == expected_status, row["dimension"]
+
+    assert declared == unenforced_live
 
 
 def test_each_cited_case_has_the_polarity_the_row_cites_it_under() -> None:

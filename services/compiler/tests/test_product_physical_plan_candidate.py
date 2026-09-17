@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import pytest
@@ -106,6 +106,7 @@ def _authority() -> ProductPhysicalPlanAuthority:
 
 
 def _observation() -> ProductSqlProviderObservation:
+    """The landing relation the emitted statement reads, as a real warehouse lays it out."""
     return ProductSqlProviderObservation(
         observation_id="observation-1",
         tenant_id="tenant-a",
@@ -113,7 +114,7 @@ def _observation() -> ProductSqlProviderObservation:
         warehouse_binding_revision=7,
         relation_ref="relation-revenue-events-v1",
         relation_namespace="raw",
-        relation_name="revenue_events",
+        relation_name="raw_sales",
         engine="postgresql",
         engine_version="18.6",
         engine_image_digest=_POSTGRESQL_IMAGE_DIGEST,
@@ -121,20 +122,18 @@ def _observation() -> ProductSqlProviderObservation:
         observed_at=datetime(2026, 9, 15, 12, tzinfo=UTC),
         columns=(
             ProductSqlColumnObservation(
-                name="region",
+                name="generation_id",
                 logical_type="string",
                 physical_type="TEXT",
                 nullable=False,
-                collation="C",
+                collation="default",
                 encoding="UTF8",
             ),
             ProductSqlColumnObservation(
-                name="revenue",
-                logical_type="decimal",
-                physical_type="NUMERIC(38,9)",
-                nullable=False,
-                decimal_precision=38,
-                decimal_scale=9,
+                name="row_ordinal", logical_type="other", physical_type="BIGINT", nullable=False
+            ),
+            ProductSqlColumnObservation(
+                name="payload", logical_type="json", physical_type="JSONB", nullable=False
             ),
         ),
         sum_semantics=ProductSqlSumSemantics(
@@ -215,7 +214,8 @@ def test_composer_builds_an_exact_generation_scoped_physical_plan(
     assert plan.provider_observation_digest == observation_digest
     assert plan.source == _authority().source
     assert plan.statement_digest == digest(plan.emitted_statement)
-    assert f"WHERE \"generation_id\" = '{'2' * 64}'" in plan.emitted_statement
+    equals = "OPERATOR(pg_catalog.=)" if engine == "postgresql" else "="
+    assert f"WHERE \"generation_id\" {equals} '{'2' * 64}'" in plan.emitted_statement
     assert expected_decimal_type in plan.emitted_statement
     assert tuple(check.column_name for check in plan.decimal_output_checks) == ("total_revenue",)
 
@@ -564,3 +564,229 @@ def test_admission_requires_the_observation_digest_to_match() -> None:
 
     assert result.preconditions[6].status == "unsatisfied"
     assert result.preconditions[12].status == "unsatisfied"
+
+
+def _fully_evidenced_postgresql_compile() -> NoValidPlan:
+    """With every accepted artifact present and signed, exactly preconditions 15, 17, 18 remain.
+
+    This is the state the independent review packet describes. All three remaining gates are
+    governed decisions, not missing evidence: runtime magnitude scope (15), acceptance of the live
+    PostgreSQL evidence (17), and independent approval (18). If another precondition regresses,
+    or one of these three is flipped without review, the packet is no longer accurate.
+    """
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from pillarmesh_provider_sdk import (
+        ProductSqlProviderObservationSigner,
+        ProductSqlProviderObservationVerifier,
+    )
+
+    observation = _observation()
+    key = Ed25519PrivateKey.generate()
+    signed_observation = ProductSqlProviderObservationSigner("provider-key-1", key).sign(
+        observation
+    )
+    signed_cardinality, cardinality_verifier = _signed_cardinality()
+
+    result = compile_product_iir(
+        _product(),
+        engine="postgresql",
+        signed_provider_observation=signed_observation,
+        provider_observation_verifier=ProductSqlProviderObservationVerifier(
+            {"provider-key-1": key.public_key()},
+            maximum_observation_age=timedelta(minutes=10),
+        ),
+        expected_provider_observation_digest=signed_observation.observation_digest,
+        expected_tenant_id="tenant-a",
+        expected_warehouse_binding_id="warehouse-a",
+        expected_warehouse_binding_revision=7,
+        expected_relation_ref="relation-revenue-events-v1",
+        expected_relation_namespace="raw",
+        expected_engine_image_digest=_POSTGRESQL_IMAGE_DIGEST,
+        expected_engine_build_digest="6" * 64,
+        evaluated_at=datetime(2026, 9, 15, 12, 5, tzinfo=UTC),
+        physical_plan_authority=_authority(),
+        signed_cardinality_evidence=signed_cardinality,
+        cardinality_evidence_verifier=cardinality_verifier,
+    )
+
+    return result
+
+
+def test_a_fully_evidenced_postgresql_candidate_leaves_only_the_governed_gates_open() -> None:
+    """With every accepted artifact present and signed, exactly preconditions 15, 17, 18 remain.
+
+    This is the state the independent review packet describes. All three remaining gates are
+    governed decisions, not missing evidence: runtime magnitude scope (15), acceptance of the live
+    PostgreSQL evidence (17), and independent approval (18).
+    """
+    result = _fully_evidenced_postgresql_compile()
+
+    unsatisfied = tuple(item.number for item in result.preconditions if item.status != "satisfied")
+    assert len(result.preconditions) == 18
+    assert unsatisfied == (15, 17, 18)
+    assert result.execution_occurred is False
+
+
+def test_the_rule_record_names_exactly_the_gates_a_real_compile_leaves_open() -> None:
+    """The rule record's unsatisfied gates are derived from the compiler, not asserted by hand.
+
+    The pre-review found the record still listing generation addressing, cardinality and
+    provenance as unsatisfied after the code could satisfy them. Map each gate to its precondition
+    and require the record to match what a fully evidenced compile actually leaves open.
+    """
+    import json
+    from pathlib import Path
+
+    rule = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "legality"
+            / "product-sql"
+            / "rules"
+            / "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE.json"
+        ).read_text(encoding="utf-8")
+    )
+    gate_preconditions: dict[str, int] = rule["gate_preconditions"]
+    open_numbers = {
+        item.number
+        for item in _fully_evidenced_postgresql_compile().preconditions
+        if item.status != "satisfied"
+    }
+
+    assert set(gate_preconditions.values()) == set(range(13, 19))
+    assert set(rule["unsatisfied_gates"]) == {
+        gate for gate, number in gate_preconditions.items() if number in open_numbers
+    }
+    assert rule["review_status"] == "changes_requested"
+
+
+def test_the_rule_record_pins_the_decode_guard_the_emitter_uses() -> None:
+    import json
+    from pathlib import Path
+
+    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+
+    rule = json.loads(
+        (
+            Path(__file__).parents[1]
+            / "legality"
+            / "product-sql"
+            / "rules"
+            / "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE.json"
+        ).read_text(encoding="utf-8")
+    )
+    profile = rule["engine_profiles"]["postgresql"]
+
+    assert profile["canonical_decimal_pattern"] == _POSTGRESQL_CANONICAL_DECIMAL
+    assert profile["group_collation"] == "C"
+    assert profile["landing_payload_column_type"] == "JSONB"
+    assert profile["landing_generation_column_type"] == "TEXT"
+
+
+def _landing_columns(**changes: dict[str, object]) -> tuple[ProductSqlColumnObservation, ...]:
+    return tuple(
+        column.model_copy(update=changes.get(column.name, {})) for column in _observation().columns
+    )
+
+
+@pytest.mark.parametrize(
+    ("case_kind", "columns"),
+    (
+        ("generation-nullable", _landing_columns(generation_id={"nullable": True})),
+        (
+            "generation-varchar",
+            _landing_columns(generation_id={"physical_type": "CHARACTER VARYING"}),
+        ),
+        (
+            "generation-nondeterministic-collation",
+            _landing_columns(generation_id={"collation": "public.case_insensitive"}),
+        ),
+        ("generation-latin1", _landing_columns(generation_id={"encoding": "LATIN1"})),
+        ("payload-json-not-jsonb", _landing_columns(payload={"physical_type": "JSON"})),
+        ("payload-nullable", _landing_columns(payload={"nullable": True})),
+        (
+            "payload-not-json",
+            _landing_columns(payload={"logical_type": "other", "physical_type": "TEXT"}),
+        ),
+        (
+            "payload-missing",
+            tuple(column for column in _observation().columns if column.name != "payload"),
+        ),
+        (
+            "generation-missing",
+            tuple(column for column in _observation().columns if column.name != "generation_id"),
+        ),
+    ),
+)
+def test_landing_relation_must_carry_the_columns_the_statement_reads(
+    case_kind: str, columns: tuple[ProductSqlColumnObservation, ...]
+) -> None:
+    """Each landing-column defect alone refuses precondition 10, with provenance still intact."""
+    observation = _observation().model_copy(update={"columns": columns})
+
+    result = _compile_admission(observation=observation)
+
+    assert result.preconditions[6].status == "satisfied", case_kind
+    assert result.preconditions[9].status == "unsatisfied", case_kind
+
+
+def test_an_observation_of_another_relation_cannot_stand_in_for_the_landing_relation() -> None:
+    """Observing a typed table with the right shape proves nothing about the relation read.
+
+    The pre-review found that an observation of the logical IIR relation could satisfy the physical
+    column precondition while the statement read a different landing relation. Both the precondition
+    and the admission chain now bind the observation to the authority's source relation.
+    """
+    observation = _observation().model_copy(update={"relation_name": "revenue_events"})
+
+    result = _compile_admission(observation=observation)
+
+    assert result.preconditions[6].status == "satisfied"
+    assert result.preconditions[9].status == "unsatisfied"
+    assert result.preconditions[12].status == "unsatisfied"
+
+
+def test_the_iir_namespace_must_match_the_landing_namespace() -> None:
+    product = _product()
+    other = product.model_copy(
+        update={"source": product.source.model_copy(update={"relation_namespace": "curated"})}
+    )
+    observation = _observation()
+
+    result = compile_product_iir(
+        other,
+        engine="postgresql",
+        provider_observation=observation,
+        expected_provider_observation_digest=digest(observation),
+        expected_tenant_id="tenant-a",
+        expected_warehouse_binding_id="warehouse-a",
+        expected_warehouse_binding_revision=7,
+        expected_relation_ref="relation-revenue-events-v1",
+        expected_relation_namespace="raw",
+        expected_engine_image_digest=_POSTGRESQL_IMAGE_DIGEST,
+        expected_engine_build_digest="6" * 64,
+        evaluated_at=datetime(2026, 9, 15, 12, 5, tzinfo=UTC),
+        physical_plan_authority=_authority(),
+    )
+
+    assert result.preconditions[9].status == "unsatisfied"
+
+
+def test_clickhouse_has_no_landing_contract_so_precondition_10_cannot_pass() -> None:
+    observation = _observation().model_copy(update={"engine": "clickhouse"})
+
+    result = compile_product_iir(
+        _product(),
+        engine="clickhouse",
+        provider_observation=observation,
+        expected_provider_observation_digest=digest(observation),
+        expected_tenant_id="tenant-a",
+        expected_warehouse_binding_id="warehouse-a",
+        expected_warehouse_binding_revision=7,
+        expected_relation_ref="relation-revenue-events-v1",
+        expected_relation_namespace="raw",
+        evaluated_at=datetime(2026, 9, 15, 12, 5, tzinfo=UTC),
+        physical_plan_authority=_authority(),
+    )
+
+    assert result.preconditions[9].status == "unsatisfied"

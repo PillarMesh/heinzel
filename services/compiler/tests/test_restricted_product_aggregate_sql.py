@@ -66,13 +66,18 @@ def test_revenue_by_region_candidate_stays_closed_after_the_static_bound_proof()
 
     assert isinstance(result, NoValidPlan)
     assert result.rule_id == "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE"
-    assert tuple(item.status for item in result.preconditions[:12]) == ("satisfied",) * 12
+    # Precondition 10 observes the landing relation named by a generation authority, which this
+    # candidate has not been given, so it stays unsatisfied alongside the governed gates.
+    assert tuple(item.status for item in result.preconditions[:12]) == (
+        ("satisfied",) * 9 + ("unsatisfied",) + ("satisfied",) * 2
+    )
     assert tuple(item.number for item in result.preconditions) == tuple(range(1, 19))
     assert tuple(item.reason for item in result.preconditions[6:11]) == (
         "bind the provider observation to the expected tenant, warehouse, relation, and digest",
         "bind the pinned engine version, image, and build to the provider observation",
         "use a provider observation no older than ten minutes at evaluation time",
-        "observe the exact non-null binary string and Decimal(38,9) physical columns",
+        "observe the non-null text generation and jsonb payload columns of the landing "
+        "relation the statement reads",
         "observe the pinned engine-specific SUM input, accumulator, result, overflow, null, "
         "and empty-group semantics",
     )
@@ -81,9 +86,11 @@ def test_revenue_by_region_candidate_stays_closed_after_the_static_bound_proof()
     )
     assert tuple(item.status for item in result.preconditions[12:]) == ("unsatisfied",) * 6
     assert result.smallest_changes == (
+        "observe the non-null text generation and jsonb payload columns of the landing "
+        "relation the statement reads",
         "bind the physical source to exactly one authoritative generation and receipt digest",
         "bind the contributing row ceiling to owning-service cardinality evidence",
-        "enforce checked Decimal(57,9) result magnitude on every engine at runtime",
+        "enforce checked Decimal(57,9) result magnitude at runtime on the pinned PostgreSQL engine",
         "authenticate the observation with provider-owned provenance authority",
         "review live checked SUM on the pinned PostgreSQL engine; "
         "cross-engine equivalence is not claimed",
@@ -539,19 +546,6 @@ def test_provider_observation_digest_tampering_fails_closed() -> None:
     assert result.preconditions[6].status == "unsatisfied"
 
 
-def test_observed_namespace_must_match_the_iir_namespace() -> None:
-    product = _revenue_by_region_iir()
-    other_namespace = product.source.model_copy(update={"relation_namespace": "curated"})
-
-    result = _compile(
-        product.model_copy(update={"source": other_namespace}),
-        observation=_postgresql_observation(),
-    )
-
-    assert result.preconditions[6].status == "satisfied"
-    assert result.preconditions[9].status == "unsatisfied"
-
-
 @pytest.mark.parametrize(
     "evaluated_at",
     (
@@ -674,7 +668,16 @@ def test_arbitrary_nonempty_sum_facts_do_not_satisfy_the_engine_profile() -> Non
         {"empty_group_behavior": "zero"},
     ),
 )
-def test_each_sum_null_semantic_is_independently_required(changed: dict[str, object]) -> None:
+def test_null_and_empty_group_semantics_are_enforced_by_the_observation_type(
+    changed: dict[str, object],
+) -> None:
+    """The null and empty-group invariant is carried by single-valued Literal fields.
+
+    `null_input_behavior` admits only "exclude" and `empty_group_behavior` only "no_row", so any
+    other value is refused by strict revalidation at precondition 7 before precondition 11 runs.
+    The comparison inside precondition 11 is unreachable for these fields. This test pins where
+    the refusal really happens rather than claiming precondition 11 enforces it.
+    """
     observation = _postgresql_observation()
     unsafe = observation.sum_semantics.model_copy(update=changed)
 
@@ -683,86 +686,28 @@ def test_each_sum_null_semantic_is_independently_required(changed: dict[str, obj
         observation=observation.model_copy(update={"sum_semantics": unsafe}),
     )
 
-    assert result.preconditions[10].status == "unsatisfied"
-
-
-@pytest.mark.parametrize(
-    "case_kind",
-    (
-        "relation-name",
-        "column-count",
-        "column-name",
-        "logical-type",
-        "nullability",
-        "physical-type",
-        "collation",
-        "decimal-scale",
-    ),
-)
-def test_physical_relation_observation_must_match_every_declared_property(
-    case_kind: str,
-) -> None:
-    observation = _postgresql_observation()
-    changes: dict[str, dict[str, object]] = {
-        "relation-name": {"relation_name": "other_events"},
-        "column-count": {"columns": (observation.columns[0],)},
-        "column-name": {
-            "columns": (
-                observation.columns[0].model_copy(update={"name": "territory"}),
-                observation.columns[1],
-            )
-        },
-        "logical-type": {
-            "columns": (
-                observation.columns[0].model_copy(update={"logical_type": "decimal"}),
-                observation.columns[1],
-            )
-        },
-        "nullability": {
-            "columns": (
-                observation.columns[0].model_copy(update={"nullable": True}),
-                observation.columns[1],
-            )
-        },
-        "physical-type": {
-            "columns": (
-                observation.columns[0].model_copy(update={"physical_type": "VARCHAR"}),
-                observation.columns[1],
-            )
-        },
-        "collation": {
-            "columns": (
-                observation.columns[0].model_copy(update={"collation": "en_US"}),
-                observation.columns[1],
-            )
-        },
-        "decimal-scale": {
-            "columns": (
-                observation.columns[0],
-                observation.columns[1].model_copy(update={"decimal_scale": 8}),
-            )
-        },
-    }
-    observation = observation.model_copy(update=changes[case_kind])
-
-    result = _compile(_revenue_by_region_iir(), observation=observation)
-
-    assert result.preconditions[9].status == "unsatisfied"
+    assert result.preconditions[6].status == "unsatisfied"
+    assert result.preconditions[6].reason.startswith(
+        "provider observation is invalid at sum_semantics."
+    )
 
 
 def test_physical_decimal_and_sum_overflow_semantics_fail_closed() -> None:
+    """A valid but wrong overflow behaviour is refused by precondition 11 itself.
+
+    `wrap` is a legal value of the field, so strict revalidation passes and precondition 11 is
+    the gate that refuses it: PostgreSQL is pinned to `promote`. An invalid literal such as
+    `truncate` would be refused earlier, at precondition 7, and prove nothing about 11.
+    """
     observation = _postgresql_observation()
-    unsafe_column = observation.columns[1].model_copy(
-        update={"decimal_precision": 18, "physical_type": "NUMERIC(18,2)"}
-    )
-    unsafe_sum = observation.sum_semantics.model_copy(update={"overflow_behavior": "truncate"})
-    changed = observation.model_copy(
-        update={"columns": (observation.columns[0], unsafe_column), "sum_semantics": unsafe_sum}
+    wrapping = observation.sum_semantics.model_copy(update={"overflow_behavior": "wrap"})
+
+    result = _compile(
+        _revenue_by_region_iir(),
+        observation=observation.model_copy(update={"sum_semantics": wrapping}),
     )
 
-    result = _compile(_revenue_by_region_iir(), observation=changed)
-
-    assert result.preconditions[9].status == "unsatisfied"
+    assert result.preconditions[6].status == "satisfied"
     assert result.preconditions[10].status == "unsatisfied"
     assert result.execution_occurred is False
 
@@ -1007,14 +952,7 @@ def test_rule_declaration_pins_narrow_constructs_and_review_gate() -> None:
     assert rule["rule_id"] == "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE"
     assert rule["review_status"] == "changes_requested"
     assert rule["observation_schema_version"] == "1"
-    assert rule["unsatisfied_gates"] == [
-        "authoritative_generation_addressing",
-        "authority_bound_cardinality",
-        "runtime_result_magnitude_enforcement",
-        "provider_owned_provenance",
-        "live_cross_engine_checked_sum_review",
-        "independent_review",
-    ]
+    # unsatisfied_gates is checked against a real compile in test_product_physical_plan_candidate.py
     assert rule["physical_source_requirements"] == {
         "authoritative_generation_count": 1,
         "generation_identifier_format": "sha256",
@@ -1248,3 +1186,34 @@ def test_live_sum_review_is_worded_per_engine_and_stays_unsatisfied(
     assert review.reason == expected_reason
     assert review.status == "unsatisfied"
     assert "both pinned engines" not in review.reason
+
+
+@pytest.mark.parametrize(
+    ("engine", "expected_reason"),
+    (
+        (
+            "postgresql",
+            "enforce checked Decimal(57,9) result magnitude at runtime on the pinned PostgreSQL "
+            "engine",
+        ),
+        (
+            "clickhouse",
+            "bind ClickHouse runtime Decimal(57,9) magnitude enforcement to its own activation",
+        ),
+    ),
+)
+def test_runtime_magnitude_is_worded_per_engine_and_stays_unsatisfied(
+    engine: Literal["postgresql", "clickhouse"], expected_reason: str
+) -> None:
+    """PostgreSQL's runtime magnitude enforcement is not evidence that ClickHouse enforces it."""
+    result = compile_product_iir(
+        _revenue_by_region_iir(),
+        engine=engine,
+        engine_version="0",
+        capabilities=_CAPABILITIES,
+    )
+
+    magnitude = next(item for item in result.preconditions if item.number == 15)
+    assert magnitude.reason == expected_reason
+    assert magnitude.status == "unsatisfied"
+    assert "every engine" not in magnitude.reason

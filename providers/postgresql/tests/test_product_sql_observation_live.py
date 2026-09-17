@@ -79,9 +79,20 @@ def postgresql_dsn() -> Iterator[str]:
                 time.sleep(0.2)
         with psycopg.connect(dsn) as connection:
             connection.execute("CREATE SCHEMA raw")
+            # Laid out like a real managed landing relation: the statement reads only
+            # generation_id and payload; the bookkeeping columns must be described, not refused.
             connection.execute(
-                "CREATE TABLE raw.revenue_events ("
-                'region text COLLATE "C" NOT NULL, revenue numeric(38,9) NOT NULL)'
+                "CREATE TABLE raw.raw_sales (generation_id text NOT NULL, "
+                "row_ordinal bigint NOT NULL, segment_digest text NOT NULL, "
+                "payload jsonb NOT NULL)"
+            )
+            # A NOT NULL ... NOT VALID constraint over existing NULLs: PostgreSQL 18 still sets
+            # attnotnull, and the observer must not report such a column as non-null.
+            connection.execute("CREATE TABLE raw.unvalidated (generation_id text, payload jsonb)")
+            connection.execute("INSERT INTO raw.unvalidated VALUES (NULL, '{}')")
+            connection.execute(
+                "ALTER TABLE raw.unvalidated "
+                "ADD CONSTRAINT generation_present NOT NULL generation_id NOT VALID"
             )
         yield dsn
     finally:
@@ -123,18 +134,23 @@ def test_live_observer_reads_postgresql_catalog_and_sum_behavior(
             warehouse_binding_revision=4,
             relation_ref="relation-revenue-events-v1",
             relation_namespace="raw",
-            relation_name="revenue_events",
+            relation_name="raw_sales",
         ),
         warehouse_validation=validation,
     )
 
-    assert tuple(column.name for column in observation.columns) == ("region", "revenue")
-    assert observation.columns[0].physical_type == "TEXT"
-    assert observation.columns[0].collation == "C"
+    assert tuple(
+        (column.name, column.logical_type, column.physical_type, column.nullable)
+        for column in observation.columns
+    ) == (
+        ("generation_id", "string", "TEXT", False),
+        ("row_ordinal", "other", "BIGINT", False),
+        ("segment_digest", "string", "TEXT", False),
+        ("payload", "json", "JSONB", False),
+    )
+    assert observation.columns[0].collation == "default"
     assert observation.columns[0].encoding == "UTF8"
-    assert observation.columns[1].physical_type == "NUMERIC(38,9)"
-    assert observation.columns[1].decimal_precision == 38
-    assert observation.columns[1].decimal_scale == 9
+    assert observation.sum_semantics.input_physical_type == "NUMERIC(38,9)"
     assert observation.sum_semantics.accumulator_physical_type == "INTERNAL"
     assert observation.sum_semantics.result_physical_type == "NUMERIC"
     assert observation.sum_semantics.overflow_behavior == "promote"
@@ -171,3 +187,48 @@ def _validation_evidence(
         restore_cleanup_digest="d" * 64,
         observed_at=datetime.now(UTC),
     )
+
+
+def test_live_observer_does_not_trust_an_unvalidated_not_null_constraint(
+    postgresql_dsn: str,
+) -> None:
+    with psycopg.connect(postgresql_dsn) as connection:
+        server_version_number, server_version_text = connection.execute(
+            "SELECT current_setting('server_version_num'), current_setting('server_version')"
+        ).fetchone()
+        attnotnull = connection.execute(
+            "SELECT attnotnull FROM pg_catalog.pg_attribute "
+            "WHERE attrelid = 'raw.unvalidated'::regclass AND attname = 'generation_id'"
+        ).fetchone()
+    assert attnotnull == (True,), "precondition of this test: PostgreSQL sets attnotnull"
+    engine_version = f"{int(server_version_number) // 10_000}.{int(server_version_number) % 10_000}"
+    validation = _validation_evidence(
+        engine_version=engine_version,
+        engine_build_digest=digest(
+            {
+                "domain": "pillarmesh-postgresql-engine-build-v1",
+                "version": {
+                    "server_version_num": str(server_version_number),
+                    "server_version": str(server_version_text),
+                },
+            }
+        ),
+    )
+    observer = PostgreSQLProductSqlObserver(
+        PostgreSQLProductSqlObservationSettings(tenant_id="tenant-a", dsn=SecretStr(postgresql_dsn))
+    )
+
+    observation = observer.observe(
+        PostgreSQLProductSqlObservationRequest(
+            tenant_id="tenant-a",
+            warehouse_binding_id="warehouse-a",
+            warehouse_binding_revision=4,
+            relation_ref="relation-unvalidated-v1",
+            relation_namespace="raw",
+            relation_name="unvalidated",
+        ),
+        warehouse_validation=validation,
+    )
+
+    assert observation.columns[0].name == "generation_id"
+    assert observation.columns[0].nullable is True
