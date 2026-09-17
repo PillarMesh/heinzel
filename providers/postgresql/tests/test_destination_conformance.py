@@ -332,3 +332,96 @@ def test_postgresql_binding_composition_resolves_private_settings_without_receip
 
     assert resolved == [("tenant-a", "warehouse-a", 4)]
     assert "private-password" not in receipt.model_dump_json()
+
+
+_PASSWORD_DSN = (
+    "host=warehouse.internal dbname=pillarmesh user=ingestion password=private-secret "
+    "sslmode=disable gssencmode=disable"
+)
+
+
+_STARTUP_PROBE_OUTCOMES = (
+    (psycopg.errors.InvalidPassword(), "authorization_denied"),
+    (psycopg.errors.InvalidAuthorizationSpecification(), "authorization_denied"),
+    (psycopg.OperationalError("probe transport failed"), "transient_transport"),
+)
+
+
+def _store_rejected_at_startup(
+    probe_outcome: Exception,
+) -> tuple[PostgreSQLLandStore, list[dict[str, object]]]:
+    probe_calls: list[dict[str, object]] = []
+
+    def rejected(_dsn: str) -> _Connection:
+        raise psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+    def probe(**parameters: object) -> _Connection:
+        probe_calls.append(parameters)
+        raise probe_outcome
+
+    store = PostgreSQLLandStore(
+        PostgreSQLLandStoreSettings(
+            dsn=_PASSWORD_DSN,
+            raw_schema_name="raw",
+            ledger_schema_name="control",
+            ledger_table_name="land_receipts",
+        ),
+        connect=rejected,
+        startup_denial_probe=probe,
+    )
+    return store, probe_calls
+
+
+@pytest.mark.parametrize(("probe_outcome", "classification"), _STARTUP_PROBE_OUTCOMES)
+def test_land_attributes_only_structured_startup_rejections(
+    probe_outcome: Exception,
+    classification: str,
+) -> None:
+    store, probe_calls = _store_rejected_at_startup(probe_outcome)
+
+    with pytest.raises(ProviderError) as captured:
+        asyncio.run(
+            PostgreSQLDestinationProvider(store=store).land(
+                segment=destination_segment(),
+                target=destination_target(),
+                idempotency_key="4" * 64,
+            )
+        )
+
+    assert captured.value.classification == classification
+    assert len(probe_calls) == 1
+    assert "private" not in str(captured.value)
+
+
+@pytest.mark.parametrize(("probe_outcome", "classification"), _STARTUP_PROBE_OUTCOMES)
+def test_receipt_inspection_attributes_only_structured_startup_rejections(
+    probe_outcome: Exception,
+    classification: str,
+) -> None:
+    store, probe_calls = _store_rejected_at_startup(probe_outcome)
+
+    with pytest.raises(PostgreSQLLandStoreError) as captured:
+        store.inspect_receipt(idempotency_key="4" * 64)
+
+    assert captured.value.classification == classification
+    assert len(probe_calls) == 1
+
+
+def test_store_classifies_a_structured_authorization_rejection_before_transport() -> None:
+    def rejected(_dsn: str) -> _Connection:
+        raise psycopg.errors.InvalidPassword()
+
+    store = PostgreSQLLandStore(
+        PostgreSQLLandStoreSettings(
+            dsn="postgresql://ingestion:secret@127.0.0.1/pillarmesh",
+            raw_schema_name="raw",
+            ledger_schema_name="control",
+            ledger_table_name="land_receipts",
+        ),
+        connect=rejected,
+    )
+
+    with pytest.raises(PostgreSQLLandStoreError) as captured:
+        store.inspect_receipt(idempotency_key="4" * 64)
+
+    assert captured.value.classification == "authorization_denied"

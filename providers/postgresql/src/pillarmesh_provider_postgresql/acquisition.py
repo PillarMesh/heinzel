@@ -39,6 +39,11 @@ from .acquisition_settings import (
     PostgreSQLAcquisitionSettings,
     PostgreSQLSourceObjectDeclaration,
 )
+from .startup_denial import (
+    StartupDenialProbe,
+    connect_attributing_startup_denial,
+    default_startup_denial_probe,
+)
 
 _CURSOR_VERSION = "postgresql-incremental-v1"
 
@@ -494,12 +499,16 @@ class PostgreSQLAcquisitionProvider:
         settings: PostgreSQLAcquisitionSettings,
         *,
         connect: _Connect | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
         clock: Callable[[], datetime] | None = None,
         private_boundary_reference_factory: Callable[[str, str], str],
         private_boundary_writer: _PrivateBoundaryWriter,
     ) -> None:
         self._settings = settings
         self._connect = connect or cast(_Connect, psycopg.connect)
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
         self._clock = clock or (lambda: datetime.now(UTC))
         self._private_boundary_reference_factory = private_boundary_reference_factory
         self._private_boundary_writer = private_boundary_writer
@@ -514,7 +523,7 @@ class PostgreSQLAcquisitionProvider:
         connection: _Connection | None = None
         try:
             declarations = self._resolve_declarations(request.object_refs)
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = self._open_connection()
             connection.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             observations: list[AcquisitionObjectObservation] = []
             for declaration in declarations:
@@ -641,7 +650,7 @@ class PostgreSQLAcquisitionProvider:
                     object_refs=intent.object_refs,
                     key_value_types=tuple(key_value_types),
                 )
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = self._open_connection()
             opened_at = self._clock()
             connection.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             with connection.cursor() as cursor:
@@ -974,7 +983,7 @@ class PostgreSQLAcquisitionProvider:
                 object_refs=intent.object_refs,
                 key_value_types=tuple(key_value_types),
             )
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = self._open_connection()
             opened_at = self._clock()
             connection.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             with connection.cursor() as cursor:
@@ -1352,6 +1361,13 @@ class PostgreSQLAcquisitionProvider:
             if connection is not None:
                 _abort_connection(connection, opened_cursors)
             raise _provider_error("integrity_failure") from None
+
+    def _open_connection(self) -> _Connection:
+        return connect_attributing_startup_denial(
+            self._connect,
+            self._settings.dsn.get_secret_value(),
+            probe=self._startup_denial_probe,
+        )
 
     def _resolve_declarations(
         self, object_refs: tuple[str, ...]

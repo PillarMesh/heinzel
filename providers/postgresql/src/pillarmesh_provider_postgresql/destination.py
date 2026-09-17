@@ -22,6 +22,12 @@ from pillarmesh_warehouse_control import EngineKind, WarehouseBinding, Warehouse
 from psycopg import sql
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from .startup_denial import (
+    StartupDenialProbe,
+    connect_attributing_startup_denial,
+    default_startup_denial_probe,
+)
+
 
 class PostgreSQLLandStoreError(RuntimeError):
     def __init__(self, classification: ProviderErrorClassification) -> None:
@@ -84,10 +90,12 @@ class PostgreSQLLandStoreSettingsAuthority(Protocol):
 
 def _postgresql_store_error(error: psycopg.Error) -> PostgreSQLLandStoreError:
     sqlstate = error.sqlstate or ""
-    if isinstance(error, (psycopg.InterfaceError, psycopg.OperationalError)):
-        classification: ProviderErrorClassification = "transient_transport"
-    elif sqlstate.startswith("28") or sqlstate == "42501":
-        classification = "authorization_denied"
+    # Authorization rejections are OperationalError subclasses, so they must be matched before the
+    # generic transport check or a rejected credential would be retried.
+    if sqlstate.startswith("28") or sqlstate == "42501":
+        classification: ProviderErrorClassification = "authorization_denied"
+    elif isinstance(error, (psycopg.InterfaceError, psycopg.OperationalError)):
+        classification = "transient_transport"
     elif sqlstate.startswith("23"):
         classification = "integrity_failure"
     elif sqlstate.startswith(("53", "57", "58")):
@@ -115,10 +123,14 @@ class PostgreSQLLandStore:
         settings: PostgreSQLLandStoreSettings,
         *,
         connect: _Connect | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
         after_commit_hook: Callable[[], None] = lambda: None,
     ) -> None:
         self._settings = settings
         self._connect = connect or cast(_Connect, psycopg.connect)
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
         self._after_commit_hook = after_commit_hook
 
     def land_transactionally(
@@ -130,7 +142,11 @@ class PostgreSQLLandStore:
         connection: _PostgreSQLConnection | None = None
         committed = False
         try:
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = connect_attributing_startup_denial(
+                self._connect,
+                self._settings.dsn.get_secret_value(),
+                probe=self._startup_denial_probe,
+            )
             connection.execute("BEGIN")
             existing = self._load_receipt(connection, receipt.idempotency_key)
             if existing is not None:
@@ -183,7 +199,11 @@ class PostgreSQLLandStore:
     def inspect_receipt(self, *, idempotency_key: str) -> LandReceipt | None:
         connection: _PostgreSQLConnection | None = None
         try:
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = connect_attributing_startup_denial(
+                self._connect,
+                self._settings.dsn.get_secret_value(),
+                probe=self._startup_denial_probe,
+            )
             return self._load_receipt(connection, idempotency_key)
         except psycopg.Error as error:
             raise _postgresql_store_error(error) from None

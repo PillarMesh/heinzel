@@ -27,6 +27,12 @@ from pillarmesh_runtime import (
 from psycopg import sql
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from .startup_denial import (
+    StartupDenialProbe,
+    connect_attributing_startup_denial,
+    default_startup_denial_probe,
+)
+
 _DECIMAL_57_9_EXCLUSIVE_BOUND = Decimal("1e48")
 
 
@@ -160,12 +166,16 @@ class PostgreSQLMaterializationWarehouse:
         signed_model: SignedCompiledDbtModel,
         invoker: DbtInvoker,
         connect: _Connect | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
         self._settings = settings
         self._signed_model = signed_model
         self._invoker = invoker
         self._connect = connect or cast(_Connect, psycopg.connect)
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
         self._clock = clock
 
     def execute(self, request: MaterializationRequest) -> MaterializationObservation:
@@ -235,7 +245,11 @@ class PostgreSQLMaterializationWarehouse:
         self._require_authority(request)
         connection: _Connection | None = None
         try:
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = connect_attributing_startup_denial(
+                self._connect,
+                self._settings.dsn.get_secret_value(),
+                probe=self._startup_denial_probe,
+            )
             connection.execute("BEGIN")
             connection.execute(
                 "SELECT pg_advisory_xact_lock(hashtext(%s), hashtext(%s))",
@@ -490,7 +504,11 @@ class PostgreSQLMaterializationWarehouse:
     def _acquire_target_lock(self) -> _Connection:
         connection: _Connection | None = None
         try:
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = connect_attributing_startup_denial(
+                self._connect,
+                self._settings.dsn.get_secret_value(),
+                probe=self._startup_denial_probe,
+            )
             connection.execute(
                 "SELECT pg_advisory_lock(hashtext(%s), hashtext(%s))",
                 (
@@ -560,7 +578,11 @@ class PostgreSQLMaterializationWarehouse:
         owns_connection = connection is None
         try:
             if connection is None:
-                connection = self._connect(self._settings.dsn.get_secret_value())
+                connection = connect_attributing_startup_denial(
+                    self._connect,
+                    self._settings.dsn.get_secret_value(),
+                    probe=self._startup_denial_probe,
+                )
             column_rows = connection.execute(
                 "SELECT ordinal_position, column_name, data_type, is_nullable "
                 "FROM information_schema.columns WHERE table_schema = %s AND table_name = %s "
@@ -664,14 +686,22 @@ class PostgreSQLProductGenerationAuthority:
         settings: PostgreSQLMaterializationSettings,
         *,
         connect: _Connect | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
     ) -> None:
         self._settings = settings
         self._connect = connect or cast(_Connect, psycopg.connect)
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
 
     def observe(self, reference: AnswerProductGenerationReference) -> QueryGenerationState:
         connection: _Connection | None = None
         try:
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = connect_attributing_startup_denial(
+                self._connect,
+                self._settings.dsn.get_secret_value(),
+                probe=self._startup_denial_probe,
+            )
             generation_row = connection.execute(
                 sql.SQL(
                     "SELECT to_regclass(generation_schema || '.' || generation_table) IS NOT NULL "

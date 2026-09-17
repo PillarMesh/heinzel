@@ -59,7 +59,7 @@ def connect_denial_probe(
     entropy: Callable[[int], bytes] = os.urandom,
 ) -> _StartupConnection:
     """Open only enough PostgreSQL protocol to retain a structured startup SQLSTATE."""
-    if sslmode not in {"disable", "verify-full"}:
+    if sslmode not in {"disable", "prefer", "verify-full"}:
         raise ValueError("PostgreSQL denial probe received an unsupported TLS mode")
     if not dbname or not user or connect_timeout <= 0:
         raise ValueError("PostgreSQL denial probe connection parameters are invalid")
@@ -68,8 +68,13 @@ def connect_denial_probe(
     try:
         stream = socket.create_connection((host, port), timeout=connect_timeout)
         stream.settimeout(connect_timeout)
-        if sslmode == "verify-full":
-            if sslrootcert is None or sslcert is None or sslkey is None:
+        if sslmode == "prefer":
+            if _server_accepts_tls(stream):
+                # libpq continues over TLS without verifying the server. The probe never sends a
+                # credential over an unverified channel, so the rejection stays unattributed.
+                raise _StartupProtocolError("PostgreSQL denial probe declined unverified TLS")
+        elif sslmode == "verify-full":
+            if sslrootcert is None or (sslcert is None) != (sslkey is None):
                 raise ValueError("PostgreSQL denial probe TLS material is incomplete")
             stream = _upgrade_to_tls(
                 stream,
@@ -104,18 +109,26 @@ def _upgrade_to_tls(
     *,
     host: str,
     root_certificate: str,
-    client_certificate: str,
-    client_private_key: str,
+    client_certificate: str | None,
+    client_private_key: str | None,
 ) -> ssl.SSLSocket:
-    stream.sendall(_SSL_REQUEST.pack(8, _SSL_REQUEST_CODE))
-    if _read_exact(stream, 1) != b"S":
+    if not _server_accepts_tls(stream):
         raise _StartupProtocolError("PostgreSQL server refused TLS negotiation")
     context = ssl.create_default_context(cafile=root_certificate)
     # Match libpq verify-full semantics while retaining CA and hostname verification. Python's
     # extra X509 strict flag rejects otherwise valid private CAs that libpq accepts.
     context.verify_flags &= ~ssl.VERIFY_X509_STRICT
-    context.load_cert_chain(certfile=client_certificate, keyfile=client_private_key)
+    if client_certificate is not None and client_private_key is not None:
+        context.load_cert_chain(certfile=client_certificate, keyfile=client_private_key)
     return context.wrap_socket(stream, server_hostname=host)
+
+
+def _server_accepts_tls(stream: socket.socket) -> bool:
+    stream.sendall(_SSL_REQUEST.pack(8, _SSL_REQUEST_CODE))
+    response = _read_exact(stream, 1)
+    if response not in {b"S", b"N"}:
+        raise _StartupProtocolError("PostgreSQL sent an invalid TLS negotiation response")
+    return response == b"S"
 
 
 def _send_startup(

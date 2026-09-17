@@ -28,6 +28,7 @@ from providers.postgresql.tests.test_acquisition_snapshot import (
     FakeBackend,
     FakeConnection,
     FakeCursor,
+    rejected_at_startup,
     schema,
     settings,
 )
@@ -1046,3 +1047,23 @@ def test_reconciliation_rejects_cursor_for_a_different_object_scope() -> None:
 
     assert captured.value.reason_code == "integrity_failure"
     assert connection.closed is False
+
+
+def test_rejected_credentials_at_incremental_startup_are_authorization_denied() -> None:
+    private_cursor = _checkpoint_payload(
+        PostgreSQLIncrementalCursor(
+            updated_at=datetime(2026, 9, 1, 11, 50, tzinfo=UTC),
+            primary_key=5,
+        )
+    )
+    acquisition_provider, probe_calls = rejected_at_startup(psycopg.errors.InvalidPassword())
+
+    with pytest.raises(AcquisitionProviderError) as captured:
+        acquisition_provider.open_acquisition(
+            _incremental_intent(private_cursor),
+            (schema(),),
+            private_cursor,
+        )
+
+    assert captured.value.classification == "authorization_denied"
+    assert len(probe_calls) == 1

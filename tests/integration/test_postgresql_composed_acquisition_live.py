@@ -473,14 +473,6 @@ def test_fresh_postgresql_rows_cross_the_composed_acquisition_path(tmp_path: Pat
 @pytest.mark.live
 @pytest.mark.emulator
 @pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1")
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "libpq reports a rejected password as OperationalError without a SQLSTATE, so the "
-        "acquisition provider classifies it as transient provider_unavailable; the warehouse "
-        "provider's startup denial probe recovers the structured 28P01 and is not yet adopted here"
-    ),
-)
 def test_rejected_source_credentials_are_classified_as_authorization_denied() -> None:
     clock = _MutableClock(_NOW)
     with _pinned_postgresql() as bootstrap_dsn:

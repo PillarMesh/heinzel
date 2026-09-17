@@ -789,3 +789,146 @@ def test_switch_rejects_post_execute_magnitude_mutation_before_publication_effec
     assert not any(
         "CREATE OR REPLACE VIEW" in repr(query) for query, _ in switch_connection.statements
     )
+
+
+_PASSWORD_DSN = (
+    "host=warehouse.internal dbname=warehouse user=materialization password=private-secret "
+    "sslmode=disable gssencmode=disable"
+)
+
+
+class _StartupDenialProbe:
+    def __init__(self, outcome: Exception) -> None:
+        self.outcome = outcome
+        self.calls = 0
+
+    def __call__(self, **_parameters: object) -> _TargetLockConnection:
+        self.calls += 1
+        raise self.outcome
+
+
+def _startup_rejection() -> psycopg.OperationalError:
+    return psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+
+def _warehouse_rejected_at_connection(
+    signed_model: SignedCompiledDbtModel,
+    connections: tuple[_TargetLockConnection | _InspectConnection | None, ...],
+    probe: _StartupDenialProbe,
+) -> PostgreSQLMaterializationWarehouse:
+    """Serve `connections` in order; `None` is a startup rejection without a SQLSTATE."""
+    connection_iterator = iter(connections)
+    lock_connection = connections[0]
+    invoker = (
+        _LockAssertingInvoker(lock_connection)
+        if isinstance(lock_connection, _TargetLockConnection)
+        else _DbtMustNotRun()
+    )
+
+    def connect(_dsn: str) -> _TargetLockConnection | _InspectConnection:
+        connection = next(connection_iterator)
+        if connection is None:
+            raise _startup_rejection()
+        return connection
+
+    return PostgreSQLMaterializationWarehouse(
+        settings=PostgreSQLMaterializationSettings(
+            tenant_id="tenant-a",
+            dsn=SecretStr(_PASSWORD_DSN),
+            consumption_schema_name="consumption",
+            consumption_view_name="orders",
+            control_schema_name="control",
+            generation_table_name="generations",
+            generation_pointer_table_name="pointers",
+        ),
+        signed_model=signed_model,
+        invoker=cast(DbtInvoker, invoker),
+        connect=connect,
+        startup_denial_probe=probe,
+    )
+
+
+def test_materialization_target_lock_classifies_rejected_credentials_as_denied() -> None:
+    signed_model = _magnitude_model()
+    probe = _StartupDenialProbe(psycopg.errors.InvalidPassword())
+    warehouse = _warehouse_rejected_at_connection(signed_model, (None,), probe)
+
+    with pytest.raises(ProviderError) as caught:
+        warehouse.execute(_magnitude_request(signed_model))
+
+    assert caught.value.classification == "authorization_denied"
+    assert probe.calls == 1
+
+
+def test_materialization_output_inspection_classifies_rejected_credentials_as_denied() -> None:
+    signed_model = _magnitude_model()
+    probe = _StartupDenialProbe(psycopg.errors.InvalidPassword())
+    warehouse = _warehouse_rejected_at_connection(
+        signed_model, (_TargetLockConnection(), None), probe
+    )
+
+    with pytest.raises(ProviderError) as caught:
+        warehouse.execute(_magnitude_request(signed_model))
+
+    assert caught.value.classification == "authorization_denied"
+    assert probe.calls == 1
+
+
+def test_consumption_view_switch_classifies_rejected_credentials_as_denied() -> None:
+    signed_model = _magnitude_model()
+    lock_connection = _TargetLockConnection()
+    inspect_connection = _InspectConnection(
+        lock_connection,
+        magnitude_row=(0,),
+        columns=[(1, "total_revenue", "numeric", "NO")],
+    )
+    probe = _StartupDenialProbe(psycopg.errors.InvalidPassword())
+    warehouse = _warehouse_rejected_at_connection(
+        signed_model, (lock_connection, inspect_connection, None), probe
+    )
+    request = _magnitude_request(signed_model)
+    observation = warehouse.execute(request)
+
+    with pytest.raises(ProviderError) as caught:
+        warehouse.switch_consumption_view(request, observation)
+
+    assert caught.value.classification == "authorization_denied"
+    assert probe.calls == 1
+
+
+@pytest.mark.parametrize(
+    ("probe_outcome", "classification"),
+    (
+        (psycopg.errors.InvalidPassword(), "authorization_denied"),
+        (psycopg.OperationalError("probe transport failed"), "transient_transport"),
+    ),
+)
+def test_generation_authority_attributes_only_structured_startup_rejections(
+    probe_outcome: Exception,
+    classification: str,
+) -> None:
+    probe = _StartupDenialProbe(probe_outcome)
+
+    def connect(_dsn: str) -> _GenerationAuthorityConnection:
+        raise _startup_rejection()
+
+    authority = PostgreSQLProductGenerationAuthority(
+        PostgreSQLMaterializationSettings(
+            tenant_id="tenant-a",
+            dsn=SecretStr(_PASSWORD_DSN),
+            consumption_schema_name="consumption",
+            consumption_view_name="product_revenue",
+            control_schema_name="product_control",
+            generation_table_name="product_generations",
+            generation_pointer_table_name="product_generation_pointers",
+        ),
+        connect=connect,
+        startup_denial_probe=probe,
+    )
+
+    with pytest.raises(ProviderError) as caught:
+        authority.observe(_generation_reference())
+
+    assert caught.value.classification == classification
+    assert probe.calls == 1
+    assert "private" not in str(caught.value)

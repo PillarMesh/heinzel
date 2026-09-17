@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Literal
@@ -610,3 +610,74 @@ def test_naive_updated_timestamp_is_invalid_provider_response() -> None:
 
     assert captured.value.reason_code == "invalid_provider_response"
     assert connection.rolled_back and connection.closed
+
+
+_PASSWORD_DSN = (
+    "host=source.internal dbname=private user=reader password=private-secret "
+    "sslmode=disable gssencmode=disable"
+)
+
+
+def rejected_at_startup(
+    probe_outcome: Exception,
+) -> tuple[PostgreSQLAcquisitionProvider, list[dict[str, object]]]:
+    probe_calls: list[dict[str, object]] = []
+
+    def fail_connect(_dsn: str) -> FakeConnection:
+        raise psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+    def probe(**parameters: object) -> FakeConnection:
+        probe_calls.append(parameters)
+        raise probe_outcome
+
+    acquisition_provider = PostgreSQLAcquisitionProvider(
+        settings().model_copy(update={"dsn": SecretStr(_PASSWORD_DSN)}),
+        connect=fail_connect,
+        startup_denial_probe=probe,
+        clock=lambda: NOW,
+        private_boundary_reference_factory=lambda tenant_id, object_ref: (
+            f"private:{tenant_id}:{object_ref}"
+        ),
+        private_boundary_writer=lambda _tenant_id, _reference, _payload: None,
+    )
+    return acquisition_provider, probe_calls
+
+
+def _observe(acquisition_provider: PostgreSQLAcquisitionProvider) -> object:
+    return acquisition_provider.observe_source(
+        SourceObservationRequest(
+            tenant_id="tenant-a", source_binding_ref="source-binding-a", object_refs=("orders",)
+        )
+    )
+
+
+def _open_snapshot(acquisition_provider: PostgreSQLAcquisitionProvider) -> object:
+    return acquisition_provider.open_acquisition(intent(), (schema(),), None)
+
+
+@pytest.mark.parametrize("entry_point", (_observe, _open_snapshot))
+def test_rejected_credentials_at_startup_are_authorization_denied(
+    entry_point: Callable[[PostgreSQLAcquisitionProvider], object],
+) -> None:
+    acquisition_provider, probe_calls = rejected_at_startup(psycopg.errors.InvalidPassword())
+
+    with pytest.raises(AcquisitionProviderError) as captured:
+        entry_point(acquisition_provider)
+
+    assert captured.value.classification == "authorization_denied"
+    assert captured.value.reason_code == "authorization_denied"
+    assert len(probe_calls) == 1
+    assert "private" not in str(captured.value)
+
+
+def test_startup_failure_the_probe_cannot_attribute_to_credentials_stays_transient() -> None:
+    acquisition_provider, probe_calls = rejected_at_startup(
+        psycopg.OperationalError("PostgreSQL denial probe transport failed")
+    )
+
+    with pytest.raises(AcquisitionProviderError) as captured:
+        _observe(acquisition_provider)
+
+    assert captured.value.classification == "transient_unavailable"
+    assert captured.value.reason_code == "provider_unavailable"
+    assert len(probe_calls) == 1
