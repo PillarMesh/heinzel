@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from .product_intent import (
         ApprovedProductIntent,
         ProductIntent,
+        ProductIntentAuthorityRefs,
         ProductIntentCandidate,
         ProductIntentConstraints,
         ProductIntentSourceCoverage,
@@ -493,6 +494,7 @@ class SQLiteRequestRepository:
         constraints: ProductIntentConstraints,
         source_coverage: tuple[ProductIntentSourceCoverage, ...],
         unresolved_constraints: tuple[str, ...],
+        authority_refs: ProductIntentAuthorityRefs | None = None,
     ) -> ProductIntentCandidate:
         from .product_intent import (
             ProductIntentCandidate,
@@ -542,6 +544,7 @@ class SQLiteRequestRepository:
                 unresolved_constraints=unresolved_constraints,
                 proposed_by=proposed_by,
                 proposed_at=proposed_at,
+                authority_refs=authority_refs,
             )
             self._connection.execute(
                 "INSERT INTO product_intent_candidates "
@@ -584,6 +587,8 @@ class SQLiteRequestRepository:
         approved_by: str,
         approved_at: datetime,
         intent: ProductIntent,
+        authority_refs: ProductIntentAuthorityRefs,
+        constraints: ProductIntentConstraints,
     ) -> ApprovedProductIntent:
         from .product_intent import ApprovedProductIntent, ProductIntent
 
@@ -603,6 +608,10 @@ class SQLiteRequestRepository:
                     existing = ApprovedProductIntent.model_validate_json(existing_row[0])
                     if existing.intent_digest != intent_digest:
                         raise ValueError("request revision already has a different approved intent")
+                    if existing.authority_refs != authority_refs:
+                        raise ValueError(
+                            "request revision was already approved against different authority"
+                        )
                     return existing
                 revision_row = self._connection.execute(
                     "SELECT COALESCE(MAX(intent_revision), 0) + 1 "
@@ -623,6 +632,8 @@ class SQLiteRequestRepository:
                     intent_digest=intent_digest,
                     approved_by=approved_by,
                     approved_at=approved_at,
+                    authority_refs=authority_refs,
+                    constraints=constraints,
                 )
                 self._connection.execute(
                     "INSERT INTO product_intent_approvals "

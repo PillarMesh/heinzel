@@ -13,7 +13,7 @@ import sqlite3
 from collections.abc import Callable, Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Literal, Protocol
+from typing import Literal, Protocol, get_args
 
 from pillarmesh_access_control import (
     AccessGrant,
@@ -33,8 +33,10 @@ from pillarmesh_catalog_control import (
     CatalogPersistenceError,
 )
 from pillarmesh_contract_model import (
+    ApprovedSemanticVersion,
     ArtifactModel,
     ArtifactReference,
+    TriggerRequirement,
     canonical_bytes,
 )
 from pillarmesh_contract_model import (
@@ -45,6 +47,7 @@ from pillarmesh_contract_service import (
     BusinessProcessManifest,
     ProcessPackageReceipt,
     ProcessPackageSnapshot,
+    SourceObservation,
 )
 from pillarmesh_evidence import AcquisitionEvidenceReceipt, RunRecord
 from pillarmesh_provider_sdk import CatalogProductDefinition
@@ -68,6 +71,7 @@ from pillarmesh_request_management import (
     GovernedAnswer,
     InboxRequest,
     ProductIntent,
+    ProductIntentAuthorityRefs,
     ProductIntentCandidate,
     ProductIntentConstraints,
     ProductIntentNoValidPlan,
@@ -314,12 +318,98 @@ class ProductIntentApprovalCommands(Protocol):
         request_revision: int,
         approved_by: str,
         intent: ProductIntent,
-        constraints: ProductIntentConstraints,
+        authority_refs: ProductIntentAuthorityRefs | None,
     ) -> ApprovedProductIntent | ProductIntentNoValidPlan: ...
 
     def list_for_request(
         self, tenant_id: str, request_id: str
     ) -> tuple[ApprovedProductIntent, ...]: ...
+
+
+class ApprovedSemanticVersionReader(Protocol):
+    def load(
+        self, tenant_id: str, semantic_version_id: str, version: int
+    ) -> ApprovedSemanticVersion: ...
+
+
+class SourceObservationReader(Protocol):
+    def load(self, tenant_id: str, observation_id: str, version: int) -> SourceObservation: ...
+
+
+# The Integration Contract trigger vocabulary is the platform's only source of cadence. A product
+# cannot be fresher than its source is refreshed, so the shortest supported cadence is the minimum
+# source interval. Adding a cadence to TriggerRequirement without mapping it here fails at import.
+_CADENCE_SECONDS: dict[str, int] = {"daily": 86_400}
+_SUPPORTED_CADENCES = frozenset(get_args(TriggerRequirement.model_fields["cadence"].annotation))
+if not _CADENCE_SECONDS.keys() >= _SUPPORTED_CADENCES:
+    raise RuntimeError("every trigger cadence must map to a minimum source interval")
+_MINIMUM_SOURCE_INTERVAL_SECONDS = min(_CADENCE_SECONDS[name] for name in _SUPPORTED_CADENCES)
+
+
+class GovernedProductIntentAuthority:
+    """Derives product intent constraints from the governed records an intent names.
+
+    Request management evaluates an intent only against constraints it gets from here. Every
+    constraint comes from a record loaded by exact identity and checked against the tenant and the
+    reference digest: approved metrics and dimensions from the approved semantic version, approved
+    sources from source observations that are current at evaluation time, and the minimum source
+    interval from the platform's supported trigger cadences. Nothing the proposer asserted about
+    constraints is used.
+    """
+
+    def __init__(
+        self,
+        *,
+        semantic_versions: ApprovedSemanticVersionReader,
+        source_observations: SourceObservationReader,
+    ) -> None:
+        self._semantic_versions = semantic_versions
+        self._source_observations = source_observations
+
+    def resolve_constraints(
+        self,
+        *,
+        tenant_id: str,
+        authority_refs: ProductIntentAuthorityRefs,
+        evaluated_at: datetime,
+    ) -> ProductIntentConstraints | None:
+        semantic_ref = authority_refs.semantic_version
+        try:
+            semantic_version = self._semantic_versions.load(
+                tenant_id, semantic_ref.artifact_id, semantic_ref.version
+            )
+        except KeyError:
+            return None
+        if (
+            semantic_version.tenant_id != tenant_id
+            or semantic_version.semantic_version_id != semantic_ref.artifact_id
+            or semantic_version.version != semantic_ref.version
+            or canonical_digest(semantic_version) != semantic_ref.digest
+        ):
+            return None
+        source_refs: list[str] = []
+        for observation_ref in authority_refs.source_observations:
+            try:
+                observation = self._source_observations.load(
+                    tenant_id, observation_ref.artifact_id, observation_ref.version
+                )
+            except KeyError:
+                return None
+            if (
+                observation.tenant_id != tenant_id
+                or observation.observation_id != observation_ref.artifact_id
+                or observation.version != observation_ref.version
+                or canonical_digest(observation) != observation_ref.digest
+                or not observation.observed_at <= evaluated_at < observation.valid_until
+            ):
+                return None
+            source_refs.append(observation.source_ref)
+        return ProductIntentConstraints(
+            approved_source_refs=tuple(dict.fromkeys(source_refs)),
+            approved_metric_refs=tuple(metric.object_id for metric in semantic_version.metrics),
+            approved_dimension_refs=tuple(entity.object_id for entity in semantic_version.entities),
+            minimum_source_interval_seconds=_MINIMUM_SOURCE_INTERVAL_SECONDS,
+        )
 
 
 class ProcessPackageCommands(Protocol):

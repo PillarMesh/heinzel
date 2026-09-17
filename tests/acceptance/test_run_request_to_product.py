@@ -25,10 +25,16 @@ def test_user_approval_precedes_product_compilation_and_no_execution_occurs(
     assert journey.approved_intent.request_id == journey.request_id
     assert journey.approved_intent.request_revision == journey.request_revision
     assert journey.approved_intent.intent.delivery.outputs == ("dataset", "table", "dashboard")
-    assert journey.product_iir.freshness_seconds == 3_600
+    assert journey.product_iir.freshness_seconds == 86_400
     assert journey.compiler_outcome.result == "no_valid_plan"
     assert journey.compiler_outcome.rule_id == "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE"
     assert journey.compiler_outcome.execution_occurred is False
+    # Approval took its constraints from the seeded governed records, not from the proposer.
+    assert journey.approved_intent.authority_refs == journey.candidate.authority_refs
+    assert journey.approved_intent.constraints is not None
+    assert journey.approved_intent.constraints.approved_source_refs == ("source-live-a",)
+    assert journey.approved_intent.constraints.approved_metric_refs == ("total-revenue",)
+    assert journey.approved_intent.constraints.minimum_source_interval_seconds == 86_400
     assert (
         tuple(item.status for item in journey.compiler_outcome.preconditions)
         == ("satisfied",) * 6 + ("unsatisfied",) * 5 + ("satisfied",) + ("unsatisfied",) * 6

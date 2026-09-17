@@ -3,11 +3,14 @@ from __future__ import annotations
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
 from pillarmesh_compiler import NoValidPlan, compile_product_iir
+from pillarmesh_console.governed_adapters import GovernedProductIntentAuthority
+from pillarmesh_contract_model import ArtifactReference, digest
+from pillarmesh_contract_service import SourceObservation, SQLiteSourceObservationRepository
 from pillarmesh_iir import (
     AggregateMeasure,
     AggregateOperation,
@@ -27,6 +30,7 @@ from pillarmesh_request_management import (
     MeasureIntent,
     ProductIntent,
     ProductIntentApprovalService,
+    ProductIntentAuthorityRefs,
     ProductIntentCandidate,
     ProductIntentCandidateService,
     ProductIntentConstraints,
@@ -34,9 +38,12 @@ from pillarmesh_request_management import (
     RequestManagementService,
     SQLiteRequestRepository,
 )
-from pillarmesh_semantic_registry import SQLiteProductCatalogPublicationRepository
+from pillarmesh_semantic_registry import (
+    SQLiteProductCatalogPublicationRepository,
+    SQLiteSemanticVersionRepository,
+)
 
-from tests.acceptance.console_native_answer_fixture import DIMENSION, METRIC
+from tests.acceptance.console_native_answer_fixture import DIMENSION, METRIC, SEMANTIC_VERSION
 from tests.acceptance.run_console_governed import ARCHITECT, REQUESTER, TENANT
 
 _SOURCE_REF = "source-live-a"
@@ -175,8 +182,53 @@ def build_product_iir(approved_intent: ApprovedProductIntent) -> ProductIntentIR
     )
 
 
+def _seed_governed_authority(directory: Path) -> ProductIntentAuthorityRefs:
+    """Record the approved semantic version and a current source observation the intent uses.
+
+    Approval derives its constraints from these records alone, so the journey must create them
+    rather than assert constraints to the approval service.
+    """
+    semantic_versions = SQLiteSemanticVersionRepository(
+        str(directory / "semantic-versions.sqlite3")
+    )
+    source_observations = SQLiteSourceObservationRepository(
+        str(directory / "source-observations.sqlite3")
+    )
+    try:
+        semantic_version = semantic_versions.store(SEMANTIC_VERSION)
+        observation = source_observations.store(
+            SourceObservation(
+                observation_id="source-observation-live-a",
+                tenant_id=TENANT,
+                version=1,
+                source_ref=_SOURCE_REF,
+                schema_digest="4" * 64,
+                observed_at=_NOW - timedelta(hours=1),
+                valid_until=_NOW + timedelta(days=1),
+            )
+        )
+    finally:
+        semantic_versions.close()
+        source_observations.close()
+    return ProductIntentAuthorityRefs(
+        semantic_version=ArtifactReference(
+            artifact_id=semantic_version.semantic_version_id,
+            version=semantic_version.version,
+            digest=digest(semantic_version),
+        ),
+        source_observations=(
+            ArtifactReference(
+                artifact_id=observation.observation_id,
+                version=observation.version,
+                digest=digest(observation),
+            ),
+        ),
+    )
+
+
 def execute_postgresql_request_to_product(directory: Path) -> RequestToProductCompilation:
     directory.mkdir(parents=True, exist_ok=True)
+    authority_refs = _seed_governed_authority(directory)
     publication_inventory = _SQLiteProductPublicationInventory(
         directory / "product-publications.sqlite3"
     )
@@ -190,7 +242,20 @@ def execute_postgresql_request_to_product(directory: Path) -> RequestToProductCo
         with closing(request_repository):
             requests = RequestManagementService(request_repository, clock=_clock)
             candidates = ProductIntentCandidateService(request_repository, clock=_clock)
-            approvals = ProductIntentApprovalService(request_repository, clock=_clock)
+            semantic_versions = SQLiteSemanticVersionRepository(
+                str(directory / "semantic-versions.sqlite3")
+            )
+            source_observations = SQLiteSourceObservationRepository(
+                str(directory / "source-observations.sqlite3")
+            )
+            approvals = ProductIntentApprovalService(
+                request_repository,
+                clock=_clock,
+                authority=GovernedProductIntentAuthority(
+                    semantic_versions=semantic_versions,
+                    source_observations=source_observations,
+                ),
+            )
             request = requests.submit_question(
                 tenant_id=TENANT,
                 requester_id=REQUESTER,
@@ -207,14 +272,14 @@ def execute_postgresql_request_to_product(directory: Path) -> RequestToProductCo
                 measures=(MeasureIntent(metric_ref=METRIC.artifact_id, aggregation="sum"),),
                 dimensions=(DimensionIntent(dimension_ref=DIMENSION.artifact_id),),
                 filters=(),
-                freshness=FreshnessObjective(maximum_age_seconds=3_600),
+                freshness=FreshnessObjective(maximum_age_seconds=86_400),
                 delivery=DeliveryIntent(outputs=("dataset", "table", "dashboard")),
             )
             constraints = ProductIntentConstraints(
                 approved_source_refs=(_SOURCE_REF,),
                 approved_metric_refs=(METRIC.artifact_id,),
                 approved_dimension_refs=(DIMENSION.artifact_id,),
-                minimum_source_interval_seconds=3_600,
+                minimum_source_interval_seconds=86_400,
             )
             candidate = candidates.propose(
                 tenant_id=TENANT,
@@ -232,15 +297,20 @@ def execute_postgresql_request_to_product(directory: Path) -> RequestToProductCo
                     ),
                 ),
                 unresolved_constraints=(),
+                authority_refs=authority_refs,
             )
-            approval = approvals.approve(
-                tenant_id=TENANT,
-                request_id=request.request_id,
-                request_revision=request.revision,
-                approved_by=ARCHITECT,
-                intent=candidate.intent,
-                constraints=candidate.constraints,
-            )
+            try:
+                approval = approvals.approve(
+                    tenant_id=TENANT,
+                    request_id=request.request_id,
+                    request_revision=request.revision,
+                    approved_by=ARCHITECT,
+                    intent=candidate.intent,
+                    authority_refs=candidate.authority_refs,
+                )
+            finally:
+                semantic_versions.close()
+                source_observations.close()
             if not isinstance(approval, ApprovedProductIntent):
                 raise AssertionError("acceptance product intent was not approved")
             if candidates.current_candidate(TENANT, request.request_id) != candidate:

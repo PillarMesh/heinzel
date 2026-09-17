@@ -72,6 +72,31 @@ class ProductIntentConstraints(ArtifactModel):
     minimum_source_interval_seconds: int = Field(gt=0)
 
 
+class ProductIntentAuthorityRefs(ArtifactModel):
+    """The exact governed records an intent is evaluated against.
+
+    A proposer may name these, but naming grants nothing: approval loads each referenced record
+    from its owning authority and derives the constraints from what that record says. A reference
+    to a record that does not exist, belongs to another tenant, has a different digest, or is no
+    longer current cannot make an intent approvable.
+    """
+
+    semantic_version: ArtifactReference
+    source_observations: tuple[ArtifactReference, ...] = Field(min_length=1)
+
+
+class ProductIntentAuthority(Protocol):
+    def resolve_constraints(
+        self,
+        *,
+        tenant_id: str,
+        authority_refs: ProductIntentAuthorityRefs,
+        evaluated_at: datetime,
+    ) -> ProductIntentConstraints | None:
+        """Return constraints derived from the referenced records, or None if any is unusable."""
+        ...
+
+
 class ProductIntentSourceCoverage(ArtifactModel):
     source_ref: str = Field(min_length=1)
     covered_fields: tuple[str, ...]
@@ -90,6 +115,9 @@ class ProductIntentCandidate(ArtifactModel):
     unresolved_constraints: tuple[str, ...]
     proposed_by: str = Field(min_length=1)
     proposed_at: datetime
+    # The proposer's constraints above are display-only; approval re-derives constraints from the
+    # records named here and never trusts the proposer's copy.
+    authority_refs: ProductIntentAuthorityRefs | None = None
 
     @field_validator("proposed_at")
     @classmethod
@@ -136,6 +164,8 @@ class ApprovedProductIntent(ArtifactModel):
     intent_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     approved_by: str = Field(min_length=1)
     approved_at: datetime
+    authority_refs: ProductIntentAuthorityRefs | None = None
+    constraints: ProductIntentConstraints | None = None
 
     @field_validator("approved_at")
     @classmethod
@@ -173,6 +203,8 @@ class ProductIntentRepository(Protocol):
         approved_by: str,
         approved_at: datetime,
         intent: ProductIntent,
+        authority_refs: ProductIntentAuthorityRefs,
+        constraints: ProductIntentConstraints,
     ) -> ApprovedProductIntent: ...
 
     def list_product_intent_approvals(
@@ -195,6 +227,7 @@ class ProductIntentCandidateRepository(Protocol):
         constraints: ProductIntentConstraints,
         source_coverage: tuple[ProductIntentSourceCoverage, ...],
         unresolved_constraints: tuple[str, ...],
+        authority_refs: ProductIntentAuthorityRefs | None = None,
     ) -> ProductIntentCandidate: ...
 
     def load_current_product_intent_candidate(
@@ -221,6 +254,7 @@ class ProductIntentCandidateService:
         constraints: ProductIntentConstraints,
         source_coverage: tuple[ProductIntentSourceCoverage, ...],
         unresolved_constraints: tuple[str, ...],
+        authority_refs: ProductIntentAuthorityRefs | None = None,
     ) -> ProductIntentCandidate:
         if not idempotency_key:
             raise ValueError("idempotency key must not be empty")
@@ -234,6 +268,8 @@ class ProductIntentCandidateService:
                 "constraints": constraints,
                 "source_coverage": source_coverage,
                 "unresolved_constraints": unresolved_constraints,
+                # Included only when present, so earlier proposals keep their replay digests.
+                **({"authority_refs": authority_refs} if authority_refs is not None else {}),
             }
         )
         return self._repository.record_product_intent_candidate(
@@ -248,6 +284,7 @@ class ProductIntentCandidateService:
             constraints=constraints,
             source_coverage=source_coverage,
             unresolved_constraints=unresolved_constraints,
+            authority_refs=authority_refs,
         )
 
     def current_candidate(self, tenant_id: str, request_id: str) -> ProductIntentCandidate | None:
@@ -256,10 +293,15 @@ class ProductIntentCandidateService:
 
 class ProductIntentApprovalService:
     def __init__(
-        self, repository: ProductIntentRepository, *, clock: Callable[[], datetime]
+        self,
+        repository: ProductIntentRepository,
+        *,
+        clock: Callable[[], datetime],
+        authority: ProductIntentAuthority,
     ) -> None:
         self._repository = repository
         self._clock = clock
+        self._authority = authority
 
     def approve(
         self,
@@ -269,8 +311,13 @@ class ProductIntentApprovalService:
         request_revision: int,
         approved_by: str,
         intent: ProductIntent,
-        constraints: ProductIntentConstraints,
+        authority_refs: ProductIntentAuthorityRefs | None,
     ) -> ApprovedProductIntent | ProductIntentNoValidPlan:
+        """Approve an intent against constraints this service derives from governed authority.
+
+        Constraints are never accepted from the caller. They are resolved from the exact semantic
+        version and source observations named by `authority_refs`, as those records stand now.
+        """
         try:
             request = self._repository.load(tenant_id, request_id)
         except KeyError:
@@ -282,6 +329,24 @@ class ProductIntentApprovalService:
         if intent.request_id != request_id:
             raise ValueError("intent request does not match approval request")
 
+        if authority_refs is None:
+            return _authority_refusal(
+                intent,
+                request_revision,
+                "governed authority references are required",
+            )
+        evaluated_at = self._clock()
+        constraints = self._authority.resolve_constraints(
+            tenant_id=tenant_id,
+            authority_refs=authority_refs,
+            evaluated_at=evaluated_at,
+        )
+        if constraints is None:
+            return _authority_refusal(
+                intent,
+                request_revision,
+                "governed authority references are unavailable, foreign, altered, or not current",
+            )
         refusal = _evaluate_constraints(
             intent=intent,
             request_revision=request_revision,
@@ -294,8 +359,10 @@ class ProductIntentApprovalService:
             request_id=request_id,
             request_revision=request_revision,
             approved_by=approved_by,
-            approved_at=self._clock(),
+            approved_at=evaluated_at,
             intent=intent,
+            authority_refs=authority_refs,
+            constraints=constraints,
         )
 
     def list_for_request(
@@ -305,6 +372,20 @@ class ProductIntentApprovalService:
             return self._repository.list_product_intent_approvals(tenant_id, request_id)
         except KeyError:
             raise KeyError("request is unavailable") from None
+
+
+def _authority_refusal(
+    intent: ProductIntent, request_revision: int, reason: str
+) -> ProductIntentNoValidPlan:
+    return ProductIntentNoValidPlan(
+        request_id=intent.request_id,
+        request_revision=request_revision,
+        constraints=(reason,),
+        smallest_changes=(
+            "Re-propose the intent against the current approved semantic version and current "
+            "source observations for this tenant.",
+        ),
+    )
 
 
 def _evaluate_constraints(

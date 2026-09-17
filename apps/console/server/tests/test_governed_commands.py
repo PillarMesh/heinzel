@@ -75,6 +75,7 @@ from pillarmesh_request_management import (
     MeasureIntent,
     ProductIntent,
     ProductIntentApprovalService,
+    ProductIntentAuthorityRefs,
     ProductIntentCandidate,
     ProductIntentConstraints,
     ProductIntentSourceCoverage,
@@ -495,6 +496,29 @@ def _product_constraints() -> ProductIntentConstraints:
     )
 
 
+class _GrantingAuthority:
+    """Stands in for governed authority: resolves the references to fixed constraints."""
+
+    def resolve_constraints(
+        self,
+        *,
+        tenant_id: str,
+        authority_refs: ProductIntentAuthorityRefs,
+        evaluated_at: datetime,
+    ) -> ProductIntentConstraints | None:
+        del tenant_id, authority_refs, evaluated_at
+        return _product_constraints()
+
+
+def _authority_refs() -> ProductIntentAuthorityRefs:
+    return ProductIntentAuthorityRefs(
+        semantic_version=ArtifactReference(artifact_id="semantic-1", version=1, digest="a" * 64),
+        source_observations=(
+            ArtifactReference(artifact_id="observation-1", version=1, digest="b" * 64),
+        ),
+    )
+
+
 class _StaticProductIntentReviewReader:
     def __init__(self, candidate: ProductIntentCandidate) -> None:
         self._candidate = candidate
@@ -529,9 +553,12 @@ def test_typed_product_intent_approval_delegates_the_exact_reviewed_candidate(
         unresolved_constraints=(),
         proposed_by="external-interpreter",
         proposed_at=_FIXED_TIME,
+        authority_refs=_authority_refs(),
     )
     reader = _StaticProductIntentReviewReader(candidate)
-    approvals = ProductIntentApprovalService(stack.repository, clock=_clock)
+    approvals = ProductIntentApprovalService(
+        stack.repository, clock=_clock, authority=_GrantingAuthority()
+    )
     backend = stack.backend(product_intent_reviews=reader, product_intent_commands=approvals)
 
     result = backend.approve_product_intent(
@@ -546,7 +573,9 @@ def test_typed_product_intent_approval_delegates_the_exact_reviewed_candidate(
 
     assert result.intent_digest == digest(intent)
     assert result.intent_revision == 1
-    assert approvals.list_for_request(_TENANT, request.request_id)[0].intent == intent
+    recorded = approvals.list_for_request(_TENANT, request.request_id)[0]
+    assert recorded.intent == intent
+    assert recorded.authority_refs == _authority_refs()
 
 
 def test_typed_product_intent_approval_refuses_unresolved_source_authority(
@@ -572,7 +601,9 @@ def test_typed_product_intent_approval_refuses_unresolved_source_authority(
         proposed_by="external-interpreter",
         proposed_at=_FIXED_TIME,
     )
-    approvals = ProductIntentApprovalService(stack.repository, clock=_clock)
+    approvals = ProductIntentApprovalService(
+        stack.repository, clock=_clock, authority=_GrantingAuthority()
+    )
     backend = stack.backend(
         product_intent_reviews=_StaticProductIntentReviewReader(candidate),
         product_intent_commands=approvals,

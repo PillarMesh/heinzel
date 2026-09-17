@@ -15,6 +15,7 @@ from pillarmesh_request_management.product_intent import (
     MeasureIntent,
     ProductIntent,
     ProductIntentApprovalService,
+    ProductIntentAuthorityRefs,
     ProductIntentCandidate,
     ProductIntentCandidateConflictError,
     ProductIntentCandidateService,
@@ -51,10 +52,45 @@ def _intent(*, maximum_age_seconds: int = 86_400) -> ProductIntent:
     )
 
 
-def _services() -> tuple[RequestManagementService, ProductIntentApprovalService]:
+class _StubAuthority:
+    """Stands in for the governed authority; records what approval asked it."""
+
+    def __init__(self, constraints: ProductIntentConstraints | None) -> None:
+        self.constraints = constraints
+        self.calls: list[tuple[str, ProductIntentAuthorityRefs, datetime]] = []
+
+    def resolve_constraints(
+        self,
+        *,
+        tenant_id: str,
+        authority_refs: ProductIntentAuthorityRefs,
+        evaluated_at: datetime,
+    ) -> ProductIntentConstraints | None:
+        self.calls.append((tenant_id, authority_refs, evaluated_at))
+        return self.constraints
+
+
+def _refs(*, semantic_version: str = "semantic-version-1") -> ProductIntentAuthorityRefs:
+    return ProductIntentAuthorityRefs(
+        semantic_version=ArtifactReference(
+            artifact_id=semantic_version, version=1, digest="a" * 64
+        ),
+        source_observations=(
+            ArtifactReference(artifact_id="source-observation-orders", version=1, digest="b" * 64),
+        ),
+    )
+
+
+def _services(
+    authority: _StubAuthority | None = None,
+) -> tuple[RequestManagementService, ProductIntentApprovalService]:
     repository = SQLiteRequestRepository(sqlite3.connect(":memory:"))
     requests = RequestManagementService(repository, clock=lambda: NOW)
-    approvals = ProductIntentApprovalService(repository, clock=lambda: NOW)
+    approvals = ProductIntentApprovalService(
+        repository,
+        clock=lambda: NOW,
+        authority=authority if authority is not None else _StubAuthority(_constraints()),
+    )
     return requests, approvals
 
 
@@ -244,7 +280,7 @@ def test_answerable_request_records_exact_typed_intent_and_replays() -> None:
         request_revision=request.revision,
         approved_by="architect-a",
         intent=intent,
-        constraints=_constraints(),
+        authority_refs=_refs(),
     )
     replay = approvals.approve(
         tenant_id="tenant-a",
@@ -252,7 +288,7 @@ def test_answerable_request_records_exact_typed_intent_and_replays() -> None:
         request_revision=request.revision,
         approved_by="architect-a",
         intent=intent,
-        constraints=_constraints(),
+        authority_refs=_refs(),
     )
 
     assert isinstance(first, ApprovedProductIntent)
@@ -296,7 +332,7 @@ def test_unknown_metric_returns_attributable_no_valid_plan() -> None:
         request_revision=request.revision,
         approved_by="architect-a",
         intent=intent,
-        constraints=_constraints(),
+        authority_refs=_refs(),
     )
 
     assert isinstance(result, ProductIntentNoValidPlan)
@@ -321,7 +357,7 @@ def test_unapproved_source_prevents_intent_approval() -> None:
         request_revision=request.revision,
         approved_by="architect-a",
         intent=intent,
-        constraints=_constraints(),
+        authority_refs=_refs(),
     )
 
     assert isinstance(result, ProductIntentNoValidPlan)
@@ -347,7 +383,7 @@ def test_hourly_freshness_is_refused_for_a_daily_source() -> None:
         request_revision=request.revision,
         approved_by="architect-a",
         intent=intent,
-        constraints=_constraints(minimum_interval_seconds=86_400),
+        authority_refs=_refs(),
     )
 
     assert isinstance(result, ProductIntentNoValidPlan)
@@ -374,7 +410,7 @@ def test_cross_tenant_approval_is_denied_without_disclosing_request_ownership() 
             request_revision=request.revision,
             approved_by="architect-b",
             intent=intent,
-            constraints=_constraints(),
+            authority_refs=_refs(),
         )
 
     assert approvals.list_for_request("tenant-a", request.request_id) == ()
@@ -395,7 +431,7 @@ def test_new_request_revision_requires_a_new_intent_revision() -> None:
         request_revision=request.revision,
         approved_by="architect-a",
         intent=intent,
-        constraints=_constraints(),
+        authority_refs=_refs(),
     )
     requests.append_conversation(
         "tenant-a",
@@ -413,7 +449,7 @@ def test_new_request_revision_requires_a_new_intent_revision() -> None:
             request_revision=request.revision,
             approved_by="architect-a",
             intent=intent,
-            constraints=_constraints(),
+            authority_refs=_refs(),
         )
 
     current = requests.get("tenant-a", request.request_id)
@@ -424,7 +460,7 @@ def test_new_request_revision_requires_a_new_intent_revision() -> None:
         request_revision=current.revision,
         approved_by="architect-a",
         intent=revised_intent,
-        constraints=_constraints(),
+        authority_refs=_refs(),
     )
 
     assert isinstance(first, ApprovedProductIntent)
@@ -448,7 +484,7 @@ def test_same_request_revision_cannot_approve_different_intent() -> None:
         request_revision=request.revision,
         approved_by="architect-a",
         intent=intent,
-        constraints=_constraints(),
+        authority_refs=_refs(),
     )
 
     with pytest.raises(ValueError, match="different approved intent"):
@@ -458,7 +494,150 @@ def test_same_request_revision_cannot_approve_different_intent() -> None:
             request_revision=request.revision,
             approved_by="architect-a",
             intent=intent.model_copy(update={"title": "Changed title"}),
-            constraints=_constraints(),
+            authority_refs=_refs(),
         )
 
     assert len(approvals.list_for_request("tenant-a", request.request_id)) == 1
+
+
+def _submitted(requests: RequestManagementService) -> tuple[str, int]:
+    request = requests.submit_question(
+        tenant_id="tenant-a",
+        requester_id="requester-a",
+        purpose="Daily finance reporting",
+        question="What is daily net revenue?",
+    )
+    return request.request_id, request.revision
+
+
+def test_approval_without_authority_references_is_refused() -> None:
+    authority = _StubAuthority(_constraints())
+    requests, approvals = _services(authority)
+    request_id, revision = _submitted(requests)
+
+    result = approvals.approve(
+        tenant_id="tenant-a",
+        request_id=request_id,
+        request_revision=revision,
+        approved_by="architect-a",
+        intent=_intent().model_copy(update={"request_id": request_id}),
+        authority_refs=None,
+    )
+
+    assert isinstance(result, ProductIntentNoValidPlan)
+    assert result.constraints == ("governed authority references are required",)
+    assert authority.calls == []
+    assert approvals.list_for_request("tenant-a", request_id) == ()
+
+
+def test_unusable_authority_references_are_refused() -> None:
+    requests, approvals = _services(_StubAuthority(None))
+    request_id, revision = _submitted(requests)
+
+    result = approvals.approve(
+        tenant_id="tenant-a",
+        request_id=request_id,
+        request_revision=revision,
+        approved_by="architect-a",
+        intent=_intent().model_copy(update={"request_id": request_id}),
+        authority_refs=_refs(),
+    )
+
+    assert isinstance(result, ProductIntentNoValidPlan)
+    assert result.constraints == (
+        "governed authority references are unavailable, foreign, altered, or not current",
+    )
+    assert approvals.list_for_request("tenant-a", request_id) == ()
+
+
+def test_approval_evaluates_against_authority_not_the_candidate_constraints() -> None:
+    """A proposer's permissive constraints cannot make an intent approvable.
+
+    The candidate below claims every source, metric and dimension is approved and that the source
+    refreshes hourly. The authority says the metric is not approved. Approval must follow the
+    authority.
+    """
+    narrow = _constraints().model_copy(update={"approved_metric_refs": ()})
+    repository = SQLiteRequestRepository(sqlite3.connect(":memory:"))
+    requests = RequestManagementService(repository, clock=lambda: NOW)
+    candidates = ProductIntentCandidateService(repository, clock=lambda: NOW)
+    approvals = ProductIntentApprovalService(
+        repository, clock=lambda: NOW, authority=_StubAuthority(narrow)
+    )
+    request_id, revision = _submitted(requests)
+    intent = _intent(maximum_age_seconds=3_600).model_copy(update={"request_id": request_id})
+    candidate = candidates.propose(
+        tenant_id="tenant-a",
+        request_id=request_id,
+        request_revision=revision,
+        idempotency_key="permissive-candidate",
+        proposed_by="interpreter-a",
+        intent=intent,
+        constraints=_constraints(minimum_interval_seconds=60),
+        source_coverage=(
+            ProductIntentSourceCoverage(
+                source_ref="source:orders", covered_fields=("order_day",), authorized=True
+            ),
+        ),
+        unresolved_constraints=(),
+        authority_refs=_refs(),
+    )
+
+    result = approvals.approve(
+        tenant_id="tenant-a",
+        request_id=request_id,
+        request_revision=revision,
+        approved_by="architect-a",
+        intent=candidate.intent,
+        authority_refs=candidate.authority_refs,
+    )
+
+    assert isinstance(result, ProductIntentNoValidPlan)
+    assert result.constraints == (
+        "metric metric:net_revenue is not approved",
+        "requested freshness 3600s is below the source minimum interval 86400s",
+    )
+
+
+def test_an_approval_records_the_authority_it_was_evaluated_against() -> None:
+    authority = _StubAuthority(_constraints())
+    requests, approvals = _services(authority)
+    request_id, revision = _submitted(requests)
+
+    approved = approvals.approve(
+        tenant_id="tenant-a",
+        request_id=request_id,
+        request_revision=revision,
+        approved_by="architect-a",
+        intent=_intent().model_copy(update={"request_id": request_id}),
+        authority_refs=_refs(),
+    )
+
+    assert isinstance(approved, ApprovedProductIntent)
+    assert approved.authority_refs == _refs()
+    assert approved.constraints == _constraints()
+    assert authority.calls == [("tenant-a", _refs(), NOW)]
+
+
+def test_replaying_an_approval_against_different_authority_is_refused() -> None:
+    requests, approvals = _services()
+    request_id, revision = _submitted(requests)
+    intent = _intent().model_copy(update={"request_id": request_id})
+    approvals.approve(
+        tenant_id="tenant-a",
+        request_id=request_id,
+        request_revision=revision,
+        approved_by="architect-a",
+        intent=intent,
+        authority_refs=_refs(),
+    )
+
+    with pytest.raises(ValueError, match="different authority"):
+        approvals.approve(
+            tenant_id="tenant-a",
+            request_id=request_id,
+            request_revision=revision,
+            approved_by="architect-a",
+            intent=intent,
+            authority_refs=_refs(semantic_version="semantic-version-2"),
+        )

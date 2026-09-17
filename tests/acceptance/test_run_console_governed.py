@@ -27,7 +27,13 @@ from pillarmesh_console.contracts import (
 )
 from pillarmesh_console.governed_backend import _catalog_classification_label
 from pillarmesh_console.request_intake import request_intake_content
-from pillarmesh_contract_model import ArtifactReference, digest
+from pillarmesh_contract_model import (
+    ApprovedSemanticVersion,
+    ArtifactReference,
+    SemanticObject,
+    digest,
+)
+from pillarmesh_contract_service import SourceObservation, SQLiteSourceObservationRepository
 from pillarmesh_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
 from pillarmesh_request_management import (
     DeliveryIntent,
@@ -36,11 +42,13 @@ from pillarmesh_request_management import (
     Grain,
     MeasureIntent,
     ProductIntent,
+    ProductIntentAuthorityRefs,
     ProductIntentConstraints,
     ProductIntentSourceCoverage,
     RequestState,
     SQLiteRequestRepository,
 )
+from pillarmesh_semantic_registry import SQLiteSemanticVersionRepository
 from pillarmesh_warehouse_control import EngineKind
 from starlette.testclient import TestClient
 
@@ -1384,6 +1392,79 @@ def test_markdown_process_package_is_persisted_and_invalid_shapes_are_denied(
     assert unsupported_media.json()["error"]["field"] == "file_name"
 
 
+def _seed_intent_authority(deployment: GovernedConsoleDeployment) -> ProductIntentAuthorityRefs:
+    """Record the governed facts the approved intent relies on, as the owning services would."""
+    now = datetime.now(UTC)
+    semantic_versions = SQLiteSemanticVersionRepository(deployment.semantic_versions_path)
+    observations = SQLiteSourceObservationRepository(deployment.source_observations_path)
+    try:
+        semantic_version = semantic_versions.store(
+            ApprovedSemanticVersion(
+                semantic_version_id="semantic-finance",
+                tenant_id=TENANT,
+                version=1,
+                process_package_ref=ArtifactReference(
+                    artifact_id="process-finance", version=1, digest="1" * 64
+                ),
+                candidate_set_digest="2" * 64,
+                review_bundle_digest="3" * 64,
+                entities=(
+                    SemanticObject(
+                        object_id="fiscal_quarter",
+                        name="Fiscal quarter",
+                        definition="The fiscal quarter a transaction belongs to.",
+                        source_refs=("process-finance",),
+                    ),
+                ),
+                events=(),
+                states=(),
+                relationships=(),
+                identity_rules=(),
+                constraints=(),
+                metrics=(
+                    SemanticObject(
+                        object_id="net_revenue",
+                        name="Net revenue",
+                        definition="Revenue net of refunds.",
+                        source_refs=("process-finance",),
+                    ),
+                ),
+                classifications=(),
+                authority_bindings=(),
+                approval_ids=("semantic-approval-finance-1",),
+                created_at=now - timedelta(days=1),
+            )
+        )
+        observation = observations.store(
+            SourceObservation(
+                observation_id="source-observation-billing-catalog",
+                tenant_id=TENANT,
+                version=1,
+                source_ref="billing-catalog",
+                schema_digest="4" * 64,
+                observed_at=now - timedelta(hours=1),
+                valid_until=now + timedelta(days=1),
+            )
+        )
+    finally:
+        semantic_versions.close()
+        observations.close()
+    return ProductIntentAuthorityRefs(
+        semantic_version=ArtifactReference(
+            artifact_id=semantic_version.semantic_version_id,
+            version=semantic_version.version,
+            digest=digest(semantic_version),
+        ),
+        source_observations=(
+            ArtifactReference(
+                artifact_id=observation.observation_id,
+                version=observation.version,
+                digest=digest(observation),
+            ),
+        ),
+    )
+
+
 def test_external_interpreter_candidate_is_projected_and_approved_by_owning_service(
     deployment: GovernedConsoleDeployment,
 ) -> None:
@@ -1394,6 +1475,7 @@ def test_external_interpreter_candidate_is_projected_and_approved_by_owning_serv
         question="What is quarterly net revenue?",
     )
     candidates = deployment.product_intent_candidates
+    authority_refs = _seed_intent_authority(deployment)
     intent = ProductIntent(
         request_id=request.request_id,
         title="Quarterly net revenue",
@@ -1434,6 +1516,7 @@ def test_external_interpreter_candidate_is_projected_and_approved_by_owning_serv
                 ),
             ),
             unresolved_constraints=(),
+            authority_refs=authority_refs,
         )
         projected = client.get(f"/api/v1/inbox/{request.request_id}")
         session = client.get("/api/v1/session").json()["data"]
@@ -1462,6 +1545,82 @@ def test_external_interpreter_candidate_is_projected_and_approved_by_owning_serv
     ]
     assert approved.status_code == 200
     assert approved.json()["data"]["intent_digest"] == candidate.intent.canonical_digest()
+
+
+def test_a_proposer_cannot_make_an_intent_approvable_by_asserting_constraints(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """The console approval route refuses when the governed records do not exist.
+
+    The candidate claims every source, metric and dimension is approved, marks its source
+    authorized, and references authority records that were never recorded. Before approval
+    resolved constraints itself, the console passed the candidate's own constraints to approval
+    and this intent would have been approved.
+    """
+    request = deployment.requests.submit_question(
+        tenant_id=TENANT,
+        requester_id=REQUESTER,
+        purpose="Quarterly finance reporting",
+        question="What is quarterly net revenue?",
+    )
+    intent = ProductIntent(
+        request_id=request.request_id,
+        title="Quarterly net revenue",
+        business_outcome="Give finance one governed quarterly view.",
+        source_refs=("billing-catalog",),
+        grain=Grain(keys=("fiscal_quarter",)),
+        measures=(MeasureIntent(metric_ref="net_revenue", aggregation="sum"),),
+        dimensions=(DimensionIntent(dimension_ref="fiscal_quarter"),),
+        filters=(),
+        freshness=FreshnessObjective(maximum_age_seconds=86_400),
+        delivery=DeliveryIntent(outputs=("table",)),
+    )
+    unrecorded = ArtifactReference(artifact_id="never-recorded", version=1, digest="e" * 64)
+
+    with TestClient(deployment.build_app()) as client:
+        deployment.product_intent_candidates.propose(
+            tenant_id=TENANT,
+            request_id=request.request_id,
+            request_revision=request.revision,
+            idempotency_key="asserted-constraints-candidate",
+            proposed_by="external-interpreter",
+            intent=intent,
+            constraints=ProductIntentConstraints(
+                approved_source_refs=("billing-catalog",),
+                approved_metric_refs=("net_revenue",),
+                approved_dimension_refs=("fiscal_quarter",),
+                minimum_source_interval_seconds=86_400,
+            ),
+            source_coverage=(
+                ProductIntentSourceCoverage(
+                    source_ref="billing-catalog",
+                    covered_fields=("fiscal_quarter", "net_revenue"),
+                    authorized=True,
+                ),
+            ),
+            unresolved_constraints=(),
+            authority_refs=ProductIntentAuthorityRefs(
+                semantic_version=unrecorded, source_observations=(unrecorded,)
+            ),
+        )
+        session = client.get("/api/v1/session").json()["data"]
+        refused = client.post(
+            f"/api/v1/inbox/{request.request_id}/product-intent/approval",
+            headers={
+                "Origin": "http://127.0.0.1:8000",
+                "X-CSRF-Token": session["csrf_token"],
+                "Idempotency-Key": "approve-asserted-constraints-1",
+            },
+            json={
+                "expected_revision": request.revision,
+                "reviewed_digest": intent.canonical_digest(),
+                "active_role": "data_architect",
+            },
+        )
+
+    assert refused.status_code == 409
+    assert refused.json()["error"]["code"] == "product_intent_no_valid_plan"
+    assert deployment.product_intent_approvals.list_for_request(TENANT, request.request_id) == ()
 
 
 def test_the_meaning_review_capability_is_delivered_rather_than_reported_as_unwired(

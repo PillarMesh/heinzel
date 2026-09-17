@@ -53,6 +53,7 @@ from pillarmesh_console.governed_adapters import (
     CatalogSearchHealthReader,
     DashboardPublicationReader,
     DerivedTenantRunReader,
+    GovernedProductIntentAuthority,
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceActorDirectory,
     InMemoryWorkspaceBindingDirectory,
@@ -81,8 +82,10 @@ from pillarmesh_contract_model import (
 from pillarmesh_contract_service import (
     AcquisitionActivationApproval,
     ProcessPackageService,
+    SourceObservation,
     SQLiteAcquisitionContractLifecycleRepository,
     SQLiteProcessPackageRepository,
+    SQLiteSourceObservationRepository,
     ValidatedSourceBinding,
 )
 from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
@@ -134,6 +137,7 @@ from pillarmesh_semantic_registry import (
     FulfillmentAuthorityObservation,
     SemanticFulfillmentSnapshotAdapter,
     SQLiteCatalogPublicationRepository,
+    SQLiteSemanticVersionRepository,
 )
 from pillarmesh_semantic_registry.publication import (
     CatalogPublicationIntent,
@@ -215,6 +219,40 @@ def _clock() -> datetime:
 def _operational_clock() -> datetime:
     """Wall time for credentials checked by processes outside the scenario."""
     return datetime.now(UTC)
+
+
+class _PerCallSemanticVersionReader:
+    """Loads approved semantic versions on whichever worker thread asks.
+
+    The owning repository opens its SQLite connection in its constructor, and SQLite connections
+    carry thread affinity, so a shared instance cannot serve threadpool routes.
+    """
+
+    def __init__(self, database_path: str) -> None:
+        self._database_path = database_path
+
+    def load(
+        self, tenant_id: str, semantic_version_id: str, version: int
+    ) -> ApprovedSemanticVersion:
+        repository = SQLiteSemanticVersionRepository(self._database_path)
+        try:
+            return repository.load(tenant_id, semantic_version_id, version)
+        finally:
+            repository.close()
+
+
+class _PerCallSourceObservationReader:
+    """Loads source observations on whichever worker thread asks, for the same reason."""
+
+    def __init__(self, database_path: str) -> None:
+        self._database_path = database_path
+
+    def load(self, tenant_id: str, observation_id: str, version: int) -> SourceObservation:
+        repository = SQLiteSourceObservationRepository(self._database_path)
+        try:
+            return repository.load(tenant_id, observation_id, version)
+        finally:
+            repository.close()
 
 
 def _worker_thread_connection(database_path: str) -> sqlite3.Connection:
@@ -1206,9 +1244,18 @@ class GovernedConsoleDeployment:
             self.request_repository,
             clock=_clock,
         )
+        # Approval derives constraints from these two governed stores, never from the proposer.
+        self.semantic_versions_path = str(directory / "semantic-versions.sqlite3")
+        self.source_observations_path = str(directory / "source-observations.sqlite3")
+        SQLiteSemanticVersionRepository(self.semantic_versions_path).close()
+        SQLiteSourceObservationRepository(self.source_observations_path).close()
         self.product_intent_approvals = ProductIntentApprovalService(
             self.request_repository,
             clock=_clock,
+            authority=GovernedProductIntentAuthority(
+                semantic_versions=_PerCallSemanticVersionReader(self.semantic_versions_path),
+                source_observations=_PerCallSourceObservationReader(self.source_observations_path),
+            ),
         )
         # Both semantic-review seams existed on the governed backend and neither was
         # wired, so the console reported the capability as unwired for a service that

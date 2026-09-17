@@ -1933,7 +1933,7 @@ class GovernedConsoleBackend:
                 request_revision=request.revision,
                 approved_by=context.actor_id,
                 intent=candidate.intent,
-                constraints=candidate.constraints,
+                authority_refs=candidate.authority_refs,
             )
         )
         if isinstance(result, ProductIntentNoValidPlan):
