@@ -73,12 +73,15 @@ def _preparation(
     *,
     empty_object_refs: frozenset[str] = frozenset(),
     fields: tuple[AcquisitionFieldValue, ...] | None = None,
+    records_by_object: dict[str, tuple[AcquisitionRecord, ...]] | None = None,
 ) -> tuple[AcquisitionPreparationResult, dict[str, bytes]]:
     artifacts: dict[str, bytes] = {}
     segment_manifests: list[AcquisitionSegmentManifest] = []
     for ordinal, object_ref in enumerate(intent.object_refs):
         records = (
-            ()
+            records_by_object[object_ref]
+            if records_by_object is not None and object_ref in records_by_object
+            else ()
             if object_ref in empty_object_refs
             else (
                 AcquisitionRecord(
@@ -427,10 +430,13 @@ def test_landed_rows_are_flat_field_objects_that_generation_scoped_sql_decodes()
     assert preparation.batch_manifest is not None
     record_line = artifacts[preparation.batch_manifest.segment_manifests[0].content_digest]
     record_fields = json.loads(record_line)["fields"]
-    assert segment.rows == (
-        canonical_bytes({item["name"]: item["value"] for item in record_fields}),
-    )
+    record = json.loads(record_line)
     assert json.loads(segment.rows[0]) == {
+        "pillarmesh:record": {
+            "record_key": record["record_key"],
+            "source_created_at": record["source_created_at"],
+            "source_updated_at": record["source_updated_at"],
+        },
         "identifier": "orders-1",
         "region": "west",
         "revenue": "10.00",
@@ -462,6 +468,100 @@ def test_flattened_rows_still_bind_to_the_verified_record_artifact() -> None:
     )
 
     with pytest.raises(runtime.AcquisitionIntegrityError):
+        asyncio.run(coordinator.land_and_acknowledge(intent=intent, preparation=preparation))
+
+    assert landing.segments == []
+
+
+def _land_segments(
+    records_by_object: dict[str, tuple[AcquisitionRecord, ...]],
+) -> list[StagedSegment]:
+    intent = _intent()
+    preparation, artifacts = _preparation(intent, records_by_object=records_by_object)
+    landing = _Landing()
+    asyncio.run(
+        runtime.AcquisitionLandingCoordinator(
+            artifact_store=_ArtifactStore(artifacts),
+            landing=landing,
+            target_resolver=_target,
+            acknowledger=_RecordingAcknowledger(),
+            consumer_ref="land:business-data",
+        ).land_and_acknowledge(intent=intent, preparation=preparation)
+    )
+    return landing.segments
+
+
+def _record(
+    object_ref: str, key: str, *, updated_at: datetime, value: str = "same"
+) -> AcquisitionRecord:
+    return AcquisitionRecord(
+        logical_object_ref=object_ref,
+        record_key=key,
+        source_created_at=None,
+        source_updated_at=updated_at,
+        fields=(AcquisitionFieldValue(name="identifier", value=value),),
+    )
+
+
+def test_records_with_equal_fields_but_distinct_identity_land_as_distinct_rows() -> None:
+    # A Stripe deletion carries its event time only in source_updated_at. Two such records with
+    # equal fields must not collapse to one landed row, or two distinct batches would derive the
+    # same generation id and collide on the destination's unique generation.
+    earlier = datetime(2026, 9, 14, 11, tzinfo=UTC)
+    first = _land_segments(
+        {
+            "accounts": (_record("accounts", "accounts-1", updated_at=earlier),),
+            "orders": (_record("orders", "orders-1", updated_at=earlier),),
+        }
+    )
+    second = _land_segments(
+        {
+            "accounts": (_record("accounts", "accounts-1", updated_at=_NOW),),
+            "orders": (_record("orders", "orders-1", updated_at=earlier),),
+        }
+    )
+
+    assert first[0].rows != second[0].rows
+    assert first[0].segment_digest != second[0].segment_digest
+    assert first[1].segment_digest == second[1].segment_digest
+
+
+def test_multi_record_segments_keep_record_order_and_count() -> None:
+    records = tuple(
+        _record("accounts", f"accounts-{index}", updated_at=_NOW, value=f"value-{index}")
+        for index in range(3)
+    )
+    (accounts, _orders) = _land_segments({"accounts": records})
+
+    assert accounts.record_count == 3
+    assert [json.loads(row)["identifier"] for row in accounts.rows] == [
+        "value-0",
+        "value-1",
+        "value-2",
+    ]
+    assert [json.loads(row)["pillarmesh:record"]["record_key"] for row in accounts.rows] == [
+        "accounts-0",
+        "accounts-1",
+        "accounts-2",
+    ]
+
+
+def test_a_field_named_like_the_reserved_identity_key_is_refused_before_land() -> None:
+    intent = _intent()
+    preparation, artifacts = _preparation(
+        intent,
+        fields=(AcquisitionFieldValue(name="pillarmesh:record", value="forged"),),
+    )
+    landing = _Landing()
+    coordinator = runtime.AcquisitionLandingCoordinator(
+        artifact_store=_ArtifactStore(artifacts),
+        landing=landing,
+        target_resolver=_target,
+        acknowledger=_RecordingAcknowledger(),
+        consumer_ref="land:business-data",
+    )
+
+    with pytest.raises(runtime.AcquisitionIntegrityError, match="reserved"):
         asyncio.run(coordinator.land_and_acknowledge(intent=intent, preparation=preparation))
 
     assert landing.segments == []

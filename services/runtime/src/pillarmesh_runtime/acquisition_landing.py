@@ -384,14 +384,34 @@ class AcquisitionLandingCoordinator:
             raise AcquisitionIntegrityError("checkpoint_receipt_authority_mismatch")
 
 
+_RECORD_IDENTITY_KEY = "pillarmesh:record"
+
+
 def _landing_row(record_line: bytes) -> bytes:
     """Project one verified canonical record line onto the flat object LAND stores.
 
     Generation-scoped product SQL decodes landing fields as top-level JSON keys, so the raw row is
     the record's fields keyed by name. Values are taken from the verified line as already encoded,
-    so timestamps and decimals keep their acquisition encoding. The full record, including its key
-    and source timestamps, stays in the content-addressed segment artifact the consumer receipt
-    binds.
+    so timestamps and decimals keep their acquisition encoding.
+
+    The record's identity -- its key and source timestamps -- is kept under a reserved key. Without
+    it, records that differ only in identity (a Stripe deletion carries its event time only in
+    `source_updated_at`) would land as identical rows, and two distinct batches would derive the
+    same generation id. The key contains a colon, so no product identifier can bind it; a source
+    field with that exact name is refused rather than overwritten.
     """
-    fields = json.loads(record_line)["fields"]
-    return canonical_bytes({field["name"]: field["value"] for field in fields})
+    try:
+        record = json.loads(record_line)
+        fields = record["fields"]
+        row: dict[str, object] = {field["name"]: field["value"] for field in fields}
+        identity = {
+            "record_key": record["record_key"],
+            "source_created_at": record["source_created_at"],
+            "source_updated_at": record["source_updated_at"],
+        }
+    except Exception:
+        raise AcquisitionIntegrityError("segment_artifact_invalid") from None
+    if _RECORD_IDENTITY_KEY in row:
+        raise AcquisitionIntegrityError("segment_field_uses_reserved_landing_key")
+    row[_RECORD_IDENTITY_KEY] = identity
+    return canonical_bytes(row)

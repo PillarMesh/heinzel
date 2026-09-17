@@ -582,8 +582,14 @@ def test_composed_acquisition_batch_lands_once_before_its_checkpoint_advances(
     assert [receipt.outcome for receipt in evidence].count("acknowledged") == 2
 
     # LAND stores each record's fields as top-level keys, which is what generation-scoped product
-    # SQL decodes; the full record stays in the verified segment artifact.
-    assert rows_after_land[0][2] == {
+    # SQL decodes, and the record's identity under a reserved key no product binding can address.
+    first_row = dict(rows_after_land[0][2])
+    assert first_row.pop("pillarmesh:record") == {
+        "record_key": digest({"logical_object_ref": "sales", "key": 1}),
+        "source_created_at": None,
+        "source_updated_at": "2026-09-12T00:00:00.000000Z",
+    }
+    assert first_row == {
         "sale_id": 1,
         "region": "west",
         "customer_id": 101,
