@@ -7,8 +7,11 @@ from typing import Literal
 from .run_models import (
     RunAttemptClaim,
     RunAttemptCompletion,
+    RunAttemptHistory,
     RunCancellation,
     RunIntent,
+    RunLifecycleSnapshot,
+    RunLifecycleStatus,
     RunRecord,
     RunRetryRequest,
 )
@@ -34,6 +37,31 @@ class RunService:
 
     def list_runs(self, tenant_id: str) -> tuple[RunRecord, ...]:
         return self._repository.list_runs(tenant_id)
+
+    def describe_runs(self, tenant_id: str) -> tuple[RunLifecycleSnapshot, ...]:
+        """Project each of the tenant's runs with its attempts, read in one transaction."""
+        now = self._clock()
+        with self._repository.read_transaction():
+            return tuple(self._describe(run, now) for run in self._repository.list_runs(tenant_id))
+
+    def _describe(self, run: RunRecord, now: datetime) -> RunLifecycleSnapshot:
+        attempts = tuple(
+            RunAttemptHistory(
+                claim=claim,
+                completion=self._repository.load_completion(run.run_id, claim.attempt_number),
+            )
+            for claim in self._repository.list_claims(run.run_id)
+        )
+        cancellation = self._repository.load_cancellation(run.run_id)
+        completed = tuple(item.completion for item in attempts if item.completion is not None)
+        return RunLifecycleSnapshot(
+            run=run,
+            attempts=attempts,
+            cancellation=cancellation,
+            status=_lifecycle_status(attempts, cancellation, now),
+            last_durable_boundary_ref=completed[-1].durable_boundary_ref if completed else None,
+            observed_at=now,
+        )
 
     def list_retry_requests(self, tenant_id: str, run_id: str) -> tuple[RunRetryRequest, ...]:
         self._repository.load_owned(tenant_id, run_id)
@@ -284,3 +312,22 @@ def _retry_request_command_authority(request: RunRetryRequest) -> tuple[object, 
         request.incident_id,
         request.incident_revision,
     )
+
+
+def _lifecycle_status(
+    attempts: tuple[RunAttemptHistory, ...],
+    cancellation: RunCancellation | None,
+    now: datetime,
+) -> RunLifecycleStatus:
+    if cancellation is not None:
+        return "cancelled"
+    if not attempts:
+        return "pending"
+    latest = attempts[-1]
+    if latest.completion is None:
+        return "leased" if latest.claim.lease_expires_at > now else "lease_expired"
+    if latest.completion.outcome == "succeeded":
+        return "succeeded"
+    if latest.completion.failure_classification == "transient":
+        return "retryable"
+    return "failed"

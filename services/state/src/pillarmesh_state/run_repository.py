@@ -97,6 +97,13 @@ class SQLiteRunRepository:
             return None
         return RunAttemptClaim.model_validate_json(bytes(row[0]))
 
+    def list_claims(self, run_id: str) -> tuple[RunAttemptClaim, ...]:
+        rows = self._connection.execute(
+            "SELECT payload FROM run_attempt_claims WHERE run_id = ? ORDER BY attempt_number",
+            (run_id,),
+        ).fetchall()
+        return tuple(RunAttemptClaim.model_validate_json(bytes(row[0])) for row in rows)
+
     def load_completion(self, run_id: str, attempt_number: int) -> RunAttemptCompletion | None:
         row = self._connection.execute(
             "SELECT payload FROM run_attempt_completions WHERE run_id = ? AND attempt_number = ?",
@@ -174,6 +181,16 @@ class SQLiteRunRepository:
                 canonical_bytes(request),
             ),
         )
+
+    @contextmanager
+    def read_transaction(self) -> Iterator[None]:
+        """A consistent read that takes no write lock, so it never waits on a worker's claim."""
+        self._connection.execute("BEGIN DEFERRED")
+        try:
+            yield
+        finally:
+            with suppress(sqlite3.Error):
+                self._connection.rollback()
 
     @contextmanager
     def transaction(self) -> Iterator[None]:

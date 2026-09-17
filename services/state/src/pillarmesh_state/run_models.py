@@ -133,3 +133,39 @@ class RunRetryRequest(ArtifactModel):
     @classmethod
     def requested_at_is_utc(cls, value: datetime) -> datetime:
         return _require_utc(value)
+
+
+type RunLifecycleStatus = Literal[
+    "pending",
+    "leased",
+    "lease_expired",
+    "retryable",
+    "succeeded",
+    "failed",
+    "cancelled",
+]
+
+
+class RunAttemptHistory(ArtifactModel):
+    claim: RunAttemptClaim
+    completion: RunAttemptCompletion | None
+
+
+class RunLifecycleSnapshot(ArtifactModel):
+    """A run with every attempt, as state recorded them, and the status they imply at `observed_at`.
+
+    `last_durable_boundary_ref` is the boundary the most recent completed attempt proved. An attempt
+    still in flight has recorded none, so it is not reported as progress.
+    """
+
+    run: RunRecord
+    attempts: tuple[RunAttemptHistory, ...]
+    cancellation: RunCancellation | None
+    status: RunLifecycleStatus
+    last_durable_boundary_ref: str | None
+    observed_at: datetime
+
+    @field_validator("observed_at")
+    @classmethod
+    def observed_at_is_utc(cls, value: datetime) -> datetime:
+        return _require_utc(value)

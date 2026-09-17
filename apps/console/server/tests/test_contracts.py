@@ -729,3 +729,11 @@ def test_conversation_commands_cannot_supply_a_separate_author_role() -> None:
                 "body": "Claimed role",
             }
         )
+
+
+def test_leased_run_status_mirrors_the_state_owned_lifecycle_vocabulary() -> None:
+    from pillarmesh_state import RunLifecycleStatus
+
+    assert set(get_args(contracts.LeasedRunStatusView.__value__)) == set(
+        get_args(RunLifecycleStatus.__value__)
+    )

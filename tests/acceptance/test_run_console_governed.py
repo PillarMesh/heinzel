@@ -49,6 +49,7 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
 )
 from pillarmesh_semantic_registry import SQLiteSemanticVersionRepository
+from pillarmesh_state import RunIntent, RunService, SQLiteRunRepository, TriggerWindow
 from pillarmesh_warehouse_control import EngineKind
 from starlette.testclient import TestClient
 
@@ -1809,6 +1810,54 @@ def test_a_run_recorded_by_the_owning_services_reaches_the_console(
 
     assert [run["run_id"] for run in listed] == ["run-000000000000000000000001"]
     assert listed[0]["contract_digest"] == "a" * 64
+
+
+def test_a_state_owned_run_reaches_the_console_with_its_attempts(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """Runs claimed and completed through state are projected, not reconstructed."""
+    runs = RunService(SQLiteRunRepository(deployment.state_runs_path), clock=lambda: _NOW)
+    run = runs.materialize(
+        RunIntent(
+            tenant_id=TENANT,
+            contract_id="contract-revenue",
+            contract_revision=1,
+            plan_digest="a" * 64,
+            trigger_policy_version="daily-v1",
+            trigger_window=TriggerWindow(starts_at=_NOW, ends_at=_NOW + timedelta(days=1)),
+            reason="scheduled",
+        )
+    )
+    other = runs.materialize(
+        RunIntent(
+            tenant_id="tenant-somebody-else",
+            contract_id="contract-other",
+            contract_revision=1,
+            plan_digest="b" * 64,
+            trigger_policy_version="daily-v1",
+            trigger_window=TriggerWindow(starts_at=_NOW, ends_at=_NOW + timedelta(days=1)),
+            reason="scheduled",
+        )
+    )
+    claim = runs.claim(tenant_id=TENANT, run_id=run.run_id, worker_id="worker-a", lease_seconds=60)
+    runs.complete(
+        tenant_id=TENANT,
+        run_id=run.run_id,
+        attempt_number=claim.attempt_number,
+        epoch=claim.epoch,
+        worker_id=claim.worker_id,
+        outcome="succeeded",
+        durable_boundary_ref="land_acknowledged:checkpoint-1",
+    )
+
+    with TestClient(deployment.build_app()) as client:
+        leased = client.get("/api/v1/runs").json()["data"]["leased_runs"]
+
+    assert [item["run_id"] for item in leased] == [run.run_id]
+    assert other.run_id not in {item["run_id"] for item in leased}
+    assert leased[0]["status"] == "succeeded"
+    assert leased[0]["last_durable_boundary_ref"] == "land_acknowledged:checkpoint-1"
+    assert [(item["attempt_number"], item["epoch"]) for item in leased[0]["attempts"]] == [(1, 1)]
 
 
 def test_a_run_under_another_tenant_s_contract_is_not_listed(

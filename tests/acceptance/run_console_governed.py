@@ -146,6 +146,11 @@ from pillarmesh_semantic_registry.publication import (
 )
 from pillarmesh_semantic_registry.repository import SQLiteSemanticRepository
 from pillarmesh_semantic_registry.review import SemanticReviewService
+from pillarmesh_state import (
+    RunLifecycleSnapshot,
+    RunService,
+    SQLiteRunRepository,
+)
 from pillarmesh_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
@@ -251,6 +256,20 @@ class _PerCallSourceObservationReader:
         repository = SQLiteSourceObservationRepository(self._database_path)
         try:
             return repository.load(tenant_id, observation_id, version)
+        finally:
+            repository.close()
+
+
+class _PerCallRunLifecycleReader:
+    """Describes state-owned runs on whichever worker thread asks, for the same reason."""
+
+    def __init__(self, database_path: str) -> None:
+        self._database_path = database_path
+
+    def describe_runs(self, tenant_id: str) -> tuple[RunLifecycleSnapshot, ...]:
+        repository = SQLiteRunRepository(self._database_path)
+        try:
+            return RunService(repository, clock=_clock).describe_runs(tenant_id)
         finally:
             repository.close()
 
@@ -1247,6 +1266,8 @@ class GovernedConsoleDeployment:
         # Approval derives constraints from these two governed stores, never from the proposer.
         self.semantic_versions_path = str(directory / "semantic-versions.sqlite3")
         self.source_observations_path = str(directory / "source-observations.sqlite3")
+        self.state_runs_path = str(directory / "state-runs.sqlite3")
+        SQLiteRunRepository(self.state_runs_path).close()
         SQLiteSemanticVersionRepository(self.semantic_versions_path).close()
         SQLiteSourceObservationRepository(self.source_observations_path).close()
         self.product_intent_approvals = ProductIntentApprovalService(
@@ -1630,6 +1651,7 @@ class GovernedConsoleDeployment:
             semantic_reviews=self.semantic_repository,
             semantic_review_commands=self.semantic_reviews,
             runs=DerivedTenantRunReader(lifecycles=self.lifecycles, evidence=self.evidence),
+            run_lifecycle=_PerCallRunLifecycleReader(self.state_runs_path),
             incidents=(self.answer_runtime.incidents if self.answer_runtime is not None else None),
             impact_reader=RequestImpactProjectionReader(
                 bindings=FulfillmentImpactBindingReader(self.fulfillment_repository),

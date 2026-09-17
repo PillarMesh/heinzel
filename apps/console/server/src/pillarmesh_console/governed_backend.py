@@ -121,6 +121,7 @@ from .contracts import (
     IncidentRecoveryCommand,
     IncidentsView,
     IncidentView,
+    LeasedRunView,
     LifecycleEventView,
     OperationalRecoveryAction,
     OperationFailureView,
@@ -150,6 +151,7 @@ from .contracts import (
     ReviewSectionView,
     ReviewView,
     RiskLevel,
+    RunAttemptView,
     RunsView,
     RunView,
     SessionView,
@@ -205,6 +207,7 @@ from .governed_adapters import (
     SemanticReviewReader,
     TenantAcquisitionReceiptReader,
     TenantIncidentReader,
+    TenantRunLifecycleReader,
     TenantRunReader,
     VerifiedAnswerReader,
     WarehouseBindingReader,
@@ -387,6 +390,7 @@ class GovernedConsoleBackend:
         requests: RequestInboxReader | None = None,
         fulfillment: FulfillmentViewReader | None = None,
         runs: TenantRunReader | None = None,
+        run_lifecycle: TenantRunLifecycleReader | None = None,
         incidents: TenantIncidentReader | None = None,
         impact_reader: RequestImpactReader | None = None,
         incident_recovery_commands: IncidentRecoveryCommands | None = None,
@@ -431,6 +435,7 @@ class GovernedConsoleBackend:
         self._requests = requests
         self._fulfillment = fulfillment
         self._runs = runs
+        self._run_lifecycle = run_lifecycle
         self._incidents = incidents
         self._impact_reader = impact_reader
         self._incident_recovery_commands = incident_recovery_commands
@@ -1256,6 +1261,7 @@ class GovernedConsoleBackend:
         if self._runs is None:
             raise _not_delivered("a tenant-scoped run read interface")
         records = self._runs.list_runs(context.tenant_id)
+        leased_runs, leased_runs_available = self._read_leased_runs(context.tenant_id)
         return RunsView(
             runs=tuple(
                 RunView(
@@ -1266,7 +1272,59 @@ class GovernedConsoleBackend:
                     updated_at=record.updated_at,
                 )
                 for record in records
+            ),
+            leased_runs=leased_runs,
+            leased_runs_available=leased_runs_available,
+        )
+
+    def _read_leased_runs(self, tenant_id: str) -> tuple[tuple[LeasedRunView, ...], bool]:
+        """Read state-owned runs without letting that optional read fail the whole listing."""
+        try:
+            return self._leased_runs(tenant_id), True
+        except ConsoleError:
+            return (), False
+
+    def _leased_runs(self, tenant_id: str) -> tuple[LeasedRunView, ...]:
+        reader = self._run_lifecycle
+        if reader is None:
+            return ()
+        return tuple(
+            LeasedRunView(
+                run_id=snapshot.run.run_id,
+                contract_id=snapshot.run.intent.contract_id,
+                contract_revision=snapshot.run.intent.contract_revision,
+                trigger_reason=snapshot.run.intent.reason,
+                window_starts_at=snapshot.run.intent.trigger_window.starts_at,
+                window_ends_at=snapshot.run.intent.trigger_window.ends_at,
+                status=snapshot.status,
+                last_durable_boundary_ref=snapshot.last_durable_boundary_ref,
+                attempts=tuple(
+                    RunAttemptView(
+                        attempt_number=item.claim.attempt_number,
+                        epoch=item.claim.epoch,
+                        worker_ref=item.claim.worker_id,
+                        claimed_at=item.claim.claimed_at,
+                        lease_expires_at=item.claim.lease_expires_at,
+                        outcome=None if item.completion is None else item.completion.outcome,
+                        failure_classification=(
+                            None
+                            if item.completion is None
+                            else item.completion.failure_classification
+                        ),
+                        durable_boundary_ref=(
+                            None
+                            if item.completion is None
+                            else item.completion.durable_boundary_ref
+                        ),
+                        completed_at=(
+                            None if item.completion is None else item.completion.completed_at
+                        ),
+                    )
+                    for item in snapshot.attempts
+                ),
+                observed_at=snapshot.observed_at,
             )
+            for snapshot in self._guarded(lambda: reader.describe_runs(tenant_id))
         )
 
     def get_incidents(self, context: TrustedActorContext) -> IncidentsView:

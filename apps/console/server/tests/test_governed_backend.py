@@ -39,6 +39,7 @@ from pillarmesh_console.governed_adapters import (
     RequestImpactReader,
     RequestInboxReader,
     TenantAcquisitionReceiptReader,
+    TenantRunLifecycleReader,
     TenantRunReader,
     WarehouseBindingReader,
     WarehouseOperationIdentity,
@@ -81,6 +82,13 @@ from pillarmesh_request_management import (
     StakeholderAnswerDraft,
 )
 from pillarmesh_request_management.requester_view import OwnDecisionView
+from pillarmesh_state import (
+    RunIntent,
+    RunLifecycleSnapshot,
+    RunService,
+    SQLiteRunRepository,
+    TriggerWindow,
+)
 from pillarmesh_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
@@ -446,6 +454,7 @@ def _backend(
     requests: RequestInboxReader | None = None,
     fulfillment: FulfillmentViewReader | None = None,
     runs: TenantRunReader | None = None,
+    run_lifecycle: TenantRunLifecycleReader | None = None,
     acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
     data_products: DataProductReferenceReader | None = None,
     product_publications: ProductPublicationDefinitionReader | None = None,
@@ -473,6 +482,7 @@ def _backend(
         requests=requests,
         fulfillment=fulfillment,
         runs=runs,
+        run_lifecycle=run_lifecycle,
         acquisition_receipts=acquisition_receipts,
         data_products=data_products,
         product_publications=product_publications,
@@ -1328,6 +1338,121 @@ def test_a_tenant_with_no_runs_reads_an_empty_listing_rather_than_a_failure() ->
     backend = _backend(runs=_StubRunReader({}))
 
     assert backend.get_runs(_architect_context()).runs == ()
+
+
+def _state_runs(tmp_path: Path, clock: list[datetime]) -> tuple[RunService, str]:
+    service = RunService(SQLiteRunRepository(tmp_path / "runs.sqlite3"), clock=lambda: clock[0])
+    run = service.materialize(
+        RunIntent(
+            tenant_id=_TENANT,
+            contract_id="contract-revenue",
+            contract_revision=2,
+            plan_digest="c" * 64,
+            trigger_policy_version="daily-v1",
+            trigger_window=TriggerWindow(
+                starts_at=datetime(2026, 9, 16, tzinfo=UTC),
+                ends_at=datetime(2026, 9, 17, tzinfo=UTC),
+            ),
+            reason="scheduled",
+        )
+    )
+    return service, run.run_id
+
+
+def test_leased_runs_project_attempts_epochs_and_the_last_durable_boundary(
+    tmp_path: Path,
+) -> None:
+    clock = [datetime(2026, 9, 17, 12, tzinfo=UTC)]
+    service, run_id = _state_runs(tmp_path, clock)
+    first = service.claim(tenant_id=_TENANT, run_id=run_id, worker_id="worker-a", lease_seconds=60)
+    clock[0] += timedelta(seconds=61)
+    second = service.claim(tenant_id=_TENANT, run_id=run_id, worker_id="worker-b", lease_seconds=60)
+    service.complete(
+        tenant_id=_TENANT,
+        run_id=run_id,
+        attempt_number=second.attempt_number,
+        epoch=second.epoch,
+        worker_id=second.worker_id,
+        outcome="failed",
+        failure_classification="transient",
+        durable_boundary_ref="acquisition_prepared:prepared-1",
+    )
+    backend = _backend(runs=_StubRunReader({}), run_lifecycle=service)
+
+    (leased,) = backend.get_runs(_architect_context()).leased_runs
+
+    assert leased.run_id == run_id
+    assert (leased.contract_id, leased.contract_revision, leased.trigger_reason) == (
+        "contract-revenue",
+        2,
+        "scheduled",
+    )
+    assert leased.window_starts_at == datetime(2026, 9, 16, tzinfo=UTC)
+    assert leased.status == "retryable"
+    assert leased.last_durable_boundary_ref == "acquisition_prepared:prepared-1"
+    assert [(item.attempt_number, item.epoch, item.outcome) for item in leased.attempts] == [
+        (1, 1, None),
+        (2, 2, "failed"),
+    ]
+    assert leased.attempts[0].lease_expires_at == first.lease_expires_at
+    assert leased.attempts[1].failure_classification == "transient"
+    assert leased.attempts[1].durable_boundary_ref == "acquisition_prepared:prepared-1"
+
+
+def test_leased_runs_are_read_for_the_calling_tenant_only(tmp_path: Path) -> None:
+    clock = [datetime(2026, 9, 17, 12, tzinfo=UTC)]
+    service, _run_id = _state_runs(tmp_path, clock)
+
+    class _Recording:
+        def __init__(self) -> None:
+            self.asked: list[str] = []
+
+        def describe_runs(self, tenant_id: str) -> tuple[RunLifecycleSnapshot, ...]:
+            self.asked.append(tenant_id)
+            return service.describe_runs(tenant_id)
+
+    recording = _Recording()
+    backend = _backend(runs=_StubRunReader({}), run_lifecycle=recording)
+
+    assert len(backend.get_runs(_architect_context()).leased_runs) == 1
+    assert recording.asked == [_TENANT]
+
+
+def test_leased_runs_are_empty_when_no_run_lifecycle_reader_is_composed() -> None:
+    """The witnessed-run listing stays delivered; leased runs are simply absent."""
+    backend = _backend(runs=_StubRunReader({_TENANT: (_run("run-1", "a" * 64, "succeeded"),)}))
+
+    view = backend.get_runs(_architect_context())
+
+    assert [run.run_id for run in view.runs] == ["run-1"]
+    assert view.leased_runs == ()
+
+
+def test_an_unavailable_run_lifecycle_read_is_reported_without_losing_witnessed_runs() -> None:
+    class _Unavailable:
+        def describe_runs(self, tenant_id: str) -> tuple[RunLifecycleSnapshot, ...]:
+            raise OSError("state store unavailable")
+
+    backend = _backend(
+        runs=_StubRunReader({_TENANT: (_run("run-1", "a" * 64, "succeeded"),)}),
+        run_lifecycle=_Unavailable(),
+    )
+
+    view = backend.get_runs(_architect_context())
+
+    assert [run.run_id for run in view.runs] == ["run-1"]
+    assert view.leased_runs == ()
+    assert view.leased_runs_available is False
+
+
+def test_a_composed_run_lifecycle_read_is_reported_available(tmp_path: Path) -> None:
+    clock = [datetime(2026, 9, 17, 12, tzinfo=UTC)]
+    service, _run_id = _state_runs(tmp_path, clock)
+
+    view = _backend(runs=_StubRunReader({}), run_lifecycle=service).get_runs(_architect_context())
+
+    assert view.leased_runs_available is True
+    assert len(view.leased_runs) == 1
 
 
 class _StubDataProductReader:

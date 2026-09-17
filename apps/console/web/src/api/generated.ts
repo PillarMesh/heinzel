@@ -306,6 +306,17 @@ export type NonEmptyJsonTuple_ReviewSectionView_ = [ReviewSectionView, ...Review
 export type MaterialChange = boolean
 export type JsonTuple_ReviewItemView_ = ReviewItemView[]
 export type ConsoleEnvelopeRunsView = ConsoleEnvelope_RunsView_
+export type AttemptNumber = number
+export type Epoch = number
+export type FailureClassification = ("transient" | "permanent") | null
+export type Outcome = ("succeeded" | "failed") | null
+export type JsonTuple_RunAttemptView_ = RunAttemptView[]
+export type ContractRevision = number
+export type LeasedRunStatusView =
+  "pending" | "leased" | "lease_expired" | "retryable" | "succeeded" | "failed" | "cancelled"
+export type TriggerReason = "scheduled" | "run_now" | "backfill" | "retry"
+export type JsonTuple_LeasedRunView_ = LeasedRunView[]
+export type LeasedRunsAvailable = boolean
 export type RunLifecycleState = "created" | "running" | "succeeded" | "failed" | "non_conforming"
 export type JsonTuple_RunView_ = RunView[]
 export type ConsoleEnvelopeSessionView = ConsoleEnvelope_SessionView_
@@ -1092,7 +1103,41 @@ export interface ConsoleEnvelope_RunsView_ {
   meta: ApiMeta
 }
 export interface RunsView {
+  leased_runs?: JsonTuple_LeasedRunView_
+  leased_runs_available?: LeasedRunsAvailable
   runs?: JsonTuple_RunView_
+}
+/**
+ * A run as state owns it: identity from its canonical intent, and every attempt.
+ *
+ * `status` is state's own reading at `observed_at`. The console offers no action here;
+ * retry and cancellation stay with the incident recovery flow that owns them.
+ */
+export interface LeasedRunView {
+  attempts?: JsonTuple_RunAttemptView_
+  contract_id: NonEmptyText
+  contract_revision: ContractRevision
+  last_durable_boundary_ref?: NonEmptyText | null
+  observed_at: UtcDatetime
+  run_id: NonEmptyText
+  status: LeasedRunStatusView
+  trigger_reason: TriggerReason
+  window_ends_at: UtcDatetime
+  window_starts_at: UtcDatetime
+}
+/**
+ * One state-owned attempt: its lease, and the outcome and boundary it recorded, if any.
+ */
+export interface RunAttemptView {
+  attempt_number: AttemptNumber
+  claimed_at: UtcDatetime
+  completed_at?: UtcDatetime | null
+  durable_boundary_ref?: NonEmptyText | null
+  epoch: Epoch
+  failure_classification?: FailureClassification
+  lease_expires_at: UtcDatetime
+  outcome?: Outcome
+  worker_ref: NonEmptyText
 }
 /**
  * A run as the evidence store witnessed it.

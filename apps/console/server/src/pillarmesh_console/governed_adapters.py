@@ -103,6 +103,7 @@ from pillarmesh_state import (
     RecoveryActionEvidence,
     RecoveryActionNotAllowedError,
     RecoveryCommand,
+    RunLifecycleSnapshot,
     StaleIncidentRevisionError,
 )
 from pillarmesh_warehouse_control import (
@@ -451,6 +452,12 @@ class ProcessPackageCommands(Protocol):
 
 class TenantRunReader(Protocol):
     def list_runs(self, tenant_id: str) -> tuple[RunRecord, ...]: ...
+
+
+class TenantRunLifecycleReader(Protocol):
+    """State's own run lifecycle read; `RunService` satisfies it directly."""
+
+    def describe_runs(self, tenant_id: str) -> tuple[RunLifecycleSnapshot, ...]: ...
 
 
 class TenantAcquisitionReceiptReader(Protocol):
