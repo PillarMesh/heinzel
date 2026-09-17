@@ -36,6 +36,7 @@ from pillarmesh_contract_model import (
 from pillarmesh_contract_service import SourceObservation, SQLiteSourceObservationRepository
 from pillarmesh_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
 from pillarmesh_request_management import (
+    ApprovedProductIntent,
     DeliveryIntent,
     DimensionIntent,
     FreshnessObjective,
@@ -1930,6 +1931,100 @@ def test_a_data_product_no_policy_permits_is_not_found_rather_than_a_failure(
     assert response.status_code == 404
 
 
+_MANAGED_SOURCE_REF = "source-binding:managed-postgresql"
+
+
+def _approve_managed_source(deployment: GovernedConsoleDeployment) -> ApprovedProductIntent:
+    """Approve an intent over the managed source, then activate its contract through the gate."""
+    now = datetime.now(UTC)
+    observations = SQLiteSourceObservationRepository(deployment.source_observations_path)
+    try:
+        observations.store(
+            SourceObservation(
+                observation_id="source-observation-managed-postgresql",
+                tenant_id=TENANT,
+                version=1,
+                source_ref=_MANAGED_SOURCE_REF,
+                schema_digest="5" * 64,
+                observed_at=now - timedelta(hours=1),
+                valid_until=now + timedelta(days=1),
+            )
+        )
+    finally:
+        observations.close()
+    authority_refs = _seed_intent_authority(deployment)
+    managed = SQLiteSourceObservationRepository(deployment.source_observations_path)
+    try:
+        stored = managed.load(TENANT, "source-observation-managed-postgresql", 1)
+    finally:
+        managed.close()
+    request = deployment.requests.submit_question(
+        tenant_id=TENANT,
+        requester_id=REQUESTER,
+        purpose="Managed source acquisition",
+        question="What is net revenue from the managed source?",
+    )
+    approval = deployment.product_intent_approvals.approve(
+        tenant_id=TENANT,
+        request_id=request.request_id,
+        request_revision=request.revision,
+        approved_by=ARCHITECT,
+        intent=ProductIntent(
+            request_id=request.request_id,
+            title="Net revenue from the managed source",
+            business_outcome="Finance reads governed revenue from the managed source.",
+            source_refs=(_MANAGED_SOURCE_REF,),
+            grain=Grain(keys=("fiscal_quarter",)),
+            measures=(MeasureIntent(metric_ref="net_revenue", aggregation="sum"),),
+            dimensions=(DimensionIntent(dimension_ref="fiscal_quarter"),),
+            filters=(),
+            freshness=FreshnessObjective(maximum_age_seconds=86_400),
+            delivery=DeliveryIntent(outputs=("dataset",)),
+        ),
+        authority_refs=authority_refs.model_copy(
+            update={
+                "source_observations": (
+                    ArtifactReference(
+                        artifact_id=stored.observation_id,
+                        version=stored.version,
+                        digest=digest(stored),
+                    ),
+                )
+            }
+        ),
+    )
+    assert isinstance(approval, ApprovedProductIntent)
+    deployment.activate_managed_source(approval)
+    return approval
+
+
+def test_no_acquisition_contract_is_activated_until_an_intent_is_approved(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """A governed deployment starts with nothing to run: a contract follows an approval."""
+    command = {
+        "active_role": "data_architect",
+        "contract_ref": "contract:managed-business-data:v1",
+        "trigger_window": "2026-09-14T12:00:00Z/2026-09-14T13:00:00Z",
+        "acquisition_mode": "snapshot",
+    }
+
+    with TestClient(deployment.build_app()) as client:
+        session = client.get("/api/v1/session").json()["data"]
+        refused = client.post(
+            "/api/v1/acquisitions/run-now",
+            headers={
+                "Origin": "http://127.0.0.1:8000",
+                "X-CSRF-Token": session["csrf_token"],
+                "Idempotency-Key": "run-before-any-approval",
+            },
+            json=command,
+        )
+
+    assert refused.status_code >= 400
+    assert deployment.lifecycles.list_contracts(TENANT) == ()
+
+
 def test_a_tenant_with_no_acquisitions_reads_an_empty_receipt_listing(
     deployment: GovernedConsoleDeployment,
 ) -> None:
@@ -1943,6 +2038,7 @@ def test_a_tenant_with_no_acquisitions_reads_an_empty_receipt_listing(
 def test_run_now_performs_a_fresh_composed_source_acquisition(
     deployment: GovernedConsoleDeployment,
 ) -> None:
+    approval = _approve_managed_source(deployment)
     command = {
         "active_role": "data_architect",
         "contract_ref": "contract:managed-business-data:v1",
@@ -1964,6 +2060,9 @@ def test_run_now_performs_a_fresh_composed_source_acquisition(
     assert first.status_code == 200
     assert replay.status_code == 200
     assert first.json()["data"]["outcome"] == "prepared"
+    # The contract the run acquired under is the one the approved intent activated.
+    (activated,) = deployment.lifecycles.list_contracts(TENANT)
+    assert activated.contract.product_intent_ref == approval.artifact_reference
     assert replay.json()["data"]["outcome"] == "prepared"
     assert deployment.source_acquisition.source_provider_resolutions == 1
     assert deployment.source_acquisition.artifact_count() > 0

@@ -53,6 +53,7 @@ from pillarmesh_console.governed_adapters import (
     CatalogSearchHealthReader,
     DashboardPublicationReader,
     DerivedTenantRunReader,
+    GovernedApprovedProductIntentSources,
     GovernedProductIntentAuthority,
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceActorDirectory,
@@ -81,7 +82,9 @@ from pillarmesh_contract_model import (
 )
 from pillarmesh_contract_service import (
     AcquisitionActivationApproval,
+    ActivatedAcquisitionContractRecord,
     ProcessPackageService,
+    ProductIntentBoundActivationService,
     SourceObservation,
     SQLiteAcquisitionContractLifecycleRepository,
     SQLiteProcessPackageRepository,
@@ -108,6 +111,7 @@ from pillarmesh_request_management import (
     AccessGrantEffectTarget,
     AccessScopePreview,
     AnswerCandidateProvider,
+    ApprovedProductIntent,
     DataAccessRequest,
     FulfillmentAdmissionReceipt,
     FulfillmentGroundingSnapshot,
@@ -1522,31 +1526,6 @@ class GovernedConsoleDeployment:
             directory / "source-acquisition",
             check_same_thread=False,
         )
-        source_authority = self.source_acquisition.register_tenant(TENANT)
-        source_contract = source_authority.contract
-        source_binding = source_authority.binding
-        self.lifecycles.activate_contract(
-            idempotency_key="governed-local-managed-source-v1",
-            contract=source_contract,
-            approval=AcquisitionActivationApproval(
-                tenant_id=TENANT,
-                process_package_ref=source_contract.process_package_ref,
-                product_intent_ref=source_contract.product_intent_ref,
-                destination_product_ref=source_contract.destination_product_ref,
-                approved_by=source_contract.activated_by,
-                approved_at=source_contract.activated_at,
-            ),
-            source_validation=ValidatedSourceBinding(
-                tenant_id=TENANT,
-                source_binding_ref=source_binding.binding_id,
-                source_binding_revision=source_binding.revision,
-                credential_revision=source_binding.credential_revision,
-                capability_profile_digest=source_contract.capability_profile_digest,
-                source_observation_ref=source_contract.source_observation_ref,
-                source_observation_digest=source_contract.source_observation_digest,
-                validated_at=source_contract.activated_at,
-            ),
-        )
         self.acquisition = compose_acquisition_application(
             contract_repository=self.lifecycles,
             binding_repository=self.source_acquisition,
@@ -1736,6 +1715,45 @@ class GovernedConsoleDeployment:
             context_provider=self._actor_for if actor is None else lambda request: _context(actor),
             allowed_origin=origin or f"http://127.0.0.1:{_DEFAULT_PORT}",
             dist_directory=dist,
+        )
+
+    def activate_managed_source(
+        self, approval: ApprovedProductIntent
+    ) -> ActivatedAcquisitionContractRecord:
+        """Activate the managed source contract for an approved intent, through the gate.
+
+        Nothing activates at startup: a contract exists only once request-management holds an
+        approval whose sources cover it, which is the rule the console is supposed to enforce.
+        """
+        authority = self.source_acquisition.register_tenant(
+            approval.tenant_id, product_intent_ref=approval.artifact_reference
+        )
+        contract = authority.contract
+        binding = authority.binding
+        return ProductIntentBoundActivationService(
+            self.lifecycles,
+            product_intents=GovernedApprovedProductIntentSources(self.product_intent_approvals),
+        ).activate(
+            idempotency_key=f"managed-source-{approval.artifact_reference.digest}",
+            contract=contract,
+            approval=AcquisitionActivationApproval(
+                tenant_id=approval.tenant_id,
+                process_package_ref=contract.process_package_ref,
+                product_intent_ref=contract.product_intent_ref,
+                destination_product_ref=contract.destination_product_ref,
+                approved_by=contract.activated_by,
+                approved_at=contract.activated_at,
+            ),
+            source_validation=ValidatedSourceBinding(
+                tenant_id=approval.tenant_id,
+                source_binding_ref=binding.binding_id,
+                source_binding_revision=binding.revision,
+                credential_revision=binding.credential_revision,
+                capability_profile_digest=contract.capability_profile_digest,
+                source_observation_ref=contract.source_observation_ref,
+                source_observation_digest=contract.source_observation_digest,
+                validated_at=contract.activated_at,
+            ),
         )
 
     def seed(self) -> SeededDecision:
