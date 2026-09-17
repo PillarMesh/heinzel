@@ -50,10 +50,8 @@ from pillarmesh_provider_sdk import (
     AcquisitionField,
     AcquisitionIntent,
     AcquisitionObjectSchema,
-    AcquisitionSegmentManifest,
     AcquisitionSourceObservation,
     ProviderError,
-    RawGenerationTarget,
     SourceObservationRequest,
 )
 from pillarmesh_request_management import (
@@ -73,7 +71,9 @@ from pillarmesh_request_management import (
 from pillarmesh_runtime import (
     AcquisitionApplication,
     AcquisitionDeclaredActivation,
-    AcquisitionLandingCoordinator,
+    AcquisitionDestinationRouting,
+    AcquisitionLandingApplication,
+    AcquisitionObjectRoute,
     AcquisitionPreparationResult,
     AcquisitionRunner,
     DestinationLandingRuntime,
@@ -81,7 +81,9 @@ from pillarmesh_runtime import (
     acquisition_run_now_reference,
     activated_contract_resolver,
     compose_acquisition_application,
+    compose_acquisition_landing,
     compose_activated_acquisition_contract,
+    landing_contract_resolver,
     opaque_reference_factory,
     source_binding_resolver,
 )
@@ -401,13 +403,15 @@ class _DestinationBindings:
         )
 
 
-def _coordinator(
+def _landing(
     composed: _ComposedAcquisition,
     landing_dsn: str,
     destination_bindings: _DestinationBindings,
     ledger: GenerationLedger,
     clock: _MutableClock,
-) -> AcquisitionLandingCoordinator:
+) -> AcquisitionLandingApplication:
+    """The product's own LAND composition: contract authority plus the deployment's routing."""
+
     def destination_provider(_binding: WarehouseBinding) -> PostgreSQLDestinationProvider:
         return PostgreSQLDestinationProvider(
             store=PostgreSQLLandStore(
@@ -420,29 +424,22 @@ def _coordinator(
             )
         )
 
-    def target(manifest: AcquisitionSegmentManifest) -> RawGenerationTarget:
-        return RawGenerationTarget(
+    return compose_acquisition_landing(
+        contract_resolver=landing_contract_resolver(composed.lifecycles),
+        routing=AcquisitionDestinationRouting(
             tenant_id=_TENANT,
             contract_ref=_CONTRACT_REF,
-            contract_revision=composed.record.revision,
-            trigger_window=_TRIGGER_WINDOW,
             destination_binding_ref=_DESTINATION_BINDING_REF,
-            logical_object_ref=manifest.logical_object_ref,
-            table_ref=f"raw_{manifest.logical_object_ref}",
-            schema_digest=manifest.record_schema_digest,
-        )
-
-    return AcquisitionLandingCoordinator(
-        artifact_store=composed.artifacts,
+            routes=(AcquisitionObjectRoute(logical_object_ref="sales", table_ref="raw_sales"),),
+        ),
         landing=DestinationLandingRuntime(
             binding_authority=destination_bindings,
             provider_factories={EngineKind.POSTGRESQL: destination_provider},
             ledger=ledger,
             clock=clock,
         ),
-        target_resolver=target,
+        artifact_store=composed.artifacts,
         acknowledger=composed.acknowledger,
-        consumer_ref=_DESTINATION_BINDING_REF,
     )
 
 
@@ -501,18 +498,20 @@ def test_composed_acquisition_batch_lands_once_before_its_checkpoint_advances(
             destination_bindings.state = WarehouseBindingState.SUSPENDED
             with pytest.raises(ProviderError) as refused:
                 asyncio.run(
-                    _coordinator(
-                        composed, landing_dsn, destination_bindings, ledger, clock
-                    ).land_and_acknowledge(intent=intent, preparation=preparation)
+                    _landing(composed, landing_dsn, destination_bindings, ledger, clock).land(
+                        trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation
+                    )
                 )
             rows_after_refusal = _raw_rows(bootstrap_dsn)
             with pytest.raises(AcquisitionStateNotFoundError):
                 composed.state.load_checkpoint(_TENANT, contract.contract_digest, _BINDING_REF)
 
             destination_bindings.state = WarehouseBindingState.READY
-            coordinator = _coordinator(composed, landing_dsn, destination_bindings, ledger, clock)
+            land_application = _landing(composed, landing_dsn, destination_bindings, ledger, clock)
             landed = asyncio.run(
-                coordinator.land_and_acknowledge(intent=intent, preparation=preparation)
+                land_application.land(
+                    trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation
+                )
             )
             rows_after_land = _raw_rows(bootstrap_dsn)
             receipts_after_land = _land_receipt_count(bootstrap_dsn)
@@ -521,7 +520,9 @@ def test_composed_acquisition_batch_lands_once_before_its_checkpoint_advances(
             )
 
             replayed = asyncio.run(
-                coordinator.land_and_acknowledge(intent=intent, preparation=preparation)
+                land_application.land(
+                    trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation
+                )
             )
             rows_after_replay = _raw_rows(bootstrap_dsn)
             with psycopg.connect(bootstrap_dsn) as connection:

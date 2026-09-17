@@ -42,10 +42,10 @@ from tests.integration.test_postgresql_acquisition_land_live import (
     _TENANT,
     _TRIGGER_WINDOW,
     _composed_acquisition,
-    _coordinator,
     _DestinationBindings,
     _intent,
     _land_receipt_count,
+    _landing,
     _raw_rows,
 )
 from tests.integration.test_postgresql_checked_sum_evidence import _pinned_postgresql
@@ -106,7 +106,7 @@ def test_a_due_run_resumes_from_its_durable_boundary_after_lease_loss(tmp_path: 
             destination_bindings = _DestinationBindings()
             ledger = GenerationLedger.in_memory()
             landing_dsn = _role_dsn(bootstrap_dsn, "landing_runtime", landing_password)
-            coordinator = _coordinator(
+            land_application = _landing(
                 composed, landing_dsn, destination_bindings, ledger, acquisition_clock
             )
             preparations: list[int] = []
@@ -130,8 +130,10 @@ def test_a_due_run_resumes_from_its_durable_boundary_after_lease_loss(tmp_path: 
                     acquisition_mode="snapshot",
                 )
                 landed = asyncio.run(
-                    coordinator.land_and_acknowledge(
-                        intent=_intent(composed, preparation), preparation=preparation
+                    land_application.land(
+                        trigger_window=trigger_window,
+                        intent=_intent(composed, preparation),
+                        preparation=preparation,
                     )
                 )
                 return landed.checkpoint_receipt.checkpoint_receipt_id

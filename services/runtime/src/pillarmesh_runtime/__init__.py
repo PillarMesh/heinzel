@@ -94,6 +94,15 @@ from .destination_composition import (
 from .faults import FaultHook, noop_fault_hook
 from .generation_ledger import GenerationLedger
 from .landing import LandingResult, LandingRunner
+from .landing_composition import (
+    AcquisitionDestinationRouting,
+    AcquisitionLandingApplication,
+    AcquisitionObjectRoute,
+    LandingContractAuthority,
+    LandingContractResolver,
+    compose_acquisition_landing,
+    landing_contract_resolver,
+)
 from .leased_run import (
     LeasedRunExecutor,
     LeasedRunOutcome,
@@ -174,12 +183,15 @@ __all__ = [
     "AcquisitionContractError",
     "AcquisitionCursorExpiredError",
     "AcquisitionDeclaredActivation",
+    "AcquisitionDestinationRouting",
     "AcquisitionDriftError",
     "AcquisitionEvidenceWriter",
     "AcquisitionIntegrityError",
     "AcquisitionLanding",
+    "AcquisitionLandingApplication",
     "AcquisitionLandingCoordinator",
     "AcquisitionLandingResult",
+    "AcquisitionObjectRoute",
     "AcquisitionOwnershipError",
     "AcquisitionPreparationResult",
     "AcquisitionPreparer",
@@ -240,6 +252,8 @@ __all__ = [
     "FaultHook",
     "GenerationLedger",
     "GovernedQueryExecutor",
+    "LandingContractAuthority",
+    "LandingContractResolver",
     "LandingResult",
     "LandingRunner",
     "LeasedRunExecutor",
@@ -295,8 +309,10 @@ __all__ = [
     "activated_contract_resolver",
     "classify_run_stage_failure",
     "compose_acquisition_application",
+    "compose_acquisition_landing",
     "compose_activated_acquisition_contract",
     "compose_authoritative_product_catalog",
+    "landing_contract_resolver",
     "noop_fault_hook",
     "opaque_reference_factory",
     "prepare_acquisition",

@@ -28,8 +28,10 @@ from pillarmesh_runtime import (
     ActivatedAcquisitionContract,
     ActivatedAcquisitionRunContracts,
     ComposedAcquisitionStateStore,
+    LandingContractAuthority,
     activated_contract_resolver,
     compose_acquisition_application,
+    landing_contract_resolver,
 )
 from pillarmesh_state import AcquisitionStateNotFoundError, RunService, SQLiteRunRepository
 from pillarmesh_trigger import (
@@ -348,3 +350,24 @@ def test_an_unavailable_contract_store_is_not_read_as_no_contract() -> None:
 
     with pytest.raises(AcquisitionTransientError):
         ActivatedAcquisitionRunContracts(_Unavailable()).load_activated(TENANT, CONTRACT_REF, 2)
+
+
+def test_landing_authority_is_read_from_the_current_activated_contract() -> None:
+    resolve = landing_contract_resolver(_ContractReader((_record(revision=1), _record(revision=2))))
+
+    authority = resolve(TENANT, CONTRACT_REF)
+
+    assert authority == LandingContractAuthority(
+        tenant_id=TENANT,
+        contract_ref=CONTRACT_REF,
+        contract_digest=CONTRACT_DIGEST,
+        revision=2,
+        acknowledgement_consumer_ref="land:orders",
+    )
+
+
+def test_landing_authority_refuses_a_contract_that_is_not_activated() -> None:
+    resolve = landing_contract_resolver(_ContractReader((_record(lifecycle_state="inactive"),)))
+
+    with pytest.raises(AcquisitionContractError):
+        resolve(TENANT, CONTRACT_REF)
