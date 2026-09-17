@@ -134,6 +134,7 @@ class _ComposedAcquisition:
     application: AcquisitionApplication
     acknowledger: AcquisitionRunner
     record: ActivatedAcquisitionContractRecord
+    lifecycles: SQLiteAcquisitionContractLifecycleRepository
     state: SQLiteAcquisitionStateRepository
     artifacts: LocalAcquisitionArtifactStore
     evidence: SQLiteStore
@@ -345,6 +346,7 @@ def _composed_acquisition(
             application=application,
             acknowledger=acknowledger,
             record=record,
+            lifecycles=lifecycles,
             state=state,
             artifacts=artifacts,
             evidence=evidence,

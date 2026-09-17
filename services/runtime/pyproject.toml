@@ -12,6 +12,7 @@ dependencies = [
   "pillarmesh-provider-sdk",
   "pillarmesh-semantic-registry",
   "pillarmesh-state",
+  "pillarmesh-trigger",
   "pillarmesh-warehouse-control",
   "pydantic>=2.11,<3",
 ]
@@ -26,6 +27,7 @@ pillarmesh-execution-graph = { workspace = true }
 pillarmesh-provider-sdk = { workspace = true }
 pillarmesh-semantic-registry = { workspace = true }
 pillarmesh-state = { workspace = true }
+pillarmesh-trigger = { workspace = true }
 pillarmesh-warehouse-control = { workspace = true }
 
 [build-system]

@@ -23,6 +23,7 @@ from pathlib import Path
 import psycopg
 import pytest
 from pillarmesh_runtime import (
+    ActivatedAcquisitionRunContracts,
     GenerationLedger,
     LeasedRunExecutor,
     RunLeaseLostError,
@@ -30,7 +31,7 @@ from pillarmesh_runtime import (
 )
 from pillarmesh_state import RunAttemptClaim, RunService
 from pillarmesh_state.run_repository import SQLiteRunRepository
-from pillarmesh_trigger import ActivatedRunContract, DailyTriggerPolicy, TriggerRunService
+from pillarmesh_trigger import DailyTriggerPolicy, TriggerRunService
 
 from tests.acceptance.run_plan4a import _MutableClock
 from tests.integration.test_postgresql_acquisition_land_live import (
@@ -40,7 +41,6 @@ from tests.integration.test_postgresql_acquisition_land_live import (
     _TENANT,
     _TRIGGER_WINDOW,
     _composed_acquisition,
-    _ComposedAcquisition,
     _coordinator,
     _DestinationBindings,
     _intent,
@@ -56,30 +56,6 @@ from tests.integration.test_postgresql_product_materialization_live import (
 _RUN_LIVE = os.environ.get("PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
 _LEASE_SECONDS = 60
 _DAILY = DailyTriggerPolicy(policy_version="daily-v1", hour_utc=0, minute_utc=0)
-
-
-class _LifecycleRunContracts:
-    """Read the trigger's view of a contract from contract-service's activated record."""
-
-    def __init__(self, composed: _ComposedAcquisition) -> None:
-        self._composed = composed
-
-    def load_activated(
-        self, tenant_id: str, contract_ref: str, revision: int
-    ) -> ActivatedRunContract | None:
-        record = self._composed.record
-        if (tenant_id, contract_ref, revision) != (
-            record.tenant_id,
-            record.contract_ref,
-            record.revision,
-        ):
-            return None
-        return ActivatedRunContract(
-            tenant_id=record.tenant_id,
-            contract_ref=record.contract_ref,
-            revision=record.revision,
-            plan_digest=record.contract.contract_digest,
-        )
 
 
 @pytest.mark.live
@@ -103,7 +79,9 @@ def test_a_due_run_resumes_from_its_durable_boundary_after_lease_loss(tmp_path: 
             acquisition_clock,
         ) as composed:
             runs = RunService(SQLiteRunRepository(tmp_path / "runs.sqlite3"), clock=run_clock)
-            triggers = TriggerRunService(_LifecycleRunContracts(composed), runs)
+            triggers = TriggerRunService(
+                ActivatedAcquisitionRunContracts(composed.lifecycles), runs
+            )
             # Observed a day after the landed window's start, the daily policy's due window is the
             # one the acquisition contract runs for.
             observed_at = _NOW + timedelta(days=1)

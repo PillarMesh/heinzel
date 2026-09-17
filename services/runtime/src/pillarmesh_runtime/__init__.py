@@ -159,6 +159,7 @@ from .result_access import (
 )
 from .result_store import SQLiteAnswerResultStore
 from .retry import retry_bounded
+from .run_contracts import ActivatedAcquisitionRunContracts
 from .runtime import Runtime, RuntimeDestination, RuntimeSource, SegmentEncoder
 
 __all__ = [
@@ -189,6 +190,7 @@ __all__ = [
     "AcquisitionThrottledError",
     "AcquisitionTransientError",
     "ActivatedAcquisitionContract",
+    "ActivatedAcquisitionRunContracts",
     "ActivatedContractReader",
     "AnswerExecutionAuthorization",
     "AnswerExecutionAuthorizationError",

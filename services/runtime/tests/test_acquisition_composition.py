@@ -24,12 +24,20 @@ from pillarmesh_runtime import (
     AcquisitionEvidenceWriter,
     AcquisitionPreparationResult,
     AcquisitionThrottledError,
+    AcquisitionTransientError,
     ActivatedAcquisitionContract,
+    ActivatedAcquisitionRunContracts,
     ComposedAcquisitionStateStore,
     activated_contract_resolver,
     compose_acquisition_application,
 )
-from pillarmesh_state import AcquisitionStateNotFoundError
+from pillarmesh_state import AcquisitionStateNotFoundError, RunService, SQLiteRunRepository
+from pillarmesh_trigger import (
+    ActivatedRunContract,
+    ContractNotActivatedError,
+    RunNowPolicy,
+    TriggerRunService,
+)
 
 NOW = datetime(2026, 9, 11, 12, tzinfo=UTC)
 TENANT = "tenant-a"
@@ -291,3 +299,52 @@ def _throttled_provider(binding: SourceConnectionBinding) -> AcquisitionProvider
         classification="throttled",
         reason_code="rate_limited",
     )
+
+
+def _run_contracts(
+    records: tuple[ActivatedAcquisitionContractRecord, ...],
+) -> ActivatedAcquisitionRunContracts:
+    return ActivatedAcquisitionRunContracts(_ContractReader(records))
+
+
+def test_trigger_reads_the_current_activated_contract_revision_as_its_run_authority() -> None:
+    contract = _run_contracts((_record(revision=1), _record(revision=2))).load_activated(
+        TENANT, CONTRACT_REF, 2
+    )
+
+    assert contract == ActivatedRunContract(
+        tenant_id=TENANT, contract_ref=CONTRACT_REF, revision=2, plan_digest=CONTRACT_DIGEST
+    )
+
+
+def test_trigger_materializes_no_run_for_a_superseded_or_unknown_contract() -> None:
+    contracts = _run_contracts((_record(revision=1), _record(revision=2)))
+    runs = RunService(SQLiteRunRepository(":memory:"), clock=lambda: NOW)
+    triggers = TriggerRunService(contracts, runs)
+
+    assert contracts.load_activated(TENANT, CONTRACT_REF, 1) is None
+    assert contracts.load_activated(TENANT, "contract:unknown", 2) is None
+    with pytest.raises(ContractNotActivatedError):
+        triggers.materialize_run_now(
+            tenant_id=TENANT,
+            contract_ref=CONTRACT_REF,
+            contract_revision=1,
+            policy=RunNowPolicy(policy_version="run-now-v1"),
+            requested_at=NOW,
+        )
+    assert runs.list_runs(TENANT) == ()
+
+
+def test_trigger_materializes_no_run_for_a_contract_that_is_no_longer_activated() -> None:
+    contracts = _run_contracts((_record(revision=2, lifecycle_state="inactive"),))
+
+    assert contracts.load_activated(TENANT, CONTRACT_REF, 2) is None
+
+
+def test_an_unavailable_contract_store_is_not_read_as_no_contract() -> None:
+    class _Unavailable:
+        def list_contracts(self, tenant_id: str) -> tuple[ActivatedAcquisitionContractRecord, ...]:
+            raise OSError("contract store unavailable")
+
+    with pytest.raises(AcquisitionTransientError):
+        ActivatedAcquisitionRunContracts(_Unavailable()).load_activated(TENANT, CONTRACT_REF, 2)
