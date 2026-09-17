@@ -122,8 +122,11 @@ from pillarmesh_request_management import (
     FulfillmentService,
     GraphImpactAdmissionResolver,
     InboxRequest,
+    ProductIntent,
     ProductIntentApprovalService,
+    ProductIntentAuthorityRefs,
     ProductIntentCandidateService,
+    ProductIntentNoValidPlan,
     RequestManagementService,
     ResolutionFailure,
     SQLiteFulfillmentRepository,
@@ -187,6 +190,9 @@ from tests.acceptance.run_plan3b import (
 from tests.acceptance.run_plan4a import OfflinePlan4AHarness
 
 TENANT = "tenant-a"
+# The source binding the managed demo contract acquires; an approval naming it activates that
+# contract, because approving the intent is the authorization the activation gate requires.
+MANAGED_SOURCE_REF = "source-binding:managed-postgresql"
 ARCHITECT = "architect-a"
 REQUESTER = "requester-a"
 DATA_OWNER = "data-owner-a"
@@ -262,6 +268,47 @@ class _PerCallSourceObservationReader:
             return repository.load(tenant_id, observation_id, version)
         finally:
             repository.close()
+
+
+class _ActivatingProductIntentApprovals:
+    """Approve through request-management, then activate what the approval authorizes.
+
+    Activation follows approval: an architect who approves an intent over the managed source has
+    authorized that contract, and nothing else activates it. Approvals over other sources record
+    the approval and activate nothing.
+    """
+
+    def __init__(self, deployment: GovernedConsoleDeployment) -> None:
+        self._deployment = deployment
+
+    def approve(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        request_revision: int,
+        approved_by: str,
+        intent: ProductIntent,
+        authority_refs: ProductIntentAuthorityRefs | None,
+    ) -> ApprovedProductIntent | ProductIntentNoValidPlan:
+        approved = self._deployment.product_intent_approvals.approve(
+            tenant_id=tenant_id,
+            request_id=request_id,
+            request_revision=request_revision,
+            approved_by=approved_by,
+            intent=intent,
+            authority_refs=authority_refs,
+        )
+        if isinstance(approved, ApprovedProductIntent) and MANAGED_SOURCE_REF in (
+            approved.intent.source_refs
+        ):
+            self._deployment.activate_managed_source(approved)
+        return approved
+
+    def list_for_request(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[ApprovedProductIntent, ...]:
+        return self._deployment.product_intent_approvals.list_for_request(tenant_id, request_id)
 
 
 class _PerCallRunLifecycleReader:
@@ -1625,7 +1672,7 @@ class GovernedConsoleDeployment:
             access_revocation_commands=self.access_application,
             fulfillment_preparation_commands=self.fulfillment,
             product_intent_reviews=self.product_intent_candidates,
-            product_intent_commands=self.product_intent_approvals,
+            product_intent_commands=_ActivatingProductIntentApprovals(self),
             process_package_commands=self.process_packages,
             semantic_reviews=self.semantic_repository,
             semantic_review_commands=self.semantic_reviews,
