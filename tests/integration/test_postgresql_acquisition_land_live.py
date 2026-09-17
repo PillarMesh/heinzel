@@ -10,7 +10,8 @@ receipt bound to those LAND receipts.
 
 It proves that the checkpoint does not move while LAND is refused, that one committed LAND is the
 only thing that moves it, that replaying the landed batch writes no rows or receipts and returns
-the same result, and what the raw table actually holds.
+the same result, and that the compiler's generation-scoped statement decodes the landed generation
+into the exact regional totals.
 """
 
 from __future__ import annotations
@@ -23,10 +24,12 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from pathlib import Path
 
 import psycopg
 import pytest
+from pillarmesh_compiler.postgresql_sql import emit_generation_scoped_postgresql
 from pillarmesh_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
 from pillarmesh_console.governed_adapters import GovernedApprovedProductIntentSources
 from pillarmesh_contract_model import ArtifactReference, digest
@@ -38,6 +41,7 @@ from pillarmesh_contract_service import (
     ValidatedSourceBinding,
 )
 from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
+from pillarmesh_execution_graph import GenerationScopedProductSource, ProductJsonFieldBinding
 from pillarmesh_provider_postgresql import (
     PostgreSQLAcquisitionProvider,
     PostgreSQLAcquisitionSettings,
@@ -95,6 +99,7 @@ from pydantic import SecretStr
 
 from tests.acceptance.run_plan4a import _CursorCipher, _MutableClock
 from tests.integration.test_postgresql_checked_sum_evidence import _pinned_postgresql
+from tests.integration.test_postgresql_compiled_product_journey_live import _product
 from tests.integration.test_postgresql_product_materialization_live import (
     _provision_cluster,
     _role_dsn,
@@ -472,11 +477,12 @@ def test_composed_acquisition_batch_lands_once_before_its_checkpoint_advances(
     with _pinned_postgresql() as bootstrap_dsn:
         acquisition_password = secrets.token_urlsafe(24)
         landing_password = secrets.token_urlsafe(24)
+        materialization_password = secrets.token_urlsafe(24)
         _provision_cluster(
             bootstrap_dsn,
             acquisition_password=acquisition_password,
             landing_password=landing_password,
-            materialization_password=secrets.token_urlsafe(24),
+            materialization_password=materialization_password,
         )
         with _composed_acquisition(
             tmp_path,
@@ -522,11 +528,32 @@ def test_composed_acquisition_batch_lands_once_before_its_checkpoint_advances(
                 coordinator.land_and_acknowledge(intent=intent, preparation=preparation)
             )
             rows_after_replay = _raw_rows(bootstrap_dsn)
-            with psycopg.connect(bootstrap_dsn) as connection:
-                top_level_region_types = connection.execute(
-                    "SELECT DISTINCT pg_catalog.jsonb_typeof(payload OPERATOR(pg_catalog.->) "
-                    "'region') FROM raw.raw_sales"
-                ).fetchall()
+            # The compiler's own generation-scoped statement over the composed generation, run as
+            # the least-privilege materialization principal.
+            statement = emit_generation_scoped_postgresql(
+                _product(),
+                GenerationScopedProductSource(
+                    namespace="raw",
+                    relation_name="raw_sales",
+                    generation_column="generation_id",
+                    payload_column="payload",
+                    generation_id=landed.landings[0].receipt.generation_id,
+                    landing_receipt_digest=digest(landed.landings[0].receipt),
+                    observed_source_schema_digest="f" * 64,
+                    field_bindings=(
+                        ProductJsonFieldBinding(
+                            logical_field="region", json_field="region", scalar_type="string"
+                        ),
+                        ProductJsonFieldBinding(
+                            logical_field="revenue", json_field="revenue", scalar_type="decimal"
+                        ),
+                    ),
+                ),
+            ).statement
+            with psycopg.connect(
+                _role_dsn(bootstrap_dsn, "materialization_runtime", materialization_password)
+            ) as connection:
+                product_rows = connection.execute(statement).fetchall()
             receipts_after_replay = _land_receipt_count(bootstrap_dsn)
             evidence = composed.evidence.list_acquisition_receipts(_TENANT)
 
@@ -554,19 +581,16 @@ def test_composed_acquisition_batch_lands_once_before_its_checkpoint_advances(
     assert receipts_after_replay == receipts_after_land
     assert [receipt.outcome for receipt in evidence].count("acknowledged") == 2
 
-    # LAND stores the canonical acquisition record: values sit in a `fields` array, not under
-    # top-level keys. The compiler's generation-scoped decode reads `payload -> '<field>'`, so it
-    # finds no JSON string in any composed row and would refuse the generation. The source-to-answer
-    # journey lands flattened field objects by hand, which hides this seam.
-    first_payload = rows_after_land[0][2]
-    assert set(first_payload) == {
-        "fields",
-        "logical_object_ref",
-        "operation",
-        "record_key",
-        "schema_version",
-        "source_created_at",
-        "source_updated_at",
+    # LAND stores each record's fields as top-level keys, which is what generation-scoped product
+    # SQL decodes; the full record stays in the verified segment artifact.
+    assert rows_after_land[0][2] == {
+        "sale_id": 1,
+        "region": "west",
+        "customer_id": 101,
+        "revenue": "10.00",
+        "updated_at": "2026-09-12T00:00:00.000000Z",
     }
-    assert first_payload["fields"][1] == {"name": "region", "value": "west"}  # type: ignore[index]
-    assert top_level_region_types == [(None,)]
+    assert sorted(product_rows) == [
+        ("east", Decimal("99.000000000")),
+        ("west", Decimal("30.000000000")),
+    ]

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 from collections.abc import Callable
 from contextlib import suppress
 from typing import BinaryIO, Protocol
@@ -256,11 +257,12 @@ class AcquisitionLandingCoordinator:
             or any(record.logical_object_ref != manifest.logical_object_ref for record in records)
         ):
             raise AcquisitionIntegrityError("segment_artifact_mismatch")
+        rows = tuple(_landing_row(line) for line in lines)
         return StagedSegment(
-            segment_digest=staged_segment_digest(lines),
+            segment_digest=staged_segment_digest(rows),
             schema_digest=manifest.record_schema_digest,
-            record_count=len(lines),
-            rows=lines,
+            record_count=len(rows),
+            rows=rows,
         )
 
     def _read_artifact(self, tenant_id: str, artifact_digest: str) -> bytes:
@@ -380,3 +382,16 @@ class AcquisitionLandingCoordinator:
             or admitted.acknowledgement_id != acknowledgement.acknowledgement_id
         ):
             raise AcquisitionIntegrityError("checkpoint_receipt_authority_mismatch")
+
+
+def _landing_row(record_line: bytes) -> bytes:
+    """Project one verified canonical record line onto the flat object LAND stores.
+
+    Generation-scoped product SQL decodes landing fields as top-level JSON keys, so the raw row is
+    the record's fields keyed by name. Values are taken from the verified line as already encoded,
+    so timestamps and decimals keep their acquisition encoding. The full record, including its key
+    and source timestamps, stays in the content-addressed segment artifact the consumer receipt
+    binds.
+    """
+    fields = json.loads(record_line)["fields"]
+    return canonical_bytes({field["name"]: field["value"] for field in fields})

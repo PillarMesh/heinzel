@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json
 from datetime import UTC, datetime
 
 import pillarmesh_runtime as runtime
@@ -25,6 +26,7 @@ from pillarmesh_provider_sdk import (
     acquisition_intent_key,
     encode_canonical_jsonl,
     raw_generation_key,
+    staged_segment_digest,
 )
 from pillarmesh_runtime import AcquisitionPreparationResult
 
@@ -70,6 +72,7 @@ def _preparation(
     intent: AcquisitionIntent,
     *,
     empty_object_refs: frozenset[str] = frozenset(),
+    fields: tuple[AcquisitionFieldValue, ...] | None = None,
 ) -> tuple[AcquisitionPreparationResult, dict[str, bytes]]:
     artifacts: dict[str, bytes] = {}
     segment_manifests: list[AcquisitionSegmentManifest] = []
@@ -83,7 +86,8 @@ def _preparation(
                     record_key=f"{object_ref}-1",
                     source_created_at=_NOW,
                     source_updated_at=_NOW,
-                    fields=(AcquisitionFieldValue(name="identifier", value=f"{object_ref}-1"),),
+                    fields=fields
+                    or (AcquisitionFieldValue(name="identifier", value=f"{object_ref}-1"),),
                 ),
             )
         )
@@ -191,6 +195,7 @@ class _Landing:
         self._fail_object_ref = fail_object_ref
         self._forge_first_receipt = forge_first_receipt
         self.landed_objects: list[str] = []
+        self.segments: list[StagedSegment] = []
 
     async def land(
         self,
@@ -209,6 +214,7 @@ class _Landing:
         if target.logical_object_ref == self._fail_object_ref:
             raise ProviderError("destination unavailable", "transient_unavailable")
         self.landed_objects.append(target.logical_object_ref)
+        self.segments.append(segment)
         receipt = LandReceipt(
             receipt_id="receipt-accounts",
             idempotency_key=idempotency_key,
@@ -389,3 +395,73 @@ def test_empty_segment_is_bound_into_batch_acknowledgement_without_destination_w
     assert len(result.landings) == 1
     assert len(acknowledger.acknowledgements) == 1
     assert result.checkpoint_receipt.cursor_digest == "6" * 64
+
+
+def test_landed_rows_are_flat_field_objects_that_generation_scoped_sql_decodes() -> None:
+    # The compiler's generation-scoped decode reads `payload -> '<field>'` (PostgreSQL) and
+    # `JSONExtractString(payload, '<field>')` (ClickHouse). LAND must therefore store each record's
+    # fields as top-level keys, not the canonical acquisition record with its `fields` array.
+    intent = _intent()
+    fields = (
+        AcquisitionFieldValue(name="identifier", value="orders-1"),
+        AcquisitionFieldValue(name="region", value="west"),
+        AcquisitionFieldValue(name="revenue", value="10.00"),
+        AcquisitionFieldValue(name="quantity", value=3),
+        AcquisitionFieldValue(name="refunded", value=False),
+        AcquisitionFieldValue(name="note", value=None),
+        AcquisitionFieldValue(name="updated_at", value=_NOW),
+    )
+    preparation, artifacts = _preparation(intent, fields=fields)
+    landing = _Landing()
+    coordinator = runtime.AcquisitionLandingCoordinator(
+        artifact_store=_ArtifactStore(artifacts),
+        landing=landing,
+        target_resolver=_target,
+        acknowledger=_RecordingAcknowledger(),
+        consumer_ref="land:business-data",
+    )
+
+    asyncio.run(coordinator.land_and_acknowledge(intent=intent, preparation=preparation))
+
+    segment = landing.segments[0]
+    assert preparation.batch_manifest is not None
+    record_line = artifacts[preparation.batch_manifest.segment_manifests[0].content_digest]
+    record_fields = json.loads(record_line)["fields"]
+    assert segment.rows == (
+        canonical_bytes({item["name"]: item["value"] for item in record_fields}),
+    )
+    assert json.loads(segment.rows[0]) == {
+        "identifier": "orders-1",
+        "region": "west",
+        "revenue": "10.00",
+        "quantity": 3,
+        "refunded": False,
+        "note": None,
+        "updated_at": record_fields[6]["value"],
+    }
+    assert isinstance(record_fields[6]["value"], str)
+    assert segment.segment_digest == staged_segment_digest(segment.rows)
+    assert segment.record_count == 1
+
+
+def test_flattened_rows_still_bind_to_the_verified_record_artifact() -> None:
+    intent = _intent()
+    preparation, artifacts = _preparation(intent)
+    assert preparation.batch_manifest is not None
+    content_digest = preparation.batch_manifest.segment_manifests[0].content_digest
+    record = json.loads(artifacts[content_digest])
+    record["fields"][0]["value"] = "tampered"
+    artifacts[content_digest] = canonical_bytes(record) + b"\n"
+    landing = _Landing()
+    coordinator = runtime.AcquisitionLandingCoordinator(
+        artifact_store=_ArtifactStore(artifacts),
+        landing=landing,
+        target_resolver=_target,
+        acknowledger=_RecordingAcknowledger(),
+        consumer_ref="land:business-data",
+    )
+
+    with pytest.raises(runtime.AcquisitionIntegrityError):
+        asyncio.run(coordinator.land_and_acknowledge(intent=intent, preparation=preparation))
+
+    assert landing.segments == []
