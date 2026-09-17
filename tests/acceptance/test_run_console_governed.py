@@ -1692,13 +1692,22 @@ def test_seeding_twice_does_not_leave_two_indistinguishable_decisions(
     newest.
     """
     first = deployment.seed()
+    with TestClient(deployment.build_app()) as client:
+        after_first = [
+            item["request_id"] for item in client.get("/api/v1/inbox").json()["data"]["items"]
+        ]
 
     second = deployment.seed()
 
     assert second.request_id == first.request_id
     with TestClient(deployment.build_app()) as client:
-        items = client.get("/api/v1/inbox").json()["data"]["items"]
-    assert [item["request_id"] for item in items] == [first.request_id]
+        after_second = [
+            item["request_id"] for item in client.get("/api/v1/inbox").json()["data"]["items"]
+        ]
+    # The seeded decision, and the approvable intent over the managed source.
+    assert after_first[0] == first.request_id
+    assert len(after_first) == len(set(after_first)) == 2
+    assert after_second == after_first
 
 
 def test_a_localhost_host_is_refused_because_a_browser_does_not_treat_it_as_loopback() -> None:

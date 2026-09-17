@@ -113,6 +113,9 @@ from pillarmesh_request_management import (
     AnswerCandidateProvider,
     ApprovedProductIntent,
     DataAccessRequest,
+    DeliveryIntent,
+    DimensionIntent,
+    FreshnessObjective,
     FulfillmentAdmissionReceipt,
     FulfillmentGroundingSnapshot,
     FulfillmentImpactBindingReader,
@@ -120,13 +123,17 @@ from pillarmesh_request_management import (
     FulfillmentProposal,
     FulfillmentReadService,
     FulfillmentService,
+    Grain,
     GraphImpactAdmissionResolver,
     InboxRequest,
+    MeasureIntent,
     ProductIntent,
     ProductIntentApprovalService,
     ProductIntentAuthorityRefs,
     ProductIntentCandidateService,
+    ProductIntentConstraints,
     ProductIntentNoValidPlan,
+    ProductIntentSourceCoverage,
     RequestManagementService,
     ResolutionFailure,
     SQLiteFulfillmentRepository,
@@ -1850,10 +1857,127 @@ class GovernedConsoleDeployment:
             actor_id=ARCHITECT,
             expected_revision=proposal.request_revision,
         )
+        self._seed_managed_source_candidate()
         return SeededDecision(
             request_id=request.request_id,
             proposal_digest=digest(proposal.subject),
             data_product_ref=self._permitted_product_ref(proposal),
+        )
+
+    def _seed_managed_source_candidate(self) -> None:
+        """Leave one approvable intent over the managed source.
+
+        Approving is what activates that contract, and the console has no route that proposes a
+        candidate: without one a demo deployment could never reach its own acquisition surface.
+        """
+        now = _clock()
+        semantic_versions = SQLiteSemanticVersionRepository(self.semantic_versions_path)
+        observations = SQLiteSourceObservationRepository(self.source_observations_path)
+        try:
+            semantic_version = semantic_versions.store(
+                ApprovedSemanticVersion(
+                    semantic_version_id="semantic-managed-business-data",
+                    tenant_id=TENANT,
+                    version=1,
+                    process_package_ref=ArtifactReference(
+                        artifact_id="process:managed-business-data", version=1, digest="1" * 64
+                    ),
+                    candidate_set_digest="2" * 64,
+                    review_bundle_digest="3" * 64,
+                    entities=(
+                        SemanticObject(
+                            object_id="account_region",
+                            name="Account region",
+                            definition="The region an account belongs to.",
+                            source_refs=("process:managed-business-data",),
+                        ),
+                    ),
+                    metrics=(
+                        SemanticObject(
+                            object_id="order_total",
+                            name="Order total",
+                            definition="The total value of an order.",
+                            source_refs=("process:managed-business-data",),
+                        ),
+                    ),
+                    events=(),
+                    states=(),
+                    relationships=(),
+                    identity_rules=(),
+                    constraints=(),
+                    classifications=(),
+                    authority_bindings=(),
+                    approval_ids=("semantic-approval-managed-1",),
+                    created_at=now,
+                )
+            )
+            observation = observations.store(
+                SourceObservation(
+                    observation_id="source-observation:managed-postgresql",
+                    tenant_id=TENANT,
+                    version=1,
+                    source_ref=MANAGED_SOURCE_REF,
+                    schema_digest="4" * 64,
+                    observed_at=now,
+                    valid_until=now + timedelta(days=1),
+                )
+            )
+        finally:
+            semantic_versions.close()
+            observations.close()
+        request = self.requests.submit_question(
+            tenant_id=TENANT,
+            requester_id=REQUESTER,
+            purpose="managed source reporting",
+            question="What are order totals by account region?",
+        )
+        intent = ProductIntent(
+            request_id=request.request_id,
+            title="Order totals by account region",
+            business_outcome="Give the business governed order totals from the managed source.",
+            source_refs=(MANAGED_SOURCE_REF,),
+            grain=Grain(keys=("account_region",)),
+            measures=(MeasureIntent(metric_ref="order_total", aggregation="sum"),),
+            dimensions=(DimensionIntent(dimension_ref="account_region"),),
+            filters=(),
+            freshness=FreshnessObjective(maximum_age_seconds=86_400),
+            delivery=DeliveryIntent(outputs=("dataset",)),
+        )
+        self.product_intent_candidates.propose(
+            tenant_id=TENANT,
+            request_id=request.request_id,
+            request_revision=request.revision,
+            idempotency_key="managed-source-candidate-v1",
+            proposed_by="external-interpreter",
+            intent=intent,
+            constraints=ProductIntentConstraints(
+                approved_source_refs=(MANAGED_SOURCE_REF,),
+                approved_metric_refs=("order_total",),
+                approved_dimension_refs=("account_region",),
+                minimum_source_interval_seconds=86_400,
+            ),
+            source_coverage=(
+                ProductIntentSourceCoverage(
+                    source_ref=MANAGED_SOURCE_REF,
+                    covered_fields=("account_region", "order_total"),
+                    authorized=True,
+                ),
+            ),
+            unresolved_constraints=(),
+            authority_refs=ProductIntentAuthorityRefs(
+                semantic_version=ArtifactReference(
+                    artifact_id=semantic_version.semantic_version_id,
+                    version=semantic_version.version,
+                    digest=digest(semantic_version),
+                ),
+                source_observations=(
+                    ArtifactReference(
+                        artifact_id=observation.observation_id,
+                        version=observation.version,
+                        digest=digest(observation),
+                    ),
+                ),
+            ),
         )
 
     def _already_seeded(self) -> SeededDecision | None:
