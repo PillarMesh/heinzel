@@ -461,3 +461,106 @@ def test_describing_runs_does_not_wait_on_a_worker_holding_the_write_lock(tmp_pa
 
     assert snapshot.status == "pending"
     assert elapsed < 1
+
+
+def test_a_live_lease_can_be_extended_so_a_long_stage_keeps_its_attempt(tmp_path: Path) -> None:
+    clock = _Clock()
+    path = tmp_path / "runs.sqlite3"
+    service = _service(path, clock)
+    other = _service(path, clock)
+    run = service.materialize(_intent())
+    claim = service.claim(
+        tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-a", lease_seconds=30
+    )
+
+    clock.now += timedelta(seconds=20)
+    extension = service.extend_lease(tenant_id="tenant-a", claim=claim, lease_seconds=30)
+
+    assert extension.attempt_number == claim.attempt_number
+    assert extension.epoch == claim.epoch
+    assert extension.extension_number == 1
+    assert extension.lease_expires_at == clock.now + timedelta(seconds=30)
+    # Past the original expiry, the attempt is still the live one and no one else may claim.
+    clock.now += timedelta(seconds=20)
+    service.require_current_attempt(tenant_id="tenant-a", claim=claim)
+    with pytest.raises(ValueError, match="already leased"):
+        other.claim(tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-b", lease_seconds=30)
+    assert service.describe_runs("tenant-a")[0].status == "leased"
+    service.complete(
+        tenant_id="tenant-a",
+        run_id=run.run_id,
+        attempt_number=claim.attempt_number,
+        epoch=claim.epoch,
+        worker_id=claim.worker_id,
+        outcome="succeeded",
+        durable_boundary_ref="land_acknowledged:checkpoint-1",
+    )
+
+
+def test_an_extended_lease_still_expires_and_fences_its_worker(tmp_path: Path) -> None:
+    clock = _Clock()
+    service = _service(tmp_path / "runs.sqlite3", clock)
+    run = service.materialize(_intent())
+    claim = service.claim(
+        tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-a", lease_seconds=30
+    )
+    service.extend_lease(tenant_id="tenant-a", claim=claim, lease_seconds=60)
+
+    clock.now += timedelta(seconds=61)
+
+    with pytest.raises(ValueError, match="run lease expired"):
+        service.require_current_attempt(tenant_id="tenant-a", claim=claim)
+    assert service.describe_runs("tenant-a")[0].status == "lease_expired"
+    successor = service.claim(
+        tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-b", lease_seconds=30
+    )
+    assert successor.epoch == 2
+    with pytest.raises(ValueError, match="stale run epoch"):
+        service.extend_lease(tenant_id="tenant-a", claim=claim, lease_seconds=30)
+
+
+def test_an_extension_never_shortens_a_lease_or_revives_a_finished_attempt(
+    tmp_path: Path,
+) -> None:
+    clock = _Clock()
+    service = _service(tmp_path / "runs.sqlite3", clock)
+    run = service.materialize(_intent())
+    claim = service.claim(
+        tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-a", lease_seconds=60
+    )
+
+    with pytest.raises(ValueError, match="lease extension must extend the lease"):
+        service.extend_lease(tenant_id="tenant-a", claim=claim, lease_seconds=30)
+
+    second = service.extend_lease(tenant_id="tenant-a", claim=claim, lease_seconds=90)
+    assert second.extension_number == 1
+    service.complete(
+        tenant_id="tenant-a",
+        run_id=run.run_id,
+        attempt_number=claim.attempt_number,
+        epoch=claim.epoch,
+        worker_id=claim.worker_id,
+        outcome="failed",
+        failure_classification="transient",
+        durable_boundary_ref="none",
+    )
+    with pytest.raises(ValueError, match="run attempt is already complete"):
+        service.extend_lease(tenant_id="tenant-a", claim=claim, lease_seconds=120)
+
+
+def test_lease_extensions_are_projected_with_the_attempt(tmp_path: Path) -> None:
+    clock = _Clock()
+    service = _service(tmp_path / "runs.sqlite3", clock)
+    run = service.materialize(_intent())
+    claim = service.claim(
+        tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-a", lease_seconds=30
+    )
+    service.extend_lease(tenant_id="tenant-a", claim=claim, lease_seconds=60)
+    service.extend_lease(tenant_id="tenant-a", claim=claim, lease_seconds=120)
+
+    (snapshot,) = service.describe_runs("tenant-a")
+    (attempt,) = snapshot.attempts
+
+    assert attempt.claim.lease_expires_at == NOW + timedelta(seconds=30)
+    assert attempt.lease_expires_at == NOW + timedelta(seconds=120)
+    assert attempt.lease_extensions == 2

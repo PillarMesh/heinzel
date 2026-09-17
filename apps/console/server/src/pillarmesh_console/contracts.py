@@ -986,7 +986,9 @@ class RunAttemptView(StrictModel):
     epoch: int = Field(ge=1)
     worker_ref: NonEmptyText
     claimed_at: UtcDatetime
+    # The claim's own expiry extended by any renewals: the expiry fencing actually uses.
     lease_expires_at: UtcDatetime
+    lease_extensions: int = Field(default=0, ge=0)
     outcome: Literal["succeeded", "failed"] | None = None
     failure_classification: Literal["transient", "permanent"] | None = None
     durable_boundary_ref: NonEmptyText | None = None

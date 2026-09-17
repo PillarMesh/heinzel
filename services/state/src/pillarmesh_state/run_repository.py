@@ -10,6 +10,7 @@ from pillarmesh_contract_model import canonical_bytes
 from .run_models import (
     RunAttemptClaim,
     RunAttemptCompletion,
+    RunAttemptLeaseExtension,
     RunCancellation,
     RunRecord,
     RunRetryRequest,
@@ -31,6 +32,12 @@ class SQLiteRunRepository:
             "CREATE TABLE IF NOT EXISTS run_attempt_completions ("
             "run_id TEXT NOT NULL, attempt_number INTEGER NOT NULL, payload BLOB NOT NULL, "
             "PRIMARY KEY (run_id, attempt_number), "
+            "FOREIGN KEY (run_id, attempt_number) "
+            "REFERENCES run_attempt_claims(run_id, attempt_number));"
+            "CREATE TABLE IF NOT EXISTS run_attempt_lease_extensions ("
+            "run_id TEXT NOT NULL, attempt_number INTEGER NOT NULL, "
+            "extension_number INTEGER NOT NULL, payload BLOB NOT NULL, "
+            "PRIMARY KEY (run_id, attempt_number, extension_number), "
             "FOREIGN KEY (run_id, attempt_number) "
             "REFERENCES run_attempt_claims(run_id, attempt_number));"
             "CREATE TABLE IF NOT EXISTS run_cancellations ("
@@ -103,6 +110,30 @@ class SQLiteRunRepository:
             (run_id,),
         ).fetchall()
         return tuple(RunAttemptClaim.model_validate_json(bytes(row[0])) for row in rows)
+
+    def latest_lease_extension(
+        self, run_id: str, attempt_number: int
+    ) -> RunAttemptLeaseExtension | None:
+        row = self._connection.execute(
+            "SELECT payload FROM run_attempt_lease_extensions "
+            "WHERE run_id = ? AND attempt_number = ? ORDER BY extension_number DESC LIMIT 1",
+            (run_id, attempt_number),
+        ).fetchone()
+        if row is None:
+            return None
+        return RunAttemptLeaseExtension.model_validate_json(bytes(row[0]))
+
+    def insert_lease_extension(self, extension: RunAttemptLeaseExtension) -> None:
+        self._connection.execute(
+            "INSERT INTO run_attempt_lease_extensions "
+            "(run_id, attempt_number, extension_number, payload) VALUES (?, ?, ?, ?)",
+            (
+                extension.run_id,
+                extension.attempt_number,
+                extension.extension_number,
+                canonical_bytes(extension),
+            ),
+        )
 
     def load_completion(self, run_id: str, attempt_number: int) -> RunAttemptCompletion | None:
         row = self._connection.execute(

@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_state import RunAttemptClaim, RunService
+from pillarmesh_state import RunAttemptClaim, RunAttemptLeaseExtension, RunService
 from pillarmesh_state.run_models import RunAttemptCompletion
 
 from .acquisition_errors import AcquisitionThrottledError, AcquisitionTransientError
@@ -51,12 +51,51 @@ _TRANSIENT_PROVIDER_CLASSIFICATIONS = frozenset(
 )
 
 
+class RunLease:
+    """A stage's handle on its attempt: the claim it runs under, and a way to renew it.
+
+    A stage that may outlive its lease renews it while working, so the attempt is not fenced
+    mid-stage. Renewal is refused once the attempt is no longer the live one, which reaches the
+    stage as `RunLeaseLostError` rather than as a silent continuation.
+    """
+
+    def __init__(
+        self,
+        runs: RunService,
+        *,
+        tenant_id: str,
+        claim: RunAttemptClaim,
+        lease_seconds: int,
+    ) -> None:
+        self._runs = runs
+        self._tenant_id = tenant_id
+        self._claim = claim
+        self._lease_seconds = lease_seconds
+
+    @property
+    def claim(self) -> RunAttemptClaim:
+        return self._claim
+
+    def extend(self, lease_seconds: int | None = None) -> RunAttemptLeaseExtension:
+        try:
+            return self._runs.extend_lease(
+                tenant_id=self._tenant_id,
+                claim=self._claim,
+                lease_seconds=self._lease_seconds if lease_seconds is None else lease_seconds,
+            )
+        except ValueError as error:
+            _raise_if_fenced(error, None)
+            raise
+        except Exception as error:
+            raise RunLeaseRenewalUnavailableError("run lease renewal is unavailable") from error
+
+
 @dataclass(frozen=True)
 class RunStage:
     """One replay-stable stage that returns the reference of the durable boundary it proved."""
 
     boundary: str
-    execute: Callable[[RunAttemptClaim], str]
+    execute: Callable[[RunLease], str]
 
 
 @dataclass(frozen=True)
@@ -68,6 +107,14 @@ class LeasedRunOutcome:
 
 class RunLeaseLostError(RuntimeError):
     """The attempt is no longer current; the worker stopped without recording an outcome."""
+
+
+class RunLeaseRenewalUnavailableError(RuntimeError):
+    """The lease could not be renewed for a reason that is not fencing.
+
+    The attempt may well still be live, so this is retryable: a state-service outage must not
+    terminate a healthy run.
+    """
 
 
 class RunStageFailedError(RuntimeError):
@@ -89,7 +136,10 @@ class RunStageFailedError(RuntimeError):
 
 def classify_run_stage_failure(error: Exception) -> RunFailureClassification:
     """Transient only when a retry is known to be safe; anything unrecognized needs an operator."""
-    if isinstance(error, (AcquisitionTransientError, AcquisitionThrottledError)):
+    if isinstance(
+        error,
+        (AcquisitionTransientError, AcquisitionThrottledError, RunLeaseRenewalUnavailableError),
+    ):
         return "transient"
     if (
         isinstance(error, ProviderError)
@@ -137,7 +187,14 @@ class LeasedRunExecutor:
         for stage in stages:
             self._require_current(tenant_id, claim)
             try:
-                reference = stage.execute(claim)
+                reference = stage.execute(
+                    RunLease(
+                        self._runs,
+                        tenant_id=tenant_id,
+                        claim=claim,
+                        lease_seconds=self._lease_seconds,
+                    )
+                )
             except Exception as error:
                 classification = self._classify(error)
                 self._require_current(tenant_id, claim, cause=error)

@@ -8,6 +8,7 @@ from .run_models import (
     RunAttemptClaim,
     RunAttemptCompletion,
     RunAttemptHistory,
+    RunAttemptLeaseExtension,
     RunCancellation,
     RunIntent,
     RunLifecycleSnapshot,
@@ -44,12 +45,20 @@ class RunService:
         with self._repository.read_transaction():
             return tuple(self._describe(run, now) for run in self._repository.list_runs(tenant_id))
 
+    def _attempt_history(self, run_id: str, claim: RunAttemptClaim) -> RunAttemptHistory:
+        extension = self._repository.latest_lease_extension(run_id, claim.attempt_number)
+        return RunAttemptHistory(
+            claim=claim,
+            completion=self._repository.load_completion(run_id, claim.attempt_number),
+            lease_expires_at=(
+                claim.lease_expires_at if extension is None else extension.lease_expires_at
+            ),
+            lease_extensions=0 if extension is None else extension.extension_number,
+        )
+
     def _describe(self, run: RunRecord, now: datetime) -> RunLifecycleSnapshot:
         attempts = tuple(
-            RunAttemptHistory(
-                claim=claim,
-                completion=self._repository.load_completion(run.run_id, claim.attempt_number),
-            )
+            self._attempt_history(run.run_id, claim)
             for claim in self._repository.list_claims(run.run_id)
         )
         cancellation = self._repository.load_cancellation(run.run_id)
@@ -91,7 +100,7 @@ class RunService:
                         or completion.failure_classification == "permanent"
                     ):
                         raise ValueError("run is already terminal")
-                elif latest.lease_expires_at > now:
+                elif self._lease_expiry(latest) > now:
                     raise ValueError("run is already leased")
             claim = RunAttemptClaim(
                 run_id=run_id,
@@ -120,8 +129,55 @@ class RunService:
                 raise ValueError("stale run epoch")
             if self._repository.load_completion(claim.run_id, claim.attempt_number) is not None:
                 raise ValueError("run attempt is already complete")
-            if latest.lease_expires_at <= now:
+            if self._lease_expiry(latest) <= now:
                 raise ValueError("run lease expired")
+
+    def extend_lease(
+        self,
+        *,
+        tenant_id: str,
+        claim: RunAttemptClaim,
+        lease_seconds: int,
+    ) -> RunAttemptLeaseExtension:
+        """Renew a live attempt's lease so a stage longer than the lease keeps its claim.
+
+        The claim itself is never rewritten: each renewal is appended, and fencing reads the
+        latest one. Only the attempt that currently holds the run may renew, and a renewal that
+        would not move the expiry forward is refused.
+        """
+        if lease_seconds <= 0:
+            raise ValueError("lease_seconds must be positive")
+        now = self._clock()
+        with self._repository.transaction():
+            self._repository.load_owned(tenant_id, claim.run_id)
+            if self._repository.load_cancellation(claim.run_id) is not None:
+                raise ValueError("run is cancelled")
+            latest = self._repository.latest_claim(claim.run_id)
+            if latest != claim:
+                raise ValueError("stale run epoch")
+            if self._repository.load_completion(claim.run_id, claim.attempt_number) is not None:
+                raise ValueError("run attempt is already complete")
+            current = self._lease_expiry(latest)
+            if current <= now:
+                raise ValueError("run lease expired")
+            extension = self._repository.latest_lease_extension(claim.run_id, claim.attempt_number)
+            extended = RunAttemptLeaseExtension(
+                run_id=claim.run_id,
+                attempt_number=claim.attempt_number,
+                epoch=claim.epoch,
+                worker_id=claim.worker_id,
+                extension_number=1 if extension is None else extension.extension_number + 1,
+                lease_expires_at=now + timedelta(seconds=lease_seconds),
+                extended_at=now,
+            )
+            if extended.lease_expires_at <= current:
+                raise ValueError("lease extension must extend the lease")
+            self._repository.insert_lease_extension(extended)
+        return extended
+
+    def _lease_expiry(self, claim: RunAttemptClaim) -> datetime:
+        extension = self._repository.latest_lease_extension(claim.run_id, claim.attempt_number)
+        return claim.lease_expires_at if extension is None else extension.lease_expires_at
 
     def complete(
         self,
@@ -181,7 +237,7 @@ class RunService:
                 or latest.worker_id != worker_id
             ):
                 raise ValueError("stale run epoch")
-            if latest.lease_expires_at <= now:
+            if self._lease_expiry(latest) <= now:
                 raise ValueError("run lease expired")
             self._repository.insert_completion(candidate)
         return candidate
@@ -325,7 +381,7 @@ def _lifecycle_status(
         return "pending"
     latest = attempts[-1]
     if latest.completion is None:
-        return "leased" if latest.claim.lease_expires_at > now else "lease_expired"
+        return "leased" if latest.lease_expires_at > now else "lease_expired"
     if latest.completion.outcome == "succeeded":
         return "succeeded"
     if latest.completion.failure_classification == "transient":

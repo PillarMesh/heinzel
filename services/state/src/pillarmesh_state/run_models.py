@@ -83,6 +83,33 @@ class RunAttemptClaim(ArtifactModel):
         return self
 
 
+class RunAttemptLeaseExtension(ArtifactModel):
+    """One renewal of a live attempt's lease, appended rather than rewriting the claim.
+
+    A stage that outlives its lease renews it under the same attempt and epoch, so the claim
+    stays the immutable record of who took the attempt and when.
+    """
+
+    run_id: str = Field(min_length=1)
+    attempt_number: int = Field(ge=1)
+    epoch: int = Field(ge=1)
+    worker_id: str = Field(min_length=1)
+    extension_number: int = Field(ge=1)
+    lease_expires_at: datetime
+    extended_at: datetime
+
+    @field_validator("lease_expires_at", "extended_at")
+    @classmethod
+    def timestamps_are_utc(cls, value: datetime) -> datetime:
+        return _require_utc(value)
+
+    @model_validator(mode="after")
+    def lease_expires_after_extension(self) -> Self:
+        if self.lease_expires_at <= self.extended_at:
+            raise ValueError("extended lease must expire after it is extended")
+        return self
+
+
 class RunAttemptCompletion(ArtifactModel):
     run_id: str = Field(min_length=1)
     attempt_number: int = Field(ge=1)
@@ -147,8 +174,21 @@ type RunLifecycleStatus = Literal[
 
 
 class RunAttemptHistory(ArtifactModel):
+    """One attempt: the claim that took it, its effective lease, and its outcome if any.
+
+    `lease_expires_at` is the claim's own expiry extended by any renewals, which is the expiry
+    every fencing decision uses.
+    """
+
     claim: RunAttemptClaim
     completion: RunAttemptCompletion | None
+    lease_expires_at: datetime
+    lease_extensions: int = Field(ge=0)
+
+    @field_validator("lease_expires_at")
+    @classmethod
+    def lease_expiry_is_utc(cls, value: datetime) -> datetime:
+        return _require_utc(value)
 
 
 class RunLifecycleSnapshot(ArtifactModel):

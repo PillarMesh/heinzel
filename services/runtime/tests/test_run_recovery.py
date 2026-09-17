@@ -8,13 +8,19 @@ from pillarmesh_provider_sdk import ProviderError
 from pillarmesh_runtime import (
     AcquisitionTransientError,
     LeasedRunExecutor,
+    RunLease,
     RunLeaseLostError,
     RunStage,
     RunStageFailedError,
     classify_run_stage_failure,
 )
 from pillarmesh_state import RunAttemptClaim, RunService
-from pillarmesh_state.run_models import RunAttemptCompletion, RunIntent, TriggerWindow
+from pillarmesh_state.run_models import (
+    RunAttemptCompletion,
+    RunAttemptLeaseExtension,
+    RunIntent,
+    TriggerWindow,
+)
 from pillarmesh_state.run_repository import SQLiteRunRepository
 
 _NOW = datetime(2026, 9, 17, 12, tzinfo=UTC)
@@ -37,10 +43,10 @@ class _IdempotentEffect:
         self.effects: list[int] = []
         self.invocations: list[int] = []
 
-    def __call__(self, claim: RunAttemptClaim) -> str:
-        self.invocations.append(claim.epoch)
+    def __call__(self, lease: RunLease) -> str:
+        self.invocations.append(lease.claim.epoch)
         if not self.effects:
-            self.effects.append(claim.epoch)
+            self.effects.append(lease.claim.epoch)
         return f"{self.name}-receipt"
 
 
@@ -89,8 +95,8 @@ def test_a_worker_that_loses_its_lease_stops_at_the_next_boundary_and_a_successo
     runs, run_id = _runs(tmp_path, clock)
     prepare, land = _IdempotentEffect("prepared"), _IdempotentEffect("checkpoint")
 
-    def prepare_then_stall(claim: RunAttemptClaim) -> str:
-        receipt = prepare(claim)
+    def prepare_then_stall(lease: RunLease) -> str:
+        receipt = prepare(lease)
         clock.now += timedelta(seconds=61)  # the worker stalls past its lease after the effect
         return receipt
 
@@ -127,7 +133,7 @@ def test_a_superseded_worker_cannot_run_later_stages_or_record_a_terminal_outcom
     land = _IdempotentEffect("checkpoint")
     successor: list[RunAttemptClaim] = []
 
-    def superseded_during_prepare(claim: RunAttemptClaim) -> str:
+    def superseded_during_prepare(lease: RunLease) -> str:
         clock.now += timedelta(seconds=61)
         successor.append(
             runs.claim(tenant_id=_TENANT, run_id=run_id, worker_id="worker-b", lease_seconds=60)
@@ -155,7 +161,7 @@ def test_a_transient_stage_failure_is_recorded_retryable_at_the_last_proven_boun
     runs, run_id = _runs(tmp_path, clock)
     prepare = _IdempotentEffect("prepared")
 
-    def unavailable(_claim: RunAttemptClaim) -> str:
+    def unavailable(_lease: RunLease) -> str:
         raise ProviderError("destination unavailable", "transient_unavailable")
 
     with pytest.raises(RunStageFailedError) as failed:
@@ -182,7 +188,7 @@ def test_a_permanent_stage_failure_makes_the_run_terminal(tmp_path: Path) -> Non
     clock = _Clock()
     runs, run_id = _runs(tmp_path, clock)
 
-    def denied(_claim: RunAttemptClaim) -> str:
+    def denied(_lease: RunLease) -> str:
         raise ProviderError("denied", "authorization_denied")
 
     with pytest.raises(RunStageFailedError) as failed:
@@ -201,7 +207,7 @@ def test_a_cancelled_run_stops_before_its_next_stage(tmp_path: Path) -> None:
     runs, run_id = _runs(tmp_path, clock)
     land = _IdempotentEffect("checkpoint")
 
-    def cancelled_during_prepare(_claim: RunAttemptClaim) -> str:
+    def cancelled_during_prepare(_lease: RunLease) -> str:
         runs.cancel(tenant_id=_TENANT, run_id=run_id, cancelled_by="operator-a", reason="stop")
         return "prepared-receipt"
 
@@ -261,7 +267,7 @@ def test_a_stage_failure_keeps_its_cause_for_diagnosis(tmp_path: Path) -> None:
     runs, run_id = _runs(tmp_path, clock)
     bug = TypeError("unexpected payload shape")
 
-    def broken(_claim: RunAttemptClaim) -> str:
+    def broken(_lease: RunLease) -> str:
         raise bug
 
     with pytest.raises(RunStageFailedError) as failed:
@@ -278,7 +284,7 @@ def test_a_stage_failure_found_after_lease_loss_still_carries_the_failure(tmp_pa
     runs, run_id = _runs(tmp_path, clock)
     bug = TypeError("unexpected payload shape")
 
-    def slow_then_broken(_claim: RunAttemptClaim) -> str:
+    def slow_then_broken(_lease: RunLease) -> str:
         clock.now += timedelta(seconds=61)
         raise bug
 
@@ -310,3 +316,83 @@ def test_a_completion_conflict_is_not_reported_as_benign_lease_loss(tmp_path: Pa
         )
 
     assert not isinstance(raised.value, RunLeaseLostError)
+
+
+def test_a_stage_longer_than_its_lease_keeps_the_attempt_by_renewing(tmp_path: Path) -> None:
+    clock = _Clock()
+    runs, run_id = _runs(tmp_path, clock)
+    land = _IdempotentEffect("checkpoint")
+
+    def long_stage(lease: RunLease) -> str:
+        for _ in range(3):
+            clock.now += timedelta(seconds=45)
+            lease.extend()
+        return "prepared-receipt"
+
+    outcome = LeasedRunExecutor(runs, worker_id="worker-a", lease_seconds=60).execute(
+        tenant_id=_TENANT,
+        run_id=run_id,
+        stages=(
+            RunStage("acquisition_prepared", long_stage),
+            RunStage("land_acknowledged", land),
+        ),
+    )
+
+    # Without renewal the 135 seconds of work would have outlived the 60 second lease.
+    assert land.effects == [1]
+    assert outcome.completion.outcome == "succeeded"
+    (snapshot,) = runs.describe_runs(_TENANT)
+    assert snapshot.attempts[0].lease_extensions == 3
+
+
+def test_a_stage_cannot_renew_a_lease_another_worker_has_taken(tmp_path: Path) -> None:
+    clock = _Clock()
+    runs, run_id = _runs(tmp_path, clock)
+    land = _IdempotentEffect("checkpoint")
+
+    def superseded_stage(lease: RunLease) -> str:
+        clock.now += timedelta(seconds=61)
+        runs.claim(tenant_id=_TENANT, run_id=run_id, worker_id="worker-b", lease_seconds=60)
+        lease.extend()
+        raise AssertionError("a superseded stage must not continue")
+
+    with pytest.raises(RunLeaseLostError, match="stale run epoch"):
+        LeasedRunExecutor(runs, worker_id="worker-a", lease_seconds=60).execute(
+            tenant_id=_TENANT,
+            run_id=run_id,
+            stages=(
+                RunStage("acquisition_prepared", superseded_stage),
+                RunStage("land_acknowledged", land),
+            ),
+        )
+
+    assert land.invocations == []
+
+
+def test_an_unavailable_renewal_does_not_permanently_fail_a_live_attempt(tmp_path: Path) -> None:
+    clock = _Clock()
+    runs, run_id = _runs(tmp_path, clock)
+
+    class _RenewalUnavailable(RunService):
+        def extend_lease(self, **kwargs: object) -> RunAttemptLeaseExtension:  # type: ignore[override]
+            raise OSError("state store unavailable")
+
+    unavailable = _RenewalUnavailable(SQLiteRunRepository(tmp_path / "runs.sqlite3"), clock=clock)
+
+    def renewing_stage(lease: RunLease) -> str:
+        lease.extend()
+        raise AssertionError("renewal must not be reported as success")
+
+    with pytest.raises(RunStageFailedError) as failed:
+        LeasedRunExecutor(unavailable, worker_id="worker-a", lease_seconds=60).execute(
+            tenant_id=_TENANT,
+            run_id=run_id,
+            stages=(RunStage("acquisition_prepared", renewing_stage),),
+        )
+
+    # A state-service outage is retryable: the attempt itself was never fenced.
+    assert failed.value.completion.failure_classification == "transient"
+    assert (
+        runs.claim(tenant_id=_TENANT, run_id=run_id, worker_id="worker-b", lease_seconds=60).epoch
+        == 2
+    )

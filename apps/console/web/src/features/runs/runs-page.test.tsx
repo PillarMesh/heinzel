@@ -103,6 +103,7 @@ const leasedRun: LeasedRunView = {
       worker_ref: "worker-b",
       claimed_at: "2026-09-17T12:02:00Z",
       lease_expires_at: "2026-09-17T12:03:00Z",
+      lease_extensions: 2,
       outcome: "failed",
       failure_classification: "transient",
       durable_boundary_ref: "acquisition_prepared:prepared-receipt-1",
@@ -139,6 +140,7 @@ test("a leased run shows its status, window and attempts with internals behind d
   expect(screen.getByText("worker-b")).toBeVisible()
   expect(screen.getByText(/attempt 1, epoch 1: lease ended without an outcome/i)).toBeVisible()
   expect(screen.getByText(/attempt 2, epoch 2: failed \(transient\)/i)).toBeVisible()
+  expect(screen.getByText(/after 2 renewals/i)).toBeVisible()
 })
 
 test("a leased run that has proved no boundary says so", async () => {
@@ -174,4 +176,29 @@ test("an unavailable state-owned run read is reported rather than shown as no ru
     expect(screen.getByText(/state-owned runs are unavailable right now/i)).toBeVisible(),
   )
   expect(screen.queryByText(/no runs have been recorded/i)).toBeNull()
+})
+
+test("a single lease renewal is described in the singular", async () => {
+  const once: LeasedRunView = {
+    ...leasedRun,
+    attempts: [
+      {
+        attempt_number: 2,
+        epoch: 2,
+        worker_ref: "worker-b",
+        claimed_at: "2026-09-17T12:02:00Z",
+        lease_expires_at: "2026-09-17T12:03:00Z",
+        lease_extensions: 1,
+      },
+    ],
+  }
+  const client = {getRuns: vi.fn().mockResolvedValue(envelope([], [once]))}
+  const user = userEvent.setup()
+
+  render(<RunsPage client={client} />)
+
+  await waitFor(() => expect(screen.getByText("Technical details")).toBeVisible())
+  await user.click(screen.getByText("Technical details"))
+
+  expect(screen.getByText(/after 1 renewal\./i)).toBeVisible()
 })

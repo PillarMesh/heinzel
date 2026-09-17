@@ -5183,6 +5183,12 @@
         "lease_expires_at": {
           "$ref": "#/$defs/UtcDatetime"
         },
+        "lease_extensions": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Lease Extensions",
+          "type": "integer"
+        },
         "outcome": {
           "anyOf": [
             {

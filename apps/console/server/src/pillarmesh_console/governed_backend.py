@@ -1304,7 +1304,8 @@ class GovernedConsoleBackend:
                         epoch=item.claim.epoch,
                         worker_ref=item.claim.worker_id,
                         claimed_at=item.claim.claimed_at,
-                        lease_expires_at=item.claim.lease_expires_at,
+                        lease_expires_at=item.lease_expires_at,
+                        lease_extensions=item.lease_extensions,
                         outcome=None if item.completion is None else item.completion.outcome,
                         failure_classification=(
                             None

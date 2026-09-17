@@ -26,6 +26,7 @@ from pillarmesh_runtime import (
     ActivatedAcquisitionRunContracts,
     GenerationLedger,
     LeasedRunExecutor,
+    RunLease,
     RunLeaseLostError,
     RunStage,
 )
@@ -110,8 +111,8 @@ def test_a_due_run_resumes_from_its_durable_boundary_after_lease_loss(tmp_path: 
             )
             preparations: list[int] = []
 
-            def prepare(claim: RunAttemptClaim) -> str:
-                preparations.append(claim.epoch)
+            def prepare(lease: RunLease) -> str:
+                preparations.append(lease.claim.epoch)
                 preparation = composed.application.run_now(
                     tenant_id=_TENANT,
                     contract_ref=_CONTRACT_REF,
@@ -121,7 +122,7 @@ def test_a_due_run_resumes_from_its_durable_boundary_after_lease_loss(tmp_path: 
                 assert preparation.prepared_receipt is not None
                 return preparation.prepared_receipt.prepared_receipt_id
 
-            def land(claim: RunAttemptClaim) -> str:
+            def land(_lease: RunLease) -> str:
                 preparation = composed.application.run_now(
                     tenant_id=_TENANT,
                     contract_ref=_CONTRACT_REF,
@@ -135,16 +136,16 @@ def test_a_due_run_resumes_from_its_durable_boundary_after_lease_loss(tmp_path: 
                 )
                 return landed.checkpoint_receipt.checkpoint_receipt_id
 
-            def prepare_then_crash(claim: RunAttemptClaim) -> str:
-                receipt = prepare(claim)
+            def prepare_then_crash(lease: RunLease) -> str:
+                receipt = prepare(lease)
                 run_clock.value += timedelta(seconds=_LEASE_SECONDS + 1)
                 return receipt
 
             stalled_claims: list[RunAttemptClaim] = []
 
-            def record_claim(claim: RunAttemptClaim) -> str:
-                stalled_claims.append(claim)
-                return prepare_then_crash(claim)
+            def record_claim(lease: RunLease) -> str:
+                stalled_claims.append(lease.claim)
+                return prepare_then_crash(lease)
 
             with pytest.raises(RunLeaseLostError, match="run lease expired") as lost:
                 LeasedRunExecutor(runs, worker_id="worker-a", lease_seconds=_LEASE_SECONDS).execute(

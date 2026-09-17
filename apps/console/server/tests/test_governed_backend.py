@@ -1367,6 +1367,7 @@ def test_leased_runs_project_attempts_epochs_and_the_last_durable_boundary(
     first = service.claim(tenant_id=_TENANT, run_id=run_id, worker_id="worker-a", lease_seconds=60)
     clock[0] += timedelta(seconds=61)
     second = service.claim(tenant_id=_TENANT, run_id=run_id, worker_id="worker-b", lease_seconds=60)
+    service.extend_lease(tenant_id=_TENANT, claim=second, lease_seconds=120)
     service.complete(
         tenant_id=_TENANT,
         run_id=run_id,
@@ -1395,6 +1396,8 @@ def test_leased_runs_project_attempts_epochs_and_the_last_durable_boundary(
         (2, 2, "failed"),
     ]
     assert leased.attempts[0].lease_expires_at == first.lease_expires_at
+    assert leased.attempts[0].lease_extensions == 0
+    assert leased.attempts[1].lease_extensions == 1
     assert leased.attempts[1].failure_classification == "transient"
     assert leased.attempts[1].durable_boundary_ref == "acquisition_prepared:prepared-1"
 

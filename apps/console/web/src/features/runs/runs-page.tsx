@@ -85,7 +85,10 @@ function LeasedRun({run}: {readonly run: LeasedRunView}) {
                   <p>
                     {attemptSummary(attempt)}. Worker <code>{attempt.worker_ref}</code>, claimed{" "}
                     {new Date(attempt.claimed_at).toISOString()}, lease until{" "}
-                    {new Date(attempt.lease_expires_at).toISOString()}.
+                    {new Date(attempt.lease_expires_at).toISOString()}
+                    {(attempt.lease_extensions ?? 0) === 0
+                      ? "."
+                      : ` after ${attempt.lease_extensions} ${attempt.lease_extensions === 1 ? "renewal" : "renewals"}.`}
                   </p>
                   {attempt.durable_boundary_ref == null ? null : (
                     <p>

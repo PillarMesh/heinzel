@@ -309,6 +309,7 @@ export type ConsoleEnvelopeRunsView = ConsoleEnvelope_RunsView_
 export type AttemptNumber = number
 export type Epoch = number
 export type FailureClassification = ("transient" | "permanent") | null
+export type LeaseExtensions = number
 export type Outcome = ("succeeded" | "failed") | null
 export type JsonTuple_RunAttemptView_ = RunAttemptView[]
 export type ContractRevision = number
@@ -1136,6 +1137,7 @@ export interface RunAttemptView {
   epoch: Epoch
   failure_classification?: FailureClassification
   lease_expires_at: UtcDatetime
+  lease_extensions?: LeaseExtensions
   outcome?: Outcome
   worker_ref: NonEmptyText
 }
