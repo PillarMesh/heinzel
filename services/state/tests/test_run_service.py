@@ -297,3 +297,56 @@ def test_only_transient_failure_allows_a_new_attempt(
                 worker_id="worker-b",
                 lease_seconds=30,
             )
+
+
+def test_current_attempt_check_passes_only_for_the_live_lease_holder(tmp_path: Path) -> None:
+    clock = _Clock()
+    service = _service(tmp_path / "runs.sqlite3", clock)
+    run = service.materialize(_intent())
+    old = service.claim(
+        tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-a", lease_seconds=30
+    )
+
+    service.require_current_attempt(tenant_id="tenant-a", claim=old)
+    clock.now += timedelta(seconds=30)
+    with pytest.raises(ValueError, match="run lease expired"):
+        service.require_current_attempt(tenant_id="tenant-a", claim=old)
+
+    current = service.claim(
+        tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-b", lease_seconds=30
+    )
+    with pytest.raises(ValueError, match="stale run epoch"):
+        service.require_current_attempt(tenant_id="tenant-a", claim=old)
+    service.require_current_attempt(tenant_id="tenant-a", claim=current)
+    with pytest.raises(KeyError):
+        service.require_current_attempt(tenant_id="tenant-b", claim=current)
+
+
+def test_current_attempt_check_refuses_completed_and_cancelled_attempts(tmp_path: Path) -> None:
+    clock = _Clock()
+    service = _service(tmp_path / "runs.sqlite3", clock)
+    run = service.materialize(_intent())
+    claim = service.claim(
+        tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-a", lease_seconds=30
+    )
+    service.complete(
+        tenant_id="tenant-a",
+        run_id=run.run_id,
+        attempt_number=claim.attempt_number,
+        epoch=claim.epoch,
+        worker_id=claim.worker_id,
+        outcome="failed",
+        failure_classification="transient",
+        durable_boundary_ref="none",
+    )
+    with pytest.raises(ValueError, match="run attempt is already complete"):
+        service.require_current_attempt(tenant_id="tenant-a", claim=claim)
+
+    retry = service.claim(
+        tenant_id="tenant-a", run_id=run.run_id, worker_id="worker-b", lease_seconds=30
+    )
+    service.cancel(
+        tenant_id="tenant-a", run_id=run.run_id, cancelled_by="operator-a", reason="stop"
+    )
+    with pytest.raises(ValueError, match="run is cancelled"):
+        service.require_current_attempt(tenant_id="tenant-a", claim=retry)

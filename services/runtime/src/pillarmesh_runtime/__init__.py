@@ -94,6 +94,14 @@ from .destination_composition import (
 from .faults import FaultHook, noop_fault_hook
 from .generation_ledger import GenerationLedger
 from .landing import LandingResult, LandingRunner
+from .leased_run import (
+    LeasedRunExecutor,
+    LeasedRunOutcome,
+    RunLeaseLostError,
+    RunStage,
+    RunStageFailedError,
+    classify_run_stage_failure,
+)
 from .models import RunResult
 from .product_catalog_composition import (
     AuthoritativeProductCatalog,
@@ -230,6 +238,8 @@ __all__ = [
     "GovernedQueryExecutor",
     "LandingResult",
     "LandingRunner",
+    "LeasedRunExecutor",
+    "LeasedRunOutcome",
     "MaterializationAuthorityError",
     "MaterializationCatalog",
     "MaterializationObservation",
@@ -259,7 +269,10 @@ __all__ = [
     "QueryResultNotFound",
     "ReadOnlyAnswerQuery",
     "ReferenceFactory",
+    "RunLeaseLostError",
     "RunResult",
+    "RunStage",
+    "RunStageFailedError",
     "Runtime",
     "RuntimeDestination",
     "RuntimeSource",
@@ -274,6 +287,7 @@ __all__ = [
     "acquisition_checkpoint_resolver",
     "acquisition_run_now_reference",
     "activated_contract_resolver",
+    "classify_run_stage_failure",
     "compose_acquisition_application",
     "compose_activated_acquisition_contract",
     "compose_authoritative_product_catalog",

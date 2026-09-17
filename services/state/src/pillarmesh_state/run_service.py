@@ -76,6 +76,25 @@ class RunService:
             self._repository.insert_claim(claim)
         return claim
 
+    def require_current_attempt(self, *, tenant_id: str, claim: RunAttemptClaim) -> None:
+        """Refuse unless the claim is still the live, unfinished attempt of an active run.
+
+        A worker checks this before each effectful stage, so a worker whose lease expired or was
+        superseded stops at the next stage boundary instead of carrying on beside its successor.
+        """
+        now = self._clock()
+        with self._repository.transaction():
+            self._repository.load_owned(tenant_id, claim.run_id)
+            if self._repository.load_cancellation(claim.run_id) is not None:
+                raise ValueError("run is cancelled")
+            latest = self._repository.latest_claim(claim.run_id)
+            if latest != claim:
+                raise ValueError("stale run epoch")
+            if self._repository.load_completion(claim.run_id, claim.attempt_number) is not None:
+                raise ValueError("run attempt is already complete")
+            if latest.lease_expires_at <= now:
+                raise ValueError("run lease expired")
+
     def complete(
         self,
         *,
