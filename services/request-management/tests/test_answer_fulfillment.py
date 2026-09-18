@@ -7,13 +7,18 @@ from heinzel_contract_model import ArtifactReference, digest
 from heinzel_request_management import (
     ClarifiedOutcomeStatement,
     DecisionKind,
+    FreshnessDisposition,
     FulfillmentGroundingSnapshot,
     FulfillmentPolicyCompiler,
     FulfillmentPolicySnapshot,
+    FulfillmentProposal,
     FulfillmentService,
     InboxRequest,
+    RequestDependency,
     RequestManagementService,
+    RequestNoValidPlan,
     RequestState,
+    ResolutionFailure,
     SQLiteFulfillmentRepository,
     SQLiteRequestRepository,
     StakeholderAnswerDraft,
@@ -74,13 +79,14 @@ def snapshots(
 
 class StaticSnapshotResolver:
     def __init__(
-        self, value: tuple[FulfillmentGroundingSnapshot, FulfillmentPolicySnapshot]
+        self,
+        value: tuple[FulfillmentGroundingSnapshot, FulfillmentPolicySnapshot] | ResolutionFailure,
     ) -> None:
         self.value = value
 
     def resolve(
         self, *, tenant_id: str, request: InboxRequest
-    ) -> tuple[FulfillmentGroundingSnapshot, FulfillmentPolicySnapshot]:
+    ) -> tuple[FulfillmentGroundingSnapshot, FulfillmentPolicySnapshot] | ResolutionFailure:
         if tenant_id != "tenant-a" or request.tenant_id != tenant_id:
             raise ValueError("snapshot resolution authority mismatch")
         return self.value
@@ -95,7 +101,7 @@ class StaticAnswerProvider:
 
 
 class CurrentFreshness:
-    def derive(self, grounding: FulfillmentGroundingSnapshot) -> str:
+    def derive(self, grounding: FulfillmentGroundingSnapshot) -> FreshnessDisposition:
         return "current" if grounding.freshness_observation_ref is not None else "unknown"
 
 
@@ -140,7 +146,9 @@ def service(
     return fulfillment_service, request_service, fulfillment_repository
 
 
-def submit_and_clarify(fulfillment: FulfillmentService, requests: RequestManagementService):
+def submit_and_clarify(
+    fulfillment: FulfillmentService, requests: RequestManagementService
+) -> tuple[InboxRequest, ClarifiedOutcomeStatement]:
     submitted = requests.submit_question(
         tenant_id="tenant-a",
         requester_id="requester-a",
@@ -169,6 +177,7 @@ def test_direct_clarification_and_answer_proposal_are_persisted() -> None:
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(proposal, FulfillmentProposal)
 
     assert isinstance(statement, ClarifiedOutcomeStatement)
     assert investigating.state is RequestState.INVESTIGATING
@@ -187,6 +196,7 @@ def test_missing_metric_creates_semantic_dependency_without_proposal() -> None:
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(dependency, RequestDependency)
 
     assert dependency.kind == "semantic_change"
     assert requests.get("tenant-a", investigating.request_id).state is RequestState.INVESTIGATING
@@ -205,6 +215,7 @@ def test_missing_factual_observation_creates_data_product_dependency() -> None:
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(dependency, RequestDependency)
 
     assert dependency.kind == "data_product_change"
     assert requests.get("tenant-a", investigating.request_id).state is RequestState.INVESTIGATING
@@ -223,6 +234,7 @@ def test_unadmitted_purpose_stores_no_valid_plan_atomically() -> None:
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(result, RequestNoValidPlan)
 
     assert result.reason_codes == ("purpose_authority_mismatch",)
     assert requests.get("tenant-a", investigating.request_id).state is RequestState.NO_VALID_PLAN
@@ -239,6 +251,7 @@ def test_material_answer_edit_creates_a_linked_proposal_revision() -> None:
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(first, FulfillmentProposal)
     provider.answer = provider.answer.model_copy(
         update={"answer_text": "Net revenue after approved refund adjustments."}
     )
@@ -249,6 +262,7 @@ def test_material_answer_edit_creates_a_linked_proposal_revision() -> None:
         actor_id="architect-a",
         expected_revision=first.request_revision,
     )
+    assert isinstance(second, FulfillmentProposal)
 
     assert second.revision == 2
     assert second.prior_proposal_digest == digest(first)

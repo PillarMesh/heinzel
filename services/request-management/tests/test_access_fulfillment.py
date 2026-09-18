@@ -9,14 +9,19 @@ from heinzel_request_management import (
     AccessGrantDeliveryObservation,
     AccessGrantEffectTarget,
     AccessScopePreview,
+    DisclosureDenial,
+    FreshnessDisposition,
+    FulfillmentAdmissionReceipt,
     FulfillmentAuthorityError,
     FulfillmentGroundingSnapshot,
     FulfillmentPolicyCompiler,
     FulfillmentPolicySnapshot,
+    FulfillmentProposal,
     FulfillmentReadService,
     FulfillmentService,
     InboxRequest,
     RequestManagementService,
+    RequestNoValidPlan,
     RequestState,
     ResolutionFailure,
     SQLiteFulfillmentRepository,
@@ -75,12 +80,15 @@ def snapshots(
 
 
 class SnapshotResolver:
-    def __init__(self, value: tuple[FulfillmentGroundingSnapshot, FulfillmentPolicySnapshot]):
+    def __init__(
+        self,
+        value: tuple[FulfillmentGroundingSnapshot, FulfillmentPolicySnapshot] | ResolutionFailure,
+    ) -> None:
         self.value = value
 
     def resolve(
         self, *, tenant_id: str, request: InboxRequest
-    ) -> tuple[FulfillmentGroundingSnapshot, FulfillmentPolicySnapshot]:
+    ) -> tuple[FulfillmentGroundingSnapshot, FulfillmentPolicySnapshot] | ResolutionFailure:
         if tenant_id != "tenant-a" or request.tenant_id != tenant_id:
             raise ValueError("snapshot resolution authority mismatch")
         return self.value
@@ -163,7 +171,7 @@ class UnusedAnswerProvider:
 
 
 class CurrentFreshness:
-    def derive(self, grounding: FulfillmentGroundingSnapshot) -> str:
+    def derive(self, grounding: FulfillmentGroundingSnapshot) -> FreshnessDisposition:
         return "unknown"
 
 
@@ -172,7 +180,7 @@ def setup(
     permitted: bool = True,
     configure_grant_resolver: bool = True,
     grant_activation_reader: GrantActivationReader | None = None,
-):
+) -> tuple[FulfillmentService, RequestManagementService, SQLiteFulfillmentRepository, InboxRequest]:
     request_repository = SQLiteRequestRepository.open(":memory:")
     requests = RequestManagementService(request_repository, clock=lambda: NOW)
     repository = SQLiteFulfillmentRepository(request_repository)
@@ -212,13 +220,17 @@ def setup(
     return fulfillment, requests, repository, requests.get("tenant-a", submitted.request_id)
 
 
-def _admit_access(fulfillment: FulfillmentService, investigating: InboxRequest):
+def _admit_access(
+    fulfillment: FulfillmentService, investigating: InboxRequest
+) -> tuple[FulfillmentProposal, FulfillmentAdmissionReceipt]:
     proposal = fulfillment.propose_access(
         tenant_id="tenant-a",
         request_id=investigating.request_id,
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    if not isinstance(proposal, FulfillmentProposal):
+        raise AssertionError("the seeded access request did not produce a proposal")
     awaiting = fulfillment.submit_proposal(
         tenant_id="tenant-a",
         request_id=proposal.request_id,
@@ -240,12 +252,15 @@ def _admit_access(fulfillment: FulfillmentService, investigating: InboxRequest):
             decision="approve",
             expected_revision=awaiting.revision,
         )
-    return proposal, fulfillment.admit(
+    admission = fulfillment.admit(
         tenant_id="tenant-a",
         request_id=proposal.request_id,
         actor_id="architect-a",
         expected_revision=awaiting.revision,
     )
+    if not isinstance(admission, FulfillmentAdmissionReceipt):
+        raise AssertionError("the approved access proposal was not admitted")
+    return proposal, admission
 
 
 def test_active_access_grant_delivers_the_request_with_requester_safe_terms() -> None:
@@ -346,6 +361,8 @@ def test_access_proposal_is_narrowed_and_requires_exact_owner_and_policy() -> No
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(proposal, FulfillmentProposal)
+    assert isinstance(proposal.subject, AccessScopePreview)
 
     assert proposal.subject.effective_fields == ("invoice_id",)
     assert proposal.subject.excluded_scopes == ("refund_amount",)
@@ -365,6 +382,7 @@ def test_access_admission_persists_current_grant_authority_with_the_approved_pro
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(proposal, FulfillmentProposal)
     awaiting = fulfillment.submit_proposal(
         tenant_id="tenant-a",
         request_id=proposal.request_id,
@@ -393,6 +411,7 @@ def test_access_admission_persists_current_grant_authority_with_the_approved_pro
         actor_id="architect-a",
         expected_revision=awaiting.revision,
     )
+    assert isinstance(admission, FulfillmentAdmissionReceipt)
 
     assert admission.access_grant_binding is not None
     assert admission.access_grant_binding.proposal_digest == digest(proposal)
@@ -412,6 +431,7 @@ def test_access_admission_fails_closed_without_current_grant_authority() -> None
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(proposal, FulfillmentProposal)
     awaiting = fulfillment.submit_proposal(
         tenant_id="tenant-a",
         request_id=proposal.request_id,
@@ -454,6 +474,8 @@ def test_unentitled_access_creates_denial_without_dependency() -> None:
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(proposal, FulfillmentProposal)
+    assert isinstance(proposal.subject, DisclosureDenial)
 
     assert proposal.subject.subject_kind == "disclosure_denial"
     assert repository.list_dependencies("tenant-a", investigating.request_id) == ()
@@ -462,11 +484,13 @@ def test_unentitled_access_creates_denial_without_dependency() -> None:
 def test_access_snapshot_failure_preserves_requester_safe_explanation() -> None:
     fulfillment, requests, repository, investigating = setup()
     safe_explanation = "The authoritative access context is unavailable."
-    fulfillment._snapshot_resolver.value = ResolutionFailure(
-        reason_codes=("authority_unavailable",),
-        constraint_refs=(),
-        smallest_changes=("Restore the approved authority observation.",),
-        requester_safe_explanation=safe_explanation,
+    fulfillment._snapshot_resolver = SnapshotResolver(
+        ResolutionFailure(
+            reason_codes=("authority_unavailable",),
+            constraint_refs=(),
+            smallest_changes=("Restore the approved authority observation.",),
+            requester_safe_explanation=safe_explanation,
+        )
     )
 
     result = fulfillment.propose_access(
@@ -475,6 +499,7 @@ def test_access_snapshot_failure_preserves_requester_safe_explanation() -> None:
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(result, RequestNoValidPlan)
 
     assert result.requester_safe_explanation == safe_explanation
     assert repository.list_no_valid_plans("tenant-a", investigating.request_id) == (result,)
@@ -489,6 +514,8 @@ def test_approved_denial_records_requester_safe_disposition() -> None:
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    assert isinstance(proposal, FulfillmentProposal)
+    assert isinstance(proposal.subject, DisclosureDenial)
     awaiting = fulfillment.submit_proposal(
         tenant_id="tenant-a",
         request_id=proposal.request_id,

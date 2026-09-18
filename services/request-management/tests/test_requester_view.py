@@ -10,8 +10,13 @@ from heinzel_request_management import (
     FulfillmentIntegrityError,
     FulfillmentNotVisible,
     FulfillmentReadService,
+    FulfillmentService,
+    InboxRequest,
+    RequestManagementService,
+    RequestNoValidPlan,
     RequestState,
     ResolutionFailure,
+    SQLiteFulfillmentRepository,
 )
 
 _SUPPORT = runpy.run_path(str(Path(__file__).with_name("test_fulfillment_approval.py")))
@@ -21,7 +26,19 @@ submit_and_clarify = _SUPPORT["submit_and_clarify"]
 StaticSnapshotResolver = _SUPPORT["StaticSnapshotResolver"]
 
 
-def _refused_request(safe_explanation: str | None):
+def _refused_request(
+    safe_explanation: str | None,
+) -> tuple[
+    RequestManagementService,
+    SQLiteFulfillmentRepository,
+    FulfillmentReadService,
+    InboxRequest,
+    RequestNoValidPlan,
+]:
+    # `service` is loaded through `runpy`, so its own annotations do not survive.
+    fulfillment: FulfillmentService
+    requests: RequestManagementService
+    repository: SQLiteFulfillmentRepository
     fulfillment, requests, repository = service()
     investigating, _ = submit_and_clarify(fulfillment, requests)
     fulfillment._snapshot_resolver = StaticSnapshotResolver(
@@ -38,6 +55,8 @@ def _refused_request(safe_explanation: str | None):
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    if not isinstance(refusal, RequestNoValidPlan):
+        raise AssertionError("the unresolvable request did not record a no valid plan")
     reader = FulfillmentReadService(
         request_service=requests,
         repository=repository,

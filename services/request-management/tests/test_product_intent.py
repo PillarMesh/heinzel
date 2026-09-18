@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 from heinzel_contract_model import ArtifactReference, digest
@@ -169,7 +170,7 @@ def test_product_intent_candidate_is_durable_and_replays_exactly() -> None:
     assert candidates.current_candidate("tenant-a", request.request_id) == first
 
 
-def test_product_intent_candidate_survives_repository_reopen(tmp_path) -> None:
+def test_product_intent_candidate_survives_repository_reopen(tmp_path: Path) -> None:
     database_path = str(tmp_path / "requests.sqlite3")
     repository = SQLiteRequestRepository.open(database_path)
     requests, candidates = _candidate_service(repository)

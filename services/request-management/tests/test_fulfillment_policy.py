@@ -5,6 +5,7 @@ from heinzel_contract_model import ArtifactReference, digest
 from heinzel_request_management import (
     AccessScopePreview,
     ClarifiedOutcomeStatement,
+    FreshnessDisposition,
     FulfillmentGroundingSnapshot,
     FulfillmentPolicyCompiler,
     FulfillmentPolicySnapshot,
@@ -121,7 +122,7 @@ def answer(*, classified: bool = False) -> StakeholderAnswerDraft:
 
 
 class CurrentFreshnessEvaluator:
-    def derive(self, grounding: FulfillmentGroundingSnapshot) -> str:
+    def derive(self, grounding: FulfillmentGroundingSnapshot) -> FreshnessDisposition:
         return "current" if grounding.freshness_observation_ref is not None else "unknown"
 
 

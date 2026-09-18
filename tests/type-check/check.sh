@@ -24,6 +24,7 @@ packages/execution-graph/tests
 services/access-control/tests
 services/context-exposure/tests
 services/dbt-adapter/tests
+services/request-management/tests
 tests/release
 '
 
@@ -48,7 +49,6 @@ services/connection-broker/tests
 services/contract/tests
 services/evidence/tests
 services/knowledge-graph/tests
-services/request-management/tests
 services/runtime/tests
 services/semantic-registry/tests
 services/state/tests

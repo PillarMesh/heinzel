@@ -18,8 +18,10 @@ from heinzel_knowledge_graph import (
 from heinzel_request_management import (
     FulfillmentImpactBindingReader,
     FulfillmentProposal,
+    FulfillmentService,
     GraphImpactAdmissionResolver,
     ImpactAdmissionResolutionError,
+    RequestManagementService,
 )
 
 _NOW = datetime(2026, 9, 12, 22, tzinfo=UTC)
@@ -43,14 +45,20 @@ def _observation(reference: ArtifactReference) -> SourceRecordObservation:
 
 
 def _proposal() -> FulfillmentProposal:
+    # `service` is loaded through `runpy`, so its own annotations do not survive.
+    fulfillment: FulfillmentService
+    requests: RequestManagementService
     fulfillment, requests, _repository = service()
     investigating, _ = submit_and_clarify(fulfillment, requests)
-    return fulfillment.propose_answer(
+    proposal = fulfillment.propose_answer(
         tenant_id="tenant-a",
         request_id=investigating.request_id,
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    if not isinstance(proposal, FulfillmentProposal):
+        raise AssertionError("the seeded answer request did not produce a proposal")
+    return proposal
 
 
 class MetricSubjectResolver:

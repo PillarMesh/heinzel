@@ -8,9 +8,15 @@ import pytest
 from heinzel_contract_model import digest
 from heinzel_request_management import (
     DecisionKind,
+    FulfillmentAdmissionReceipt,
+    FulfillmentProposal,
     FulfillmentService,
+    InboxRequest,
+    RequestManagementService,
+    RequestNoValidPlan,
     RequestState,
     ResolutionFailure,
+    SQLiteFulfillmentRepository,
 )
 from pydantic import ValidationError
 
@@ -39,7 +45,22 @@ class RoleResolver:
         )
 
 
-def prepared_service() -> tuple[FulfillmentService, object, object]:
+def prepared_service() -> tuple[
+    FulfillmentService,
+    RequestManagementService,
+    tuple[SQLiteFulfillmentRepository, FulfillmentProposal, InboxRequest],
+]:
+    """Seed one submitted proposal awaiting its approvals.
+
+    The third element was declared `object`, so unpacking it failed and every name
+    taken from it lost its type across the file. `propose_answer` also returns the
+    full outcome union, so the proposal is narrowed once here rather than at each
+    of the thirty-odd places that read a proposal-only field.
+    """
+    # `service` is loaded through `runpy`, so its own annotations do not survive.
+    fulfillment: FulfillmentService
+    requests: RequestManagementService
+    repository: SQLiteFulfillmentRepository
     fulfillment, requests, repository = service()
     fulfillment._authority_role_resolver = RoleResolver()
     investigating, _ = submit_and_clarify(fulfillment, requests)
@@ -49,6 +70,8 @@ def prepared_service() -> tuple[FulfillmentService, object, object]:
         actor_id="architect-a",
         expected_revision=investigating.revision,
     )
+    if not isinstance(proposal, FulfillmentProposal):
+        raise AssertionError("the seeded answer request did not produce a proposal")
     awaiting = fulfillment.submit_proposal(
         tenant_id="tenant-a",
         request_id=proposal.request_id,
@@ -87,6 +110,7 @@ def test_exact_role_scoped_approvals_admit_only_current_proposal() -> None:
         actor_id="architect-a",
         expected_revision=awaiting.revision,
     )
+    assert isinstance(admission, FulfillmentAdmissionReceipt)
 
     assert admission.proposal_digest == digest(proposal)
     assert admission.approval_ids == tuple(item.approval_id for item in approvals)
@@ -260,6 +284,7 @@ def test_equivalent_policy_reresolution_allows_admission_against_fresh_snapshot(
         actor_id="architect-a",
         expected_revision=awaiting.revision,
     )
+    assert isinstance(admission, FulfillmentAdmissionReceipt)
 
     assert admission.execution_status == "ready_for_execution"
     assert admission.policy_snapshot_digest != proposal.policy_snapshot_digest
@@ -295,6 +320,7 @@ def test_changed_grounding_supersedes_proposal_with_exact_current_context() -> N
         actor_id="architect-a",
         expected_revision=awaiting.revision,
     )
+    assert isinstance(revised, FulfillmentProposal)
 
     assert revised.revision == 2
     assert revised.prior_proposal_digest == digest(proposal)
@@ -337,6 +363,7 @@ def test_changed_policy_supersedes_proposal_and_invalidates_old_approvals() -> N
         actor_id="architect-a",
         expected_revision=awaiting.revision,
     )
+    assert isinstance(revised, FulfillmentProposal)
 
     assert revised.revision == 2
     assert revised.prior_proposal_digest == digest(proposal)
@@ -362,6 +389,7 @@ def test_failed_policy_reresolution_records_no_valid_plan() -> None:
         actor_id="architect-a",
         expected_revision=awaiting.revision,
     )
+    assert isinstance(result, RequestNoValidPlan)
 
     assert result.reason_codes == ("policy_authority_unavailable",)
     assert result.requester_safe_explanation == "The current policy authority is unavailable."

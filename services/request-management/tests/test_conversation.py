@@ -214,7 +214,9 @@ def test_stale_conversation_cannot_append_an_orphaned_entry(
     assert service.get("tenant-a", request.request_id).revision == 2
 
 
-def test_repository_rolls_back_conversation_when_revision_race_loses(tmp_path) -> None:
+def test_repository_rolls_back_conversation_when_revision_race_loses(
+    tmp_path: Path,
+) -> None:
     database_path = tmp_path / "requests.db"
     repository = SQLiteRequestRepository.open(str(database_path))
     service = RequestManagementService(repository, clock=lambda: NOW)
