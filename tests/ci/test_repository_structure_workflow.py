@@ -1,4 +1,4 @@
-"""Contract tests for the Offline assurance workflow's triggers.
+"""Contract tests for the Offline assurance workflow: triggers, action pins and the DCO check.
 
 The offline job runs the whole lint, type, test and boundary suite, several minutes per run.
 Unfiltered, a push to a pull request branch fires it twice, once for `push` and once for
@@ -59,3 +59,55 @@ def test_a_newer_pull_request_push_supersedes_the_outdated_run(workflow: dict[st
 
 def test_the_offline_job_is_bounded(workflow: dict[str, Any]) -> None:
     assert workflow["jobs"]["validate"]["timeout-minutes"] == 30
+
+
+_CHECKOUT_PIN = "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803"
+
+
+def _steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:
+    steps = workflow["jobs"]["validate"]["steps"]
+    assert isinstance(steps, list)
+    return steps
+
+
+def _step(workflow: dict[str, Any], name: str) -> dict[str, Any]:
+    matches = [step for step in _steps(workflow) if step.get("name") == name]
+    assert len(matches) == 1, name
+    return matches[0]
+
+
+def test_checkout_is_pinned_to_a_reviewed_commit_with_full_history(
+    workflow: dict[str, Any],
+) -> None:
+    checkout = _step(workflow, "Check out repository")
+
+    assert checkout["uses"] == _CHECKOUT_PIN
+    # check_dco.py refuses a shallow clone, which would hide commits outside the fetched depth.
+    assert checkout["with"]["fetch-depth"] == 0
+
+
+def test_every_action_is_pinned_to_a_full_commit_sha(workflow: dict[str, Any]) -> None:
+    for step in _steps(workflow):
+        uses = step.get("uses")
+        if uses is None:
+            continue
+        _, _, ref = uses.partition("@")
+        assert len(ref) == 40 and all(c in "0123456789abcdef" for c in ref), uses
+
+
+def test_pull_requests_check_dco_sign_off_on_the_head_commit_right_after_checkout(
+    workflow: dict[str, Any],
+) -> None:
+    names = [step.get("name") for step in _steps(workflow)]
+    dco = _step(workflow, "Check DCO sign-off")
+
+    assert names.index("Check DCO sign-off") == names.index("Check out repository") + 1
+    assert dco["if"] == "github.event_name == 'pull_request'"
+    # github.sha on a pull request is GitHub's unsigned test-merge commit, never the head.
+    assert dco["env"] == {
+        "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+        "HEAD_SHA": "${{ github.event.pull_request.head.sha }}",
+    }
+    # Expressions reach the shell only through the environment, never interpolated into it.
+    assert dco["run"] == 'python3 tests/ci/check_dco.py "$BASE_SHA" "$HEAD_SHA"'
+    assert "${{" not in dco["run"]

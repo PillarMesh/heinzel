@@ -68,6 +68,9 @@ HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest -m live -q \
 The warehouse lifecycle acceptance run provisions PostgreSQL and ClickHouse in Docker; see
 `.github/workflows/warehouse-lifecycle.yml` for the environment it needs.
 
+`.github/workflows/live.yml` runs every journey that needs only Docker nightly, and on a pull
+request labelled `run-live`.
+
 ## Documentation
 
 - [Capability status](docs/status.md)
