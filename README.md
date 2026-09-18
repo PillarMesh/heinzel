@@ -41,7 +41,7 @@ uv run pytest -m "not live" -q
 The offline suite needs no network, Docker or credentials. The console in `apps/console` has its
 own [README](apps/console/README.md).
 
-A one-command Docker Compose quickstart is coming next.
+A Docker Compose quickstart is planned.
 
 ## Live tests
 

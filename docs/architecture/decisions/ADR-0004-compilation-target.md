@@ -10,7 +10,7 @@ Heinzel is the authority that generates, tests, versions, and deploys transforma
 
 Three concerns are routinely conflated. The authoring surface and the internal representation are already settled: the human declares an Integration Contract and the compiler owns the semantic intermediate representation (IIR). Only the emitted artifact is open.
 
-Two constraints bear on the choice. Heinzel's central claim requires proving that a physical plan produces only histories the contract allows, which is undecidable for arbitrary SQL — three-valued logic, implicit casts, collation-dependent comparison, non-deterministic functions, and window-frame semantics all defeat it. Separately, Heinzel offers both PostgreSQL and ClickHouse, whose dialects diverge silently on null handling, precision, collation, locale, and timezone.
+Two constraints bear on the choice. Heinzel's central claim requires proving that a physical plan produces only histories the contract allows, which is undecidable for arbitrary SQL — three-valued logic, implicit casts, collation-dependent comparison, non-deterministic functions, and window-frame semantics all defeat it. Separately, Heinzel targets both PostgreSQL and ClickHouse (ClickHouse support is partial), whose dialects diverge silently on null handling, precision, collation, locale, and timezone.
 
 Because Heinzel generates transformations, no human writes transformation code in the normal path. The ergonomic case for a DSL therefore has almost no user, while the requirement that a human approve generated output where meaning changes argues directly for an artifact the data engineer already reads.
 

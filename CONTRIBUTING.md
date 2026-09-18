@@ -63,7 +63,8 @@ git commit -s
 This adds a `Signed-off-by: Your Name <you@example.com>` trailer, which must match the commit
 author's name and email. CI checks every commit in a pull request with `tests/ci/check_dco.py` and
 blocks the pull request if any commit is unsigned. To sign off commits you have already made, run
-`git rebase --signoff main` and force-push your branch.
+`git rebase --signoff upstream/main` (where `upstream` is this repository) and force-push your
+branch.
 
 ## Use of AI tools
 

@@ -3,8 +3,8 @@
 The compiler emits a plan only when a legality rule admits it. A rule declares numbered
 preconditions; the compiler evaluates each one against the contract or product intent and the
 current provider observations. If every precondition is satisfied, the plan is admitted. If any is
-not, compilation returns `No Valid Plan`, listing each unsatisfied precondition by number with the
-reason and the smallest change that would satisfy it.
+not, compilation returns `No Valid Plan`, which lists every precondition by number with its status
+and reason, and the smallest changes that would satisfy the unsatisfied ones.
 
 Rules are sound but deliberately incomplete: a rule may refuse work that would in fact be safe, but
 it must never admit work that is not.
@@ -20,15 +20,24 @@ it must never admit work that is not.
 
 ## Rule file fields
 
-- `rule_id`, `version` or `rule_version`: the rule's identity. A changed rule gets a new version.
+The two rule files have different fields.
+
+The snapshot rule has:
+
+- `rule_id` and `version`: the rule's identity.
 - `preconditions`: the precondition numbers the rule evaluates.
 - `soundness` and `completeness`: soundness is required; completeness is not claimed.
-- `review_status`: the outcome of the rule's most recent independent review. The candidate rule
-  is `changes_requested`, so it is not admitted.
+
+The candidate product SQL rule has no `preconditions`, `soundness` or `completeness` fields. It has:
+
+- `rule_id` and `rule_version`: the rule's identity.
+- `constructs` and `excluded_constructs`: the SQL shape it covers and what it leaves out.
+- `engine_profiles` and `decimal_sum_bound`: the pinned per-engine semantics it relies on.
+- `physical_source_requirements`: what the landing source must provide.
+- `review_status`: the outcome of the rule's most recent review, currently `changes_requested`.
 - `gate_preconditions`: the preconditions that stand for review and evidence gates rather than
   checks on the input, mapped by name to their number.
-- `unsatisfied_gates`: the gates still open. While any gate is open, every compilation under the
-  rule ends in `No Valid Plan`.
+- `unsatisfied_gates`: a record of which gates the compiler currently treats as unsatisfied.
 
 ## Snapshot rule preconditions
 
@@ -64,7 +73,7 @@ it must never admit work that is not.
 | 7 | The provider observation is bound to the expected tenant, warehouse, relation and digest. |
 | 8 | The pinned engine version, image and build are bound to the observation. |
 | 9 | The observation is no older than ten minutes. |
-| 10 | The landing relation has the non-null text generation and JSONB payload columns the statement reads. |
+| 10 | The landing relation has the non-null text generation and JSONB payload columns the statement reads. Only PostgreSQL has a landing observation contract, so this can never be satisfied on ClickHouse. |
 | 11 | The engine's observed `SUM` semantics match the pinned engine profile. |
 | 12 | `NUMERIC(38,9)` sums are proven to fit exact `Decimal(57,9)` arithmetic. |
 
@@ -79,8 +88,10 @@ Preconditions 13 to 18 are the rule's `gate_preconditions`:
 | 17 | `live_checked_sum_review` | The live checked-SUM run on the pinned engine has been reviewed. For PostgreSQL this withholds any cross-engine equivalence claim; ClickHouse needs its own activation. |
 | 18 | `independent_review` | An independent reviewer has approved the rule. |
 
-Gates 15, 17 and 18 are listed in `unsatisfied_gates`, so the compiler currently returns
-`No Valid Plan` for every product SQL compilation on either engine.
+The compiler hard-codes preconditions 15, 17 and 18 as unsatisfied
+(`src/heinzel_compiler/product_compiler.py`). `unsatisfied_gates` in the rule file records that
+state, and a test keeps the two in step. The compiler therefore cannot admit a product plan today:
+every product SQL compilation, on either engine, returns `No Valid Plan`.
 
 ## Changing a rule
 
@@ -88,5 +99,4 @@ Adding or widening a rule needs, in the same change, a proof of the property it 
 positive and negative fixtures for each engine it covers, a test that each precondition can fail,
 and approval by a reviewer other than its author. See [AGENTS.md](../../../AGENTS.md).
 
-Independent review records are kept outside this repository. A rule file records only the outcome
-(`review_status`) and the gates that remain open.
+Rule changes are reviewed on public pull requests.

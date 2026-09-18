@@ -2,8 +2,8 @@
 
 This page states what Heinzel does today, and how each claim is proved.
 
-- **Delivered**: an automated test drives a fresh transaction through the capability to its
-  terminal state.
+- **Delivered**: an automated test drives a fresh transaction through the whole capability to its
+  terminal state, with no test double standing in for a part of the capability itself.
 - **Partial**: the core works and is tested, but part of the capability is missing or is proved
   only in part.
 - **Not yet**: it does not work yet.
@@ -20,7 +20,7 @@ runs it whenever a change touches it.
 | --- | --- | --- | --- |
 | Request intake and titles | Delivered | Requests are validated, bound to a digest, stored and read back exactly. | Offline |
 | Clarification and revisions | Partial | Conversations persist in order. A stale edit is refused as a conflict and the client re-reads the current revision; retrying a failed operation from the console is not delivered. | Offline |
-| Unsupported request refusal | Partial | A refused question ends in `No Valid Plan` before any proposal or provider call. Deciding which questions are unsupported exists only in the local acceptance deployment. | Offline |
+| Unsupported request refusal | Partial | A refused question ends in `No Valid Plan` before any proposal or provider call. Deciding which questions are unsupported is done only by the test harness; no product component does it yet. | Offline |
 | Business process packages | Delivered | Markdown packages and manifests are stored byte-exact, versioned and digested; a failed store publishes nothing. | Offline |
 | Product intent and activation | Delivered | Intents are approved against recorded semantic versions and source observations. The intent-bound activation service activates an acquisition contract only from an approved intent. | Offline |
 | PostgreSQL acquisition | Delivered | Fresh rows are prepared, replayed without new artifacts, and acknowledged on the pinned PostgreSQL image; rejected credentials are classified and refused. | Live |
@@ -29,14 +29,14 @@ runs it whenever a change touches it.
 | Restricted product SQL compiler | Partial | Emits guarded, unsigned PostgreSQL and ClickHouse statements for the project-and-sum shape. Every product compilation ends in `No Valid Plan` until the candidate rule's open gates close (see [legality rules](../services/compiler/legality/README.md)). | Offline and live |
 | Transform and materialization | Partial | dbt models materialize with checked outputs on PostgreSQL, without compiler admission or catalog publication. There is no live ClickHouse materialization. | Live |
 | Runs, triggers and recovery | Partial | Daily and run-now triggers produce run identities, and a leased run resumes from its last durable boundary after losing its lease. There is no running scheduler, and the console only displays runs. | Live |
-| Governed answers | Delivered | Native PostgreSQL questions are compiled to signed query plans, executed on a fresh cluster and delivered under current authority. The catalog and dashboard in that test are local doubles. | Live |
+| Governed answers | Partial | Native PostgreSQL questions are compiled to signed query plans, executed on a fresh cluster and delivered after a current entitlement check. The enterprise policy authority in that test is a test double, as are the catalog and dashboard; a real deployment needs a connected enterprise policy authority. | Live |
 | Result tables and CSV | Delivered | Results render as governed tables and download as exact CSV. | Live (opt-in native console browser suite) |
 | Catalog publication | Delivered | Approved semantics publish to OpenMetadata and are observed back; tenant isolation holds. | Live (OpenMetadata in Docker); isolation offline |
 | Superset dashboards | Partial | Governed dashboards publish to, and read back from, a fresh Superset; dashboard access applies and revokes. Single sign-on is not implemented. | Live |
 | Access control | Partial | Grants are approved and apply and revoke on PostgreSQL, ClickHouse and Superset. Revocation at expiry is proved only offline. Entitlement needs a connected enterprise policy authority. | Live and offline |
 | Operations and recovery | Partial | Incidents are listed, and the console admits retry, cancel and reconcile actions. No test yet raises an incident from a real failure and recovers it. | Offline |
 | Context graph and impact | Partial | Impact analysis across seven subject kinds. | Offline |
-| Agent interface (MCP) | Partial | Eight governed context tools. The production application refuses to start until its authority adapters are configured. | Offline |
+| Agent interface (MCP) | Partial | Eight governed context tools. The production application cannot start yet: no authority adapters are implemented. | Offline |
 | End-to-end PostgreSQL journey | Not yet | One request reaching a published data product end to end. | — |
 | ClickHouse parity | Not yet | Warehouse lifecycle, destination, access and statement conformance work on ClickHouse; acquisition and the full journey do not. | — |
 

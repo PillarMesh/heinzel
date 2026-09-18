@@ -22,8 +22,9 @@ Not every stage is connected yet. [Capability status](status.md) says which part
 5. **Compiler** lowers intent to restricted, guarded SQL that a legality rule must admit, or refuses
    with `No Valid Plan` and the reasons
    ([legality rules](../services/compiler/legality/README.md)). Admitted plans are signed.
-6. **Materialization** runs through the dbt adapter, which executes only compiler-signed models and
-   checks their outputs before publication.
+6. **Materialization** runs through the dbt adapter, which executes only signed models and checks
+   their outputs before publication. The compiler does not yet admit product models (see
+   [status](status.md)).
 7. **Evidence** records each run as a hash-chained event log and verifies evidence packages against
    the chain and the signed execution graph.
 8. **Console** is the web interface for requesters and architects. It shows projections of the
