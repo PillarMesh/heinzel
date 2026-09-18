@@ -34,7 +34,10 @@ from heinzel_warehouse_control import (
     WarehouseValidationEvidence,
     WarehouseValidationProfile,
 )
-from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import (
+    SQLiteWarehouseRepository,
+    _Connection,
+)
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 25, 12, tzinfo=UTC)
@@ -83,7 +86,7 @@ class RecordingRepository(SQLiteWarehouseRepository):
 
 
 class TerminalFailureConnection:
-    def __init__(self, connection: sqlite3.Connection) -> None:
+    def __init__(self, connection: _Connection) -> None:
         self._connection = connection
         self._terminal_operation_updated = False
 
@@ -115,7 +118,7 @@ class TerminalFailureConnection:
 
 
 class StableAdmissionConnection:
-    def __init__(self, connection: sqlite3.Connection) -> None:
+    def __init__(self, connection: _Connection) -> None:
         self._connection = connection
         self._terminal_operation_updated = False
 
@@ -937,7 +940,8 @@ def _stable_replay_scenario(
             operation = _claim_replay_operation(repository, binding, operation_kind, replay_path)
         binding = _advance_replay_binding(repository, binding, WarehouseBindingState.VALIDATING)
         binding = _advance_replay_binding(repository, binding, WarehouseBindingState.READY)
-        invoke = partial(
+        # The four replay paths return different artifacts; the binding covers both.
+        invoke: partial[WarehouseBinding] | partial[WarehouseRetirementEvidence] = partial(
             orchestrator.provision,
             binding.tenant_id,
             binding.binding_id,

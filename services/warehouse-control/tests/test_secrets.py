@@ -459,7 +459,7 @@ def test_backup_retirement_replays_a_durable_tombstone_until_ciphertext_is_erase
     def crash_after_tombstone(_descriptor: int, _length: int) -> None:
         raise SimulatedSecretCrash
 
-    monkeypatch.setattr(secrets_module.os, "ftruncate", crash_after_tombstone)
+    monkeypatch.setattr(os, "ftruncate", crash_after_tombstone)
     with pytest.raises(SimulatedSecretCrash):
         capability.retire()
 
@@ -467,7 +467,7 @@ def test_backup_retirement_replays_a_durable_tombstone_until_ciphertext_is_erase
     assert active_ciphertext.stat(follow_symlinks=False).st_size == 760
     assert capability.is_retired() is False
 
-    monkeypatch.setattr(secrets_module.os, "ftruncate", real_ftruncate)
+    monkeypatch.setattr(os, "ftruncate", real_ftruncate)
     capability.retire()
 
     assert active_ciphertext.stat(follow_symlinks=False).st_size == 0
@@ -709,14 +709,14 @@ def test_durable_tombstone_is_authoritative_for_every_replay_operation(
         del descriptor, length
         raise SimulatedSecretCrash
 
-    monkeypatch.setattr(secrets_module.os, "ftruncate", crash_before_first_descriptor_clear)
+    monkeypatch.setattr(os, "ftruncate", crash_before_first_descriptor_clear)
     with pytest.raises(SimulatedSecretCrash):
         authority.delete(reference, operation_id=OPERATION_A)
 
     tombstone = directory / TOMBSTONE_A
     assert tombstone.stat(follow_symlinks=False).st_size == 0
     _assert_private_file_unchanged(destination, expected_status, expected_digest)
-    monkeypatch.setattr(secrets_module.os, "ftruncate", real_ftruncate)
+    monkeypatch.setattr(os, "ftruncate", real_ftruncate)
 
     if replayed_operation == "delete":
         authority.delete(reference, operation_id=OPERATION_A)
@@ -769,7 +769,7 @@ def test_delete_without_residue_durably_tombstones_and_prevents_resurrection(
                     events.append("tombstone_fsynced")
         real_fsync(descriptor)
 
-    monkeypatch.setattr(secrets_module.os, "fsync", record_fsync)
+    monkeypatch.setattr(os, "fsync", record_fsync)
 
     authority.delete(REFERENCE_A, operation_id=OPERATION_A)
 
@@ -842,7 +842,7 @@ def test_delete_fails_closed_when_the_published_name_changes_before_tombstone(
             swapped = True
         return real_open(path, flags, mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(secrets_module.os, "open", open_after_swap)
+    monkeypatch.setattr(os, "open", open_after_swap)
 
     with pytest.raises(WarehouseSecretStorageError) as failure:
         authority.delete(reference, operation_id=OPERATION_A)
@@ -923,8 +923,8 @@ def test_store_replaces_verified_invalid_temp_created_before_file_fsync(
             events.append("temporary_cleared")
         real_ftruncate(descriptor, length)
 
-    monkeypatch.setattr(secrets_module.os, "fsync", record_fsync)
-    monkeypatch.setattr(secrets_module.os, "ftruncate", record_ftruncate)
+    monkeypatch.setattr(os, "fsync", record_fsync)
+    monkeypatch.setattr(os, "ftruncate", record_ftruncate)
 
     reference = authority.store(OPERATION_A, _secrets())
 
@@ -997,8 +997,8 @@ def test_delete_removes_verified_invalid_temp_created_before_file_fsync(
             events.append("temporary_cleared")
         real_ftruncate(descriptor, length)
 
-    monkeypatch.setattr(secrets_module.os, "fsync", record_fsync)
-    monkeypatch.setattr(secrets_module.os, "ftruncate", record_ftruncate)
+    monkeypatch.setattr(os, "fsync", record_fsync)
+    monkeypatch.setattr(os, "ftruncate", record_ftruncate)
 
     authority.delete(REFERENCE_A, operation_id=OPERATION_A)
     authority.delete(REFERENCE_A, operation_id=OPERATION_A)
@@ -1158,7 +1158,7 @@ def test_invalid_temp_reconciliation_rejects_unexpected_owner(
             return os.stat_result(fields)
         return status_result
 
-    monkeypatch.setattr(secrets_module.os, "fstat", report_unexpected_owner)
+    monkeypatch.setattr(os, "fstat", report_unexpected_owner)
 
     with pytest.raises(WarehouseSecretStorageError) as failure:
         authority.store(OPERATION_A, _secrets())
@@ -1209,7 +1209,7 @@ def test_store_fails_closed_when_temporary_name_changes_before_descriptor_clear(
             swapped = True
         real_ftruncate(descriptor, length)
 
-    monkeypatch.setattr(secrets_module.os, "ftruncate", swap_before_descriptor_clear)
+    monkeypatch.setattr(os, "ftruncate", swap_before_descriptor_clear)
 
     with pytest.raises(WarehouseSecretStorageError) as failure:
         authority.store(OPERATION_A, _secrets())
@@ -1257,7 +1257,7 @@ def test_delete_descriptor_clear_never_mutates_a_replacement_at_the_active_name(
             swapped = True
         real_ftruncate(descriptor, length)
 
-    monkeypatch.setattr(secrets_module.os, "ftruncate", swap_active_name_before_clear)
+    monkeypatch.setattr(os, "ftruncate", swap_active_name_before_clear)
 
     with pytest.raises(WarehouseSecretStorageError) as failure:
         authority.delete(reference, operation_id=OPERATION_A)
@@ -1303,7 +1303,7 @@ def test_store_never_invokes_the_exact_quarantine_unlink_hook(
         attacked_unlink_targets.append(os.fsdecode(path))
         raise AssertionError("secret storage must not invoke a pathname unlink hook")
 
-    monkeypatch.setattr(secrets_module.os, "unlink", reject_exact_quarantine_unlink)
+    monkeypatch.setattr(os, "unlink", reject_exact_quarantine_unlink)
 
     reference = authority.store(OPERATION_A, _secrets())
 
@@ -1475,7 +1475,7 @@ def test_delete_replays_tombstone_before_or_after_descriptor_clear(
             raise SimulatedSecretCrash
         real_ftruncate(descriptor, length)
 
-    monkeypatch.setattr(secrets_module.os, "ftruncate", crash_descriptor_clear)
+    monkeypatch.setattr(os, "ftruncate", crash_descriptor_clear)
     with pytest.raises(SimulatedSecretCrash):
         authority.delete(reference, operation_id=OPERATION_A)
 
@@ -1487,7 +1487,7 @@ def test_delete_replays_tombstone_before_or_after_descriptor_clear(
     else:
         assert destination_size >= 100
 
-    monkeypatch.setattr(secrets_module.os, "ftruncate", real_ftruncate)
+    monkeypatch.setattr(os, "ftruncate", real_ftruncate)
     authority.delete(reference, operation_id=OPERATION_A)
     authority.delete(reference, operation_id=OPERATION_A)
 
@@ -1516,7 +1516,7 @@ def test_existing_tombstone_replay_redurabilizes_marker_before_descriptor_erasur
         del descriptor, length
         raise SimulatedSecretCrash
 
-    monkeypatch.setattr(secrets_module.os, "ftruncate", first_crash_before_descriptor_clear)
+    monkeypatch.setattr(os, "ftruncate", first_crash_before_descriptor_clear)
     with pytest.raises(SimulatedSecretCrash):
         authority.delete(reference, operation_id=OPERATION_A)
 
@@ -1543,8 +1543,8 @@ def test_existing_tombstone_replay_redurabilizes_marker_before_descriptor_erasur
         events.append("descriptor_cleared")
         real_ftruncate(descriptor, length)
 
-    monkeypatch.setattr(secrets_module.os, "fsync", second_crash_before_directory_fsync)
-    monkeypatch.setattr(secrets_module.os, "ftruncate", record_descriptor_clear)
+    monkeypatch.setattr(os, "fsync", second_crash_before_directory_fsync)
+    monkeypatch.setattr(os, "ftruncate", record_descriptor_clear)
     with pytest.raises(SimulatedSecretCrash):
         authority.delete(reference, operation_id=OPERATION_A)
 
@@ -1552,8 +1552,8 @@ def test_existing_tombstone_replay_redurabilizes_marker_before_descriptor_erasur
     _assert_private_file_unchanged(destination, destination_status, destination_digest)
     _assert_private_file_unchanged(temporary, temporary_status, temporary_digest)
 
-    monkeypatch.setattr(secrets_module.os, "fsync", real_fsync)
-    monkeypatch.setattr(secrets_module.os, "ftruncate", real_ftruncate)
+    monkeypatch.setattr(os, "fsync", real_fsync)
+    monkeypatch.setattr(os, "ftruncate", real_ftruncate)
     authority.delete(reference, operation_id=OPERATION_A)
     authority.delete(reference, operation_id=OPERATION_A)
 
@@ -1639,8 +1639,8 @@ def test_delete_never_calls_name_unlink_or_hard_link(
         link_paths.append((os.fsdecode(source), os.fsdecode(destination)))
         raise AssertionError("secret deletion must not derive authority from a hard link")
 
-    monkeypatch.setattr(secrets_module.os, "unlink", reject_name_unlink)
-    monkeypatch.setattr(secrets_module.os, "link", reject_hard_link)
+    monkeypatch.setattr(os, "unlink", reject_name_unlink)
+    monkeypatch.setattr(os, "link", reject_hard_link)
 
     authority.delete(reference, operation_id=OPERATION_A)
 
@@ -1667,11 +1667,11 @@ def test_directory_creation_replays_before_or_after_parent_fsync(
             raise SimulatedSecretCrash
         real_fsync(descriptor)
 
-    monkeypatch.setattr(secrets_module.os, "fsync", crash_parent_fsync)
+    monkeypatch.setattr(os, "fsync", crash_parent_fsync)
     with pytest.raises(SimulatedSecretCrash):
         _authority(directory)
 
-    monkeypatch.setattr(secrets_module.os, "fsync", real_fsync)
+    monkeypatch.setattr(os, "fsync", real_fsync)
     _authority(directory)
 
     assert stat.S_IMODE(directory.stat().st_mode) == 0o700

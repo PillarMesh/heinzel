@@ -30,7 +30,10 @@ from heinzel_warehouse_control import (
     WarehouseValidationEvidence,
     WarehouseValidationProfile,
 )
-from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import (
+    SQLiteWarehouseRepository,
+    _Connection,
+)
 
 NOW = datetime(2026, 8, 24, 12, tzinfo=UTC)
 LATER = NOW + timedelta(minutes=1)
@@ -46,7 +49,7 @@ class Clock:
 
 
 class FailingConnection:
-    def __init__(self, connection: sqlite3.Connection, *, fail_after_prefix: str) -> None:
+    def __init__(self, connection: _Connection, *, fail_after_prefix: str) -> None:
         self._connection = connection
         self._fail_after_prefix = fail_after_prefix
 

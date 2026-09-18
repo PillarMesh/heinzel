@@ -237,7 +237,9 @@ def test_warehouse_evidence_accepts_release_engine_version_tokens(
 ) -> None:
     payload["engine_version"] = engine_version
 
-    assert artifact.model_validate(payload).engine_version == engine_version
+    # `type[BaseModel]` declares no `engine_version`; read it off the dumped model
+    # so the assertion states what it checks without widening the parameter type.
+    assert artifact.model_validate(payload).model_dump()["engine_version"] == engine_version
 
 
 @pytest.mark.parametrize(

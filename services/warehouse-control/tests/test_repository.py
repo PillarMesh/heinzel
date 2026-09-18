@@ -35,7 +35,11 @@ from heinzel_warehouse_control import (
     WarehouseValidationProfile,
 )
 from heinzel_warehouse_control import repository as repository_module
-from heinzel_warehouse_control.repository import SQLiteWarehouseRepository, StaleRevisionError
+from heinzel_warehouse_control.repository import (
+    SQLiteWarehouseRepository,
+    StaleRevisionError,
+    _Connection,
+)
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 LATER = NOW + timedelta(minutes=1)
@@ -329,6 +333,9 @@ def resume_validation_evidence(
 def retirement_evidence(
     binding: WarehouseBinding,
     resources: tuple[PrivateWarehouseResource, ...] = (),
+    /,
+    # Positional-only above so a `**updates` expansion cannot bind to them; every
+    # caller already passes both positionally.
     **updates: object,
 ) -> WarehouseRetirementEvidence:
     ordered_resources = sorted(
@@ -446,7 +453,7 @@ def recorded_terminal_resources(
 class BarrierConnection:
     def __init__(
         self,
-        connection: sqlite3.Connection,
+        connection: _Connection,
         barrier: Barrier,
         atomic_allocations: Queue[None],
     ) -> None:
@@ -478,7 +485,7 @@ class BarrierConnection:
 class FailingConnection:
     def __init__(
         self,
-        connection: sqlite3.Connection,
+        connection: _Connection,
         *,
         fail_after_prefix: str,
         rollback_error: sqlite3.Error | None = None,
@@ -493,6 +500,11 @@ class FailingConnection:
             raise sqlite3.OperationalError("sensitive primary sqlite detail")
         return cursor
 
+    def executescript(self, sql: str) -> sqlite3.Cursor:
+        # Present because `_Connection` declares it: without it this double did not
+        # satisfy the protocol it is assigned onto, so the substitution was unchecked.
+        return self._connection.executescript(sql)
+
     def commit(self) -> None:
         self._connection.commit()
 
@@ -506,7 +518,7 @@ class FailingConnection:
 
 
 class InitializationFailureConnection:
-    def __init__(self, connection: sqlite3.Connection) -> None:
+    def __init__(self, connection: _Connection) -> None:
         self._connection = connection
 
     def execute(self, sql: str, parameters: tuple[object, ...] = ()) -> sqlite3.Cursor:
@@ -520,7 +532,7 @@ class InitializationFailureConnection:
 
 
 class TenantScopeConnection:
-    def __init__(self, connection: sqlite3.Connection) -> None:
+    def __init__(self, connection: _Connection) -> None:
         self._connection = connection
 
     def execute(self, sql: str, parameters: tuple[object, ...] = ()) -> sqlite3.Cursor:
@@ -584,12 +596,10 @@ def test_two_connections_allocate_distinct_sequences_atomically(
     original_connect = sqlite3.connect
     outcomes: Queue[WarehouseBinding | Exception] = Queue()
 
-    def connect(database: str, *args: object, **kwargs: object) -> BarrierConnection:
-        return BarrierConnection(
-            original_connect(database, *args, **kwargs), barrier, atomic_allocations
-        )
+    def connect(database: str) -> BarrierConnection:
+        return BarrierConnection(original_connect(database), barrier, atomic_allocations)
 
-    monkeypatch.setattr(repository_module.sqlite3, "connect", connect)
+    monkeypatch.setattr(sqlite3, "connect", connect)
 
     def create_draft() -> None:
         control = WarehouseControlService(
@@ -2100,7 +2110,10 @@ def test_concurrent_draft_abandonment_and_operation_resource_claim_are_serialize
     setup_repository.close()
     retired = advance_binding(source, WarehouseBindingState.RETIRED)
     barrier = Barrier(2)
-    outcomes: Queue[tuple[str, object]] = Queue()
+    # The two threads report different shapes on one queue: the abandon thread puts
+    # its failure (or None), the operation thread puts the pair it collected.
+    outcomes: Queue[tuple[str, Exception | tuple[Exception | None, Exception | None] | None]]
+    outcomes = Queue()
 
     def abandon() -> None:
         repository = SQLiteWarehouseRepository(str(database_path))
@@ -2144,7 +2157,9 @@ def test_concurrent_draft_abandonment_and_operation_resource_claim_are_serialize
     results = dict(outcomes.get(timeout=1) for _ in range(2))
     repository = SQLiteWarehouseRepository(str(database_path))
     current = repository.load(source.tenant_id, source.binding_id)
-    claim_error, resource_error = results["operation"]
+    operation_outcome = results["operation"]
+    assert isinstance(operation_outcome, tuple)
+    claim_error, resource_error = operation_outcome
     if current == retired:
         assert results["abandon"] is None
         assert isinstance(claim_error, WarehouseOperationConflictError)
@@ -2345,6 +2360,7 @@ def test_single_evidence_admission_records_binding_and_evidence_atomically(kind:
     terminal = fixture.terminal
 
     if kind == "resume":
+        evidence: WarehouseResumeValidationEvidence | WarehouseRetirementEvidence
         evidence = resume_validation_evidence(source)
         repository.record_resume_validation_operation(
             terminal,
@@ -2864,7 +2880,7 @@ def test_close_failure_does_not_replace_repository_initialization_error(
 ) -> None:
     connection = sqlite3.connect(":memory:")
     monkeypatch.setattr(
-        repository_module.sqlite3,
+        sqlite3,
         "connect",
         lambda _database: InitializationFailureConnection(connection),
     )
@@ -2882,7 +2898,7 @@ def test_connect_failure_is_wrapped_without_exposing_sqlite_details(
     def fail_connect(_database: str) -> sqlite3.Connection:
         raise sqlite3.OperationalError("sensitive connect detail")
 
-    monkeypatch.setattr(repository_module.sqlite3, "connect", fail_connect)
+    monkeypatch.setattr(sqlite3, "connect", fail_connect)
 
     with pytest.raises(WarehousePersistenceError, match="initialize") as failure:
         SQLiteWarehouseRepository(":memory:")

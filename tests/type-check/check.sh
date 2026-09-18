@@ -30,6 +30,7 @@ services/context-exposure/tests
 services/dbt-adapter/tests
 services/request-management/tests
 services/state/tests
+services/warehouse-control/tests
 tests/release
 '
 
@@ -53,7 +54,6 @@ services/knowledge-graph/tests
 services/runtime/tests
 services/semantic-registry/tests
 services/trigger/tests
-services/warehouse-control/tests
 tests/acceptance
 tests/ci
 tests/conformance
