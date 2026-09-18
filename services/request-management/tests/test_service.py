@@ -342,3 +342,62 @@ def test_stored_request_payload_is_the_canonical_form_the_platform_digests() -> 
 
     assert bytes(payload) == canonical_bytes(request)
     assert hashlib.sha256(payload).hexdigest() == digest(request)
+
+
+def test_request_transition_table_is_exact_and_terminal_states_have_no_successors() -> None:
+    """Every request state has exactly these successors; cancellation is handled separately."""
+    from heinzel_request_management.service import _TRANSITIONS
+
+    assert set(_TRANSITIONS) == set(RequestState)
+    assert {
+        source.value: frozenset(target.value for target in targets)
+        for source, targets in _TRANSITIONS.items()
+    } == {
+        "submitted": frozenset({"clarifying", "investigating"}),
+        "clarifying": frozenset({"investigating", "submitted"}),
+        "investigating": frozenset({"proposed", "executing", "no_valid_plan"}),
+        "proposed": frozenset({"awaiting_approval", "investigating"}),
+        "awaiting_approval": frozenset({"executing", "rejected", "investigating"}),
+        "executing": frozenset({"verifying", "failed"}),
+        "verifying": frozenset({"delivered", "failed"}),
+        "delivered": frozenset({"monitoring", "retired"}),
+        "monitoring": frozenset({"retired"}),
+        "rejected": frozenset(),
+        "no_valid_plan": frozenset(),
+        "cancelled": frozenset(),
+        "failed": frozenset(),
+        "retired": frozenset(),
+    }
+
+
+def test_terminal_request_states_are_exact_and_are_the_states_without_successors() -> None:
+    """Cancellation is admitted from every state except these, so the set must stay exact."""
+    from heinzel_request_management.service import _TRANSITIONS, _terminal_states
+
+    terminal = frozenset(state.value for state in _terminal_states())
+
+    assert terminal == frozenset({"rejected", "no_valid_plan", "cancelled", "failed", "retired"})
+    assert terminal == frozenset(
+        state.value for state, targets in _TRANSITIONS.items() if not targets
+    )
+
+
+def test_cancelled_request_cannot_be_cancelled_again() -> None:
+    service = RequestManagementService(SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW)
+    request = access_request(service)
+    cancelled = service.transition(
+        "tenant-a",
+        request.request_id,
+        RequestState.CANCELLED,
+        actor_id="architect-a",
+        expected_revision=request.revision,
+    )
+
+    with pytest.raises(ValueError, match="cancelled -> cancelled is not allowed"):
+        service.transition(
+            "tenant-a",
+            cancelled.request_id,
+            RequestState.CANCELLED,
+            actor_id="architect-a",
+            expected_revision=cancelled.revision,
+        )
