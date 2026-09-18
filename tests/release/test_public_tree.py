@@ -8,9 +8,11 @@ Only two kinds of pattern live in this file: the company name (outside its allow
 and personal email addresses. Everything else that is specific to how this company operates
 internally -- account names, tool names, process names, milestone and gate codes -- is loaded at
 run time from a private terms file, named by the HEINZEL_PRIVATE_TERMS_FILE environment variable.
-That file lives outside the public repository; the release audit supplies its path when it runs
-this scanner with enforcement on. Without the variable set, only the generic patterns apply, and
-enforcing without the variable set is treated as a configuration error, not a clean tree.
+That file lives outside the public repository, so public CI never has it.
+
+The whole-tree gate always runs, with the generic patterns at least, and adds the private terms
+whenever the variable is set. The release audit also sets HEINZEL_REQUIRE_PRIVATE_TERMS=1, which
+turns a missing variable into a configuration error rather than a generic-only pass.
 """
 
 from __future__ import annotations
@@ -485,24 +487,54 @@ def test_scan_tree_covers_content_path_and_binary_findings(
     assert by_path["reviewed_stale.bin"][0].line == 0
 
 
-# --- the enforced whole-tree gate -----------------------------------------------------------
+# --- the whole-tree gate ------------------------------------------------------------------
 
 
 def test_the_public_tree_contains_nothing_internal() -> None:
-    if os.environ.get("HEINZEL_ENFORCE_PUBLIC_TREE") != "1":
-        pytest.skip("public-tree gate is enforced only when HEINZEL_ENFORCE_PUBLIC_TREE=1")
-    if not os.environ.get("HEINZEL_PRIVATE_TERMS_FILE"):
-        pytest.fail("HEINZEL_PRIVATE_TERMS_FILE must be set when enforcing")
+    if os.environ.get("HEINZEL_REQUIRE_PRIVATE_TERMS") == "1" and not os.environ.get(
+        "HEINZEL_PRIVATE_TERMS_FILE"
+    ):
+        pytest.fail("HEINZEL_PRIVATE_TERMS_FILE must be set when HEINZEL_REQUIRE_PRIVATE_TERMS=1")
     assert tracked_files()
     findings = scan_tree()
     report = "\n".join(f"{f.path}:{f.line}: {f.reason}: {f.text}" for f in findings[:200])
     assert findings == (), f"{len(findings)} internal references remain:\n{report}"
 
 
-def test_the_enforced_gate_fails_closed_without_private_terms(
+def test_the_gate_runs_with_generic_terms_only_when_no_private_terms_are_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("HEINZEL_ENFORCE_PUBLIC_TREE", "1")
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.delenv("HEINZEL_PRIVATE_TERMS_FILE", raising=False)
+    test_the_public_tree_contains_nothing_internal()
+
+
+def test_the_gate_fails_closed_when_private_terms_are_required_but_unset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HEINZEL_REQUIRE_PRIVATE_TERMS", "1")
     monkeypatch.delenv("HEINZEL_PRIVATE_TERMS_FILE", raising=False)
     with pytest.raises(pytest.fail.Exception, match="HEINZEL_PRIVATE_TERMS_FILE"):
+        test_the_public_tree_contains_nothing_internal()
+
+
+def test_the_gate_applies_the_private_terms_file_when_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A stand-in term that matches a tracked path proves the file's terms reach the tree scan.
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in private term\t\\bLICENSE\\b\n")
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
+    with pytest.raises(AssertionError, match="stand-in private term"):
+        test_the_public_tree_contains_nothing_internal()
+
+
+def test_the_gate_fails_closed_on_a_malformed_private_terms_file(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    malformed = tmp_path / "malformed.txt"
+    malformed.write_text("no tab on this line\n")
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(malformed))
+    with pytest.raises(ValueError):
         test_the_public_tree_contains_nothing_internal()
