@@ -20,8 +20,10 @@ from heinzel_iir import (
     NamedExpression,
     ProductIntentIR,
     ProjectOperation,
+    ScalarExpression,
     SourceRelation,
 )
+from heinzel_iir.product_models import ScalarType
 
 _PROJECTION_REASON = "project only the aggregate's direct declared source inputs"
 _GROUP_REASON = "group only by non-null string source columns under binary collation"
@@ -36,9 +38,9 @@ def _unsatisfied_reasons(product_iir: ProductIntentIR) -> frozenset[str]:
 
 def _product(
     *,
-    group_type: str = "string",
-    group_expression: object | None = None,
-    measure_type: str = "decimal",
+    group_type: ScalarType = "string",
+    group_expression: ScalarExpression | None = None,
+    measure_type: ScalarType = "decimal",
 ) -> ProductIntentIR:
     region = ColumnReference(relation_alias="revenue_events", column_name="region")
     revenue = ColumnReference(relation_alias="revenue_events", column_name="revenue")

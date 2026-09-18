@@ -21,10 +21,13 @@ status=0
 COVERED='
 apps/console/server/tests
 packages/execution-graph/tests
+packages/iir/tests
 services/access-control/tests
+services/compiler/tests
 services/context-exposure/tests
 services/dbt-adapter/tests
 services/request-management/tests
+services/state/tests
 tests/release
 '
 
@@ -33,7 +36,6 @@ tests/release
 # rather than guess.
 PENDING='
 packages/contract-model/tests
-packages/iir/tests
 packages/provider-sdk/tests
 providers/clickhouse/tests
 providers/openmetadata/tests
@@ -44,14 +46,12 @@ providers/superset/tests
 services/authoring-mcp/tests
 services/bi-control/tests
 services/catalog-control/tests
-services/compiler/tests
 services/connection-broker/tests
 services/contract/tests
 services/evidence/tests
 services/knowledge-graph/tests
 services/runtime/tests
 services/semantic-registry/tests
-services/state/tests
 services/trigger/tests
 services/warehouse-control/tests
 tests/acceptance

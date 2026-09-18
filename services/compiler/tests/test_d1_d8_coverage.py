@@ -103,14 +103,14 @@ def test_case_dimension_tags_agree_with_the_coverage_map() -> None:
             by_dimension[dimension].add(case_id)
 
     for row in _coverage_rows():
-        dimension = row["dimension"]
-        assert isinstance(dimension, str)
+        row_dimension = row["dimension"]
+        assert isinstance(row_dimension, str)
         referenced = set(_string_tuple(row, "positive_cases")) | set(
             _string_tuple(row, "negative_cases")
         )
-        assert referenced == by_dimension[dimension], (
-            f"{dimension} coverage map and case tags disagree: "
-            f"{sorted(referenced ^ by_dimension[dimension])}"
+        assert referenced == by_dimension[row_dimension], (
+            f"{row_dimension} coverage map and case tags disagree: "
+            f"{sorted(referenced ^ by_dimension[row_dimension])}"
         )
 
 
