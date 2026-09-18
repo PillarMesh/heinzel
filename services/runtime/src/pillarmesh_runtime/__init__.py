@@ -12,6 +12,7 @@ from .acquisition import (
 from .acquisition_application import (
     AcquisitionApplication,
     AcquisitionPreparer,
+    AcquisitionRunPreparation,
     CheckpointResolver,
     ContractRecordResolver,
     acquisition_run_now_reference,
@@ -45,6 +46,10 @@ from .acquisition_landing import (
     AcquisitionLandingResult,
     AcquisitionSegmentArtifactStore,
     AcquisitionTargetResolver,
+)
+from .acquisition_run_stages import (
+    AcquisitionRunStageError,
+    compose_acquisition_run_stages,
 )
 from .answer_composition import (
     AnswerQueryBindingAuthority,
@@ -94,6 +99,25 @@ from .destination_composition import (
 from .faults import FaultHook, noop_fault_hook
 from .generation_ledger import GenerationLedger
 from .landing import LandingResult, LandingRunner
+from .landing_composition import (
+    AcquisitionDestinationRouting,
+    AcquisitionLandingApplication,
+    AcquisitionObjectRoute,
+    LandingContractAuthority,
+    LandingContractResolver,
+    compose_acquisition_landing,
+    landing_contract_resolver,
+)
+from .leased_run import (
+    LeasedRunExecutor,
+    LeasedRunOutcome,
+    RunLease,
+    RunLeaseLostError,
+    RunLeaseRenewalUnavailableError,
+    RunStage,
+    RunStageFailedError,
+    classify_run_stage_failure,
+)
 from .models import RunResult
 from .product_catalog_composition import (
     AuthoritativeProductCatalog,
@@ -151,6 +175,7 @@ from .result_access import (
 )
 from .result_store import SQLiteAnswerResultStore
 from .retry import retry_bounded
+from .run_contracts import ActivatedAcquisitionRunContracts
 from .runtime import Runtime, RuntimeDestination, RuntimeSource, SegmentEncoder
 
 __all__ = [
@@ -163,15 +188,20 @@ __all__ = [
     "AcquisitionContractError",
     "AcquisitionCursorExpiredError",
     "AcquisitionDeclaredActivation",
+    "AcquisitionDestinationRouting",
     "AcquisitionDriftError",
     "AcquisitionEvidenceWriter",
     "AcquisitionIntegrityError",
     "AcquisitionLanding",
+    "AcquisitionLandingApplication",
     "AcquisitionLandingCoordinator",
     "AcquisitionLandingResult",
+    "AcquisitionObjectRoute",
     "AcquisitionOwnershipError",
     "AcquisitionPreparationResult",
     "AcquisitionPreparer",
+    "AcquisitionRunPreparation",
+    "AcquisitionRunStageError",
     "AcquisitionRunner",
     "AcquisitionRuntimeError",
     "AcquisitionSegmentArtifactStore",
@@ -181,6 +211,7 @@ __all__ = [
     "AcquisitionThrottledError",
     "AcquisitionTransientError",
     "ActivatedAcquisitionContract",
+    "ActivatedAcquisitionRunContracts",
     "ActivatedContractReader",
     "AnswerExecutionAuthorization",
     "AnswerExecutionAuthorizationError",
@@ -228,8 +259,12 @@ __all__ = [
     "FaultHook",
     "GenerationLedger",
     "GovernedQueryExecutor",
+    "LandingContractAuthority",
+    "LandingContractResolver",
     "LandingResult",
     "LandingRunner",
+    "LeasedRunExecutor",
+    "LeasedRunOutcome",
     "MaterializationAuthorityError",
     "MaterializationCatalog",
     "MaterializationObservation",
@@ -259,7 +294,12 @@ __all__ = [
     "QueryResultNotFound",
     "ReadOnlyAnswerQuery",
     "ReferenceFactory",
+    "RunLease",
+    "RunLeaseLostError",
+    "RunLeaseRenewalUnavailableError",
     "RunResult",
+    "RunStage",
+    "RunStageFailedError",
     "Runtime",
     "RuntimeDestination",
     "RuntimeSource",
@@ -274,9 +314,13 @@ __all__ = [
     "acquisition_checkpoint_resolver",
     "acquisition_run_now_reference",
     "activated_contract_resolver",
+    "classify_run_stage_failure",
     "compose_acquisition_application",
+    "compose_acquisition_landing",
+    "compose_acquisition_run_stages",
     "compose_activated_acquisition_contract",
     "compose_authoritative_product_catalog",
+    "landing_contract_resolver",
     "noop_fault_hook",
     "opaque_reference_factory",
     "prepare_acquisition",

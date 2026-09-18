@@ -50,6 +50,10 @@ type CapabilityState = Literal["ready", "blocked", "degraded", "not_delivered"]
 type OperationState = Literal["accepted", "running", "succeeded", "failed", "outcome_unknown"]
 # Mirrors the evidence store's `RunState` exactly; see `RunView`.
 type RunLifecycleState = Literal["created", "running", "succeeded", "failed", "non_conforming"]
+# Mirrors state's `RunLifecycleStatus`; a contract test pins the two together.
+type LeasedRunStatusView = Literal[
+    "pending", "leased", "lease_expired", "retryable", "succeeded", "failed", "cancelled"
+]
 # Mirror the acquisition evidence receipt's own vocabularies. The console does not
 # depend on the provider SDK that declares `acquisition_mode`, so these are restated
 # rather than imported, and a test pins each one to the owning model's annotation so
@@ -975,8 +979,47 @@ class RunView(StrictModel):
     updated_at: UtcDatetime
 
 
+class RunAttemptView(StrictModel):
+    """One state-owned attempt: its lease, and the outcome and boundary it recorded, if any."""
+
+    attempt_number: int = Field(ge=1)
+    epoch: int = Field(ge=1)
+    worker_ref: NonEmptyText
+    claimed_at: UtcDatetime
+    # The claim's own expiry extended by any renewals: the expiry fencing actually uses.
+    lease_expires_at: UtcDatetime
+    lease_extensions: int = Field(default=0, ge=0)
+    outcome: Literal["succeeded", "failed"] | None = None
+    failure_classification: Literal["transient", "permanent"] | None = None
+    durable_boundary_ref: NonEmptyText | None = None
+    completed_at: UtcDatetime | None = None
+
+
+class LeasedRunView(StrictModel):
+    """A run as state owns it: identity from its canonical intent, and every attempt.
+
+    `status` is state's own reading at `observed_at`. The console offers no action here;
+    retry and cancellation stay with the incident recovery flow that owns them.
+    """
+
+    run_id: NonEmptyText
+    contract_id: NonEmptyText
+    contract_revision: int = Field(ge=1)
+    trigger_reason: Literal["scheduled", "run_now", "backfill", "retry"]
+    window_starts_at: UtcDatetime
+    window_ends_at: UtcDatetime
+    status: LeasedRunStatusView
+    last_durable_boundary_ref: NonEmptyText | None = None
+    attempts: JsonTuple[RunAttemptView] = Field(default=())
+    observed_at: UtcDatetime
+
+
 class RunsView(StrictModel):
     runs: JsonTuple[RunView] = Field(default=())
+    leased_runs: JsonTuple[LeasedRunView] = Field(default=())
+    # False when a composed state run read failed. The witnessed runs above are still
+    # served, and an empty `leased_runs` is then not a claim that no runs exist.
+    leased_runs_available: bool = True
 
 
 class IncidentView(StrictModel):

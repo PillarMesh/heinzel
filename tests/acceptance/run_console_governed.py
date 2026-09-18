@@ -53,6 +53,7 @@ from pillarmesh_console.governed_adapters import (
     CatalogSearchHealthReader,
     DashboardPublicationReader,
     DerivedTenantRunReader,
+    GovernedApprovedProductIntentSources,
     GovernedProductIntentAuthority,
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceActorDirectory,
@@ -81,7 +82,9 @@ from pillarmesh_contract_model import (
 )
 from pillarmesh_contract_service import (
     AcquisitionActivationApproval,
+    ActivatedAcquisitionContractRecord,
     ProcessPackageService,
+    ProductIntentBoundActivationService,
     SourceObservation,
     SQLiteAcquisitionContractLifecycleRepository,
     SQLiteProcessPackageRepository,
@@ -108,7 +111,11 @@ from pillarmesh_request_management import (
     AccessGrantEffectTarget,
     AccessScopePreview,
     AnswerCandidateProvider,
+    ApprovedProductIntent,
     DataAccessRequest,
+    DeliveryIntent,
+    DimensionIntent,
+    FreshnessObjective,
     FulfillmentAdmissionReceipt,
     FulfillmentGroundingSnapshot,
     FulfillmentImpactBindingReader,
@@ -116,10 +123,17 @@ from pillarmesh_request_management import (
     FulfillmentProposal,
     FulfillmentReadService,
     FulfillmentService,
+    Grain,
     GraphImpactAdmissionResolver,
     InboxRequest,
+    MeasureIntent,
+    ProductIntent,
     ProductIntentApprovalService,
+    ProductIntentAuthorityRefs,
     ProductIntentCandidateService,
+    ProductIntentConstraints,
+    ProductIntentNoValidPlan,
+    ProductIntentSourceCoverage,
     RequestManagementService,
     ResolutionFailure,
     SQLiteFulfillmentRepository,
@@ -146,6 +160,11 @@ from pillarmesh_semantic_registry.publication import (
 )
 from pillarmesh_semantic_registry.repository import SQLiteSemanticRepository
 from pillarmesh_semantic_registry.review import SemanticReviewService
+from pillarmesh_state import (
+    RunLifecycleSnapshot,
+    RunService,
+    SQLiteRunRepository,
+)
 from pillarmesh_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
@@ -178,6 +197,9 @@ from tests.acceptance.run_plan3b import (
 from tests.acceptance.run_plan4a import OfflinePlan4AHarness
 
 TENANT = "tenant-a"
+# The source binding the managed demo contract acquires; an approval naming it activates that
+# contract, because approving the intent is the authorization the activation gate requires.
+MANAGED_SOURCE_REF = "source-binding:managed-postgresql"
 ARCHITECT = "architect-a"
 REQUESTER = "requester-a"
 DATA_OWNER = "data-owner-a"
@@ -251,6 +273,61 @@ class _PerCallSourceObservationReader:
         repository = SQLiteSourceObservationRepository(self._database_path)
         try:
             return repository.load(tenant_id, observation_id, version)
+        finally:
+            repository.close()
+
+
+class _ActivatingProductIntentApprovals:
+    """Approve through request-management, then activate what the approval authorizes.
+
+    Activation follows approval: an architect who approves an intent over the managed source has
+    authorized that contract, and nothing else activates it. Approvals over other sources record
+    the approval and activate nothing.
+    """
+
+    def __init__(self, deployment: GovernedConsoleDeployment) -> None:
+        self._deployment = deployment
+
+    def approve(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        request_revision: int,
+        approved_by: str,
+        intent: ProductIntent,
+        authority_refs: ProductIntentAuthorityRefs | None,
+    ) -> ApprovedProductIntent | ProductIntentNoValidPlan:
+        approved = self._deployment.product_intent_approvals.approve(
+            tenant_id=tenant_id,
+            request_id=request_id,
+            request_revision=request_revision,
+            approved_by=approved_by,
+            intent=intent,
+            authority_refs=authority_refs,
+        )
+        if isinstance(approved, ApprovedProductIntent) and MANAGED_SOURCE_REF in (
+            approved.intent.source_refs
+        ):
+            self._deployment.activate_managed_source(approved)
+        return approved
+
+    def list_for_request(
+        self, tenant_id: str, request_id: str
+    ) -> tuple[ApprovedProductIntent, ...]:
+        return self._deployment.product_intent_approvals.list_for_request(tenant_id, request_id)
+
+
+class _PerCallRunLifecycleReader:
+    """Describes state-owned runs on whichever worker thread asks, for the same reason."""
+
+    def __init__(self, database_path: str) -> None:
+        self._database_path = database_path
+
+    def describe_runs(self, tenant_id: str) -> tuple[RunLifecycleSnapshot, ...]:
+        repository = SQLiteRunRepository(self._database_path)
+        try:
+            return RunService(repository, clock=_clock).describe_runs(tenant_id)
         finally:
             repository.close()
 
@@ -1247,6 +1324,8 @@ class GovernedConsoleDeployment:
         # Approval derives constraints from these two governed stores, never from the proposer.
         self.semantic_versions_path = str(directory / "semantic-versions.sqlite3")
         self.source_observations_path = str(directory / "source-observations.sqlite3")
+        self.state_runs_path = str(directory / "state-runs.sqlite3")
+        SQLiteRunRepository(self.state_runs_path).close()
         SQLiteSemanticVersionRepository(self.semantic_versions_path).close()
         SQLiteSourceObservationRepository(self.source_observations_path).close()
         self.product_intent_approvals = ProductIntentApprovalService(
@@ -1501,31 +1580,6 @@ class GovernedConsoleDeployment:
             directory / "source-acquisition",
             check_same_thread=False,
         )
-        source_authority = self.source_acquisition.register_tenant(TENANT)
-        source_contract = source_authority.contract
-        source_binding = source_authority.binding
-        self.lifecycles.activate_contract(
-            idempotency_key="governed-local-managed-source-v1",
-            contract=source_contract,
-            approval=AcquisitionActivationApproval(
-                tenant_id=TENANT,
-                process_package_ref=source_contract.process_package_ref,
-                product_intent_ref=source_contract.product_intent_ref,
-                destination_product_ref=source_contract.destination_product_ref,
-                approved_by=source_contract.activated_by,
-                approved_at=source_contract.activated_at,
-            ),
-            source_validation=ValidatedSourceBinding(
-                tenant_id=TENANT,
-                source_binding_ref=source_binding.binding_id,
-                source_binding_revision=source_binding.revision,
-                credential_revision=source_binding.credential_revision,
-                capability_profile_digest=source_contract.capability_profile_digest,
-                source_observation_ref=source_contract.source_observation_ref,
-                source_observation_digest=source_contract.source_observation_digest,
-                validated_at=source_contract.activated_at,
-            ),
-        )
         self.acquisition = compose_acquisition_application(
             contract_repository=self.lifecycles,
             binding_repository=self.source_acquisition,
@@ -1625,11 +1679,12 @@ class GovernedConsoleDeployment:
             access_revocation_commands=self.access_application,
             fulfillment_preparation_commands=self.fulfillment,
             product_intent_reviews=self.product_intent_candidates,
-            product_intent_commands=self.product_intent_approvals,
+            product_intent_commands=_ActivatingProductIntentApprovals(self),
             process_package_commands=self.process_packages,
             semantic_reviews=self.semantic_repository,
             semantic_review_commands=self.semantic_reviews,
             runs=DerivedTenantRunReader(lifecycles=self.lifecycles, evidence=self.evidence),
+            run_lifecycle=_PerCallRunLifecycleReader(self.state_runs_path),
             incidents=(self.answer_runtime.incidents if self.answer_runtime is not None else None),
             impact_reader=RequestImpactProjectionReader(
                 bindings=FulfillmentImpactBindingReader(self.fulfillment_repository),
@@ -1716,6 +1771,45 @@ class GovernedConsoleDeployment:
             dist_directory=dist,
         )
 
+    def activate_managed_source(
+        self, approval: ApprovedProductIntent
+    ) -> ActivatedAcquisitionContractRecord:
+        """Activate the managed source contract for an approved intent, through the gate.
+
+        Nothing activates at startup: a contract exists only once request-management holds an
+        approval whose sources cover it, which is the rule the console is supposed to enforce.
+        """
+        authority = self.source_acquisition.register_tenant(
+            approval.tenant_id, product_intent_ref=approval.artifact_reference
+        )
+        contract = authority.contract
+        binding = authority.binding
+        return ProductIntentBoundActivationService(
+            self.lifecycles,
+            product_intents=GovernedApprovedProductIntentSources(self.product_intent_approvals),
+        ).activate(
+            idempotency_key=f"managed-source-{approval.artifact_reference.digest}",
+            contract=contract,
+            approval=AcquisitionActivationApproval(
+                tenant_id=approval.tenant_id,
+                process_package_ref=contract.process_package_ref,
+                product_intent_ref=contract.product_intent_ref,
+                destination_product_ref=contract.destination_product_ref,
+                approved_by=contract.activated_by,
+                approved_at=contract.activated_at,
+            ),
+            source_validation=ValidatedSourceBinding(
+                tenant_id=approval.tenant_id,
+                source_binding_ref=binding.binding_id,
+                source_binding_revision=binding.revision,
+                credential_revision=binding.credential_revision,
+                capability_profile_digest=contract.capability_profile_digest,
+                source_observation_ref=contract.source_observation_ref,
+                source_observation_digest=contract.source_observation_digest,
+                validated_at=contract.activated_at,
+            ),
+        )
+
     def seed(self) -> SeededDecision:
         """Commit one decision the architect can act on, through the owning services.
 
@@ -1763,10 +1857,127 @@ class GovernedConsoleDeployment:
             actor_id=ARCHITECT,
             expected_revision=proposal.request_revision,
         )
+        self._seed_managed_source_candidate()
         return SeededDecision(
             request_id=request.request_id,
             proposal_digest=digest(proposal.subject),
             data_product_ref=self._permitted_product_ref(proposal),
+        )
+
+    def _seed_managed_source_candidate(self) -> None:
+        """Leave one approvable intent over the managed source.
+
+        Approving is what activates that contract, and the console has no route that proposes a
+        candidate: without one a demo deployment could never reach its own acquisition surface.
+        """
+        now = _clock()
+        semantic_versions = SQLiteSemanticVersionRepository(self.semantic_versions_path)
+        observations = SQLiteSourceObservationRepository(self.source_observations_path)
+        try:
+            semantic_version = semantic_versions.store(
+                ApprovedSemanticVersion(
+                    semantic_version_id="semantic-managed-business-data",
+                    tenant_id=TENANT,
+                    version=1,
+                    process_package_ref=ArtifactReference(
+                        artifact_id="process:managed-business-data", version=1, digest="1" * 64
+                    ),
+                    candidate_set_digest="2" * 64,
+                    review_bundle_digest="3" * 64,
+                    entities=(
+                        SemanticObject(
+                            object_id="account_region",
+                            name="Account region",
+                            definition="The region an account belongs to.",
+                            source_refs=("process:managed-business-data",),
+                        ),
+                    ),
+                    metrics=(
+                        SemanticObject(
+                            object_id="order_total",
+                            name="Order total",
+                            definition="The total value of an order.",
+                            source_refs=("process:managed-business-data",),
+                        ),
+                    ),
+                    events=(),
+                    states=(),
+                    relationships=(),
+                    identity_rules=(),
+                    constraints=(),
+                    classifications=(),
+                    authority_bindings=(),
+                    approval_ids=("semantic-approval-managed-1",),
+                    created_at=now,
+                )
+            )
+            observation = observations.store(
+                SourceObservation(
+                    observation_id="source-observation:managed-postgresql",
+                    tenant_id=TENANT,
+                    version=1,
+                    source_ref=MANAGED_SOURCE_REF,
+                    schema_digest="4" * 64,
+                    observed_at=now,
+                    valid_until=now + timedelta(days=1),
+                )
+            )
+        finally:
+            semantic_versions.close()
+            observations.close()
+        request = self.requests.submit_question(
+            tenant_id=TENANT,
+            requester_id=REQUESTER,
+            purpose="managed source reporting",
+            question="What are order totals by account region?",
+        )
+        intent = ProductIntent(
+            request_id=request.request_id,
+            title="Order totals by account region",
+            business_outcome="Give the business governed order totals from the managed source.",
+            source_refs=(MANAGED_SOURCE_REF,),
+            grain=Grain(keys=("account_region",)),
+            measures=(MeasureIntent(metric_ref="order_total", aggregation="sum"),),
+            dimensions=(DimensionIntent(dimension_ref="account_region"),),
+            filters=(),
+            freshness=FreshnessObjective(maximum_age_seconds=86_400),
+            delivery=DeliveryIntent(outputs=("dataset",)),
+        )
+        self.product_intent_candidates.propose(
+            tenant_id=TENANT,
+            request_id=request.request_id,
+            request_revision=request.revision,
+            idempotency_key="managed-source-candidate-v1",
+            proposed_by="external-interpreter",
+            intent=intent,
+            constraints=ProductIntentConstraints(
+                approved_source_refs=(MANAGED_SOURCE_REF,),
+                approved_metric_refs=("order_total",),
+                approved_dimension_refs=("account_region",),
+                minimum_source_interval_seconds=86_400,
+            ),
+            source_coverage=(
+                ProductIntentSourceCoverage(
+                    source_ref=MANAGED_SOURCE_REF,
+                    covered_fields=("account_region", "order_total"),
+                    authorized=True,
+                ),
+            ),
+            unresolved_constraints=(),
+            authority_refs=ProductIntentAuthorityRefs(
+                semantic_version=ArtifactReference(
+                    artifact_id=semantic_version.semantic_version_id,
+                    version=semantic_version.version,
+                    digest=digest(semantic_version),
+                ),
+                source_observations=(
+                    ArtifactReference(
+                        artifact_id=observation.observation_id,
+                        version=observation.version,
+                        digest=digest(observation),
+                    ),
+                ),
+            ),
         )
 
     def _already_seeded(self) -> SeededDecision | None:

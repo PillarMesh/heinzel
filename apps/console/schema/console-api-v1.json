@@ -3539,6 +3539,12 @@
       },
       "type": "array"
     },
+    "JsonTuple_LeasedRunView_": {
+      "items": {
+        "$ref": "#/$defs/LeasedRunView"
+      },
+      "type": "array"
+    },
     "JsonTuple_LifecycleEventView_": {
       "items": {
         "$ref": "#/$defs/LifecycleEventView"
@@ -3627,6 +3633,12 @@
       },
       "type": "array"
     },
+    "JsonTuple_RunAttemptView_": {
+      "items": {
+        "$ref": "#/$defs/RunAttemptView"
+      },
+      "type": "array"
+    },
     "JsonTuple_RunView_": {
       "items": {
         "$ref": "#/$defs/RunView"
@@ -3644,6 +3656,84 @@
         "type": "string"
       },
       "type": "array"
+    },
+    "LeasedRunStatusView": {
+      "enum": [
+        "pending",
+        "leased",
+        "lease_expired",
+        "retryable",
+        "succeeded",
+        "failed",
+        "cancelled"
+      ],
+      "type": "string"
+    },
+    "LeasedRunView": {
+      "additionalProperties": false,
+      "description": "A run as state owns it: identity from its canonical intent, and every attempt.\n\n`status` is state's own reading at `observed_at`. The console offers no action here;\nretry and cancellation stay with the incident recovery flow that owns them.",
+      "properties": {
+        "attempts": {
+          "$ref": "#/$defs/JsonTuple_RunAttemptView_",
+          "default": []
+        },
+        "contract_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "contract_revision": {
+          "minimum": 1,
+          "title": "Contract Revision",
+          "type": "integer"
+        },
+        "last_durable_boundary_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "observed_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "run_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "status": {
+          "$ref": "#/$defs/LeasedRunStatusView"
+        },
+        "trigger_reason": {
+          "enum": [
+            "scheduled",
+            "run_now",
+            "backfill",
+            "retry"
+          ],
+          "title": "Trigger Reason",
+          "type": "string"
+        },
+        "window_ends_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "window_starts_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        }
+      },
+      "required": [
+        "run_id",
+        "contract_id",
+        "contract_revision",
+        "trigger_reason",
+        "window_starts_at",
+        "window_ends_at",
+        "status",
+        "observed_at"
+      ],
+      "title": "LeasedRunView",
+      "type": "object"
     },
     "LifecycleEventView": {
       "additionalProperties": false,
@@ -5035,6 +5125,100 @@
       ],
       "type": "string"
     },
+    "RunAttemptView": {
+      "additionalProperties": false,
+      "description": "One state-owned attempt: its lease, and the outcome and boundary it recorded, if any.",
+      "properties": {
+        "attempt_number": {
+          "minimum": 1,
+          "title": "Attempt Number",
+          "type": "integer"
+        },
+        "claimed_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcDatetime"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "durable_boundary_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "epoch": {
+          "minimum": 1,
+          "title": "Epoch",
+          "type": "integer"
+        },
+        "failure_classification": {
+          "anyOf": [
+            {
+              "enum": [
+                "transient",
+                "permanent"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Failure Classification"
+        },
+        "lease_expires_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "lease_extensions": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Lease Extensions",
+          "type": "integer"
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "enum": [
+                "succeeded",
+                "failed"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Outcome"
+        },
+        "worker_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "attempt_number",
+        "epoch",
+        "worker_ref",
+        "claimed_at",
+        "lease_expires_at"
+      ],
+      "title": "RunAttemptView",
+      "type": "object"
+    },
     "RunLifecycleState": {
       "enum": [
         "created",
@@ -5078,6 +5262,15 @@
     "RunsView": {
       "additionalProperties": false,
       "properties": {
+        "leased_runs": {
+          "$ref": "#/$defs/JsonTuple_LeasedRunView_",
+          "default": []
+        },
+        "leased_runs_available": {
+          "default": true,
+          "title": "Leased Runs Available",
+          "type": "boolean"
+        },
         "runs": {
           "$ref": "#/$defs/JsonTuple_RunView_",
           "default": []

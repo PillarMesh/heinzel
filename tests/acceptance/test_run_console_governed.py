@@ -36,6 +36,7 @@ from pillarmesh_contract_model import (
 from pillarmesh_contract_service import SourceObservation, SQLiteSourceObservationRepository
 from pillarmesh_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
 from pillarmesh_request_management import (
+    ApprovedProductIntent,
     DeliveryIntent,
     DimensionIntent,
     FreshnessObjective,
@@ -49,6 +50,7 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
 )
 from pillarmesh_semantic_registry import SQLiteSemanticVersionRepository
+from pillarmesh_state import RunIntent, RunService, SQLiteRunRepository, TriggerWindow
 from pillarmesh_warehouse_control import EngineKind
 from starlette.testclient import TestClient
 
@@ -1690,13 +1692,22 @@ def test_seeding_twice_does_not_leave_two_indistinguishable_decisions(
     newest.
     """
     first = deployment.seed()
+    with TestClient(deployment.build_app()) as client:
+        after_first = [
+            item["request_id"] for item in client.get("/api/v1/inbox").json()["data"]["items"]
+        ]
 
     second = deployment.seed()
 
     assert second.request_id == first.request_id
     with TestClient(deployment.build_app()) as client:
-        items = client.get("/api/v1/inbox").json()["data"]["items"]
-    assert [item["request_id"] for item in items] == [first.request_id]
+        after_second = [
+            item["request_id"] for item in client.get("/api/v1/inbox").json()["data"]["items"]
+        ]
+    # The seeded decision, and the approvable intent over the managed source.
+    assert after_first[0] == first.request_id
+    assert len(after_first) == len(set(after_first)) == 2
+    assert after_second == after_first
 
 
 def test_a_localhost_host_is_refused_because_a_browser_does_not_treat_it_as_loopback() -> None:
@@ -1811,6 +1822,54 @@ def test_a_run_recorded_by_the_owning_services_reaches_the_console(
     assert listed[0]["contract_digest"] == "a" * 64
 
 
+def test_a_state_owned_run_reaches_the_console_with_its_attempts(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """Runs claimed and completed through state are projected, not reconstructed."""
+    runs = RunService(SQLiteRunRepository(deployment.state_runs_path), clock=lambda: _NOW)
+    run = runs.materialize(
+        RunIntent(
+            tenant_id=TENANT,
+            contract_id="contract-revenue",
+            contract_revision=1,
+            plan_digest="a" * 64,
+            trigger_policy_version="daily-v1",
+            trigger_window=TriggerWindow(starts_at=_NOW, ends_at=_NOW + timedelta(days=1)),
+            reason="scheduled",
+        )
+    )
+    other = runs.materialize(
+        RunIntent(
+            tenant_id="tenant-somebody-else",
+            contract_id="contract-other",
+            contract_revision=1,
+            plan_digest="b" * 64,
+            trigger_policy_version="daily-v1",
+            trigger_window=TriggerWindow(starts_at=_NOW, ends_at=_NOW + timedelta(days=1)),
+            reason="scheduled",
+        )
+    )
+    claim = runs.claim(tenant_id=TENANT, run_id=run.run_id, worker_id="worker-a", lease_seconds=60)
+    runs.complete(
+        tenant_id=TENANT,
+        run_id=run.run_id,
+        attempt_number=claim.attempt_number,
+        epoch=claim.epoch,
+        worker_id=claim.worker_id,
+        outcome="succeeded",
+        durable_boundary_ref="land_acknowledged:checkpoint-1",
+    )
+
+    with TestClient(deployment.build_app()) as client:
+        leased = client.get("/api/v1/runs").json()["data"]["leased_runs"]
+
+    assert [item["run_id"] for item in leased] == [run.run_id]
+    assert other.run_id not in {item["run_id"] for item in leased}
+    assert leased[0]["status"] == "succeeded"
+    assert leased[0]["last_durable_boundary_ref"] == "land_acknowledged:checkpoint-1"
+    assert [(item["attempt_number"], item["epoch"]) for item in leased[0]["attempts"]] == [(1, 1)]
+
+
 def test_a_run_under_another_tenant_s_contract_is_not_listed(
     deployment: GovernedConsoleDeployment,
 ) -> None:
@@ -1881,6 +1940,199 @@ def test_a_data_product_no_policy_permits_is_not_found_rather_than_a_failure(
     assert response.status_code == 404
 
 
+_MANAGED_SOURCE_REF = "source-binding:managed-postgresql"
+
+
+def _approve_managed_source(deployment: GovernedConsoleDeployment) -> ApprovedProductIntent:
+    """Approve an intent over the managed source, then activate its contract through the gate."""
+    now = datetime.now(UTC)
+    observations = SQLiteSourceObservationRepository(deployment.source_observations_path)
+    try:
+        observations.store(
+            SourceObservation(
+                observation_id="source-observation-managed-postgresql",
+                tenant_id=TENANT,
+                version=1,
+                source_ref=_MANAGED_SOURCE_REF,
+                schema_digest="5" * 64,
+                observed_at=now - timedelta(hours=1),
+                valid_until=now + timedelta(days=1),
+            )
+        )
+    finally:
+        observations.close()
+    authority_refs = _seed_intent_authority(deployment)
+    managed = SQLiteSourceObservationRepository(deployment.source_observations_path)
+    try:
+        stored = managed.load(TENANT, "source-observation-managed-postgresql", 1)
+    finally:
+        managed.close()
+    request = deployment.requests.submit_question(
+        tenant_id=TENANT,
+        requester_id=REQUESTER,
+        purpose="Managed source acquisition",
+        question="What is net revenue from the managed source?",
+    )
+    approval = deployment.product_intent_approvals.approve(
+        tenant_id=TENANT,
+        request_id=request.request_id,
+        request_revision=request.revision,
+        approved_by=ARCHITECT,
+        intent=ProductIntent(
+            request_id=request.request_id,
+            title="Net revenue from the managed source",
+            business_outcome="Finance reads governed revenue from the managed source.",
+            source_refs=(_MANAGED_SOURCE_REF,),
+            grain=Grain(keys=("fiscal_quarter",)),
+            measures=(MeasureIntent(metric_ref="net_revenue", aggregation="sum"),),
+            dimensions=(DimensionIntent(dimension_ref="fiscal_quarter"),),
+            filters=(),
+            freshness=FreshnessObjective(maximum_age_seconds=86_400),
+            delivery=DeliveryIntent(outputs=("dataset",)),
+        ),
+        authority_refs=authority_refs.model_copy(
+            update={
+                "source_observations": (
+                    ArtifactReference(
+                        artifact_id=stored.observation_id,
+                        version=stored.version,
+                        digest=digest(stored),
+                    ),
+                )
+            }
+        ),
+    )
+    assert isinstance(approval, ApprovedProductIntent)
+    deployment.activate_managed_source(approval)
+    return approval
+
+
+def test_no_acquisition_contract_is_activated_until_an_intent_is_approved(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """A governed deployment starts with nothing to run: a contract follows an approval."""
+    command = {
+        "active_role": "data_architect",
+        "contract_ref": "contract:managed-business-data:v1",
+        "trigger_window": "2026-09-14T12:00:00Z/2026-09-14T13:00:00Z",
+        "acquisition_mode": "snapshot",
+    }
+
+    with TestClient(deployment.build_app()) as client:
+        session = client.get("/api/v1/session").json()["data"]
+        refused = client.post(
+            "/api/v1/acquisitions/run-now",
+            headers={
+                "Origin": "http://127.0.0.1:8000",
+                "X-CSRF-Token": session["csrf_token"],
+                "Idempotency-Key": "run-before-any-approval",
+            },
+            json=command,
+        )
+
+    assert refused.status_code >= 400
+    assert deployment.lifecycles.list_contracts(TENANT) == ()
+
+
+def test_approving_an_intent_through_the_console_activates_what_it_authorizes(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """The console's own approval is what makes a contract exist; nothing else activates one."""
+    now = datetime.now(UTC)
+    observations = SQLiteSourceObservationRepository(deployment.source_observations_path)
+    try:
+        stored = observations.store(
+            SourceObservation(
+                observation_id="source-observation-managed-postgresql",
+                tenant_id=TENANT,
+                version=1,
+                source_ref=_MANAGED_SOURCE_REF,
+                schema_digest="5" * 64,
+                observed_at=now - timedelta(hours=1),
+                valid_until=now + timedelta(days=1),
+            )
+        )
+    finally:
+        observations.close()
+    authority_refs = _seed_intent_authority(deployment).model_copy(
+        update={
+            "source_observations": (
+                ArtifactReference(
+                    artifact_id=stored.observation_id,
+                    version=stored.version,
+                    digest=digest(stored),
+                ),
+            )
+        }
+    )
+    request = deployment.requests.submit_question(
+        tenant_id=TENANT,
+        requester_id=REQUESTER,
+        purpose="Managed source acquisition",
+        question="What is net revenue from the managed source?",
+    )
+    intent = ProductIntent(
+        request_id=request.request_id,
+        title="Net revenue from the managed source",
+        business_outcome="Finance reads governed revenue from the managed source.",
+        source_refs=(_MANAGED_SOURCE_REF,),
+        grain=Grain(keys=("fiscal_quarter",)),
+        measures=(MeasureIntent(metric_ref="net_revenue", aggregation="sum"),),
+        dimensions=(DimensionIntent(dimension_ref="fiscal_quarter"),),
+        filters=(),
+        freshness=FreshnessObjective(maximum_age_seconds=86_400),
+        delivery=DeliveryIntent(outputs=("dataset",)),
+    )
+
+    with TestClient(deployment.build_app()) as client:
+        deployment.product_intent_candidates.propose(
+            tenant_id=TENANT,
+            request_id=request.request_id,
+            request_revision=request.revision,
+            idempotency_key="managed-source-candidate-1",
+            proposed_by="external-interpreter",
+            intent=intent,
+            constraints=ProductIntentConstraints(
+                approved_source_refs=(_MANAGED_SOURCE_REF,),
+                approved_metric_refs=("net_revenue",),
+                approved_dimension_refs=("fiscal_quarter",),
+                minimum_source_interval_seconds=86_400,
+            ),
+            source_coverage=(
+                ProductIntentSourceCoverage(
+                    source_ref=_MANAGED_SOURCE_REF,
+                    covered_fields=("fiscal_quarter", "net_revenue"),
+                    authorized=True,
+                ),
+            ),
+            unresolved_constraints=(),
+            authority_refs=authority_refs,
+        )
+        before = deployment.lifecycles.list_contracts(TENANT)
+        session = client.get("/api/v1/session").json()["data"]
+        approved = client.post(
+            f"/api/v1/inbox/{request.request_id}/product-intent/approval",
+            headers={
+                "Origin": "http://127.0.0.1:8000",
+                "X-CSRF-Token": session["csrf_token"],
+                "Idempotency-Key": "approve-managed-source-1",
+            },
+            json={
+                "expected_revision": request.revision,
+                "reviewed_digest": intent.canonical_digest(),
+                "active_role": "data_architect",
+            },
+        )
+        after = deployment.lifecycles.list_contracts(TENANT)
+
+    assert before == ()
+    assert approved.status_code == 200
+    (activated,) = after
+    assert activated.contract.source_binding_ref == _MANAGED_SOURCE_REF
+    (recorded,) = deployment.product_intent_approvals.list_for_request(TENANT, request.request_id)
+    assert activated.contract.product_intent_ref == recorded.artifact_reference
+
+
 def test_a_tenant_with_no_acquisitions_reads_an_empty_receipt_listing(
     deployment: GovernedConsoleDeployment,
 ) -> None:
@@ -1894,6 +2146,7 @@ def test_a_tenant_with_no_acquisitions_reads_an_empty_receipt_listing(
 def test_run_now_performs_a_fresh_composed_source_acquisition(
     deployment: GovernedConsoleDeployment,
 ) -> None:
+    approval = _approve_managed_source(deployment)
     command = {
         "active_role": "data_architect",
         "contract_ref": "contract:managed-business-data:v1",
@@ -1915,6 +2168,9 @@ def test_run_now_performs_a_fresh_composed_source_acquisition(
     assert first.status_code == 200
     assert replay.status_code == 200
     assert first.json()["data"]["outcome"] == "prepared"
+    # The contract the run acquired under is the one the approved intent activated.
+    (activated,) = deployment.lifecycles.list_contracts(TENANT)
+    assert activated.contract.product_intent_ref == approval.artifact_reference
     assert replay.json()["data"]["outcome"] == "prepared"
     assert deployment.source_acquisition.source_provider_resolutions == 1
     assert deployment.source_acquisition.artifact_count() > 0

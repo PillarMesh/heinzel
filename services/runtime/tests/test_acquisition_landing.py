@@ -29,6 +29,7 @@ from pillarmesh_provider_sdk import (
     staged_segment_digest,
 )
 from pillarmesh_runtime import AcquisitionPreparationResult
+from pydantic import ValidationError
 
 _NOW = datetime(2026, 9, 14, 12, tzinfo=UTC)
 _TENANT = "tenant-a"
@@ -199,6 +200,7 @@ class _Landing:
         self._forge_first_receipt = forge_first_receipt
         self.landed_objects: list[str] = []
         self.segments: list[StagedSegment] = []
+        self.targets: list[RawGenerationTarget] = []
 
     async def land(
         self,
@@ -218,6 +220,7 @@ class _Landing:
             raise ProviderError("destination unavailable", "transient_unavailable")
         self.landed_objects.append(target.logical_object_ref)
         self.segments.append(segment)
+        self.targets.append(target)
         receipt = LandReceipt(
             receipt_id="receipt-accounts",
             idempotency_key=idempotency_key,
@@ -565,3 +568,243 @@ def test_a_field_named_like_the_reserved_identity_key_is_refused_before_land() -
         asyncio.run(coordinator.land_and_acknowledge(intent=intent, preparation=preparation))
 
     assert landing.segments == []
+
+
+def _routing(
+    *,
+    table_refs: dict[str, str] | None = None,
+    contract_ref: str = _CONTRACT_REF,
+    tenant_id: str = _TENANT,
+) -> runtime.AcquisitionDestinationRouting:
+    routed = table_refs or {"accounts": "raw_accounts", "orders": "raw_orders"}
+    return runtime.AcquisitionDestinationRouting(
+        tenant_id=tenant_id,
+        contract_ref=contract_ref,
+        destination_binding_ref=_DESTINATION_BINDING_REF,
+        routes=tuple(
+            runtime.AcquisitionObjectRoute(logical_object_ref=object_ref, table_ref=table_ref)
+            for object_ref, table_ref in routed.items()
+        ),
+    )
+
+
+def _authority(
+    consumer_ref: str = "land:business-data", *, contract_digest: str = _CONTRACT_DIGEST
+) -> runtime.LandingContractAuthority:
+    return runtime.LandingContractAuthority(
+        tenant_id=_TENANT,
+        contract_ref=_CONTRACT_REF,
+        contract_digest=contract_digest,
+        revision=4,
+        acknowledgement_consumer_ref=consumer_ref,
+    )
+
+
+def _composed(
+    artifacts: dict[str, bytes],
+    landing: _Landing,
+    acknowledger: _RecordingAcknowledger,
+    *,
+    routing: runtime.AcquisitionDestinationRouting | None = None,
+    authority: runtime.LandingContractAuthority | None = None,
+) -> runtime.AcquisitionLandingApplication:
+    resolved = authority or _authority()
+    return runtime.compose_acquisition_landing(
+        contract_resolver=lambda tenant_id, contract_ref: resolved,
+        routing=routing or _routing(),
+        landing=landing,
+        artifact_store=_ArtifactStore(artifacts),
+        acknowledger=acknowledger,
+    )
+
+
+def test_composed_landing_routes_each_object_to_its_table_under_the_contract_s_authority() -> None:
+    intent = _intent()
+    preparation, artifacts = _preparation(intent)
+    landing = _Landing()
+    acknowledger = _RecordingAcknowledger()
+
+    result = asyncio.run(
+        _composed(artifacts, landing, acknowledger).land(
+            trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation
+        )
+    )
+
+    assert landing.landed_objects == ["accounts", "orders"]
+    assert [target.table_ref for target in landing.targets] == ["raw_accounts", "raw_orders"]
+    assert {target.contract_revision for target in landing.targets} == {4}
+    assert {target.trigger_window for target in landing.targets} == {_TRIGGER_WINDOW}
+    assert {target.destination_binding_ref for target in landing.targets} == {
+        _DESTINATION_BINDING_REF
+    }
+    assert len(acknowledger.acknowledgements) == 1
+    assert result.checkpoint_receipt.committed_revision == 1
+
+
+def test_composed_landing_acknowledges_as_the_consumer_the_contract_names() -> None:
+    intent = _intent()
+    preparation, artifacts = _preparation(intent)
+    acknowledger = _RecordingAcknowledger()
+
+    asyncio.run(
+        _composed(
+            artifacts,
+            _Landing(),
+            acknowledger,
+            authority=_authority("land:another-consumer"),
+        ).land(trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation)
+    )
+
+    assert acknowledger.acknowledgements[0].consumer_ref == "land:another-consumer"
+
+
+def test_composed_landing_refuses_an_object_the_routing_does_not_cover() -> None:
+    intent = _intent()
+    preparation, artifacts = _preparation(intent)
+    landing = _Landing()
+
+    with pytest.raises(runtime.AcquisitionContractError, match="destination_routing_incomplete"):
+        asyncio.run(
+            _composed(
+                artifacts,
+                landing,
+                _RecordingAcknowledger(),
+                routing=_routing(table_refs={"accounts": "raw_accounts"}),
+            ).land(trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation)
+        )
+
+    assert landing.landed_objects == []
+
+
+def test_composed_landing_refuses_routing_that_names_another_contract() -> None:
+    intent = _intent()
+    preparation, artifacts = _preparation(intent)
+    landing = _Landing()
+
+    with pytest.raises(runtime.AcquisitionContractError, match="destination_routing_authority"):
+        asyncio.run(
+            _composed(
+                artifacts,
+                landing,
+                _RecordingAcknowledger(),
+                routing=_routing(contract_ref="contract:somebody-else"),
+            ).land(trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation)
+        )
+
+    assert landing.landed_objects == []
+
+
+def test_composed_landing_refuses_an_authority_for_a_different_contract_revision() -> None:
+    """A batch lands under the contract it was prepared against, never a newer activation.
+
+    The resolver answers with whatever is activated now. Landing a batch prepared under an
+    earlier contract would stamp a revision it was never validated against into the generation
+    key and the LAND receipt, so the batch is refused instead.
+    """
+    intent = _intent()
+    preparation, artifacts = _preparation(intent)
+    landing = _Landing()
+
+    with pytest.raises(runtime.AcquisitionContractError, match="contract_authority_drift"):
+        asyncio.run(
+            _composed(
+                artifacts,
+                landing,
+                _RecordingAcknowledger(),
+                authority=_authority(contract_digest="d" * 64),
+            ).land(trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation)
+        )
+
+    assert landing.landed_objects == []
+
+
+def test_composed_landing_refuses_routing_that_names_another_tenant() -> None:
+    intent = _intent()
+    preparation, artifacts = _preparation(intent)
+    landing = _Landing()
+
+    with pytest.raises(runtime.AcquisitionContractError, match="destination_routing_authority"):
+        asyncio.run(
+            _composed(
+                artifacts,
+                landing,
+                _RecordingAcknowledger(),
+                routing=_routing(tenant_id="tenant-somebody-else"),
+            ).land(trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation)
+        )
+
+    assert landing.landed_objects == []
+
+
+def test_a_routing_cannot_be_mutated_after_it_is_stated() -> None:
+    routing = _routing()
+
+    with pytest.raises(ValidationError):
+        routing.routes[0].table_ref = "raw_elsewhere"  # type: ignore[misc]
+    assert {route.table_ref for route in routing.routes} == {"raw_accounts", "raw_orders"}
+
+
+class _StubApplication:
+    def __init__(
+        self, preparation: AcquisitionPreparationResult, intent: AcquisitionIntent
+    ) -> None:
+        self._preparation = preparation
+        self._intent = intent
+        self.calls: list[tuple[str, str, str, str]] = []
+
+    def prepare_now(
+        self, *, tenant_id: str, contract_ref: str, trigger_window: str, acquisition_mode: str
+    ) -> runtime.AcquisitionRunPreparation:
+        self.calls.append((tenant_id, contract_ref, trigger_window, acquisition_mode))
+        return runtime.AcquisitionRunPreparation(intent=self._intent, result=self._preparation)
+
+
+class _StubLanding:
+    def __init__(self, result: runtime.AcquisitionLandingResult) -> None:
+        self._result = result
+        self.landed: list[tuple[str, str]] = []
+
+    async def land(
+        self,
+        *,
+        trigger_window: str,
+        intent: AcquisitionIntent,
+        preparation: AcquisitionPreparationResult,
+    ) -> runtime.AcquisitionLandingResult:
+        self.landed.append((trigger_window, intent.intent_key))
+        return self._result
+
+
+def test_composed_run_stages_prepare_then_land_the_prepared_batch() -> None:
+    intent = _intent()
+    preparation, artifacts = _preparation(intent)
+    landing = _Landing()
+    acknowledger = _RecordingAcknowledger()
+    landed = asyncio.run(
+        _composed(artifacts, landing, acknowledger).land(
+            trigger_window=_TRIGGER_WINDOW, intent=intent, preparation=preparation
+        )
+    )
+    application = _StubApplication(preparation, intent)
+    stub_landing = _StubLanding(landed)
+
+    stages = runtime.compose_acquisition_run_stages(
+        application=application,
+        landing=stub_landing,
+        tenant_id=_TENANT,
+        contract_ref=_CONTRACT_REF,
+        trigger_window=_TRIGGER_WINDOW,
+        acquisition_mode="snapshot",
+    )
+
+    assert [stage.boundary for stage in stages] == ["acquisition_prepared", "land_acknowledged"]
+    lease = object()
+    assert preparation.prepared_receipt is not None
+    assert stages[0].execute(lease) == preparation.prepared_receipt.prepared_receipt_id  # type: ignore[arg-type]
+    assert stages[1].execute(lease) == landed.checkpoint_receipt.checkpoint_receipt_id  # type: ignore[arg-type]
+    # The landing stage lands the batch preparation replayed, under the run's own window.
+    assert stub_landing.landed == [(_TRIGGER_WINDOW, intent.intent_key)]
+    assert application.calls == [
+        (_TENANT, _CONTRACT_REF, _TRIGGER_WINDOW, "snapshot"),
+        (_TENANT, _CONTRACT_REF, _TRIGGER_WINDOW, "snapshot"),
+    ]

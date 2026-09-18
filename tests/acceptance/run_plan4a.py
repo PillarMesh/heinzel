@@ -623,7 +623,10 @@ class OfflinePlan4AHarness:
             clock=self.clock,
         )
 
-    def register_tenant(self, tenant_id: str) -> _TenantAuthority:
+    def register_tenant(
+        self, tenant_id: str, *, product_intent_ref: ArtifactReference | None = None
+    ) -> _TenantAuthority:
+        """Compose this tenant's managed source authority, bound to an approved intent if given."""
         database = _FakePostgreSQLDatabase()
         provider = PostgreSQLAcquisitionProvider(
             _provider_settings(database),
@@ -673,7 +676,8 @@ class OfflinePlan4AHarness:
                     version=1,
                     digest="1" * 64,
                 ),
-                product_intent_ref=ArtifactReference(
+                product_intent_ref=product_intent_ref
+                or ArtifactReference(
                     artifact_id="intent:managed-business-data",
                     version=1,
                     digest="2" * 64,

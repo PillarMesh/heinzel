@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol
 
-from pillarmesh_contract_model import digest
+from pillarmesh_contract_model import ArtifactModel, digest
 from pillarmesh_contract_service import (
     ActivatedAcquisitionContractRecord,
 )
@@ -17,6 +17,13 @@ from .acquisition_errors import AcquisitionContractError, AcquisitionOwnershipEr
 type CheckpointResolver = Callable[[str, str, str], tuple[int, str | None]]
 type Clock = Callable[[], datetime]
 type ContractRecordResolver = Callable[[str, str], ActivatedAcquisitionContractRecord]
+
+
+class AcquisitionRunPreparation(ArtifactModel):
+    """A prepared batch with the intent it was admitted under, which LAND needs to land it."""
+
+    intent: AcquisitionIntent
+    result: AcquisitionPreparationResult
 
 
 class AcquisitionPreparer(Protocol):
@@ -71,6 +78,22 @@ class AcquisitionApplication:
         trigger_window: str,
         acquisition_mode: AcquisitionMode,
     ) -> AcquisitionPreparationResult:
+        return self.prepare_now(
+            tenant_id=tenant_id,
+            contract_ref=contract_ref,
+            trigger_window=trigger_window,
+            acquisition_mode=acquisition_mode,
+        ).result
+
+    def prepare_now(
+        self,
+        *,
+        tenant_id: str,
+        contract_ref: str,
+        trigger_window: str,
+        acquisition_mode: AcquisitionMode,
+    ) -> AcquisitionRunPreparation:
+        """Prepare the batch and keep the admitted intent, which LAND binds its targets to."""
         untrusted_record = self._contract_resolver(tenant_id, contract_ref)
         try:
             record = ActivatedAcquisitionContractRecord.model_validate(
@@ -118,4 +141,6 @@ class AcquisitionApplication:
             encoded_byte_ceiling=contract.encoded_byte_ceiling,
             admitted_at=self._clock(),
         )
-        return prepare_acquisition(intent=intent, runner=self._runner)
+        return AcquisitionRunPreparation(
+            intent=intent, result=prepare_acquisition(intent=intent, runner=self._runner)
+        )
