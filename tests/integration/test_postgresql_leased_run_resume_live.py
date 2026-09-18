@@ -1,8 +1,8 @@
 """A due run crashes after a durable boundary, loses its lease, and a successor resumes it.
 
-The acceptance ledger's run-lifecycle row recorded that state owns run identity, leases and epochs,
-and each runner resumes from its own durable boundaries, but no runtime work executed under a
-state-owned run. This journey closes that seam on the digest-pinned PostgreSQL 18.6 image.
+State owns run identity, leases and epochs, and each runner resumes from its own durable
+boundaries. This journey executes runtime work under a state-owned run on the digest-pinned
+PostgreSQL 18.6 image.
 
 A daily trigger materializes one state-owned run for an activated contract. `LeasedRunExecutor`
 claims it and runs two replay-stable stages: composed acquisition preparation, then LAND with

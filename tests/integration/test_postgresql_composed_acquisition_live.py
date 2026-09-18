@@ -1,10 +1,9 @@
 """A fresh PostgreSQL transaction through the composed acquisition path, on the pinned engine.
 
-The acceptance ledger's acquisition row recorded that no fresh PostgreSQL transaction had crossed
-the composed path: the only end-to-end acquisition journey ran against an in-process fake database.
-This journey drives the product's composition, `compose_acquisition_application` with the durable
-state repository, artifact store and evidence writer, against real source rows in the digest-pinned
-PostgreSQL 18.6 image.
+The offline end-to-end acquisition journey runs against an in-process fake database, so it never
+takes a fresh PostgreSQL transaction across the composed path. This journey drives the product's
+composition, `compose_acquisition_application` with the durable state repository, artifact store
+and evidence writer, against real source rows in the digest-pinned PostgreSQL 18.6 image.
 
 The activated contract it runs is itself governed: it is activated through the intent-bound service
 from a product intent approval recorded in request management, and the application resolves it from

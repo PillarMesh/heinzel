@@ -1,7 +1,7 @@
 """Live checked SUM evidence for PostgreSQL activation of PRODUCT-SQL-V2-PROJECT-SUM-001.
 
-Milestone M3 needs an observation, not an argument: what the pinned PostgreSQL engine actually
-returns for the emitted product statement at each numeric boundary the proof note relies on.
+Activation needs an observation, not an argument: what the pinned PostgreSQL engine actually
+returns for the emitted product statement at each numeric boundary the checked SUM relies on.
 
 The live test runs every case against the exact pinned image, through the statement the
 compiler emits, and compares the result with the committed evidence bundle. Setting
@@ -10,9 +10,9 @@ context and SUM semantics are read with the PostgreSQL provider's own observers,
 records what the compiler's provenance path would observe.
 
 The offline tests keep the bundle honest without an engine. They fail when the emitted statement
-no longer matches the one the evidence was captured against, when a case the milestone requires
-is missing, or when a recorded digest does not match its recorded value. The bundle never
-carries a DSN, credential, port, or container name.
+no longer matches the one the evidence was captured against, when a required case is missing,
+or when a recorded digest does not match its recorded value. The bundle never carries a DSN,
+credential, port, or container name.
 """
 
 from __future__ import annotations

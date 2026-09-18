@@ -1,8 +1,8 @@
 """A composed acquisition batch lands in PostgreSQL and only then advances its checkpoint.
 
-The acceptance ledger's LAND row recorded that LAND had been proved on its own, against
-hand-built segments, while the composed acquisition checkpoint journey remained open. This journey
-closes that seam on the digest-pinned PostgreSQL 18.6 image: fresh source rows are prepared by
+Other tests prove LAND on its own, against hand-built segments. This journey proves LAND inside
+the composed acquisition checkpoint path on the digest-pinned PostgreSQL 18.6 image: fresh source
+rows are prepared by
 `compose_acquisition_application` under a contract activated through the intent-bound service, and
 `AcquisitionLandingCoordinator` reads the verified batch artifacts, lands each segment through
 `DestinationLandingRuntime` into the raw table, and acknowledges the checkpoint with a consumer
