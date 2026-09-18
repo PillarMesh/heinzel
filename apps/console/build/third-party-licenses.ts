@@ -48,6 +48,10 @@ const LICENSE_FILENAMES = [
 
 const OUTPUT_FILE_NAME = "licenses/THIRD_PARTY.txt"
 
+const NODE_MODULES_PATH_PATTERN = /[\\/]node_modules[\\/]/
+
+type AssetsInlineLimit = number | ((filePath: string, content: Buffer) => boolean | undefined)
+
 /**
  * The directory of the `node_modules` package that owns a bundled path (a module id, or an
  * asset's original file path), or null when the path was not loaded from `node_modules`
@@ -172,6 +176,34 @@ export function collectBundledPackageRoots(bundle: BundleLike, root: string): Se
   return packageRoots
 }
 
+/**
+ * Wraps a user's `build.assetsInlineLimit` so nothing under `node_modules` is ever inlined as a
+ * data URI. Vite's default limit is 4 KB: below that, a small icon or font pulled in through a
+ * CSS `url()` from a package with no licence would be inlined straight into a chunk and never
+ * appear in the bundle as an asset with `originalFileNames` -- the only place
+ * `collectBundledPackageRoots` can see it -- so it would ship with no licence check at all.
+ *
+ * Delegates to the user's own setting for everything outside `node_modules`: calls it if it is a
+ * function, compares the content length if it is a number, and returns `undefined` (Vite's own
+ * default then applies) if the user set nothing.
+ */
+export function createAssetsInlineLimit(
+  userLimit: AssetsInlineLimit | undefined,
+): (filePath: string, content: Buffer) => boolean | undefined {
+  return (filePath, content) => {
+    if (NODE_MODULES_PATH_PATTERN.test(filePath)) {
+      return false
+    }
+    if (typeof userLimit === "function") {
+      return userLimit(filePath, content)
+    }
+    if (typeof userLimit === "number") {
+      return content.length < userLimit
+    }
+    return undefined
+  }
+}
+
 export interface ThirdPartyLicenseReport {
   readonly text: string
   readonly missingLicenseFor: readonly string[]
@@ -224,6 +256,9 @@ export function buildThirdPartyLicenseReport(bundle: BundleLike, root: string): 
  * Emits `licenses/THIRD_PARTY.txt` into the build output with the licence text of every bundled
  * `node_modules` package (from chunks and from assets alike), and fails the build if any bundled
  * package cannot ship a licence -- an omission here is a licence-compliance gap, not a warning.
+ * Also forces `build.assetsInlineLimit` to never inline a `node_modules` asset as a data URI, so
+ * a small icon or font stays a real asset this plugin can inspect instead of disappearing into a
+ * chunk unexamined.
  *
  * Only the main build is registered (see `vite.config.ts`); a `worker` build has its own,
  * separate `plugins` array (`build.rollupOptions`/`worker.plugins`), so this plugin must be added
@@ -234,6 +269,13 @@ export function thirdPartyLicensesPlugin(): Plugin {
 
   return {
     name: "heinzel:third-party-licenses",
+    config(config) {
+      return {
+        build: {
+          assetsInlineLimit: createAssetsInlineLimit(config.build?.assetsInlineLimit),
+        },
+      }
+    },
     configResolved(config) {
       projectRoot = config.root
     },

@@ -1,11 +1,12 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 
 import {
   buildThirdPartyLicenseReport,
   collectBundledPackageRoots,
+  createAssetsInlineLimit,
   findLicenseFile,
   readPackageMetadata,
   resolvePackageRoot,
@@ -312,5 +313,47 @@ describe("buildThirdPartyLicenseReport", () => {
     const report = buildThirdPartyLicenseReport(bundle, workspaceDir)
 
     expect(report.missingLicenseFor).toEqual([packageDir])
+  })
+})
+
+describe("createAssetsInlineLimit", () => {
+  test("never inlines a node_modules asset, no matter how generous the user's own limit is", () => {
+    const limit = createAssetsInlineLimit(Number.MAX_SAFE_INTEGER)
+
+    expect(limit("/repo/node_modules/some-pkg/icon.svg", Buffer.from("x"))).toBe(false)
+  })
+
+  test("never inlines a node_modules asset even when the user's own limit is a function that says yes", () => {
+    const limit = createAssetsInlineLimit(() => true)
+
+    expect(limit("/repo/node_modules/some-pkg/icon.svg", Buffer.from("x"))).toBe(false)
+  })
+
+  test("falls back to the user's numeric limit for a path outside node_modules", () => {
+    const limit = createAssetsInlineLimit(10)
+
+    expect(limit("/repo/web/src/logo.svg", Buffer.alloc(5))).toBe(true)
+    expect(limit("/repo/web/src/logo.svg", Buffer.alloc(20))).toBe(false)
+  })
+
+  test("delegates to the user's function limit for a path outside node_modules", () => {
+    const userLimit = vi.fn(() => true)
+    const limit = createAssetsInlineLimit(userLimit)
+    const content = Buffer.from("abc")
+
+    expect(limit("/repo/web/src/logo.svg", content)).toBe(true)
+    expect(userLimit).toHaveBeenCalledWith("/repo/web/src/logo.svg", content)
+  })
+
+  test("returns undefined outside node_modules when the user set no limit, deferring to Vite's default", () => {
+    const limit = createAssetsInlineLimit(undefined)
+
+    expect(limit("/repo/web/src/logo.svg", Buffer.from("x"))).toBeUndefined()
+  })
+
+  test("matches a node_modules path using Windows-style backslash separators", () => {
+    const limit = createAssetsInlineLimit(undefined)
+
+    expect(limit("C:\\repo\\node_modules\\some-pkg\\icon.svg", Buffer.from("x"))).toBe(false)
   })
 })
