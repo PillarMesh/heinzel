@@ -24,6 +24,7 @@ packages/execution-graph/tests
 services/access-control/tests
 services/context-exposure/tests
 services/dbt-adapter/tests
+tests/release
 '
 
 # Known uncovered, with the error count measured at the time of listing. These are
@@ -97,6 +98,7 @@ for directory in $COVERED; do
     fi
     if ! uv run mypy --config-file "$CONFIG" \
         --cache-dir "$ROOT/.mypy_cache/type-check/$(printf '%s' "$directory" | tr / _)" \
+        --explicit-package-bases --namespace-packages \
         "$ROOT/$directory"; then
         status=1
     fi
