@@ -1,67 +1,86 @@
 # Heinzel
 
-Heinzel is an Enterprise Data Compiler: a contract-first platform that compiles declared data outcomes into legal, feasible, signed execution graphs and executes them deterministically with attributable evidence.
+Heinzel is an open-source, governed data engineering platform. Business users ask for the data they
+need; a data architect reviews and approves the request; Heinzel acquires the source data, lands it
+in a warehouse it manages, and builds a governed data product, with each step recorded as
+verifiable evidence.
 
-The current product boundary is set by the managed data engineering platform addendum. Heinzel operates the tenant's analytical warehouse rather than integrating with an arbitrary customer-managed destination, and the initial engine catalog is PostgreSQL and ClickHouse.
+The name comes from the Heinzelmännchen of Cologne, who by legend finished the town's work
+overnight.
 
-The repository contains the data architect control-plane foundation: immutable managed-warehouse bindings, immutable business-process package intake, and a typed architect inbox with attributable conversation and revision-bound decisions. It also contains the completed M0 evidence thin thread, which is [historical](#historical-m0).
+> **Status:** early and under active development. Some capabilities are complete, others partial,
+> and one request cannot yet travel all the way to a published data product. Read
+> [docs/status.md](docs/status.md) before relying on any of them.
 
-## Start Here
+## What it does
 
-- Managed data engineering platform addendum
-- [Managed data plane decision](docs/architecture/decisions/ADR-0003-managed-data-engineering-platform.md)
-- [Repository layout](docs/architecture/repository-layout.md)
-- [Monorepo decision](docs/architecture/decisions/ADR-0001-monorepo-structure.md)
-- Initial structure design
-- [Contributing](CONTRIBUTING.md)
-- [Security](SECURITY.md)
+- **Request to product.** Requests are clarified, typed into a product intent, and approved by an
+  architect before anything runs.
+- **Contract-first execution.** Acquisition runs only under an activated contract bound to an
+  approved intent.
+- **Legal plans only.** The compiler emits only plans a legality rule admits, or refuses with a
+  reason (`No Valid Plan`).
+- **Evidence by default.** Runs record hash-chained evidence, and execution graphs, governed query
+  plans and compiled models are signed.
+- **Governed access.** Access is proposed, approved, time-bound and revocable.
 
-## Plan 2: Catalog and Semantic Formation
+Warehouse engines: PostgreSQL today; ClickHouse partially. Catalog publication uses OpenMetadata and
+dashboards use Apache Superset.
 
-Plan 2 proves the data-architect journey from an immutable business-process package through
-candidate extraction, authority resolution, owner review, approved semantics, managed Integration
-Contract formation, OpenMetadata publication, drift intake, backup/restore, and exact cleanup.
+## Getting started
 
-- Setup
-- Offline and witnessed acceptance
-- Evidence package
-- Exact teardown
+You need Python 3.13 and [uv](https://docs.astral.sh/uv/).
 
-## Plan 3A: Managed Warehouse Lifecycle
-
-Plan 3A proves that the managed warehouse control plane preserves one provider-neutral lifecycle
-across PostgreSQL and ClickHouse: provision, validate, back up and restore, suspend and resume,
-retire under retention, and perform exact authorized cleanup with sanitized evidence.
-
-- Setup
-- Witnessed acceptance
-- Evidence package
-- Exact teardown
-
-## Historical M0
-
-M0 was the PostgreSQL-to-Snowflake thin-thread experiment: one curated PostgreSQL snapshot contract verified, compiled into a signed graph, executed into Snowflake, and reconstructed from append-only evidence. It proved compiler, runtime, and evidence behaviour against an externally managed destination.
-
-These records remain valid as historical evidence. They are not rewritten, and they do not define the destination or product scope after the addendum above. Snowflake is no longer a product destination.
-
-- M0 account setup
-- M0 LocalStack Snowflake smoke test
-- M0 acceptance run
-- M0 evidence package
-- M0 acceptance transport decision
-- M0 teardown
-
-## Validate the Repository
-
-Install the exact locked workspace and run all offline gates:
-
-```sh
-uv sync --locked --all-packages
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy
-uv run pytest -m "not live"
-./tests/repository-structure/test.sh
+```bash
+git clone https://github.com/PillarMesh/heinzel.git
+cd heinzel
+uv sync --all-packages
+uv run pytest -m "not live" -q
 ```
 
-Real-account tests are deliberately opt-in and require the dedicated environment described in `docs/m0/setup.md`. An offline pass is not evidence that PostgreSQL-to-Snowflake execution works against real accounts.
+The offline suite needs no network, Docker or credentials. The console in `apps/console` has its
+own [README](apps/console/README.md).
+
+A one-command Docker Compose quickstart is coming next.
+
+## Live tests
+
+Tests marked `live` exercise real engines and services, and are opt-in. They need Docker and pull
+pinned, digest-addressed images; some also need local PostgreSQL binaries (`initdb`, or set
+`HEINZEL_TEST_POSTGRES_BIN_DIR`). A test whose switch or credentials are missing skips itself.
+
+| Switch or credential | Enables |
+| --- | --- |
+| `HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1` | PostgreSQL acquisition, LAND, leased-run resume, the compiled product journey and product SQL conformance on pinned PostgreSQL and ClickHouse images |
+| `HEINZEL_RUN_ACCESS_EMULATORS=1` | Access grants on PostgreSQL and ClickHouse |
+| `HEINZEL_RUN_DESTINATION_EMULATORS=1` | PostgreSQL and ClickHouse destination providers and the ClickHouse dbt adapter |
+| `HEINZEL_OPENMETADATA_SECRET_STORE_KEY`, `HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD`, `HEINZEL_OPENMETADATA_EMULATOR=1` | OpenMetadata catalog tests, after starting `tests/emulators/openmetadata/run.sh` |
+| `LOCALSTACK_AUTH_TOKEN` | The LocalStack Snowflake emulator, run by `tests/emulators/localstack-snowflake/run.sh` |
+| `HEINZEL_TEST_SNOWFLAKE_*`, `HEINZEL_SNOWFLAKE_*` and related settings | A real Snowflake account for the PostgreSQL-to-Snowflake snapshot; each test's skip message names what is missing |
+
+For example:
+
+```bash
+HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest -m live -q \
+  tests/integration/test_postgresql_composed_acquisition_live.py
+```
+
+The warehouse lifecycle acceptance run provisions PostgreSQL and ClickHouse in Docker; see
+`.github/workflows/warehouse-lifecycle.yml` for the environment it needs.
+
+## Documentation
+
+- [Capability status](docs/status.md)
+- [Architecture](docs/architecture.md)
+- [Repository layout](docs/architecture/repository-layout.md)
+- [Design decisions](docs/architecture/decisions/)
+- [Legality rules](services/compiler/legality/README.md)
+- [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md) · [Engineering rules](AGENTS.md) · [Security](SECURITY.md) ·
+  [Code of Conduct](CODE_OF_CONDUCT.md)
+
+## License
+
+Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+Heinzel is a product of PillarMesh ([pillarmesh.com](https://pillarmesh.com)).
