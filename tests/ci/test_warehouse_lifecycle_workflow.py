@@ -833,7 +833,7 @@ def test_live_job_uses_the_repository_pinned_toolchain_actions(workflow: dict[st
         "setup-uv must stay pinned to the repository's reviewed commit"
     )
     workflow_source = WORKFLOW_PATH.read_text(encoding="utf-8")
-    assert "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6" in workflow_source
+    assert "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0" in workflow_source
     assert (
         "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4" in workflow_source
     )
