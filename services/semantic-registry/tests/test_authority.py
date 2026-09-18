@@ -955,3 +955,36 @@ def test_classification_candidate_binds_the_catalog_observation_as_authority() -
 
     assert resolution.status is AuthorityResolutionStatus.RESOLVED
     assert resolution.selected_observation_digest == digest(classification)
+
+
+def test_contradiction_groups_are_exact() -> None:
+    """Only kinds in the same group make competing claims that can contradict each other."""
+    from heinzel_semantic_registry.authority import _CONTRADICTION_GROUPS
+
+    assert {frozenset(kind.value for kind in group) for group in _CONTRADICTION_GROUPS} == {
+        frozenset({"business_meaning", "process_semantics", "imported_classification"}),
+        frozenset({"imported_glossary"}),
+        frozenset({"identity"}),
+        frozenset({"relationship"}),
+        frozenset({"metric"}),
+        frozenset({"integrity_constraint"}),
+    }
+
+
+def test_governing_information_kind_of_each_candidate_kind_is_exact() -> None:
+    """The governing kind chooses which admitted winner is bound as a candidate's authority."""
+    from heinzel_semantic_registry.authority import _CANDIDATE_GOVERNING_KIND
+
+    assert {
+        candidate.value: information.value
+        for candidate, information in _CANDIDATE_GOVERNING_KIND.items()
+    } == {
+        "entity": "business_meaning",
+        "event": "business_meaning",
+        "state": "process_semantics",
+        "relationship": "relationship",
+        "identity_rule": "identity",
+        "integrity_constraint": "integrity_constraint",
+        "metric": "metric",
+        "classification": "imported_classification",
+    }
