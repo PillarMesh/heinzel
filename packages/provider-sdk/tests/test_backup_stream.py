@@ -211,7 +211,7 @@ def test_backup_stream_rejects_a_source_that_breaks_the_bounded_read_contract() 
 
     with pytest.raises(ValueError, match="bounded read"):
         encrypt_backup_stream(
-            OversizedSource(),  # type: ignore[arg-type]
+            OversizedSource(),
             io.BytesIO(),
             key=b"k" * 32,
             chunk_size=4 * 1024,

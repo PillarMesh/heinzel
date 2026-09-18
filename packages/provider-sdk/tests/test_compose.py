@@ -13,6 +13,7 @@ from pathlib import Path
 from threading import Event, Thread
 from typing import IO
 
+import heinzel_provider_sdk
 import heinzel_provider_sdk.compose as compose_module
 import pytest
 from heinzel_provider_sdk import (
@@ -123,9 +124,12 @@ class _StartedChild:
 class _FinishedProcess:
     def __init__(self, *, stdout: bytes = b"", stderr: bytes = b"", returncode: int = 0) -> None:
         self.stdin: IO[bytes] | None = None
-        # The test-double process owns these pipes until its test exits.
-        self.stdout = tempfile.TemporaryFile()  # noqa: SIM115
-        self.stderr = tempfile.TemporaryFile()  # noqa: SIM115
+        # The test-double process owns these pipes until its test exits. Annotated
+        # as the protocol declares them: `ComposeProcess` holds these as variables,
+        # and a protocol variable is invariant, so inferring `BufferedRandom` here
+        # made every double in this family fail to satisfy `CommandRunner`.
+        self.stdout: IO[bytes] | None = tempfile.TemporaryFile()  # noqa: SIM115
+        self.stderr: IO[bytes] | None = tempfile.TemporaryFile()  # noqa: SIM115
         self.stdout.write(stdout)
         self.stderr.write(stderr)
         self.stdout.seek(0)
@@ -148,7 +152,9 @@ class _FinishedProcess:
 
 
 def test_provider_sdk_exports_compose_process_boundary() -> None:
-    assert DockerComposeProcess
+    # `assert DockerComposeProcess` asserted a class object, which is always true.
+    # The claim is that the package exports the boundary, so assert that instead.
+    assert "DockerComposeProcess" in heinzel_provider_sdk.__all__
 
 
 def test_compose_verifies_container_and_reference_image_content_ids(tmp_path: Path) -> None:
@@ -649,7 +655,8 @@ class _UnreapableProcess(_FinishedProcess):
         return None
 
     def wait(self, timeout: float | None = None) -> int:
-        raise subprocess.TimeoutExpired("docker", timeout)
+        # `TimeoutExpired` records the elapsed timeout, which is never None here.
+        raise subprocess.TimeoutExpired("docker", timeout if timeout is not None else 0.0)
 
 
 class _SimulatedCancellation(BaseException):
@@ -660,6 +667,10 @@ class _CloseCancellation(BaseException):
     pass
 
 
+# typeshed satisfies `IO[bytes]` with concrete io classes such as `BytesIO`, but not
+# with `io.RawIOBase` subclasses, though both are valid binary streams at runtime.
+# The fault-injection streams below are `RawIOBase`, so each assignment onto a
+# `ComposeProcess` field carries a scoped ignore rather than reshaping the double.
 class _CancellationOnCloseStream(io.RawIOBase):
     def __init__(self, source: IO[bytes]) -> None:
         self._source = source
@@ -699,7 +710,7 @@ class _GracefulWaitFailureProcess(_FinishedProcess):
             raise OSError("private graceful wait failure")
         if self._reap_after_kill:
             return self.returncode
-        raise subprocess.TimeoutExpired("docker", timeout)
+        raise subprocess.TimeoutExpired("docker", timeout if timeout is not None else 0.0)
 
 
 class _OrdinaryWaitFailureProcess(_FinishedProcess):
@@ -745,9 +756,9 @@ class _FilenoFailureStream(io.BytesIO):
         raise self._error_type(self._error_detail)
 
 
-def _process_with_stdin(stdin: IO[bytes]) -> _FinishedProcess:
+def _process_with_stdin(stdin: IO[bytes] | io.RawIOBase) -> _FinishedProcess:
     process = _FinishedProcess()
-    process.stdin = stdin
+    process.stdin = stdin  # type: ignore[assignment]
     return process
 
 
@@ -1394,7 +1405,8 @@ def test_compose_stream_preserves_cancellation_when_child_cleanup_cannot_reap(
 
 def test_compose_stream_close_cannot_replace_a_primary_cancellation(tmp_path: Path) -> None:
     child = _FinishedProcess(stdout=b"stream")
-    child.stdout = _CancellationOnCloseStream(child.stdout)
+    assert child.stdout is not None
+    child.stdout = _CancellationOnCloseStream(child.stdout)  # type: ignore[assignment]
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
         run=lambda command, *, env, stdin, stdout, stderr: child,
@@ -1413,7 +1425,8 @@ def test_compose_stream_close_cannot_replace_a_primary_cancellation(tmp_path: Pa
 
 def test_compose_stream_reports_close_cancellation_after_normal_exit(tmp_path: Path) -> None:
     child = _FinishedProcess(stdout=b"stream")
-    child.stdout = _CancellationOnCloseStream(child.stdout)
+    assert child.stdout is not None
+    child.stdout = _CancellationOnCloseStream(child.stdout)  # type: ignore[assignment]
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
         run=lambda command, *, env, stdin, stdout, stderr: child,
@@ -1430,7 +1443,8 @@ def test_compose_stream_reports_close_cancellation_inside_an_outer_exception(
     tmp_path: Path,
 ) -> None:
     child = _FinishedProcess(stdout=b"stream")
-    child.stdout = _CancellationOnCloseStream(child.stdout)
+    assert child.stdout is not None
+    child.stdout = _CancellationOnCloseStream(child.stdout)  # type: ignore[assignment]
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
         run=lambda command, *, env, stdin, stdout, stderr: child,

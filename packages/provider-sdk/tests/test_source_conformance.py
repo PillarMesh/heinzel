@@ -248,7 +248,9 @@ class _Session:
         self.aborted = False
         self.abort_count = 0
 
-    def __iter__(self) -> _Session:
+    def __iter__(self) -> Iterator[AcquisitionRecord]:
+        # `_Session` is its own iterator over records; naming that here lets the
+        # failure subclasses below override it without widening the return type.
         return self
 
     def __next__(self) -> AcquisitionRecord:

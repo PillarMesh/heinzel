@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import TypedDict
 
 import pytest
 from heinzel_contract_model import digest
@@ -13,6 +14,7 @@ from heinzel_provider_sdk.acquisition_models import (
     AcquisitionField,
     AcquisitionFieldValue,
     AcquisitionIntent,
+    AcquisitionMode,
     AcquisitionNoValidPlan,
     AcquisitionObjectSchema,
     AcquisitionPreparedReceipt,
@@ -28,8 +30,24 @@ _UTC_A = datetime(2026, 8, 31, 12, 0, tzinfo=UTC)
 _UTC_B = datetime(2026, 8, 31, 12, 5, tzinfo=UTC)
 
 
+class _IntentIdentity(TypedDict):
+    """The identity fields `acquisition_intent_key` hashes and the intent repeats.
+
+    Typed so the `**identity` expansion below is checked against the key function
+    and the model, rather than erased to `object`.
+    """
+
+    tenant_id: str
+    run_intent_ref: str
+    contract_digest: str
+    source_binding_ref: str
+    acquisition_mode: AcquisitionMode
+    object_refs: tuple[str, ...]
+    prior_checkpoint_revision: int
+
+
 def _intent_payload() -> dict[str, object]:
-    identity = {
+    identity: _IntentIdentity = {
         "tenant_id": "tenant-a",
         "run_intent_ref": "1" * 64,
         "contract_digest": "2" * 64,
@@ -175,10 +193,12 @@ def test_record_fields_reject_non_scalar_and_naive_timestamp_values() -> None:
 
     assert valid.operation == "upsert"
 
+    # Both values are outside the declared scalar union; rejecting them is the
+    # assertion, so the checker is right and the scope is one argument each.
     with pytest.raises(ValidationError, match="scalar"):
-        AcquisitionFieldValue(name="amount", value={"nested": 1})
+        AcquisitionFieldValue(name="amount", value={"nested": 1})  # type: ignore[arg-type]
     with pytest.raises(ValidationError, match="floating-point"):
-        AcquisitionFieldValue(name="amount", value=10.5)
+        AcquisitionFieldValue(name="amount", value=10.5)  # type: ignore[arg-type]
     with pytest.raises(ValidationError, match="timezone-aware UTC"):
         AcquisitionFieldValue(name="updated_at", value=datetime(2026, 8, 31, 12, 0))
     with pytest.raises(ValidationError, match="field names must be unique"):
@@ -217,9 +237,16 @@ def _segment(record_count: int = 1, encoded_bytes: int = 128) -> AcquisitionSegm
     )
 
 
+class _BatchIdentity(TypedDict):
+    intent_key: str
+    prior_checkpoint_revision: int
+    candidate_checkpoint_digest: str
+    segment_manifests: tuple[AcquisitionSegmentManifest, ...]
+
+
 def _batch() -> AcquisitionBatchManifest:
     segment = _segment()
-    identity = {
+    identity: _BatchIdentity = {
         "intent_key": "c" * 64,
         "prior_checkpoint_revision": 0,
         "candidate_checkpoint_digest": "d" * 64,

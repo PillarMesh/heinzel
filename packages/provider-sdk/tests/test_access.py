@@ -7,6 +7,7 @@ from heinzel_provider_sdk.access import (
     AccessEffectCommand,
     AccessEffectProviderError,
     AccessEffectResult,
+    AccessEffectSurface,
     run_access_provider_conformance,
 )
 from pydantic import ValidationError
@@ -53,7 +54,7 @@ def test_access_provider_error_exposes_only_retry_classification() -> None:
 
 
 class _ConformantProvider:
-    surface = "warehouse"
+    surface: AccessEffectSurface = "warehouse"
 
     def __init__(self) -> None:
         self._results: dict[str, AccessEffectResult] = {}
