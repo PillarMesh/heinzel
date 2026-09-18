@@ -1,9 +1,9 @@
 """The request-to-product journey with the compiler in it, on the pinned PostgreSQL engine.
 
-Earlier live journeys materialized a hand-written statement with placeholder compiler inputs:
-invented IIR and observation digests, a fake legality rule, unsigned cardinality, and a local
-PostgreSQL that is not the pinned engine. This journey replaces every one of those with the
-owning service's real artifact, on the digest-pinned PostgreSQL 18.6 image:
+This journey uses no hand-written statement and no placeholder compiler input: no invented IIR
+or observation digests, fake legality rule, unsigned cardinality, or local PostgreSQL that is not
+the pinned engine. Every input is the owning service's real artifact, on the digest-pinned
+PostgreSQL 18.6 image:
 
 - source rows are acquired and landed through the real providers and generation ledger;
 - the landing relation is observed and signed by the PostgreSQL provider observer;

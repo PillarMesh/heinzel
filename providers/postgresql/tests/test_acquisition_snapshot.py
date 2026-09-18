@@ -184,7 +184,8 @@ class FakeBackend:
     def evaluate_privilege_probe(self, statement: str, params: object) -> bool:
         normalized_statement = " ".join(statement.split())
         # Pinning the complete policy catches removed or inverted predicates that a fake database
-        # cannot evaluate; Task 9 proves the same statement against PostgreSQL grant semantics.
+        # cannot evaluate; the live acquisition journeys under tests/integration run the same
+        # statement against real PostgreSQL grant semantics.
         statement_is_exact = (
             hashlib.sha256(normalized_statement.encode()).hexdigest()
             == "9241746875e7f5d202b4919687451c987339fb7f850964d2c75089ebca1b219d"

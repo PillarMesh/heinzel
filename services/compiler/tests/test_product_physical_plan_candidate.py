@@ -569,10 +569,10 @@ def test_admission_requires_the_observation_digest_to_match() -> None:
 def _fully_evidenced_postgresql_compile() -> NoValidPlan:
     """With every accepted artifact present and signed, exactly preconditions 15, 17, 18 remain.
 
-    This is the state the independent review packet describes. All three remaining gates are
-    governed decisions, not missing evidence: runtime magnitude scope (15), acceptance of the live
-    PostgreSQL evidence (17), and independent approval (18). If another precondition regresses,
-    or one of these three is flipped without review, the packet is no longer accurate.
+    All three remaining gates are governed decisions, not missing evidence: runtime magnitude
+    scope (15), acceptance of the live PostgreSQL evidence (17), and independent approval (18).
+    Another precondition regressing, or one of these three flipping without review, changes
+    this state.
     """
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from heinzel_provider_sdk import (
@@ -615,9 +615,8 @@ def _fully_evidenced_postgresql_compile() -> NoValidPlan:
 def test_a_fully_evidenced_postgresql_candidate_leaves_only_the_governed_gates_open() -> None:
     """With every accepted artifact present and signed, exactly preconditions 15, 17, 18 remain.
 
-    This is the state the independent review packet describes. All three remaining gates are
-    governed decisions, not missing evidence: runtime magnitude scope (15), acceptance of the live
-    PostgreSQL evidence (17), and independent approval (18).
+    All three remaining gates are governed decisions, not missing evidence: runtime magnitude
+    scope (15), acceptance of the live PostgreSQL evidence (17), and independent approval (18).
     """
     result = _fully_evidenced_postgresql_compile()
 
@@ -630,9 +629,10 @@ def test_a_fully_evidenced_postgresql_candidate_leaves_only_the_governed_gates_o
 def test_the_rule_record_names_exactly_the_gates_a_real_compile_leaves_open() -> None:
     """The rule record's unsatisfied gates are derived from the compiler, not asserted by hand.
 
-    The pre-review found the record still listing generation addressing, cardinality and
-    provenance as unsatisfied after the code could satisfy them. Map each gate to its precondition
-    and require the record to match what a fully evidenced compile actually leaves open.
+    A hand-maintained record can go on listing gates such as generation addressing, cardinality
+    and provenance as unsatisfied after the code can satisfy them. Map each gate to its
+    precondition and require the record to match what a fully evidenced compile actually leaves
+    open.
     """
     import json
     from pathlib import Path
@@ -733,9 +733,9 @@ def test_landing_relation_must_carry_the_columns_the_statement_reads(
 def test_an_observation_of_another_relation_cannot_stand_in_for_the_landing_relation() -> None:
     """Observing a typed table with the right shape proves nothing about the relation read.
 
-    The pre-review found that an observation of the logical IIR relation could satisfy the physical
-    column precondition while the statement read a different landing relation. Both the precondition
-    and the admission chain now bind the observation to the authority's source relation.
+    An observation of the logical IIR relation must not satisfy the physical column precondition
+    while the statement reads a different landing relation. Both the precondition and the
+    admission chain bind the observation to the authority's source relation.
     """
     observation = _observation().model_copy(update={"relation_name": "revenue_events"})
 

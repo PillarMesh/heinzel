@@ -603,7 +603,7 @@ def test_evidence_was_captured_against_the_statement_the_compiler_emits_now() ->
     assert bundle["statement_digest"] == digest(_statement())
 
 
-def test_evidence_covers_every_case_the_milestone_requires() -> None:
+def test_evidence_covers_exactly_the_required_boundary_cases() -> None:
     assert {case["case_id"] for case in _bundle_cases()} == _REQUIRED_CASE_IDS
 
 
@@ -653,7 +653,7 @@ def test_every_malformed_landing_value_is_refused_by_the_statement_guard() -> No
     """Refusals of malformed input must come from the decode guard (22P02), never from coercion.
 
     If a malformed value produced rows, or were refused only by an overflow in a later cast, the
-    guard would not be doing what the proof note says.
+    guard would not be enforcing the decode refusal the checked SUM's bound argument relies on.
     """
     refused = {
         "input_at_exclusive_upper_bound",

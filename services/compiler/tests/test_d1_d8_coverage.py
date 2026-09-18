@@ -184,9 +184,9 @@ def test_unenforced_exclusions_are_exactly_the_negatives_postgresql_still_accept
     """Which exclusions are unenforced is derived from live results, not declared by hand.
 
     A negative case whose recorded PostgreSQL outcome is still "rows" is an exclusion nothing
-    refuses. The pre-review found the map declared only one such case while excess-scale rounding
-    was a second, undeclared one; a hand-maintained list cannot notice that. Every such case must
-    be declared, nothing else may be, and a row's status must say whether it carries one.
+    refuses. A hand-maintained list can declare one such case while missing another, such as
+    excess-scale rounding, and cannot notice the gap. Every such case must be declared, nothing
+    else may be, and a row's status must say whether it carries one.
     """
     unenforced_live = {
         cast(str, case["case_id"])
