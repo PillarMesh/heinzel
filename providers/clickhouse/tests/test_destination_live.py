@@ -16,6 +16,7 @@ from heinzel_provider_clickhouse.destination import (
     ClickHouseLandStoreSettings,
 )
 from heinzel_provider_sdk.destination_conformance import destination_segment, destination_target
+from pydantic import SecretStr
 
 _IMAGE = (
     "clickhouse/clickhouse-server:25.8.32.4@"
@@ -93,7 +94,7 @@ def clickhouse_settings() -> Iterator[ClickHouseLandStoreSettings]:
         yield ClickHouseLandStoreSettings(
             endpoint=endpoint,
             username="ingestion",
-            password=password,
+            password=SecretStr(password),
             raw_database_name="raw",
             ledger_database_name="control",
             ledger_table_name="land_receipts",

@@ -5,6 +5,7 @@ import json
 import os
 import socket
 import subprocess
+import threading
 from base64 import b64encode
 from collections.abc import Callable
 from contextlib import contextmanager
@@ -30,6 +31,7 @@ from heinzel_provider_clickhouse.warehouse import (
     ClickHouseGrantPlan,
     ClickHouseHTTPClient,
     _classification_for_error,
+    _ClickHouseOperation,
     _expected_grant_rows,
     _rewrite_private_binary_file,
     assert_supported_semantics,
@@ -197,7 +199,14 @@ class _RecordingResources:
         self.resources.update((resource.resource_id, resource) for resource in resources)
 
 
-class _RecordingCompose:
+class _RecordingCompose(DockerComposeProcess):
+    """Inherits the boundary it substitutes for, rather than merely resembling it.
+
+    The provider takes a concrete `DockerComposeProcess`, so a standalone double was
+    rejected wherever it was passed. Inheriting also makes every override below
+    checked against the real signature instead of against this class alone.
+    """
+
     def __init__(self, recorder: _RecordingResources) -> None:
         self._recorder = recorder
         self.events: list[str] = []
@@ -213,7 +222,7 @@ class _RecordingCompose:
         self.native_backup_present = False
         self.running = True
 
-    def resource_is_absent(self, **arguments: Any) -> bool:
+    def resource_is_absent(self, **arguments: Any) -> bool | None:
         key = (str(arguments["resource_kind"]), str(arguments["identifier"]))
         if key in self.removed:
             return True
@@ -286,7 +295,7 @@ class _RecordingCompose:
     def inspect_container_running(self, **_arguments: Any) -> bool:
         return self.running
 
-    def inspect_container_has_published_ports(self, **arguments: Any) -> bool:
+    def inspect_container_has_published_ports(self, **arguments: Any) -> bool | None:
         identifier = str(arguments["identifier"])
         return not any(
             resource.resource_kind is WarehouseResourceKind.RESTORE_CONTAINER
@@ -294,7 +303,7 @@ class _RecordingCompose:
             for resource in self._recorder.resources.values()
         )
 
-    def inspect_container_networks(self, **arguments: Any) -> tuple[str, ...]:
+    def inspect_container_networks(self, **arguments: Any) -> tuple[str, ...] | None:
         identifier = str(arguments["identifier"])
         if identifier.endswith("-isolation-probe"):
             return tuple(
@@ -321,7 +330,7 @@ class _RecordingCompose:
             )
         )
 
-    def inspect_container_network_ipv4_address(self, **arguments: Any) -> str:
+    def inspect_container_network_ipv4_address(self, **arguments: Any) -> str | None:
         identifier = str(arguments["identifier"])
         address = (
             "172.31.0.9"
@@ -336,7 +345,7 @@ class _RecordingCompose:
         assert validated is not None
         return validated
 
-    def inspect_network_internal(self, **arguments: Any) -> bool:
+    def inspect_network_internal(self, **arguments: Any) -> bool | None:
         identifier = str(arguments["identifier"])
         if any(
             resource.resource_kind is WarehouseResourceKind.RESTORE_PRIVATE_NETWORK
@@ -365,7 +374,7 @@ class _RecordingClient:
         self.restore_failures = restore_failures
         self.provision_failures = provision_failures
 
-    def execute(self, statement: str, *, operation: str = "validate") -> bytes:
+    def execute(self, statement: str, *, operation: _ClickHouseOperation = "validate") -> bytes:
         self.statements.append(statement)
         if statement.startswith("BACKUP ") and self._compose is not None:
             # ClickHouse refuses to write a backup to a destination that already
@@ -388,7 +397,9 @@ class _RecordingClient:
             return self._grant_result(statement.removeprefix("CHECK GRANT ")).encode("ascii")
         return b""
 
-    def query_lines(self, statement: str, *, operation: str = "validate") -> tuple[str, ...]:
+    def query_lines(
+        self, statement: str, *, operation: _ClickHouseOperation = "validate"
+    ) -> tuple[str, ...]:
         self.statements.append(statement)
         if statement == "SELECT 1":
             if self.username == "default" and self.endpoint in self.disabled_bootstrap_endpoints:
@@ -967,7 +978,7 @@ def test_clickhouse_reconcile_recovers_after_bootstrap_tombstone_before_resource
 def test_clickhouse_provision_rejects_an_unexpected_container_network(tmp_path: Path) -> None:
     class _UnexpectedNetworkCompose(_RecordingCompose):
         def inspect_container_networks(self, **arguments: Any) -> tuple[str, ...]:
-            return (*super().inspect_container_networks(**arguments), "unrelated-network")
+            return (*(super().inspect_container_networks(**arguments) or ()), "unrelated-network")
 
     recorder = _RecordingResources()
     compose = _UnexpectedNetworkCompose(recorder)
@@ -1628,6 +1639,7 @@ def test_clickhouse_receipt_replay_rejects_another_operation_identity(tmp_path: 
         revision=3,
     )
     result = provider.validate(validating_binding, operation, resume=False)
+    assert isinstance(result, InitialWarehouseValidationResult)
     receipt_resource = next(
         resource
         for resource in boundary.resources()
@@ -1916,7 +1928,7 @@ def test_clickhouse_receipt_cleanup_transport_failures_remain_retryable_at_provi
     class _CleanupTransportCompose(_RecordingCompose):
         fail_cleanup = False
 
-        def resource_is_absent(self, **arguments: Any) -> bool:
+        def resource_is_absent(self, **arguments: Any) -> bool | None:
             if self.fail_cleanup and arguments["resource_kind"] == "container":
                 raise ComposeCommandError(
                     "sanitized Docker cleanup transport failure",
@@ -2322,7 +2334,7 @@ def test_clickhouse_restore_probe_transport_failures_remain_retryable_at_provide
 
 def test_clickhouse_restore_tunnel_reserves_its_port_until_start() -> None:
     tunnel = warehouse_module._RestoreLoopbackTunnel(
-        compose=object(),
+        compose=_RecordingCompose(_RecordingResources()),
         project_name="restore-project",
     )
     competitor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -2438,9 +2450,9 @@ def test_clickhouse_restore_tunnel_start_failure_is_retryable_and_cleanup_termin
         def is_alive(self) -> bool:
             return False
 
-    monkeypatch.setattr(warehouse_module.threading, "Thread", _FailedThread)
+    monkeypatch.setattr(threading, "Thread", _FailedThread)
     tunnel = warehouse_module._RestoreLoopbackTunnel(
-        compose=object(),
+        compose=_RecordingCompose(_RecordingResources()),
         project_name="restore-project",
     )
 
@@ -2718,7 +2730,7 @@ def test_clickhouse_tunnel_reservation_failure_tombstones_decrypted_staging_and_
     def unavailable_socket(*_arguments: object, **_keywords: object) -> socket.socket:
         raise OSError("sanitized tunnel reservation failure")
 
-    monkeypatch.setattr(warehouse_module.socket, "socket", unavailable_socket)
+    monkeypatch.setattr(socket, "socket", unavailable_socket)
 
     with pytest.raises(WarehouseProviderError) as captured:
         provider.validate(
@@ -3239,7 +3251,7 @@ def test_clickhouse_http_client_executes_against_the_scoped_https_endpoint(
         ClickHouseConnectionTarget(
             endpoint="https://localhost:18443",
             username="pm_administration",
-            password="private-password",
+            password=SecretStr("private-password"),
             root_certificate=tmp_path / "ca.crt",
             client_certificate=tmp_path / "client.crt",
             client_private_key=tmp_path / "client.key",
@@ -3280,7 +3292,7 @@ def test_clickhouse_http_client_sanitizes_server_failures(
         ClickHouseConnectionTarget(
             endpoint="https://localhost:18443",
             username="pm_runtime",
-            password="private-password",
+            password=SecretStr("private-password"),
             root_certificate=tmp_path / "ca.crt",
             client_certificate=tmp_path / "client.crt",
             client_private_key=tmp_path / "client.key",
@@ -3312,7 +3324,7 @@ def test_clickhouse_http_client_classifies_transport_without_driver_leakage(
         ClickHouseConnectionTarget(
             endpoint="https://localhost:18443",
             username="pm_runtime",
-            password="private-password",
+            password=SecretStr("private-password"),
             root_certificate=tmp_path / "ca.crt",
             client_certificate=tmp_path / "client.crt",
             client_private_key=tmp_path / "client.key",

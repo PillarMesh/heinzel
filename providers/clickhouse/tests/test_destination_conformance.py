@@ -13,13 +13,14 @@ from heinzel_provider_clickhouse.destination import (
     clickhouse_insert_token,
     compose_clickhouse_destination_provider,
 )
-from heinzel_provider_sdk import LandReceipt, ProviderError
+from heinzel_provider_sdk import LandReceipt, ProviderError, ProviderErrorClassification
 from heinzel_provider_sdk.destination_conformance import (
     destination_segment,
     destination_target,
     run_destination_conformance,
 )
 from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
+from pydantic import SecretStr
 
 
 class _Store:
@@ -28,8 +29,8 @@ class _Store:
         self.insert_tokens: list[str] = []
         self.fail_transport = False
         self.fail_receipt_once = False
-        self.classified_failure: str | None = None
-        self.inspect_classified_failure: str | None = None
+        self.classified_failure: ProviderErrorClassification | None = None
+        self.inspect_classified_failure: ProviderErrorClassification | None = None
 
     def insert_segment(
         self,
@@ -141,7 +142,7 @@ def test_concrete_clickhouse_store_inserts_with_token_and_records_receipt() -> N
         ClickHouseLandStoreSettings(
             endpoint="http://127.0.0.1:8123",
             username="ingestion",
-            password="secret",
+            password=SecretStr("secret"),
             raw_database_name="raw",
             ledger_database_name="control",
             ledger_table_name="land_receipts",
@@ -186,7 +187,7 @@ def test_concrete_clickhouse_store_reconciles_timeout_after_insert() -> None:
         ClickHouseLandStoreSettings(
             endpoint="http://127.0.0.1:8123",
             username="ingestion",
-            password="secret",
+            password=SecretStr("secret"),
             raw_database_name="raw",
             ledger_database_name="control",
             ledger_table_name="land_receipts",
@@ -232,7 +233,9 @@ def test_clickhouse_reconciles_an_insert_committed_before_the_receipt() -> None:
     "classification",
     ("transient_unavailable", "throttled", "authorization_denied", "statement_rejected"),
 )
-def test_clickhouse_preserves_driver_failure_classification(classification: str) -> None:
+def test_clickhouse_preserves_driver_failure_classification(
+    classification: ProviderErrorClassification,
+) -> None:
     store = _Store()
     store.classified_failure = classification
     provider = ClickHouseDestinationProvider(store=store)
@@ -299,7 +302,7 @@ def test_clickhouse_timeout_reconciliation_preserves_driver_failure_classificati
 
 def test_clickhouse_binding_composition_resolves_private_settings_without_receipt_leakage() -> None:
     client = _Client()
-    secret_password = "private-password"
+    secret_password = SecretStr("private-password")
     resolved: list[tuple[str, str, int]] = []
 
     class SettingsAuthority:
@@ -347,4 +350,4 @@ def test_clickhouse_binding_composition_resolves_private_settings_without_receip
     )
 
     assert resolved == [("tenant-a", "warehouse-a", 4)]
-    assert secret_password not in receipt.model_dump_json()
+    assert secret_password.get_secret_value() not in receipt.model_dump_json()

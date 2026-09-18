@@ -23,6 +23,7 @@ apps/console/server/tests
 packages/execution-graph/tests
 packages/iir/tests
 packages/provider-sdk/tests
+providers/clickhouse/tests
 providers/openmetadata/tests
 services/access-control/tests
 services/compiler/tests
@@ -40,7 +41,6 @@ tests/release
 # rather than guess.
 PENDING='
 packages/contract-model/tests
-providers/clickhouse/tests
 providers/postgresql/tests
 providers/snowflake/tests
 providers/stripe/tests
