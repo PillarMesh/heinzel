@@ -72,8 +72,8 @@ classification could not resolve them to "permitted" from installed metadata alo
 | npm | `caniuse-lite` | `license: "CC-BY-4.0"` is a data/content licence, not a generic code-license term | Confirmed via the package's own `LICENSE` file; CC-BY-4.0 only requires attribution, is a `devDependency` (browserslist data, not shipped in the built console), and imposes no copyleft on Heinzel's own code |
 
 No `REVIEWED` entry hides a genuinely GPL-only, AGPL, or SSPL dependency; every entry above
-resolves to a permissive licence once the actual grant (not just the PyPI/npm classifier
-shorthand) is read.
+resolves to an OSI-approved, non-copyleft licence option once the actual grant (not just the
+PyPI/npm classifier shorthand) is read.
 
 ## 3. Locked but not installed
 

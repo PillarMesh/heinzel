@@ -51,6 +51,9 @@ _FORBIDDEN_SIGNALS = (
     "commons clause",
     "licenseref-",  # SPDX convention for a custom, non-standard license text
     "see license in",  # npm's "see license in <file>" placeholder names no actual license
+    "non-commercial",
+    "noncommercial",
+    "no commercial",
 )
 
 # A free-text `License` field can be an entire embedded license body (e.g. the full text of the
@@ -61,10 +64,12 @@ _FORBIDDEN_SIGNALS = (
 _MAX_LICENSE_FIELD_LENGTH = 200
 
 # A bare "gpl" is standalone GPL, forbidden; it must not fire inside "lgpl" or a spelled-out
-# "lesser" grant, which are permitted. Word-bounded so "gpl" doesn't also match inside "gplv2"
-# (handled separately below) or an unrelated word.
-_GPL_TOKEN = re.compile(r"(?<![a-z0-9])gpl(?![a-z0-9])")
-_GPL_VERSIONED_TOKEN = re.compile(r"(?<![a-z0-9])gplv\d")
+# "lesser" grant, which are permitted. Left-bounded, then either a compact version suffix
+# ("gpl3", "gplv3", "gpl2+") or a right word-boundary for the bare token -- SPDX/PyPI license
+# strings routinely drop the separator ("GPL3", "GPLv3") that a plain "gpl(?![a-z0-9])" check
+# would require, and "gpl2+" needs to match "gpl2" without the trailing "+" defeating the
+# right-boundary check.
+_GPL_TOKEN = re.compile(r"(?<![a-z0-9])gpl(?:v?\d|(?![a-z0-9]))")
 _GPL_PHRASE = "gnu general public license"
 _LGPL_MARKERS = ("lgpl", "lesser", "gnu lesser general public license")
 
@@ -154,19 +159,28 @@ def _term_present(term: str, text: str) -> bool:
     return re.search(rf"(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])", text) is not None
 
 
+def _left_bounded_present(term: str, text: str) -> bool:
+    # Only the left edge is checked: compact copyleft spellings ("AGPLv3", "AGPL3", "SSPLv1")
+    # glue a version straight onto the name with no separator, so requiring a right boundary
+    # too (as PERMITTED terms do) would miss them. FORBIDDEN's terms are distinctive enough
+    # ("agpl", "affero", "sspl", "server side public") that a bare left boundary doesn't risk
+    # matching inside an unrelated word.
+    return re.search(rf"(?<![a-z0-9]){re.escape(term)}", text) is not None
+
+
 def _has_forbidden_signal(text: str) -> bool:
     return any(signal in text for signal in _FORBIDDEN_SIGNALS)
 
 
 def _has_forbidden_term(text: str) -> bool:
-    return any(_term_present(term, text) for term in FORBIDDEN)
+    return any(_left_bounded_present(term, text) for term in FORBIDDEN)
 
 
 def _has_gpl_signal(text: str) -> bool:
     stripped = text
     for marker in _LGPL_MARKERS:
         stripped = stripped.replace(marker, "")
-    if _GPL_TOKEN.search(stripped) or _GPL_VERSIONED_TOKEN.search(stripped):
+    if _GPL_TOKEN.search(stripped):
         return True
     return _GPL_PHRASE in stripped
 
@@ -184,23 +198,56 @@ def _classify(text: str) -> Verdict:
 
 
 def _combine_license_fields(
-    license_expression: str, license_field: str, classifiers: list[str]
+    license_expression: str, license_field: str, classifiers: list[str], *, cap_free_text: bool
 ) -> str:
-    if len(license_field) > _MAX_LICENSE_FIELD_LENGTH:
+    if cap_free_text and len(license_field) > _MAX_LICENSE_FIELD_LENGTH:
         license_field = ""
     fields = [field for field in (license_expression, license_field, *classifiers) if field]
     return " ".join(fields).lower()
 
 
-def _license_text(dist: metadata.Distribution) -> str:
+def _classify_license_evidence(
+    license_expression: str, license_field: str, classifiers: list[str]
+) -> Verdict:
+    """Classify PyPI-style license evidence, in two passes.
+
+    A long free-text `License` field is not trusted as evidence of a *permissive* licence -- a
+    huge embedded body is likely to contain incidental matches for unrelated words -- but it
+    must still be scanned for forbidden and GPL terms: an embedded copy of the actual GPL is
+    still the GPL no matter how long the field is. So forbidden/GPL detection runs over the
+    full, uncapped text; only the permitted-term check runs over the capped text.
+    """
+    full_text = _combine_license_fields(
+        license_expression, license_field, classifiers, cap_free_text=False
+    )
+    if _classify(full_text) == "forbidden":
+        return "forbidden"
+    capped_text = _combine_license_fields(
+        license_expression, license_field, classifiers, cap_free_text=True
+    )
+    return _classify(capped_text)
+
+
+def _license_components(dist: metadata.Distribution) -> tuple[str, str, list[str]]:
     classifiers = [
         c for c in dist.metadata.get_all("Classifier") or [] if c.startswith("License ::")
     ]
-    return _combine_license_fields(
+    return (
         dist.metadata.get("License-Expression") or "",
         dist.metadata.get("License") or "",
         classifiers,
     )
+
+
+def _license_text(dist: metadata.Distribution) -> str:
+    """The full (uncapped) evidence text: what the check saw, used for reporting and review."""
+    expression, field, classifiers = _license_components(dist)
+    return _combine_license_fields(expression, field, classifiers, cap_free_text=False)
+
+
+def _license_verdict(dist: metadata.Distribution) -> Verdict:
+    expression, field, classifiers = _license_components(dist)
+    return _classify_license_evidence(expression, field, classifiers)
 
 
 def _npm_license_evidence(package: _NpmPackage) -> str | None:
@@ -268,9 +315,9 @@ def test_every_python_dependency_is_permitted() -> None:
             problems.append(f"{name}: installed {dist.version} but uv.lock has {locked_version}")
         if name in REVIEWED_PYTHON:
             continue
-        text = _license_text(dist)
-        verdict = _classify(text)
+        verdict = _license_verdict(dist)
         if verdict != "permitted":
+            text = _license_text(dist)
             problems.append(f"{name}: {verdict} ({text or 'no license metadata'})")
     assert problems == [], "\n".join(problems)
 
@@ -294,13 +341,14 @@ def test_every_reviewed_python_entry_matches_its_recorded_license_text() -> None
         if name in missing:
             problems.append(f"{name}: listed in REVIEWED_PYTHON but not installed here")
             continue
-        actual = _license_text(metadata.distribution(name))
+        dist = metadata.distribution(name)
+        actual = _license_text(dist)
         if actual != reviewed.reported:
             problems.append(
                 f"{name}: license text changed since review; "
                 f"recorded {reviewed.reported!r}, now {actual!r}"
             )
-        if _classify(actual) == "permitted":
+        if _license_verdict(dist) == "permitted":
             problems.append(f"{name}: now classifies as permitted automatically; drop the entry")
     assert problems == [], "\n".join(problems)
 
@@ -375,6 +423,48 @@ def test_classify_matches_the_license_policy(text: str, expected: Verdict) -> No
 @pytest.mark.parametrize(
     ("text", "expected"),
     [
+        ("mit or agplv3", "forbidden"),
+        ("mit or agpl3", "forbidden"),
+        ("mit or ssplv1", "forbidden"),
+        ("mit or gpl3", "forbidden"),
+        ("mit or gpl2+", "forbidden"),
+    ],
+)
+def test_classify_catches_compact_copyleft_spellings(text: str, expected: Verdict) -> None:
+    assert _classify(text) == expected
+
+
+def test_classify_license_evidence_still_scans_long_fields_for_forbidden_and_gpl_signals() -> None:
+    long_gpl_text = "GNU GENERAL PUBLIC LICENSE\n" + "This program is distributed in the hope " * 20
+    assert len(long_gpl_text) > _MAX_LICENSE_FIELD_LENGTH
+    assert (
+        _classify_license_evidence("", long_gpl_text, ["License :: OSI Approved :: MIT License"])
+        == "forbidden"
+    )
+
+    long_mit_text = "Permission is hereby granted, free of charge, to any person obtaining " * 5
+    assert len(long_mit_text) > _MAX_LICENSE_FIELD_LENGTH
+    assert _classify_license_evidence("", long_mit_text, []) != "forbidden"
+    assert (
+        _classify_license_evidence("", long_mit_text, ["License :: OSI Approved :: MIT License"])
+        == "permitted"
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("mit-style, non-commercial use only", "forbidden"),
+        ("bsd-like, no commercial use", "forbidden"),
+    ],
+)
+def test_classify_catches_non_commercial_signals(text: str, expected: Verdict) -> None:
+    assert _classify(text) == expected
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
         # "unlicense" is permitted (public-domain dedication); "unlicensed" means the
         # opposite -- no license was granted at all -- and must not match as a substring.
         ("unlicensed", "forbidden"),
@@ -404,28 +494,28 @@ def test_classify_gpl_detection_ignores_lgpl_but_not_gpl(text: str, expected: Ve
     assert _classify(text) == expected
 
 
-def test_classify_ignores_an_overlong_free_text_license_field() -> None:
-    # A full GPLv2 COPYING-style body contains "permitted", "disclaim", and even the phrase
-    # "GNU Lesser General Public License" quoted in its preamble; none of that is evidence once
-    # the field is this long. With no License-Expression or classifiers to fall back on, the
-    # combined evidence is empty and the verdict is unknown, not permitted and not forbidden.
-    long_gpl_text = "GNU GENERAL PUBLIC LICENSE\n" + "This program is distributed in the hope " * 20
-    assert len(long_gpl_text) > _MAX_LICENSE_FIELD_LENGTH
-    combined = _combine_license_fields("", long_gpl_text, [])
-    assert _classify(combined) == "unknown"
+def test_combine_license_fields_drops_an_overlong_free_text_field_when_capped() -> None:
+    # A field this long is not trusted as evidence of a permissive licence on its own, whatever
+    # it happens to contain; capping empties it, leaving nothing else here to classify from.
+    long_neutral_text = "See the accompanying documentation for the full terms. " * 5
+    assert len(long_neutral_text) > _MAX_LICENSE_FIELD_LENGTH
+    capped = _combine_license_fields("", long_neutral_text, [], cap_free_text=True)
+    assert capped == ""
+    uncapped = _combine_license_fields("", long_neutral_text, [], cap_free_text=False)
+    assert uncapped != ""
 
 
 def test_classify_still_resolves_isodate_and_libcst_from_their_classifiers() -> None:
     # Both ship a long free-text License body (ignored past the length cutoff) but also carry a
     # short, trustworthy OSI classifier, which must still be enough to classify them.
-    isodate_combined = _combine_license_fields(
-        "", "x" * 300, ["License :: OSI Approved :: BSD License"]
+    assert (
+        _classify_license_evidence("", "x" * 300, ["License :: OSI Approved :: BSD License"])
+        == "permitted"
     )
-    libcst_combined = _combine_license_fields(
-        "", "x" * 300, ["License :: OSI Approved :: MIT License"]
+    assert (
+        _classify_license_evidence("", "x" * 300, ["License :: OSI Approved :: MIT License"])
+        == "permitted"
     )
-    assert _classify(isodate_combined) == "permitted"
-    assert _classify(libcst_combined) == "permitted"
 
 
 @pytest.mark.parametrize(
