@@ -103,10 +103,20 @@ table above) are runtime npm dependencies -- listed in `apps/console/package.jso
 OFL-1.1 condition 2 requires that the copyright notice and licence text travel with any
 redistributed copy of the font. A built `dist` that leaves this repository -- as a release
 asset, or baked into a container image -- is such a copy, so the OFL text and copyright notice
-need to travel with it. That obligation is not yet met by anything in this repository; it is
-intended to be handled when a `NOTICE` / `THIRD_PARTY_NOTICES` file is written for the release
-(out of scope for this task, which does not change the console build). This is a known gap to
-close before any `apps/console/dist` build is actually distributed, not a blocker for this test.
+need to travel with it. That obligation is now met: `THIRD_PARTY_NOTICES.md` names both
+packages and their licence, and the upstream `LICENSE` text for each is copied byte for byte
+into `apps/console/web/public/licenses/` so the production build ships it at
+`dist/licenses/ibm-plex-sans-OFL.txt` and `dist/licenses/ibm-plex-mono-OFL.txt`.
+`tests/release/test_third_party_notices.py` pins each shipped file to its package's locked
+version and to a sha256 of the shipped text, so an npm upgrade fails that suite until the new
+upstream licence text is reviewed and re-copied.
+
+The equivalent obligation for the bundled JavaScript dependencies (react, react-dom,
+react-router, scheduler, ajv, and any other bundled `node_modules` package, all MIT) is also
+met: a build-time Vite plugin (`apps/console/build/third-party-licenses.ts`) collects the
+licence text of every package actually bundled and emits it to
+`dist/licenses/THIRD_PARTY.txt`, failing the build if a bundled package has no licence file to
+ship.
 
 ## 5. Totals
 
