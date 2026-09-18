@@ -467,3 +467,21 @@ def test_private_boundary_failures_are_typed_and_sanitized() -> None:
 
     assert "secret_canary" not in str(probe_failure.value)
     assert probe_failure.value.__cause__ is None
+
+
+def test_source_binding_transition_table_is_exact_and_retired_is_terminal() -> None:
+    """Every source binding state has exactly these successors, and retired has none."""
+    from heinzel_connection_broker.models import SOURCE_BINDING_TRANSITIONS
+
+    assert set(SOURCE_BINDING_TRANSITIONS) == set(SourceConnectionBindingState)
+    assert {
+        source.value: frozenset(target.value for target in targets)
+        for source, targets in SOURCE_BINDING_TRANSITIONS.items()
+    } == {
+        "draft": frozenset({"validating", "retired"}),
+        "validating": frozenset({"ready", "failed", "retired"}),
+        "ready": frozenset({"validating", "suspended", "retired"}),
+        "suspended": frozenset({"validating", "retired"}),
+        "failed": frozenset({"validating", "retired"}),
+        "retired": frozenset(),
+    }

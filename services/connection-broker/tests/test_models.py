@@ -141,3 +141,22 @@ def test_private_capability_rejects_raw_endpoint_and_credential_material(
 
     with pytest.raises(ValidationError):
         PrivateSourceCapability.model_validate(payload | {field: value})
+
+
+def test_source_binding_validation_evidence_fields_are_exact_and_ordered() -> None:
+    assert tuple(SourceBindingValidationEvidence.model_fields) == (
+        "schema_version",
+        "evidence_id",
+        "tenant_id",
+        "binding_id",
+        "binding_revision",
+        "credential_revision",
+        "provider_kind",
+        "positive_probe_succeeded",
+        "positive_probe_digest",
+        "denial_probe_succeeded",
+        "denial_probe_digest",
+        "source_observation_ref",
+        "capability_profile_digest",
+        "observed_at",
+    )
