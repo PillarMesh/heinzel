@@ -32,12 +32,13 @@ cd apps/console
 npm run lint && npm run typecheck && npm run check:contracts && npm run test -- --run
 ```
 
-Tests marked `live` are opt-in. They start pinned engine images in Docker, and some need an
-explicit switch or external credentials; the [README](README.md#live-tests) lists them. For
-example:
+Tests marked `live` or `emulator` are opt-in. They start pinned engine images in Docker, and some
+need an explicit switch or external credentials; the [README](README.md#live-tests) lists them.
+Select them with `-m "live or emulator"`, as the `Live journeys` workflow does: several
+Docker-backed suites are marked only `emulator`, so `-m live` alone deselects them. For example:
 
 ```bash
-HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest -m live -q \
+HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest -m "live or emulator" -q \
   tests/integration/test_postgresql_compiled_product_journey_live.py
 ```
 

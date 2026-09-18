@@ -92,7 +92,8 @@ behaviour. Documentation describes intended design; it is not evidence that some
 - Name tests as a sentence stating the guaranteed behaviour, for example
   `test_interrupted_migration_never_leaves_a_schema_without_its_version_row`.
 - Keep the offline suite deterministic and free of network access. Tests that need Docker, pinned
-  engine images or external credentials are marked `live` and are opt-in.
+  engine images or external credentials are marked `live` or `emulator`, sit behind an opt-in
+  switch, and are selected with `-m "live or emulator"`.
 - A test double must never be more permissive than the component it replaces. Where a fake stands
   in for something that parses, validates or persists, assert the payload against the real model.
 

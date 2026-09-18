@@ -53,8 +53,8 @@ members = [
 addopts = "--strict-config --strict-markers --import-mode=importlib"
 testpaths = ["apps", "packages", "providers", "services", "tests"]
 markers = [
-  "emulator: requires an explicitly started local service emulator",
-  "live: requires dedicated real service credentials or an explicitly started emulator",
+  "emulator: runs against a local engine or service emulator, usually a pinned Docker image the test starts; opt-in by switch",
+  "live: requires real service credentials, an explicitly started emulator or a Docker-hosted engine; opt-in",
 ]
 
 [tool.ruff]

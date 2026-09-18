@@ -45,23 +45,29 @@ A Docker Compose quickstart is planned.
 
 ## Live tests
 
-Tests marked `live` exercise real engines and services, and are opt-in. They need Docker and pull
-pinned, digest-addressed images; some also need local PostgreSQL binaries (`initdb`, or set
-`HEINZEL_TEST_POSTGRES_BIN_DIR`). A test whose switch or credentials are missing skips itself.
+Tests that exercise real engines and services are opt-in and carry one or both of two markers:
+`live` (real service credentials, an explicitly started emulator, or a Docker-hosted engine) and
+`emulator` (a local engine or service emulator, usually a pinned Docker image the test starts
+itself). Select every one of them with `-m "live or emulator"`; `-m live` alone deselects the tests
+marked only `emulator`. They need Docker and pull pinned, digest-addressed images; some also need
+local PostgreSQL binaries (`initdb`, or set `HEINZEL_TEST_POSTGRES_BIN_DIR`). A test whose switch
+or credentials are missing skips itself. Tests marked only `emulator` are also selected by
+`-m "not live"`, where they skip unless their switch is set.
 
 | Switch or credential | Enables |
 | --- | --- |
 | `HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1` | PostgreSQL acquisition, LAND, leased-run resume, the compiled product journey and product SQL conformance on pinned PostgreSQL and ClickHouse images |
 | `HEINZEL_RUN_ACCESS_EMULATORS=1` | Access grants on PostgreSQL and ClickHouse |
 | `HEINZEL_RUN_DESTINATION_EMULATORS=1` | PostgreSQL and ClickHouse destination providers and the ClickHouse dbt adapter |
-| `HEINZEL_OPENMETADATA_SECRET_STORE_KEY`, `HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD`, `HEINZEL_OPENMETADATA_EMULATOR=1` | OpenMetadata catalog tests, after starting `tests/emulators/openmetadata/run.sh` |
+| `HEINZEL_OPENMETADATA_SECRET_STORE_KEY`, `HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD`, `HEINZEL_OPENMETADATA_EMULATOR=1` | OpenMetadata catalog tests. `tests/emulators/openmetadata/run.sh` checks these values, `DOCKER_CONFIG` and a running Docker daemon, then runs pytest itself (by default `tests/integration/test_openmetadata_live.py`; pass a different command as arguments) |
+| Docker with Compose; no switch | Superset dashboard tests (`tests/integration/test_superset_dashboard_live.py`, `tests/integration/test_request_to_dashboard_live.py`), which build and start a local Superset stack with generated credentials. They have no opt-in switch, so any live selection without a path filter builds that image |
 | `LOCALSTACK_AUTH_TOKEN` | The LocalStack Snowflake emulator, run by `tests/emulators/localstack-snowflake/run.sh` |
 | `HEINZEL_TEST_SNOWFLAKE_*`, `HEINZEL_SNOWFLAKE_*` and related settings | A real Snowflake account for the PostgreSQL-to-Snowflake snapshot; each test's skip message names what is missing |
 
 For example:
 
 ```bash
-HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest -m live -q \
+HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest -m "live or emulator" -q \
   tests/integration/test_postgresql_composed_acquisition_live.py
 ```
 
