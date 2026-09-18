@@ -73,6 +73,53 @@ def test_scanner_fails_closed_for_private_material(
     assert rule_id in {finding.rule_id for finding in findings}
 
 
+def test_scanner_ignores_a_hexadecimal_needle_that_only_extends_a_longer_run() -> None:
+    # The exact bytes of a CI failure: the acceptance key inside a trace event digest.
+    payload = b'"event_digest":"bc0e311491045fa3297ffdbb12a620db71f0cb38984201acd6392b736d56e"'
+
+    findings = scan_bytes("trace/events.json", payload, ScanInput(acceptance_keys=(984201,)))
+
+    assert findings == ()
+
+
+def test_scanner_reports_a_hexadecimal_needle_that_stands_alone() -> None:
+    payload = b'{"acceptance":984201,"digest":"cb38984201acd6"}'
+
+    findings = scan_bytes("payload.json", payload, ScanInput(acceptance_keys=(984201,)))
+
+    assert [(item.rule_id, item.byte_offset) for item in findings] == [
+        ("acceptance_key_exact", payload.index(b"984201"))
+    ]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b'{"value":"abc984201"}', b'{"value":"984201abc"}'],
+    ids=["hexadecimal-before", "hexadecimal-after"],
+)
+def test_scanner_gives_up_a_hexadecimal_needle_abutting_hexadecimal_on_either_side(
+    payload: bytes,
+) -> None:
+    # The deliberate cost of the rule above, and why one side is enough rather than both: a needle
+    # landing at the start or the end of a digest has a delimiter on its other side, so requiring
+    # both sides would leave those collisions in place. The exporter writes canonical JSON, where
+    # a leaked key is a number or a string value and so is delimited on both sides.
+
+    findings = scan_bytes("payload.json", payload, ScanInput(acceptance_keys=(984201,)))
+
+    assert findings == ()
+
+
+def test_scanner_still_reports_a_non_hexadecimal_canary_surrounded_by_hexadecimal() -> None:
+    payload = b'{"value":"deadbeefsecretcafe"}'
+
+    findings = scan_bytes("payload.json", payload, ScanInput(credential_canaries=("secret",)))
+
+    assert [(item.rule_id, item.byte_offset) for item in findings] == [
+        ("credential_canary_exact", payload.index(b"secret"))
+    ]
+
+
 def test_scanner_reports_all_offsets_without_returning_matched_bytes() -> None:
     findings = scan_bytes(
         "payload.json",
