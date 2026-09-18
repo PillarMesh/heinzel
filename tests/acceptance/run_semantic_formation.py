@@ -125,9 +125,9 @@ def _failure_message(
     cleanup_incomplete: bool,
 ) -> str:
     if isinstance(error, CatalogProviderError):
-        message = f"Plan 2 witnessed lifecycle failed during {phase}: {error}"
+        message = f"Semantic formation witnessed lifecycle failed during {phase}: {error}"
     else:
-        message = f"Plan 2 witnessed lifecycle failed during {phase}"
+        message = f"Semantic formation witnessed lifecycle failed during {phase}"
     if cleanup_incomplete:
         return f"{message}; exact cleanup remains incomplete"
     return message
@@ -605,7 +605,7 @@ def validate_sanitized_evidence(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m tests.acceptance.run_semantic_formation",
-        description="Run or clean up the opt-in Plan 2 witnessed OpenMetadata lifecycle.",
+        description="Run or clean up the opt-in witnessed semantic formation lifecycle.",
     )
     parser.add_argument(
         "command",

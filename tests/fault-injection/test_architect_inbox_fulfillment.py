@@ -56,7 +56,7 @@ def test_each_admission_write_failure_rolls_back_and_retry_converges(table: str)
     trigger = f"fail_request_fulfillment_{table}"
     repository._connection.execute(
         f"CREATE TRIGGER {trigger} BEFORE INSERT ON {table} "
-        "BEGIN SELECT RAISE(ABORT, 'forced Plan 3B write failure'); END"
+        "BEGIN SELECT RAISE(ABORT, 'forced request fulfillment write failure'); END"
     )
     repository._connection.commit()
 

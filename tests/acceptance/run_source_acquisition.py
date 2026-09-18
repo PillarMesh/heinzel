@@ -92,9 +92,9 @@ class SourceAcquisitionAcceptanceReport(BaseModel):
     @model_validator(mode="after")
     def requires_source_only_success(self) -> Self:
         if self.object_refs != _OBJECT_REFS:
-            raise ValueError("Plan 4A object scope is incomplete")
+            raise ValueError("Source acquisition object scope is incomplete")
         if self.destination_provider_resolutions or self.destination_writes:
-            raise ValueError("Plan 4A cannot claim a destination effect")
+            raise ValueError("Source acquisition cannot claim a destination effect")
         return self
 
 
@@ -1055,7 +1055,7 @@ def execute_source_acquisition_journey(work_dir: Path) -> SourceAcquisitionJourn
     )
     public_payload = canonical_bytes(report)
     if any(canary in public_payload for canary in private_canaries):
-        raise RuntimeError("Plan 4A report leaked a private source value")
+        raise RuntimeError("Source acquisition report leaked a private source value")
     harness.state.close()
     return SourceAcquisitionJourney(
         report=report,
@@ -1200,7 +1200,7 @@ def _schemas(database: _FakePostgreSQLDatabase) -> tuple[AcquisitionObjectSchema
 
 def _required_manifest(preparation: AcquisitionPreparationResult) -> AcquisitionBatchManifest:
     if preparation.batch_manifest is None:
-        raise RuntimeError("Plan 4A journey expected a prepared batch")
+        raise RuntimeError("Source acquisition journey expected a prepared batch")
     return preparation.batch_manifest
 
 
@@ -1237,7 +1237,9 @@ def _row_compound_key(row: tuple[object, ...]) -> tuple[datetime, int]:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run offline Plan 4A PostgreSQL acceptance")
+    parser = argparse.ArgumentParser(
+        description="Run offline source acquisition PostgreSQL acceptance"
+    )
     parser.add_argument("--work-dir", type=Path, required=True)
     return parser
 

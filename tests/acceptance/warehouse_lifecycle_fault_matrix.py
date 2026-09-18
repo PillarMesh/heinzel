@@ -1142,7 +1142,7 @@ def canonical_fault_matrix_outcomes(
         )
     except (TypeError, ValueError):
         raise ValueError(
-            "Plan 3A offline control-plane fault matrix is incomplete or unsuccessful"
+            "Warehouse lifecycle offline control-plane fault matrix is incomplete or unsuccessful"
         ) from None
     expected = required_fault_scenario_ids()
     observed = tuple((outcome.engine_kind, outcome.scenario_id) for outcome in validated)
@@ -1157,7 +1157,9 @@ def canonical_fault_matrix_outcomes(
             for outcome in validated
         )
     ):
-        raise ValueError("Plan 3A offline control-plane fault matrix is incomplete or unsuccessful")
+        raise ValueError(
+            "Warehouse lifecycle offline control-plane fault matrix is incomplete or unsuccessful"
+        )
     return tuple(sorted(validated, key=lambda outcome: (outcome.engine_kind, outcome.scenario_id)))
 
 

@@ -416,7 +416,7 @@ def refund_entity_package() -> ProcessPackage:
 
 
 class OfflineSemanticFormationHarness:
-    """Test-only composition root for the complete governed Plan 2 journey."""
+    """Test-only composition root for the complete governed semantic formation journey."""
 
     def __init__(self, *, database_path: Path, catalog: StrictValidatingCatalog) -> None:
         self.database_path = database_path

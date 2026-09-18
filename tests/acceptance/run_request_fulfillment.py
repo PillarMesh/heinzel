@@ -269,7 +269,9 @@ class _AcceptanceInvariants:
 
     def require_all_held(self) -> None:
         if self._failed:
-            raise AssertionError("plan 3B acceptance did not hold: " + "; ".join(self._failed))
+            raise AssertionError(
+                "request fulfillment acceptance did not hold: " + "; ".join(self._failed)
+            )
 
 
 def run_offline_request_fulfillment() -> RequestFulfillmentAcceptanceResult:
@@ -500,7 +502,7 @@ def run_offline_request_fulfillment() -> RequestFulfillmentAcceptanceResult:
             "the clarified outcome bound the approval", clarified_outcome_bound
         ),
         "semantic_formation_decision_separate": invariants.held(
-            "the plan 2 decision stayed separate", semantic_formation_decision_separate
+            "the semantic formation decision stayed separate", semantic_formation_decision_separate
         ),
         "access_scope_narrowed": invariants.held(
             "the access scope was narrowed", access_scope_narrowed

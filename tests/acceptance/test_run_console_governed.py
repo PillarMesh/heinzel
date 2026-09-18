@@ -1632,7 +1632,7 @@ def test_the_meaning_review_capability_is_delivered_rather_than_reported_as_unwi
 
     Both seams existed on the governed backend and the harness wired neither, so the
     console reported `semantic-review: not_delivered - semantic-registry review
-    wiring` for a service that has been implemented since Plan 2.
+    wiring` for a service that has been implemented since semantic formation shipped.
     """
     with TestClient(deployment.build_app()) as client:
         workspace = client.get("/api/v1/workspace").json()["data"]

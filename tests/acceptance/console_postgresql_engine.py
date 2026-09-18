@@ -11,8 +11,7 @@ evidence that admits the binding to `ready`.
 
 It still validates under `WarehouseValidationProfile.LOCAL_ACCEPTANCE`, which is
 the provider's own choice: encryption at rest is deferred on this profile, so the
-run proves the lifecycle and not a production posture. Read
-`docs/warehouse-lifecycle/acceptance-run.md` for what that profile does and does not assert.
+run proves the lifecycle and not a production posture.
 
 The operation secrets follow whichever operation the orchestrator actually minted,
 which is why the provider is built per operation rather than at startup.

@@ -3,14 +3,14 @@
 This composes the console against the owning services themselves -- warehouse-control,
 request-management, fulfillment, and the semantic registry -- with their state in real
 SQLite files on disk, and serves it on loopback behind the compiled browser bundle. It
-is the acceptance run of `docs/console/acceptance-run.md` made interactive: the same
-wiring, driven by a person instead of a test.
+is the console acceptance run made interactive: the same wiring, driven by a person
+instead of a test.
 
 **This is not a live claim.** The warehouse provider is the local-acceptance harness,
 not a real engine: it returns local-acceptance grade validation evidence that
 `LocalAcceptanceWarehouseReadinessPolicy` admits, so a binding reaches `ready` without
-any container existing. Every other transaction is the owning service's own. Read
-`docs/console/known-gaps.md` before reading any screen as coverage.
+any container existing. Every other transaction is the owning service's own. A
+capability the console marks as not delivered is not covered, whatever its screen shows.
 
 **This harness has no authentication.** The actor is chosen by a request header so one
 browser can walk both the architect and the requester surface, which is exactly the
@@ -1287,8 +1287,8 @@ class GovernedConsoleDeployment:
             self.warehouse_repository = SQLiteWarehouseRepository(
                 connection=self._warehouse_connection
             )
-        # `CatalogControlBindingReader` has been built since Plan 2 and was never
-        # composed, so the console reported the capability as unwired rather than
+        # `CatalogControlBindingReader` has been built since semantic formation shipped and
+        # was never composed, so the console reported the capability as unwired rather than
         # undelivered. The catalog binding is created here rather than by a console
         # command, because the console contract carries no catalog command.
         self.catalog_path = str(directory / "catalog.sqlite3")
@@ -1338,9 +1338,9 @@ class GovernedConsoleDeployment:
         )
         # Both semantic-review seams existed on the governed backend and neither was
         # wired, so the console reported the capability as unwired for a service that
-        # has been implemented since Plan 2. The reader is the repository, because
-        # `load_review_bundle` is a repository read; the command is the service, which
-        # is what checks the deciding actor's authority.
+        # has been implemented since semantic formation shipped. The reader is the
+        # repository, because `load_review_bundle` is a repository read; the command is the
+        # service, which is what checks the deciding actor's authority.
         self.semantic_path = str(directory / "semantic.sqlite3")
         self.semantic_repository = SQLiteSemanticRepository(
             connection=_worker_thread_connection(self.semantic_path)
@@ -1573,7 +1573,7 @@ class GovernedConsoleDeployment:
         self.evidence_path = directory / "evidence.sqlite3"
         self.evidence = SQLiteStore.open(self.evidence_path, check_same_thread=False)
         # The governed-local UI drives the same composed acquisition boundary as a
-        # deployment. Its PostgreSQL session is the deterministic Plan 4A source so
+        # deployment. Its PostgreSQL session is the deterministic source acquisition fixture so
         # browser testing remains offline, while lifecycle, state, artifacts, and
         # evidence use their durable implementations.
         self.source_acquisition = OfflineSourceAcquisitionHarness(

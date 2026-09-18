@@ -64,7 +64,7 @@ def test_witnessed_failure_message_reports_only_the_closed_phase_and_provider_er
         error=provider_error,
         cleanup_incomplete=False,
     ) == (
-        "Plan 2 witnessed lifecycle failed during isolated_restore: "
+        "Semantic formation witnessed lifecycle failed during isolated_restore: "
         "OpenMetadata isolated restore health failed"
     )
     assert (
@@ -73,7 +73,7 @@ def test_witnessed_failure_message_reports_only_the_closed_phase_and_provider_er
             error=RuntimeError("private provider payload"),
             cleanup_incomplete=False,
         )
-        == "Plan 2 witnessed lifecycle failed during isolated_restore"
+        == "Semantic formation witnessed lifecycle failed during isolated_restore"
     )
 
 
@@ -255,7 +255,7 @@ def test_source_identity_rejects_a_dirty_checkout(tmp_path: Path) -> None:
     repository.mkdir()
     _git(repository, "init")
     _git(repository, "config", "user.email", "semantic-formation@example.invalid")
-    _git(repository, "config", "user.name", "Plan 2 Test")
+    _git(repository, "config", "user.name", "Semantic Formation Test")
     source = repository / "source.txt"
     source.write_text("committed\n")
     _git(repository, "add", "source.txt")

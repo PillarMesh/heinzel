@@ -1105,7 +1105,9 @@ def teardown_warehouse_lifecycle(
     authorized: bool,
 ) -> WarehouseLifecycleCleanupEvidence:
     if not authorized:
-        raise PermissionError("Plan 3A teardown requires explicit retention authorization")
+        raise PermissionError(
+            "Warehouse lifecycle teardown requires explicit retention authorization"
+        )
     ledger = _load_private_ledger(config)
     if run_id is not None and ledger.run_id != run_id:
         raise WarehouseLifecycleHarnessError("teardown run identity does not match private ledger")
@@ -1267,7 +1269,7 @@ def run_warehouse_lifecycle(
 ) -> WarehouseLifecycleEvidence:
     started_at = _utc(clock())
     if not cleanup_authorized:
-        raise PermissionError("Plan 3A run requires explicit retention authorization")
+        raise PermissionError("Warehouse lifecycle run requires explicit retention authorization")
     if started_at < config.retention_deadline:
         raise WarehouseLifecycleHarnessError("retention deadline has not elapsed")
     run_id = digest(
@@ -1306,7 +1308,7 @@ def run_warehouse_lifecycle(
             raise
         except BaseException:
             raise WarehouseLifecycleHarnessError(
-                f"Plan 3A witnessed lifecycle failed for {engine_kind}"
+                f"Warehouse lifecycle witnessed lifecycle failed for {engine_kind}"
             ) from None
         if capture.result is None or capture.result.engine_kind != engine_kind:
             raise WarehouseLifecycleHarnessError("engine witness returned the wrong engine result")
@@ -1336,10 +1338,14 @@ def run_warehouse_lifecycle(
         authorized=cleanup_authorized,
     )
     if not cleanup.zero_residual_resources:
-        raise WarehouseLifecycleHarnessError("Plan 3A exact cleanup left residual resources")
+        raise WarehouseLifecycleHarnessError(
+            "Warehouse lifecycle exact cleanup left residual resources"
+        )
     fault_matrix_evidence = WarehouseLifecycleFaultMatrixEvidence(outcomes=fault_outcomes)
     if len(results) != 2:
-        raise WarehouseLifecycleHarnessError("Plan 3A requires exactly two engine witnesses")
+        raise WarehouseLifecycleHarnessError(
+            "Warehouse lifecycle requires exactly two engine witnesses"
+        )
     provisional: _WarehouseLifecycleProvisionalEvidence = {
         "run_id": run_id,
         "source_commit": config.source_commit,
@@ -1404,17 +1410,19 @@ def validate_warehouse_lifecycle_evidence(
     ledger = _load_private_ledger(config)
     expected_evidence_digest = ledger.public_evidence_digest
     if expected_evidence_digest is None:
-        raise WarehouseLifecycleHarnessError("public Plan 3A evidence is not authenticated")
+        raise WarehouseLifecycleHarnessError(
+            "public warehouse lifecycle evidence is not authenticated"
+        )
     evidence_path = config.evidence_directory / EVIDENCE_FILE_NAME
     try:
         encoded = evidence_path.read_bytes()
     except OSError:
         raise WarehouseLifecycleHarnessError(
-            "public Plan 3A evidence is missing or invalid"
+            "public warehouse lifecycle evidence is missing or invalid"
         ) from None
     if not hmac.compare_digest(_sha256(encoded), expected_evidence_digest):
         raise WarehouseLifecycleHarnessError(
-            "public Plan 3A evidence differs from authenticated state"
+            "public warehouse lifecycle evidence differs from authenticated state"
         )
 
     cleanup = ledger.cleanup_evidence
@@ -1424,7 +1432,7 @@ def validate_warehouse_lifecycle_evidence(
         encoded_cleanup_digest = untrusted["cleanup_digest"]
     except (KeyError, TypeError, ValueError, json.JSONDecodeError):
         raise WarehouseLifecycleHarnessError(
-            "public Plan 3A evidence is missing or invalid"
+            "public warehouse lifecycle evidence is missing or invalid"
         ) from None
     if (
         not isinstance(encoded_run_id, str)
@@ -1435,37 +1443,37 @@ def validate_warehouse_lifecycle_evidence(
         or encoded_cleanup_digest != digest(cleanup)
     ):
         raise WarehouseLifecycleHarnessError(
-            "public Plan 3A evidence differs from private cleanup state"
+            "public warehouse lifecycle evidence differs from private cleanup state"
         )
 
     try:
         evidence = WarehouseLifecycleEvidence.model_validate_json(encoded)
     except ValueError:
         raise WarehouseLifecycleHarnessError(
-            "public Plan 3A evidence is missing or invalid"
+            "public warehouse lifecycle evidence is missing or invalid"
         ) from None
     if canonical_json_bytes(evidence) != encoded:
-        raise WarehouseLifecycleHarnessError("public Plan 3A evidence is not canonical")
+        raise WarehouseLifecycleHarnessError("public warehouse lifecycle evidence is not canonical")
     if evidence.source_commit != config.source_commit:
         raise WarehouseLifecycleHarnessError(
-            "public Plan 3A evidence source commit differs from the run"
+            "public warehouse lifecycle evidence source commit differs from the run"
         )
     if tuple(result.engine_image for result in evidence.engine_results) != (
         config.postgres_image,
         config.clickhouse_image,
     ):
         raise WarehouseLifecycleHarnessError(
-            "public Plan 3A evidence image pins differ from the run"
+            "public warehouse lifecycle evidence image pins differ from the run"
         )
     if evidence.failure_matrix_digest != _failure_matrix_digest(evidence.failure_matrix.outcomes):
-        raise WarehouseLifecycleHarnessError("public Plan 3A fault evidence is invalid")
+        raise WarehouseLifecycleHarnessError("public warehouse lifecycle fault evidence is invalid")
 
     scan_private_markers(encoded, WitnessCapture(), config.private_markers)
     return evidence
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run witnessed Plan 3A acceptance")
+    parser = argparse.ArgumentParser(description="Run witnessed warehouse lifecycle acceptance")
     subparsers = parser.add_subparsers(dest="command", required=True)
     run = subparsers.add_parser("run")
     run.add_argument("--authorize-retention-cleanup", action="store_true")
@@ -1524,7 +1532,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"ERROR: {error}", file=sys.stderr)
         return 2
     except Exception:
-        print("ERROR: Plan 3A acceptance failed", file=sys.stderr)
+        print("ERROR: warehouse lifecycle acceptance failed", file=sys.stderr)
         return 2
 
 
