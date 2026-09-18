@@ -10,6 +10,6 @@
 personal account	(?i)ks2002119|celeredge|yeskay
 internal planning tool	(?i)superpowers
 internal milestone	(?i)(?<![a-z0-9])plan[\s_-]?[234][ab]?(?![0-9])
-internal milestone	(?i)\bgate[\s_-]?[a-d]\b
+internal milestone	(?i)\bgate[\s_-][a-d]\b
 internal milestone	(?i)(?<![a-z0-9])m[0-8](?![0-9a-z])
 internal process	(?i)acceptance ledger|advisory pre-?review

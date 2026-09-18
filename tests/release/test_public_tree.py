@@ -9,7 +9,8 @@ and personal email addresses. Everything else that is specific to how this compa
 internally -- account names, tool names, process names, milestone and gate codes -- is loaded at
 run time from a private terms file, named by the HEINZEL_PRIVATE_TERMS_FILE environment variable.
 That file lives outside the public repository; the release audit supplies its path when it runs
-this scanner with enforcement on. Without the variable set, only the generic patterns apply.
+this scanner with enforcement on. Without the variable set, only the generic patterns apply, and
+enforcing without the variable set is treated as a configuration error, not a clean tree.
 """
 
 from __future__ import annotations
@@ -39,23 +40,32 @@ _GENERIC_TERMS: _Terms = (("company name outside allowed references", _COMPANY_P
 # Allowed occurrences of the company name are removed from a line, with anchored regexes
 # rather than plain substring replacement, before any forbidden pattern is checked. A plain
 # substring removal would also delete the "pillarmesh.com" prefix out of a longer, unrelated
-# domain such as "pillarmesh.company" or "pillarmesh.com.evil.io", hiding a real hit.
+# domain such as "pillarmesh.company" or "pillarmesh.com.evil.io", hiding a real hit. The
+# lookahead allows a lone sentence-ending period (".", not followed by another domain label)
+# and an optional "www." prefix, but still rejects any other subdomain.
 _ALLOWED_REFERENCE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"Copyright 2026 PillarMesh"),
     re.compile(r"github\.com/PillarMesh/"),
     re.compile(r"ghcr\.io/pillarmesh/"),
-    re.compile(r"(?i)(?<![a-z0-9.-])pillarmesh\.com(?![a-z0-9.-])"),
+    re.compile(r"(?i)(?<![a-z0-9.-])(?:www\.)?pillarmesh\.com(?![a-z0-9-]|\.[a-z0-9])"),
     re.compile(r"a product of PillarMesh"),
 )
 
-# Domain labels that mark an address as documentation or test fixture rather than a person's,
-# whether the label is the TLD or anywhere else in the domain -- this also covers subdomains of
-# example.com, example.org and example.net.
-_RESERVED_EMAIL_LABELS = frozenset({"example", "test", "invalid", "localhost"})
+# A domain is exempt from the personal-email check when its final label (the TLD) is one of
+# these reserved, non-routable names.
+_RESERVED_EMAIL_TLDS = frozenset({"example", "test", "invalid", "localhost"})
+
+# A domain is also exempt when it is exactly one of these documentation domains, or a
+# subdomain of one -- unlike the TLD rule above, this covers "sub.example.org" too.
+_EXAMPLE_DOMAINS = ("example.com", "example.org", "example.net")
 
 # Vendor-shipped default addresses that appear verbatim in third-party config templates; these
 # are not personal addresses. open-metadata's docker-compose ships this exact address.
 _VENDOR_EMAIL_ALLOWLIST = frozenset({"admin@open-metadata.org"})
+
+# The only company-domain addresses allowed in the public tree. Any other address at this
+# domain (e.g. a departed employee's) is still a personal-email finding.
+_COMPANY_EMAIL_ALLOWLIST = frozenset({"contact@pillarmesh.com", "karthik@pillarmesh.com"})
 
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
@@ -81,13 +91,16 @@ REVIEWED_BINARIES: Mapping[str, str] = {}
 def _is_exempt_email(match: re.Match[str], line: str) -> bool:
     text = match.group(0)
     lower = text.lower()
-    if lower in _VENDOR_EMAIL_ALLOWLIST:
+    if lower in _VENDOR_EMAIL_ALLOWLIST or lower in _COMPANY_EMAIL_ALLOWLIST:
         return True
     if lower == "git@github.com" and line[match.end() : match.end() + 1] == ":":
         return True
-    domain = text.split("@", 1)[1]
-    labels = domain.lower().split(".")
-    return any(label in _RESERVED_EMAIL_LABELS for label in labels)
+    domain = lower.split("@", 1)[1]
+    if domain.rsplit(".", 1)[-1] in _RESERVED_EMAIL_TLDS:
+        return True
+    return domain in _EXAMPLE_DOMAINS or any(
+        domain.endswith("." + example) for example in _EXAMPLE_DOMAINS
+    )
 
 
 def _has_forbidden_email(line: str) -> bool:
@@ -136,7 +149,7 @@ def _active_terms() -> _Terms:
     return _GENERIC_TERMS + _load_private_terms(private_path)
 
 
-def tracked_text_files(root: Path = ROOT) -> tuple[str, ...]:
+def tracked_files(root: Path = ROOT) -> tuple[str, ...]:
     """Every tracked file's path, exactly as git records it, relative to root."""
     listed = subprocess.run(
         ["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True
@@ -157,7 +170,10 @@ def _scan_line(path: str, number: int, line: str, terms: _Terms) -> list[Finding
     for reason, pattern in terms:
         if pattern.search(cleaned):
             findings.append(Finding(path, number, reason, line.strip()[:160]))
-    if _has_forbidden_email(cleaned):
+    # The email check runs on the original line: allowed-reference stripping is only meant to
+    # hide legitimate mentions of the company's own domain from the company-name pattern, and
+    # must not also hide who an address belongs to from the email pattern.
+    if _has_forbidden_email(line):
         findings.append(Finding(path, number, "personal email", line.strip()[:160]))
     return findings
 
@@ -175,7 +191,7 @@ def scan_tree(root: Path = ROOT, terms: _Terms | None = None) -> tuple[Finding, 
     if terms is None:
         terms = _active_terms()
     findings: list[Finding] = []
-    for relative in tracked_text_files(root):
+    for relative in tracked_files(root):
         if relative == _EXCLUDED_PATH:
             continue
         findings.extend(_scan_line(relative, 0, relative, terms))
@@ -223,6 +239,8 @@ def test_generic_terms_catch_each_kind(line: str, expected_reason: str) -> None:
         "ghcr.io/pillarmesh/heinzel:1.0.0",
         "a product of PillarMesh, built for the community",
         "See pillarmesh.com for details",
+        "See pillarmesh.com.",
+        "www.pillarmesh.com is the homepage",
         "Contact karthik@pillarmesh.com",
         "user@example.com is a placeholder",
         "foo@bar.example.org is also fine",
@@ -236,7 +254,36 @@ def test_generic_terms_allow_company_references_and_ordinary_words(line: str) ->
     assert scan_text("sample.md", line, terms=_GENERIC_TERMS) == (), line
 
 
-# --- the private terms loader ------------------------------------------------------------
+@pytest.mark.parametrize(
+    "line",
+    [
+        "bob@test.acme.io",
+        "ceo@example.co.uk",
+        "ops@invalid.corp.com",
+        "jane.doe@pillarmesh.com",
+    ],
+)
+def test_email_exemptions_still_catch_non_exempt_domains(line: str) -> None:
+    findings = scan_text("sample.md", line, terms=_GENERIC_TERMS)
+    assert findings, line
+    assert findings[0].reason == "personal email"
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "private@example.test",
+        "admin@localhost.invalid",
+        "user@example.com",
+        "a@sub.example.org",
+        "contact@pillarmesh.com",
+    ],
+)
+def test_email_exemptions_allow_reserved_and_company_domains(line: str) -> None:
+    assert scan_text("sample.md", line, terms=_GENERIC_TERMS) == (), line
+
+
+# --- the private terms loader mechanics (stand-in patterns only, never the real ones) ------
 
 
 def test_the_loader_parses_reason_tab_regex_lines(tmp_path: Path) -> None:
@@ -249,6 +296,15 @@ def test_the_loader_parses_reason_tab_regex_lines(tmp_path: Path) -> None:
         ("stand-in account", "acct-[0-9]+"),
         ("stand-in tool", "super-widget"),
     ]
+
+
+def test_the_loader_allows_multiple_lines_under_the_same_reason(tmp_path: Path) -> None:
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in widget\twidget-[0-9]+\nstand-in widget\tgadget-[0-9]+\n")
+    terms = _load_private_terms(str(terms_file))
+    assert [reason for reason, _ in terms] == ["stand-in widget", "stand-in widget"]
+    assert scan_text("sample.md", "see widget-1", terms=terms)[0].reason == "stand-in widget"
+    assert scan_text("sample.md", "see gadget-2", terms=terms)[0].reason == "stand-in widget"
 
 
 def test_scan_text_uses_loaded_private_terms(tmp_path: Path) -> None:
@@ -316,42 +372,49 @@ def test_active_terms_loads_the_env_file_when_set(
     assert terms[-1][0] == "stand-in tool"
 
 
-# --- boundary cases for the milestone-shaped private patterns -----------------------------
+# --- the real private terms file's milestone patterns (only when it is configured) --------
+#
+# These lines are generic milestone/gate shapes, not the account or tool names, so they are
+# fine to keep here. What must not live here is a second copy of the real regexes: instead
+# these tests load the actual file the release audit will point HEINZEL_PRIVATE_TERMS_FILE at,
+# so there is exactly one place the milestone patterns are written down.
 
-_MILESTONE_TERMS_TEXT = (
-    "internal milestone\t(?i)(?<![a-z0-9])plan[\\s_-]?[234][ab]?(?![0-9])\n"
-    "internal milestone\t(?i)\\bgate[\\s_-]?[a-d]\\b\n"
-    "internal milestone\t(?i)(?<![a-z0-9])m[0-8](?![0-9a-z])\n"
+_MILESTONE_CATCH_LINES = (
+    "Plan 3B evidence",
+    "blocked until Gate A closes",
+    "the M0 thin thread",
+    "gate b",
+)
+
+_MILESTONE_NEAR_MISS_LINES = (
+    "xplan2",
+    "plan20",
+    "am0",
+    "Gate A1",
+    "m0de",
+    "gated",
+    "feature-gated route",
+)
+
+_requires_private_terms_file = pytest.mark.skipif(
+    not os.environ.get("HEINZEL_PRIVATE_TERMS_FILE"),
+    reason="exercises the real private terms file named by HEINZEL_PRIVATE_TERMS_FILE",
 )
 
 
-@pytest.fixture
-def _milestone_terms(tmp_path: Path) -> _Terms:
-    terms_file = tmp_path / "milestones.txt"
-    terms_file.write_text(_MILESTONE_TERMS_TEXT)
-    return _load_private_terms(str(terms_file))
-
-
-@pytest.mark.parametrize(
-    "line",
-    [
-        "Plan 3B evidence",
-        "blocked until Gate A closes",
-        "the M0 thin thread",
-        "gate b",
-    ],
-)
-def test_milestone_terms_catch_the_real_shapes(_milestone_terms: _Terms, line: str) -> None:
-    findings = scan_text("sample.md", line, terms=_milestone_terms)
+@_requires_private_terms_file
+@pytest.mark.parametrize("line", _MILESTONE_CATCH_LINES)
+def test_the_real_private_terms_catch_the_milestone_shapes(line: str) -> None:
+    terms = _load_private_terms(os.environ["HEINZEL_PRIVATE_TERMS_FILE"])
+    findings = scan_text("sample.md", line, terms=terms)
     assert findings and findings[0].reason == "internal milestone"
 
 
-@pytest.mark.parametrize(
-    "line",
-    ["xplan2", "plan20", "am0", "Gate A1", "m0de"],
-)
-def test_milestone_terms_allow_the_near_misses(_milestone_terms: _Terms, line: str) -> None:
-    assert scan_text("sample.md", line, terms=_milestone_terms) == (), line
+@_requires_private_terms_file
+@pytest.mark.parametrize("line", _MILESTONE_NEAR_MISS_LINES)
+def test_the_real_private_terms_allow_the_near_misses(line: str) -> None:
+    terms = _load_private_terms(os.environ["HEINZEL_PRIVATE_TERMS_FILE"])
+    assert scan_text("sample.md", line, terms=terms) == (), line
 
 
 # --- scan_tree over a real git repository --------------------------------------------------
@@ -416,7 +479,18 @@ def test_scan_tree_covers_content_path_and_binary_findings(
 def test_the_public_tree_contains_nothing_internal() -> None:
     if os.environ.get("HEINZEL_ENFORCE_PUBLIC_TREE") != "1":
         pytest.skip("public-tree gate is enforced only when HEINZEL_ENFORCE_PUBLIC_TREE=1")
-    assert tracked_text_files()
+    if not os.environ.get("HEINZEL_PRIVATE_TERMS_FILE"):
+        pytest.fail("HEINZEL_PRIVATE_TERMS_FILE must be set when enforcing")
+    assert tracked_files()
     findings = scan_tree()
     report = "\n".join(f"{f.path}:{f.line}: {f.reason}: {f.text}" for f in findings[:200])
     assert findings == (), f"{len(findings)} internal references remain:\n{report}"
+
+
+def test_the_enforced_gate_fails_closed_without_private_terms(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("HEINZEL_ENFORCE_PUBLIC_TREE", "1")
+    monkeypatch.delenv("HEINZEL_PRIVATE_TERMS_FILE", raising=False)
+    with pytest.raises(pytest.fail.Exception, match="HEINZEL_PRIVATE_TERMS_FILE"):
+        test_the_public_tree_contains_nothing_internal()
