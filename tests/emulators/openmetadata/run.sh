@@ -3,7 +3,7 @@
 set -eu
 
 if [ -z "${DOCKER_CONFIG:-}" ]; then
-    printf '%s' 'ERROR: DOCKER_CONFIG is required\n' >&2
+    printf '%s\n' 'ERROR: DOCKER_CONFIG is required' >&2
     exit 2
 fi
 

@@ -271,7 +271,7 @@ def test_launcher_refuses_missing_docker_config_before_docker_is_touched(tmp_pat
     )
 
     assert result.returncode == 2
-    assert result.stderr == "ERROR: DOCKER_CONFIG is required\\n"
+    assert result.stderr == "ERROR: DOCKER_CONFIG is required\n"
     assert not touched.exists()
 
 
