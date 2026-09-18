@@ -19,6 +19,7 @@ def _members() -> list[Path]:
 
 def _problems(member: Path, project: dict[str, Any]) -> list[str]:
     problems: list[str] = []
+    relative_member = member.relative_to(ROOT)
 
     name = project.get("name", "")
     if not name.startswith("heinzel-"):
@@ -34,7 +35,7 @@ def _problems(member: Path, project: dict[str, Any]) -> list[str]:
     if readme != "README.md":
         problems.append(f"readme is {readme!r}, expected 'README.md'")
     elif not (member / readme).is_file():
-        problems.append(f"{member / readme} does not exist")
+        problems.append(f"{relative_member / readme} does not exist")
 
     if REQUIRED_AUTHOR not in project.get("authors", []):
         problems.append(f"authors does not contain {REQUIRED_AUTHOR!r}")
@@ -58,8 +59,15 @@ def _problems(member: Path, project: dict[str, Any]) -> list[str]:
             f"expression (hatchling rejects the combination): {license_classifiers!r}"
         )
 
-    if not (member / "LICENSE").is_file():
-        problems.append(f"{member / 'LICENSE'} does not exist")
+    member_license = member / "LICENSE"
+    if not member_license.is_file():
+        problems.append(f"{relative_member / 'LICENSE'} does not exist")
+    else:
+        root_license = ROOT / "LICENSE"
+        if member_license.read_bytes() != root_license.read_bytes():
+            problems.append(
+                f"{relative_member / 'LICENSE'} is not byte-identical to the root LICENSE"
+            )
 
     return problems
 

@@ -49,8 +49,9 @@ _ALLOWED_REFERENCE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"ghcr\.io/pillarmesh/"),
     re.compile(r"(?i)(?<![a-z0-9.-])(?:www\.)?pillarmesh\.com(?![a-z0-9-]|\.[a-z0-9])"),
     re.compile(r"a product of PillarMesh"),
-    # These two exist for package author metadata: a pyproject.toml `authors` entry, in its
-    # Python-dict-literal form and its TOML inline-table form.
+    # These two exist for package author metadata: a pyproject.toml `authors` entry, covering
+    # the TOML inline-table form in each pyproject.toml, and the dict/JSON form used by the
+    # release metadata test.
     re.compile(r'"name":\s*"PillarMesh"'),
     re.compile(r'(?<![\w.-])name\s*=\s*"PillarMesh"'),
 )
