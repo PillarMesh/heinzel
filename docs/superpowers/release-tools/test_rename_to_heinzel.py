@@ -319,3 +319,181 @@ def test_a_second_run_changes_nothing(tmp_path: Path) -> None:
     assert after_first["src/heinzel_a/x.py"] == (
         b"heinzel_a karthik@pillarmesh.com WarehouseLifecycleConfig\n"
     )
+
+
+_REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
+
+
+def _load_module(name: str, path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ('state_directory / "plan2.sqlite"', 'state_directory / "semantic-formation.sqlite"'),
+        ('root="$RUNNER_TEMP/plan3a"', 'root="$RUNNER_TEMP/warehouse-lifecycle"'),
+        (
+            '"user.email", "plan2@example.invalid"',
+            '"user.email", "semantic-formation@example.invalid"',
+        ),
+        ("tmp_path / 'state-plan2.db'", "tmp_path / 'state-semantic-formation.db'"),
+        (
+            "/absolute/private/plan3b and plan4a.",
+            "/absolute/private/request-fulfillment and source-acquisition.",
+        ),
+    ],
+)
+def test_bare_milestone_names_are_renamed(text: str, expected: str) -> None:
+    assert tool.rename_text(text) == expected
+
+
+def test_bare_milestone_catch_all_leaves_longer_tokens_and_protected_spans_alone() -> None:
+    text = "plan2x plan22 xplan2 karthik@pillarmesh.com/plan2 Plan 2"
+
+    renamed = tool.rename_text(text)
+
+    assert renamed == "plan2x plan22 xplan2 karthik@pillarmesh.com/semantic-formation Plan 2"
+
+
+def test_a_bare_org_and_repository_reference_keeps_the_org_name() -> None:
+    text = "the name 'PillarMesh/pillarmesh'. Both"
+
+    assert tool.rename_text(text) == "the name 'PillarMesh/heinzel'. Both"
+
+
+def test_git_records_the_moves_as_renames(tmp_path: Path) -> None:
+    body = "".join(
+        f"line {index} of a module that is long enough to be similar\n" for index in range(40)
+    )
+    repository = _make_repository(
+        tmp_path, {"src/pillarmesh_runtime/module.py": "import pillarmesh_runtime\n" + body}
+    )
+
+    assert tool.main([], root=repository) == 0
+    _git(repository, "add", "-A")
+
+    status = _git(repository, "diff", "--cached", "-M", "--name-status")
+    assert status.startswith("R")
+    assert "src/pillarmesh_runtime/module.py\tsrc/heinzel_runtime/module.py" in status
+
+
+def test_paths_with_non_ascii_characters_and_spaces_move(tmp_path: Path) -> None:
+    repository = _make_repository(tmp_path, {"docs/café notes/pillarmesh guide.md": "pillarmesh\n"})
+
+    assert tool.main([], root=repository) == 0
+
+    files = _snapshot(repository)
+    assert files["docs/café notes/heinzel guide.md"] == b"heinzel\n"
+    assert "docs/café notes/pillarmesh guide.md" not in files
+
+
+def test_a_move_whose_parent_path_is_a_file_is_refused(tmp_path: Path) -> None:
+    repository = _make_repository(
+        tmp_path, {"src/heinzel_pkg": "a file\n", "src/pillarmesh_pkg/module.py": "x\n"}
+    )
+
+    with pytest.raises(tool.RenameError, match="which is a file"):
+        tool.build_plan(repository)
+
+
+def test_the_console_package_lock_is_rewritten_not_excluded(tmp_path: Path) -> None:
+    lock = (
+        '{\n  "name": "@pillarmesh/console",\n'
+        '  "packages": {"": {"name": "@pillarmesh/console"}}\n}\n'
+    )
+    repository = _make_repository(tmp_path, {"apps/console/package-lock.json": lock})
+
+    assert tool.main([], root=repository) == 0
+
+    assert (repository / "apps/console/package-lock.json").read_text() == lock.replace(
+        "@pillarmesh/", "@heinzel/"
+    )
+    assert not tool.is_excluded("apps/console/package-lock.json")
+
+
+def test_the_residual_check_uses_the_release_scanners_exact_patterns() -> None:
+    scanner = _load_module(
+        "public_tree_scanner", _REPOSITORY_ROOT / "tests/release/test_public_tree.py"
+    )
+
+    assert [pattern.pattern for pattern in tool._SCANNER_ALLOWED] == [
+        pattern.pattern for pattern in scanner._ALLOWED_REFERENCE_PATTERNS
+    ]
+    assert tool._COMPANY_PATTERN.pattern == scanner._COMPANY_PATTERN.pattern
+
+
+def test_a_chained_move_is_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    repository = _make_repository(tmp_path, {"first.txt": "a\n", "second.txt": "b\n"})
+    monkeypatch.setattr(
+        tool, "PATH_RENAMES", {"first.txt": "second.txt", "second.txt": "third.txt"}
+    )
+
+    with pytest.raises(tool.RenameError, match="chained"):
+        tool.build_plan(repository)
+
+
+def test_targets_that_differ_only_in_case_are_refused(tmp_path: Path) -> None:
+    repository = _make_repository(
+        tmp_path, {"src/pillarmesh_x.py": "a\n", "src/Heinzel_x.py": "b\n"}
+    )
+
+    with pytest.raises(tool.RenameError, match="case-insensitively"):
+        tool.build_plan(repository)
+
+
+def test_a_failed_git_mv_names_the_recovery_commands(tmp_path: Path) -> None:
+    repository = _make_repository(
+        tmp_path, {"src/pillarmesh_a.py": "a\n", "src/pillarmesh_b.py": "b\n"}
+    )
+    plan = tool.build_plan(repository)
+    (repository / "src/pillarmesh_b.py").unlink()
+
+    with pytest.raises(tool.RenameError, match=r"git reset --hard && git clean -fd"):
+        tool.apply_plan(repository, plan)
+
+
+@pytest.mark.parametrize("target", ["pillarmesh_runtime/module.py", "docs/plan3a/setup.md"])
+def test_a_symlink_to_an_old_name_is_refused(tmp_path: Path, target: str) -> None:
+    repository = _make_repository(tmp_path, {"README.md": "x\n"})
+    (repository / "link").symlink_to(target)
+    _git(repository, "add", "link")
+    _git(repository, "commit", "-q", "-m", "link")
+
+    with pytest.raises(tool.RenameError, match="symlink link"):
+        tool.build_plan(repository)
+
+
+def test_binary_file_report_says_only_raw_bytes_were_seen(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository = _make_repository(tmp_path, {"image.png": b"\x00pillarmesh"})
+
+    assert tool.main(["--dry-run"], root=repository) == 0
+
+    assert "raw bytes only" in capsys.readouterr().out
+
+
+def test_a_source_whose_target_is_already_tracked_is_not_reported_missing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repository = _make_repository(
+        tmp_path,
+        {
+            "tests/acceptance/run_semantic_formation.py": "x\n",
+            "docs/warehouse-lifecycle/setup.md": "x\n",
+        },
+    )
+
+    assert tool.main(["--dry-run"], root=repository) == 0
+
+    missing = capsys.readouterr().out.split("Missing PATH_RENAMES")[1].splitlines()[0]
+    assert "tests/acceptance/run_plan2.py" not in missing
+    assert "docs/plan3a/" not in missing
+    assert "tests/acceptance/run_plan3a.py" in missing

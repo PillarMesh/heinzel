@@ -36,6 +36,7 @@ import sys
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 # Entries ending in "/" exclude a directory prefix; the others exclude one exact path.
@@ -102,8 +103,14 @@ _MILESTONES: tuple[tuple[str, str, str], ...] = (
 )
 
 
-def _milestone_rules() -> tuple[tuple[str, str], ...]:
-    rules: list[tuple[str, str]] = []
+# A rule's old side is a literal substring or a compiled pattern. Patterns are applied to the
+# masked text, so they can never see a protected span; they must not match NUL or digits alone,
+# which is all a placeholder contains.
+type Rule = tuple[str | re.Pattern[str], str]
+
+
+def _milestone_rules() -> tuple[Rule, ...]:
+    rules: list[Rule] = []
     for lower, camel, snake in _MILESTONES:
         camel_name = "".join(word.capitalize() for word in snake.split("_"))
         kebab = snake.replace("_", "-")
@@ -114,12 +121,15 @@ def _milestone_rules() -> tuple[tuple[str, str], ...]:
             (f"{lower}_", f"{snake}_"),
             (f"_{lower}", f"_{snake}"),
             (f"{lower}-", f"{kebab}-"),
+            # Whatever is left is a bare token such as "plan2.sqlite", "$RUNNER_TEMP/plan3a" or
+            # "plan2@example.invalid"; the hyphenated name is the one that is valid in all of them.
+            (re.compile(rf"(?<![A-Za-z0-9]){lower}(?![0-9A-Za-z])"), kebab),
         ]
     return tuple(rules)
 
 
 # Applied in order: a specific rule must precede every more general rule that also matches it.
-TEXT_RENAMES: tuple[tuple[str, str], ...] = (
+TEXT_RENAMES: tuple[Rule, ...] = (
     ("M0-PG-SNAPSHOT-SNOWFLAKE-001", "SNAPSHOT-POSTGRESQL-SNOWFLAKE-001"),
     *((old, new) for old, new in DIRECTORY_RENAMES.items()),
     ("plan2_orchestration", "semantic_formation_orchestration"),
@@ -166,6 +176,9 @@ PROTECTED_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"github\.com/PillarMesh/"),
     re.compile(r"ghcr\.io/pillarmesh/"),
     re.compile(r"(?i)pillarmesh\.com(?![a-z0-9-])"),
+    # A bare "org/repository" reference keeps the org name; only the repository is renamed.
+    # The scanner still flags it, which is accepted until AGENTS.md is rewritten.
+    re.compile(r"PillarMesh(?=/pillarmesh)"),
 )
 
 # Placeholders use NUL, which no rewritten file may contain (NUL marks a file as binary), and
@@ -204,7 +217,7 @@ class Move:
 class RenamePlan:
     moves: list[Move] = field(default_factory=list)
     rewrites: dict[str, str] = field(default_factory=dict)  # old path -> new text
-    rule_replacements: Counter[tuple[str, str]] = field(default_factory=Counter)
+    rule_replacements: Counter[tuple[str, str]] = field(default_factory=Counter)  # (old, new)
     rule_files: Counter[tuple[str, str]] = field(default_factory=Counter)
     protected_spans: Counter[str] = field(default_factory=Counter)
     missing_sources: list[str] = field(default_factory=list)
@@ -261,15 +274,26 @@ def rename_text(
     for pattern in PROTECTED_PATTERNS:
         masked = pattern.sub(_mask, masked)
     for old, new in TEXT_RENAMES:
-        occurrences = masked.count(old)
-        if occurrences:
+        if isinstance(old, str):
+            occurrences = masked.count(old)
             masked = masked.replace(old, new)
-            if replacements is not None:
-                replacements[(old, new)] += occurrences
+        else:
+            # A function replacement keeps the new text literal (no backslash-group expansion).
+            masked, occurrences = old.subn(partial(_literal, new), masked)
+        if occurrences and replacements is not None:
+            replacements[(rule_label(old), new)] += occurrences
     restored = _PLACEHOLDER.sub(lambda match: spans[int(match.group(1))], masked)
     if "\x00" in restored:
         raise RenameError("a protected-span placeholder survived the rename")
     return restored
+
+
+def _literal(replacement: str, _match: re.Match[str]) -> str:
+    return replacement
+
+
+def rule_label(old: str | re.Pattern[str]) -> str:
+    return old if isinstance(old, str) else f"re:{old.pattern}"
 
 
 def rename_path(path: str) -> tuple[str, str | None]:
@@ -313,11 +337,16 @@ def build_plan(root: Path) -> RenamePlan:
     tracked = _tracked(root)
     tracked_set = set(tracked)
     plan = RenamePlan()
-    plan.missing_sources = sorted(source for source in PATH_RENAMES if source not in tracked_set)
+    # A source whose target is already tracked has been renamed by an earlier run: not missing.
+    plan.missing_sources = sorted(
+        source
+        for source, target in PATH_RENAMES.items()
+        if source not in tracked_set and target not in tracked_set
+    )
     plan.missing_sources += sorted(
         prefix
-        for prefix in DIRECTORY_RENAMES
-        if not any(path.startswith(prefix) for path in tracked)
+        for prefix, target in DIRECTORY_RENAMES.items()
+        if not any(path.startswith((prefix, target)) for path in tracked)
     )
 
     errors: list[str] = []
@@ -329,7 +358,16 @@ def build_plan(root: Path) -> RenamePlan:
             plan.moves.append(Move(path, new_path, reason))
 
         full_path = root / path
-        if full_path.is_symlink() or not full_path.is_file():
+        if full_path.is_symlink():
+            # git stores a symlink's target as text, but rewriting it would silently repoint the
+            # link; a target that names an old path must be fixed by hand.
+            link_target = os.readlink(full_path)
+            if _COMPANY_PATTERN.search(link_target) or any(
+                pattern.search(link_target) for pattern in _MILESTONE_PATTERNS
+            ):
+                errors.append(f"symlink {path} points at an old name: {link_target}")
+            continue
+        if not full_path.is_file():
             continue
         data = full_path.read_bytes()
         if b"\x00" in data:
@@ -349,15 +387,24 @@ def build_plan(root: Path) -> RenamePlan:
             plan.rewrites[path] = new_text
         _residuals(plan, new_path, new_text)
 
+    # Compared case-insensitively: on a case-insensitive filesystem (the macOS default) two
+    # paths that differ only in case are the same file.
     targets: dict[str, str] = {}
     moving = {move.old for move in plan.moves}
+    staying = {path.casefold(): path for path in tracked if path not in moving}
     for move in plan.moves:
-        if move.new in targets:
-            errors.append(f"collision: {targets[move.new]} and {move.old} both map to {move.new}")
-        targets[move.new] = move.old
-        if (move.new in tracked_set and move.new not in moving) or (
-            move.new not in tracked_set and (root / move.new).exists()
-        ):
+        folded = move.new.casefold()
+        if folded in targets:
+            errors.append(f"collision: {targets[folded]} and {move.old} both map to {move.new}")
+        targets[folded] = move.old
+        if move.new in moving:
+            errors.append(f"chained move: {move.old} -> {move.new}, which is itself being moved")
+        elif folded in staying and staying[folded] != move.new:
+            errors.append(
+                f"collision: {move.old} -> {move.new} collides case-insensitively with "
+                f"{staying[folded]}"
+            )
+        elif folded in staying or (root / move.new).exists():
             errors.append(f"collision: {move.old} -> {move.new}, which already exists")
         for parent in Path(move.new).parents:
             if str(parent) != "." and (root / parent).is_file():
@@ -371,7 +418,13 @@ def apply_plan(root: Path, plan: RenamePlan) -> None:
     new_path_of = {move.old: move.new for move in plan.moves}
     for move in plan.moves:
         (root / move.new).parent.mkdir(parents=True, exist_ok=True)
-        _git(root, "mv", "--", move.old, move.new)
+        try:
+            _git(root, "mv", "--", move.old, move.new)
+        except subprocess.CalledProcessError as error:
+            raise RenameError(
+                f"git mv {move.old} {move.new} failed: {os.fsdecode(error.stderr).strip()}\n"
+                "The tree is partly renamed. Restore it with: git reset --hard && git clean -fd"
+            ) from error
         _remove_empty_parents(root, Path(move.old).parent)
     for old_path, text in plan.rewrites.items():
         (root / new_path_of.get(old_path, old_path)).write_bytes(text.encode("utf-8"))
@@ -407,7 +460,7 @@ def report(plan: RenamePlan, *, list_moves: bool) -> str:
     for pattern, count in plan.protected_spans.most_common():
         lines.append(f"  {count:6d}  {pattern}")
     lines.append(
-        "Binary files naming the company (not rewritten): "
+        "Binary files naming the company (raw bytes only, not rewritten): "
         + (", ".join(plan.binary_mentions) if plan.binary_mentions else "none")
     )
     lines.append(
@@ -437,7 +490,11 @@ def main(argv: Sequence[str] | None = None, *, root: Path | None = None) -> int:
     if arguments.dry_run:
         print(report(plan, list_moves=True))
         return 0
-    apply_plan(repository, plan)
+    try:
+        apply_plan(repository, plan)
+    except RenameError as error:
+        print(f"rename_to_heinzel: {error}", file=sys.stderr)
+        return 1
     print(report(plan, list_moves=False))
     return 0
 
