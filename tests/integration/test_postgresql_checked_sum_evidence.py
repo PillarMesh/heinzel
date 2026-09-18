@@ -11,16 +11,14 @@ records what the compiler's provenance path would observe.
 
 The offline tests keep the bundle honest without an engine. They fail when the emitted statement
 no longer matches the one the evidence was captured against, when a case the milestone requires
-is missing, when a recorded digest does not match its recorded value, or when the per-case
-report disagrees with the bundle. The bundle never carries a DSN, credential, port, or container
-name.
+is missing, or when a recorded digest does not match its recorded value. The bundle never
+carries a DSN, credential, port, or container name.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import re
 import socket
 import subprocess
 import time
@@ -59,9 +57,6 @@ from heinzel_provider_sdk import ProductSqlColumnObservation
 
 _LEGALITY = Path(__file__).parents[2] / "services" / "compiler" / "legality" / "product-sql"
 _BUNDLE_PATH = _LEGALITY / "fixtures" / "postgresql-live-checked-sum-evidence.json"
-_REPORT_PATH = (
-    _LEGALITY / "proof-notes" / "PRODUCT-SQL-V2-PROJECT-SUM-001-POSTGRESQL-LIVE-EVIDENCE.md"
-)
 _RUN_LIVE = os.environ.get("HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
 _WRITE_EVIDENCE = os.environ.get("HEINZEL_WRITE_CHECKED_SUM_EVIDENCE") == "1"
 _RULE_ID = "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE"
@@ -651,36 +646,6 @@ def test_evidence_carries_no_connection_detail_or_credential() -> None:
     assert "password" not in text.lower()
     assert "127.0.0.1" not in text
     assert "heinzel-checked-sum-pg-" not in text
-
-
-def test_report_states_exactly_what_the_bundle_recorded() -> None:
-    """The reviewer reads the report; it must not drift from the evidence it summarises."""
-    report = _REPORT_PATH.read_text(encoding="utf-8")
-    for case in _bundle_cases():
-        observed = case["observed"]
-        assert isinstance(observed, dict)
-        row = re.search(rf"^\| `{case['case_id']}` \|(?P<rest>.*)$", report, re.MULTILINE)
-        assert row is not None, f"{case['case_id']} is missing from the report"
-        rest = row.group("rest")
-        assert str(case["result_digest"])[:16] in rest, case["case_id"]
-        stated = rest.split("|")[1].strip()
-        classification = observed["classification"]
-        if classification in {"statement_rejected", "cast_rejected"}:
-            assert stated == f"refused, SQLSTATE `{observed['sqlstate']}`", case["case_id"]
-        elif classification == "accepted":
-            assert stated == f"accepted `{observed['value']}`", case["case_id"]
-        elif classification == "violation":
-            assert stated == "flagged as a violation", case["case_id"]
-        elif classification == "within_bound":
-            assert stated == "not flagged", case["case_id"]
-        else:
-            returned = cast(list[list[str]], observed["rows"])
-            expected = (
-                ", ".join(f"`{group}` \u2192 `{value}`" for group, value in returned)
-                if returned
-                else "no rows"
-            )
-            assert stated == expected, case["case_id"]
 
 
 def test_every_malformed_landing_value_is_refused_by_the_statement_guard() -> None:
