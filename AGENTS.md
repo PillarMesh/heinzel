@@ -24,8 +24,9 @@ behaviour. Documentation describes intended design; it is not evidence that some
   unverified assumption into executable authority.
 - A new or widened legality rule needs, in the same change, a proof of the property it relies on,
   positive and negative fixtures for each engine, a test that each precondition can fail, and
-  review by someone other than its author. An author must not approve their own rule. See
-  [services/compiler/legality](services/compiler/legality/README.md).
+  review by someone other than its author. An author must not approve their own rule. The
+  existing rules predate the public proof record; a new or changed rule includes its proof in the
+  pull request. See [services/compiler/legality](services/compiler/legality/README.md).
 - AI tools may assist with interpretation, explanation and candidate generation, but are never the
   authority for legality, signing, execution semantics, evidence, recovery or state transitions.
 - Identical canonical inputs and compiler versions must produce identical artifacts. Timestamps,

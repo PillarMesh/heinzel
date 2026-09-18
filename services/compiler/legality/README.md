@@ -99,4 +99,8 @@ Adding or widening a rule needs, in the same change, a proof of the property it 
 positive and negative fixtures for each engine it covers, a test that each precondition can fail,
 and approval by a reviewer other than its author. See [AGENTS.md](../../../AGENTS.md).
 
+The rules in this directory predate the public proof record, so their proofs are not in the
+repository; their fixtures and tests are. A new or changed rule must include its proof in the pull
+request that introduces it.
+
 Rule changes are reviewed on public pull requests.
