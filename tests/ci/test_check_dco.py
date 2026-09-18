@@ -49,9 +49,9 @@ def _commit(repo: Path, name: str, message: str, *, cleanup: str = "strip") -> s
     _git(
         repo,
         "-c",
-        "user.name=karthik",
+        "user.name=Ada Example",
         "-c",
-        "user.email=karthik@pillarmesh.com",
+        "user.email=ada@example.com",
         "-c",
         "commit.gpgsign=false",
         "-c",
@@ -68,9 +68,7 @@ def _commit(repo: Path, name: str, message: str, *, cleanup: str = "strip") -> s
 def test_only_commits_without_a_matching_sign_off_are_reported(tmp_path: Path) -> None:
     _init(tmp_path)
     base = _commit(tmp_path, "a", "chore: base")
-    signed = _commit(
-        tmp_path, "b", "feat: signed\n\nSigned-off-by: karthik <karthik@pillarmesh.com>"
-    )
+    signed = _commit(tmp_path, "b", "feat: signed\n\nSigned-off-by: Ada Example <ada@example.com>")
     unsigned = _commit(tmp_path, "c", "fix: unsigned")
     wrong = _commit(tmp_path, "d", "docs: other\n\nSigned-off-by: someone <someone@example.com>")
 
@@ -87,7 +85,7 @@ def test_trailing_whitespace_and_crlf_on_the_sign_off_line_still_count(tmp_path:
     signed = _commit(
         tmp_path,
         "b",
-        "feat: signed\r\n\r\nSigned-off-by: karthik <karthik@pillarmesh.com>  \r\n",
+        "feat: signed\r\n\r\nSigned-off-by: Ada Example <ada@example.com>  \r\n",
         cleanup="verbatim",
     )
 
@@ -102,17 +100,17 @@ def test_sign_off_email_matches_case_insensitively_but_name_matches_exactly(
     signed = _commit(
         tmp_path,
         "b",
-        "feat: signed\n\nSigned-off-by: karthik <Karthik@PillarMesh.com>",
+        "feat: signed\n\nSigned-off-by: Ada Example <Ada@Example.COM>",
     )
     wrong_name = _commit(
         tmp_path,
         "c",
-        "fix: wrong name\n\nSigned-off-by: Someone Else <karthik@pillarmesh.com>",
+        "fix: wrong name\n\nSigned-off-by: Someone Else <ada@example.com>",
     )
     wrong_case_name = _commit(
         tmp_path,
         "e",
-        "fix: wrong name case\n\nSigned-off-by: Karthik <karthik@pillarmesh.com>",
+        "fix: wrong name case\n\nSigned-off-by: ada example <ada@example.com>",
     )
 
     assert unsigned_commits(base, signed, cwd=tmp_path) == ()
@@ -129,7 +127,7 @@ def test_a_sign_off_quoted_mid_body_before_trailing_prose_does_not_count(
         tmp_path,
         "b",
         "fix: quoted sign-off\n\n"
-        "Signed-off-by: karthik <karthik@pillarmesh.com>\n\n"
+        "Signed-off-by: Ada Example <ada@example.com>\n\n"
         "This paragraph of prose comes after the quoted line above, so it is not\n"
         "a trailer block and must not satisfy the check.",
     )
@@ -141,18 +139,16 @@ def test_merge_commits_in_the_range_are_checked_like_any_other_commit(tmp_path: 
     _init(tmp_path)
     base = _commit(tmp_path, "a", "chore: base")
     _git(tmp_path, "branch", "side")
-    main_tip = _commit(
-        tmp_path, "b", "feat: main\n\nSigned-off-by: karthik <karthik@pillarmesh.com>"
-    )
+    main_tip = _commit(tmp_path, "b", "feat: main\n\nSigned-off-by: Ada Example <ada@example.com>")
     _git(tmp_path, "checkout", "-q", "side")
-    _commit(tmp_path, "c", "feat: side\n\nSigned-off-by: karthik <karthik@pillarmesh.com>")
+    _commit(tmp_path, "c", "feat: side\n\nSigned-off-by: Ada Example <ada@example.com>")
     _git(tmp_path, "checkout", "-q", "-B", "main", main_tip)
     _git(
         tmp_path,
         "-c",
-        "user.name=karthik",
+        "user.name=Ada Example",
         "-c",
-        "user.email=karthik@pillarmesh.com",
+        "user.email=ada@example.com",
         "-c",
         "commit.gpgsign=false",
         "merge",
@@ -232,9 +228,7 @@ def test_showsignature_local_config_does_not_break_the_check(tmp_path: Path) -> 
     _init(tmp_path)
     _git(tmp_path, "config", "log.showSignature", "true")
     base = _commit(tmp_path, "a", "chore: base")
-    signed = _commit(
-        tmp_path, "b", "feat: signed\n\nSigned-off-by: karthik <karthik@pillarmesh.com>"
-    )
+    signed = _commit(tmp_path, "b", "feat: signed\n\nSigned-off-by: Ada Example <ada@example.com>")
 
     assert unsigned_commits(base, signed, cwd=tmp_path) == ()
 
@@ -319,7 +313,7 @@ def test_a_shallow_clone_is_rejected_with_a_fetch_depth_hint(tmp_path: Path) -> 
     source.mkdir()
     _init(source)
     base = _commit(source, "a", "chore: base")
-    _commit(source, "b", "feat: signed\n\nSigned-off-by: karthik <karthik@pillarmesh.com>")
+    _commit(source, "b", "feat: signed\n\nSigned-off-by: Ada Example <ada@example.com>")
 
     clone = tmp_path / "clone"
     _git(tmp_path, "clone", "--depth=1", source.as_uri(), str(clone))
