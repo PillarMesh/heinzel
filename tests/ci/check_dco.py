@@ -32,18 +32,31 @@ from re import compile as re_compile
 
 SHALLOW_HINT = "shallow clone: fetch full history (actions/checkout fetch-depth: 0)"
 
-# Field and record separators for the single `git rev-list` call that reads every
-# commit in the range in one process: 0x1f/0x1e are ASCII "unit/record separator",
-# vanishingly unlikely to appear in a name, email, or sign-off trailer, unlike a
-# printable delimiter such as "|" or a tab.
-_FIELD_SEPARATOR = "\x1f"
-_RECORD_SEPARATOR = "\x1e"
+# Field separator for the single `git rev-list` call that reads every commit in
+# the range in one process. NUL is the only byte git guarantees cannot appear in
+# an author name or email (both are single lines of a raw commit object, so they
+# also cannot contain a newline either), unlike a printable delimiter -- or, as
+# it turns out, unlike 0x1f/0x1e ("unit/record separator"): git accepts either
+# of those inside an author name, which shifted every later field by one and
+# let a forged identity match an unrelated sign-off.
+#
+# `%x00` (four literal characters, below) is git's own `--format` placeholder
+# for an embedded NUL byte in its OUTPUT. It must stay literal text in the
+# argv we pass to git -- an actual NUL character in an argv element is not
+# representable in a C-string argument and would raise `ValueError: embedded
+# null byte` before git even runs. `_FIELD_SEPARATOR` is the real NUL character
+# that placeholder produces in the captured output, which Python's `str` can
+# hold without issue; that is what we split on. `unfold` keeps each trailer
+# value on one line, so a record boundary is simply the newline `--format`
+# appends per commit -- no separate record separator is needed.
+_FIELD_SEPARATOR = "\x00"
+_FORMAT_FIELD_SEPARATOR = "%x00"
 _REV_LIST_FORMAT = (
-    f"%H{_FIELD_SEPARATOR}%an{_FIELD_SEPARATOR}%ae{_FIELD_SEPARATOR}"
-    f"%(trailers:key=Signed-off-by,valueonly,unfold,separator={_FIELD_SEPARATOR})"
-    f"{_RECORD_SEPARATOR}"
+    f"%H{_FORMAT_FIELD_SEPARATOR}%an{_FORMAT_FIELD_SEPARATOR}%ae{_FORMAT_FIELD_SEPARATOR}"
+    f"%(trailers:key=Signed-off-by,valueonly,unfold,separator={_FORMAT_FIELD_SEPARATOR})"
 )
 _TRAILER_VALUE_PATTERN = re_compile(r"^(?P<name>.+?)\s*<(?P<email>[^<>]+)>$")
+_COMMIT_SHA_PATTERN = re_compile(r"^[0-9a-f]{40}$|^[0-9a-f]{64}$")
 
 
 class DcoCheckError(Exception):
@@ -114,13 +127,16 @@ def _matches_author(trailer_value: str, author_name: str, author_email: str) -> 
 
 def _split_rev_list_output(raw: str) -> list[tuple[str, str, str, list[str]]]:
     records: list[tuple[str, str, str, list[str]]] = []
-    for chunk in raw.split(_RECORD_SEPARATOR):
-        body = chunk.strip("\n")
-        if not body:
+    for line in raw.split("\n"):
+        if not line:
             continue
-        sha, author_name, author_email, trailer_blob = body.split(_FIELD_SEPARATOR, 3)
-        candidates = [value for value in trailer_blob.split(_FIELD_SEPARATOR) if value.strip()]
-        records.append((sha, author_name, author_email, candidates))
+        fields = line.split(_FIELD_SEPARATOR)
+        if len(fields) < 3:
+            raise DcoCheckError(f"malformed rev-list record: {line!r}")
+        sha, author_name, author_email, *candidates = fields
+        if _COMMIT_SHA_PATTERN.match(sha) is None:
+            raise DcoCheckError(f"malformed rev-list record: not a commit SHA: {sha!r}")
+        records.append((sha, author_name, author_email, [c for c in candidates if c.strip()]))
     return records
 
 

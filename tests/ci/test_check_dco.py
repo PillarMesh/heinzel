@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.ci.check_dco import SHALLOW_HINT, main, unsigned_commits
+from tests.ci.check_dco import SHALLOW_HINT, DcoCheckError, main, unsigned_commits
 
 
 @pytest.fixture(autouse=True)
@@ -167,6 +167,65 @@ def test_merge_commits_in_the_range_are_checked_like_any_other_commit(tmp_path: 
     missing = unsigned_commits(base, merge_sha, cwd=tmp_path)
 
     assert merge_sha in missing
+
+
+def _commit_with_author_name(repo: Path, name: str, author_name: str, message: str) -> str:
+    (repo / name).write_text(name, encoding="utf-8")
+    _git(repo, "add", name)
+    _git(
+        repo,
+        "-c",
+        f"user.name={author_name}",
+        "-c",
+        "user.email=attacker@example.com",
+        "-c",
+        "commit.gpgsign=false",
+        "-c",
+        "tag.gpgsign=false",
+        "commit",
+        "-q",
+        "--cleanup=strip",
+        "-m",
+        message,
+    )
+    return _git(repo, "rev-parse", "HEAD")
+
+
+def test_a_field_separator_byte_inside_the_author_name_does_not_shift_fields(
+    tmp_path: Path,
+) -> None:
+    _init(tmp_path)
+    base = _commit(tmp_path, "a", "chore: base")
+    # An author name carrying the OLD field-separator byte used to shift every
+    # field after it by one, so the sign-off's genuine name/email pair ended up
+    # compared against the wrong slice of the record and matched by accident.
+    spoofed = _commit_with_author_name(
+        tmp_path,
+        "b",
+        "Alice\x1falice@x",
+        "feat: spoofed\n\nSigned-off-by: Alice <alice@x>",
+    )
+
+    assert unsigned_commits(base, spoofed, cwd=tmp_path) == (spoofed,)
+
+
+def test_an_embedded_record_separator_byte_in_the_author_name_is_handled_cleanly(
+    tmp_path: Path,
+) -> None:
+    _init(tmp_path)
+    base = _commit(tmp_path, "a", "chore: base")
+    weird = _commit_with_author_name(
+        tmp_path,
+        "b",
+        "Bob\x1eEve",
+        "feat: no sign-off",
+    )
+
+    try:
+        result = unsigned_commits(base, weird, cwd=tmp_path)
+    except DcoCheckError:
+        return
+    assert weird in result
 
 
 def test_showsignature_local_config_does_not_break_the_check(tmp_path: Path) -> None:
