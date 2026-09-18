@@ -12,7 +12,7 @@ from tempfile import TemporaryDirectory
 
 import psycopg
 import pytest
-from pillarmesh_compiler import (
+from heinzel_compiler import (
     GovernedQueryInput,
     GovernedQueryPlan,
     ProductGenerationReference,
@@ -23,7 +23,7 @@ from pillarmesh_compiler import (
     QueryScan,
     compile_governed_query,
 )
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLQueryEstimator,
     PostgreSQLQueryEstimatorSettings,
 )
@@ -37,7 +37,7 @@ class _Signer:
 
 
 def _postgresql_binary(name: str) -> str:
-    configured_directory = os.getenv("PILLARMESH_TEST_POSTGRES_BIN_DIR")
+    configured_directory = os.getenv("HEINZEL_TEST_POSTGRES_BIN_DIR")
     candidate = (
         str(Path(configured_directory) / name)
         if configured_directory is not None
@@ -186,7 +186,7 @@ def _query_input() -> GovernedQueryInput:
 def test_native_postgresql_estimator_explains_but_does_not_invent_scan_bytes() -> None:
     if os.geteuid() == 0:
         pytest.skip("initdb refuses to initialize a cluster as root")
-    with TemporaryDirectory(prefix="pillarmesh-estimator-postgresql-") as root_text:
+    with TemporaryDirectory(prefix="heinzel-estimator-postgresql-") as root_text:
         password = secrets.token_urlsafe(32)
         with _fresh_postgresql_cluster(Path(root_text)) as bootstrap_dsn:
             estimator_dsn = _provision_estimator(bootstrap_dsn, password)

@@ -182,7 +182,7 @@ export function ProcessStage({
       <p className="eyebrow">Stage 4 · Business process</p>
       <h1 id="process-title">Describe the business process</h1>
       <p className="setup-stage__lead">
-        PillarMesh stores the exact UTF-8 Markdown narrative and its validated process manifest.
+        Heinzel stores the exact UTF-8 Markdown narrative and its validated process manifest.
       </p>
       <label className="process-file">
         <span>Process package</span>

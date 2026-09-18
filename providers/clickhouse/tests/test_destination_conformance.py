@@ -5,7 +5,7 @@ import json
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_provider_clickhouse.destination import (
+from heinzel_provider_clickhouse.destination import (
     ClickHouseDestinationProvider,
     ClickHouseLandStore,
     ClickHouseLandStoreError,
@@ -13,13 +13,13 @@ from pillarmesh_provider_clickhouse.destination import (
     clickhouse_insert_token,
     compose_clickhouse_destination_provider,
 )
-from pillarmesh_provider_sdk import LandReceipt, ProviderError
-from pillarmesh_provider_sdk.destination_conformance import (
+from heinzel_provider_sdk import LandReceipt, ProviderError
+from heinzel_provider_sdk.destination_conformance import (
     destination_segment,
     destination_target,
     run_destination_conformance,
 )
-from pillarmesh_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
+from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
 
 
 class _Store:

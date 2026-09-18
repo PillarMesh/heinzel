@@ -7,8 +7,8 @@ from typing import cast
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import digest
-from pillarmesh_dbt_adapter import (
+from heinzel_contract_model import digest
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtDecimalMagnitudeCheck,
     DbtFailureClassification,
@@ -19,22 +19,22 @@ from pillarmesh_dbt_adapter import (
     SignedCompiledDbtModel,
     compiled_dbt_model_signing_bytes,
 )
-from pillarmesh_execution_graph import (
+from heinzel_execution_graph import (
     Decimal57OutputCheck,
     GenerationScopedProductSource,
     ProductJsonFieldBinding,
     ProductPhysicalPlan,
     ProductTarget,
 )
-from pillarmesh_provider_clickhouse import (
+from heinzel_provider_clickhouse import (
     ClickHouseMaterializationSettings,
     ClickHouseMaterializationWarehouse,
     ClickHouseMaterializedColumn,
     ClickHouseProductSqlObservationSettings,
     clickhouse_materialized_schema_digest,
 )
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import MaterializationRequest
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import MaterializationRequest
 from pydantic import SecretStr
 
 _NOW = datetime(2026, 9, 15, 23, tzinfo=UTC)

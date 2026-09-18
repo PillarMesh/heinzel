@@ -3,15 +3,15 @@ from __future__ import annotations
 from typing import Literal
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, SemanticObject, digest
-from pillarmesh_provider_openmetadata import (
+from heinzel_contract_model import ArtifactReference, SemanticObject, digest
+from heinzel_provider_openmetadata import (
     CatalogObjectRef,
     CatalogObjectSnapshot,
     CatalogProviderError,
     OpenMetadataPublicationProvider,
     ProviderHealth,
 )
-from pillarmesh_provider_openmetadata.models import (
+from heinzel_provider_openmetadata.models import (
     CatalogFailureClassification,
     GlossaryTermPayload,
 )

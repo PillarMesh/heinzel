@@ -1,25 +1,25 @@
 [project]
-name = "pillarmesh-provider-postgresql"
+name = "heinzel-provider-postgresql"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
-  "pillarmesh-dbt-adapter",
-  "pillarmesh-contract-model",
-  "pillarmesh-provider-sdk",
-  "pillarmesh-runtime",
-  "pillarmesh-semantic-registry",
-  "pillarmesh-warehouse-control",
+  "heinzel-dbt-adapter",
+  "heinzel-contract-model",
+  "heinzel-provider-sdk",
+  "heinzel-runtime",
+  "heinzel-semantic-registry",
+  "heinzel-warehouse-control",
   "psycopg[binary]>=3.2,<4",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
-pillarmesh-dbt-adapter = { workspace = true }
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-provider-sdk = { workspace = true }
-pillarmesh-runtime = { workspace = true }
-pillarmesh-semantic-registry = { workspace = true }
-pillarmesh-warehouse-control = { workspace = true }
+heinzel-dbt-adapter = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-runtime = { workspace = true }
+heinzel-semantic-registry = { workspace = true }
+heinzel-warehouse-control = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

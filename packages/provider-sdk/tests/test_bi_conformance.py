@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pillarmesh_provider_sdk.bi import dashboard_external_key
+from heinzel_provider_sdk.bi import dashboard_external_key
 
 
 def test_dashboard_external_key_is_deterministic_and_title_independent() -> None:

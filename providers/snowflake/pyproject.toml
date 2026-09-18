@@ -1,17 +1,17 @@
 [project]
-name = "pillarmesh-provider-snowflake"
+name = "heinzel-provider-snowflake"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
-  "pillarmesh-contract-model",
-  "pillarmesh-provider-sdk",
+  "heinzel-contract-model",
+  "heinzel-provider-sdk",
   "pydantic>=2.11,<3",
   "snowflake-connector-python>=3.17,<5",
 ]
 
 [tool.uv.sources]
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-provider-sdk = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

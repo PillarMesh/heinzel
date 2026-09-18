@@ -1,5 +1,5 @@
 [project]
-name = "pillarmesh-contract-model"
+name = "heinzel-contract-model"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = ["pydantic>=2.11,<3"]

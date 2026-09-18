@@ -10,18 +10,18 @@ import time
 from threading import Thread
 
 import pytest
-from pillarmesh_console import create_app
-from pillarmesh_console.auth import (
+from heinzel_console import create_app
+from heinzel_console.auth import (
     InFlightCommandKeys,
     SessionCsrfTokens,
     TrustedActorContext,
 )
-from pillarmesh_console.errors import ConsoleConflict
-from pillarmesh_console.governed_adapters import (
+from heinzel_console.errors import ConsoleConflict
+from heinzel_console.governed_adapters import (
     classify_downstream_failure,
     console_error_for,
 )
-from pillarmesh_console.operation_handles import (
+from heinzel_console.operation_handles import (
     InMemoryOperationHandleRepository,
     OperationHandleRecord,
     mint_console_handle,
@@ -42,13 +42,13 @@ def _context(actor_id: str = "actor-a", session_id: str = "session-a") -> Truste
 def test_the_allowed_origin_follows_the_port_the_launch_scripts_advertise(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Both launch scripts expose PILLARMESH_CONSOLE_API_PORT.
+    """Both launch scripts expose HEINZEL_CONSOLE_API_PORT.
 
     With the origin fixed at 8000, every read worked and every command failed
     `same_origin_required`, which reads as a broken product rather than a
     misconfigured one.
     """
-    monkeypatch.setenv("PILLARMESH_CONSOLE_ALLOWED_ORIGIN", "http://127.0.0.1:8123")
+    monkeypatch.setenv("HEINZEL_CONSOLE_ALLOWED_ORIGIN", "http://127.0.0.1:8123")
     app = create_app()
 
     assert app.state.allowed_origin == "http://127.0.0.1:8123"
@@ -57,7 +57,7 @@ def test_the_allowed_origin_follows_the_port_the_launch_scripts_advertise(
 def test_an_explicit_allowed_origin_still_wins_over_the_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("PILLARMESH_CONSOLE_ALLOWED_ORIGIN", "http://127.0.0.1:8123")
+    monkeypatch.setenv("HEINZEL_CONSOLE_ALLOWED_ORIGIN", "http://127.0.0.1:8123")
     app = create_app(allowed_origin="http://127.0.0.1:9000")
 
     assert app.state.allowed_origin == "http://127.0.0.1:9000"
@@ -72,7 +72,7 @@ def test_managed_link_origin_is_absent_until_explicitly_configured() -> None:
 def test_managed_link_origin_is_normalized_from_explicit_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("PILLARMESH_CONSOLE_MANAGED_LINK_ORIGIN", "https://BI.EXAMPLE.TEST:443/")
+    monkeypatch.setenv("HEINZEL_CONSOLE_MANAGED_LINK_ORIGIN", "https://BI.EXAMPLE.TEST:443/")
 
     app = create_app()
 
@@ -124,7 +124,7 @@ def test_a_malformed_persisted_artifact_is_not_reported_as_a_stale_revision() ->
 
 def test_a_composition_error_is_not_reported_as_a_stale_revision() -> None:
     """The warehouse repository refuses an ambiguous construction with ValueError."""
-    from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+    from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 
     connection = sqlite3.connect(":memory:")
     try:

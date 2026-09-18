@@ -9,14 +9,14 @@ from pathlib import Path
 from typing import Protocol
 
 import pytest
-from pillarmesh_catalog_control import (
+from heinzel_catalog_control import (
     CatalogBinding,
     CatalogBindingState,
     CatalogControlService,
     CatalogValidationEvidence,
     SQLiteCatalogRepository,
 )
-from pillarmesh_provider_openmetadata import (
+from heinzel_provider_openmetadata import (
     DockerComposeController,
     EncryptedDirectoryOpenMetadataSecretStore,
     OpenMetadataClient,
@@ -71,10 +71,8 @@ def no_supported_catalog(*, tenant_id: str, binding_id: str) -> str:
 
 class LocalOpenMetadata:
     def __init__(self, temporary_path: Path) -> None:
-        secret_store_key = os.environ.get("PILLARMESH_OPENMETADATA_SECRET_STORE_KEY")
-        bootstrap_admin_password = os.environ.get(
-            "PILLARMESH_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD"
-        )
+        secret_store_key = os.environ.get("HEINZEL_OPENMETADATA_SECRET_STORE_KEY")
+        bootstrap_admin_password = os.environ.get("HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD")
         if secret_store_key is None or bootstrap_admin_password is None:
             pytest.skip("OpenMetadata live credentials are required")
         self._repository = SQLiteCatalogRepository(str(temporary_path / "catalog.sqlite"))

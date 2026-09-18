@@ -1,28 +1,28 @@
 [project]
-name = "pillarmesh-state"
+name = "heinzel-state"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
-  "pillarmesh-contract-model",
-  "pillarmesh-provider-sdk",
+  "heinzel-contract-model",
+  "heinzel-provider-sdk",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-provider-sdk = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.mutmut]
-source_paths = ["src/pillarmesh_state"]
+source_paths = ["src/heinzel_state"]
 only_mutate = [
-  "src/pillarmesh_state/artifacts.py",
-  "src/pillarmesh_state/crypto.py",
-  "src/pillarmesh_state/recovery_service.py",
-  "src/pillarmesh_state/repository.py",
+  "src/heinzel_state/artifacts.py",
+  "src/heinzel_state/crypto.py",
+  "src/heinzel_state/recovery_service.py",
+  "src/heinzel_state/repository.py",
 ]
 also_copy = ["tests"]
 pytest_add_cli_args_test_selection = [

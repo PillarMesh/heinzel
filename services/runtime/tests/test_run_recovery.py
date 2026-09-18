@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import (
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import (
     AcquisitionTransientError,
     LeasedRunExecutor,
     RunLease,
@@ -14,14 +14,14 @@ from pillarmesh_runtime import (
     RunStageFailedError,
     classify_run_stage_failure,
 )
-from pillarmesh_state import RunAttemptClaim, RunService
-from pillarmesh_state.run_models import (
+from heinzel_state import RunAttemptClaim, RunService
+from heinzel_state.run_models import (
     RunAttemptCompletion,
     RunAttemptLeaseExtension,
     RunIntent,
     TriggerWindow,
 )
-from pillarmesh_state.run_repository import SQLiteRunRepository
+from heinzel_state.run_repository import SQLiteRunRepository
 
 _NOW = datetime(2026, 9, 17, 12, tzinfo=UTC)
 _TENANT = "tenant-a"

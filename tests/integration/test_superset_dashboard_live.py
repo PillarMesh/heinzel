@@ -9,16 +9,16 @@ from urllib.parse import urlsplit
 
 import httpx
 import pytest
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardAnswerAuthority,
     DashboardControlService,
     DashboardDesiredState,
     DashboardProductGenerationReference,
     SQLiteDashboardRepository,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_provider_sdk import AccessEffectCommand, ProviderError
-from pillarmesh_provider_superset import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_provider_sdk import AccessEffectCommand, ProviderError
+from heinzel_provider_superset import (
     CredentialScopedSupersetAccessEffectProvider,
     CredentialScopedSupersetProvider,
     HttpSupersetClient,
@@ -360,7 +360,7 @@ def test_cold_superset_applies_and_revokes_authority_bound_dashboard_access(
         assert replayed == applied
         assert applied.provider_receipt_digest == digest(
             {
-                "domain": "pillarmesh.superset-access-effect.v1",
+                "domain": "heinzel.superset-access-effect.v1",
                 "provider_version": access_provider.provider_version,
                 "command": apply_command,
                 "target": target,

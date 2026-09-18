@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -122,9 +122,7 @@ def test_managed_contract_v2_keeps_m0_contract_model_unchanged() -> None:
 
     assert contract.schema_version == "2"
     assert contract.formation_status is ContractFormationStatus.READY_TO_ACTIVATE
-    assert (
-        "tenant_id" not in __import__("pillarmesh_contract_model").IntegrationContract.model_fields
-    )
+    assert "tenant_id" not in __import__("heinzel_contract_model").IntegrationContract.model_fields
 
 
 def test_managed_contract_rejects_unknown_fields() -> None:

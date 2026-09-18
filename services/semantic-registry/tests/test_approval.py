@@ -4,13 +4,13 @@ from datetime import UTC, datetime, timedelta
 from typing import get_type_hints
 
 import pytest
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     ApprovedSemanticVersion,
     ContractFormationStatus,
     InformationKind,
     digest,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     ApprovalCompilationInput,
     ApprovedSemanticCompiler,
     AuthorityObservation,
@@ -22,7 +22,7 @@ from pillarmesh_semantic_registry import (
     SemanticCandidate,
     SemanticCandidateSet,
 )
-from pillarmesh_semantic_registry.repository import SemanticVersionRepository
+from heinzel_semantic_registry.repository import SemanticVersionRepository
 
 NOW = datetime(2026, 8, 21, 12, tzinfo=UTC)
 

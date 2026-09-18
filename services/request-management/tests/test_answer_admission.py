@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import pytest
-from pillarmesh_contract_model import ArtifactModel, ArtifactReference, canonical_bytes, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactModel, ArtifactReference, canonical_bytes, digest
+from heinzel_request_management import (
     AnswerIntentValidation,
     AnswerPolicyAdmissionService,
     AnswerQuestionIntent,
@@ -19,18 +19,18 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
     StakeholderQuestion,
 )
-from pillarmesh_request_management.answer_admission import (
+from heinzel_request_management.answer_admission import (
     PolicyAdmissionBudgetExceeded,
     PolicyScanReservation,
 )
-from pillarmesh_request_management.answer_models import AnswerProductGenerationReference
-from pillarmesh_request_management.answer_usage import (
+from heinzel_request_management.answer_models import AnswerProductGenerationReference
+from heinzel_request_management.answer_usage import (
     AnswerExecutionUsageEvidence,
     AnswerPlanUsageEvidence,
     AnswerPolicyUsageUnavailable,
     DurableStatementCeilingBreachReader,
 )
-from pillarmesh_request_management.repository import StaleRevisionError
+from heinzel_request_management.repository import StaleRevisionError
 
 NOW = datetime(2026, 9, 11, 20, 0, tzinfo=UTC)
 DIGEST = "a" * 64

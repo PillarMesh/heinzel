@@ -37,7 +37,7 @@ AFFECTED_PATHS = (
     "pyproject.toml",
     "uv.lock",
     ".python-version",
-    "docs/plan3a/",
+    "docs/warehouse-lifecycle/",
     "docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md",
     "docs/superpowers/specs/2026-08-24-plan-3a-managed-warehouse-lifecycle-design.md",
     "docs/superpowers/plans/2026-08-24-plan-3a-managed-warehouse-lifecycle.md",
@@ -48,7 +48,7 @@ AFFECTED_PATHS = (
     "tests/end-to-end/",
     "tests/integration/test_postgresql_warehouse_live",
     "tests/integration/test_clickhouse_warehouse_live",
-    "tests/ci/run_plan3a_witness.py",
+    "tests/ci/run_warehouse_lifecycle_witness.py",
     "tests/ci/test_warehouse_lifecycle_workflow",
     ".github/workflows/warehouse-lifecycle",
 )
@@ -91,7 +91,7 @@ def _install_fake_witness_toolchain(command_directory: Path) -> None:
         """
 printf '%s\n' "$*" >> "$FAKE_UV_LOG"
 if test "${1:-}" = run && test "${2:-}" = python \
-  && test "${3:-}" = -m && test "${4:-}" = tests.ci.run_plan3a_witness; then
+  && test "${3:-}" = -m && test "${4:-}" = tests.ci.run_warehouse_lifecycle_witness; then
   shift 2
   exec "$FAKE_PYTHON" "$@"
 fi
@@ -113,7 +113,7 @@ esac
 
 
 def _witness_private_environment(runner_directory: Path) -> dict[str, str]:
-    private_root = runner_directory / "plan3a-private"
+    private_root = runner_directory / "warehouse-lifecycle-private"
     private_root.mkdir(mode=0o700)
     source_commit = subprocess.run(
         ["git", "rev-parse", "HEAD"],
@@ -123,20 +123,20 @@ def _witness_private_environment(runner_directory: Path) -> dict[str, str]:
         text=True,
     ).stdout.strip()
     return {
-        "PILLARMESH_PLAN3A_STATE_PATH": str(private_root / "state"),
-        "PILLARMESH_PLAN3A_SECRET_DIRECTORY": str(private_root / "secrets"),
-        "PILLARMESH_PLAN3A_BACKUP_DIRECTORY": str(private_root / "backups"),
-        "PILLARMESH_PLAN3A_EVIDENCE_DIRECTORY": str(private_root / "evidence"),
-        "PILLARMESH_PLAN3A_RESERVATION_PATH": str(private_root / "reservation.json"),
-        "PILLARMESH_PLAN3A_SOURCE_COMMIT": source_commit,
-        "PILLARMESH_PLAN3A_POSTGRES_IMAGE": POSTGRES_IMAGE,
-        "PILLARMESH_PLAN3A_CLICKHOUSE_IMAGE": CLICKHOUSE_IMAGE,
-        "PILLARMESH_PLAN3A_RETENTION_DEADLINE": "2026-08-28T12:00:00Z",
-        "PILLARMESH_PLAN3A_CREDENTIAL_CANARIES": json.dumps(
+        "HEINZEL_WAREHOUSE_LIFECYCLE_STATE_PATH": str(private_root / "state"),
+        "HEINZEL_WAREHOUSE_LIFECYCLE_SECRET_DIRECTORY": str(private_root / "secrets"),
+        "HEINZEL_WAREHOUSE_LIFECYCLE_BACKUP_DIRECTORY": str(private_root / "backups"),
+        "HEINZEL_WAREHOUSE_LIFECYCLE_EVIDENCE_DIRECTORY": str(private_root / "evidence"),
+        "HEINZEL_WAREHOUSE_LIFECYCLE_RESERVATION_PATH": str(private_root / "reservation.json"),
+        "HEINZEL_WAREHOUSE_LIFECYCLE_SOURCE_COMMIT": source_commit,
+        "HEINZEL_WAREHOUSE_LIFECYCLE_POSTGRES_IMAGE": POSTGRES_IMAGE,
+        "HEINZEL_WAREHOUSE_LIFECYCLE_CLICKHOUSE_IMAGE": CLICKHOUSE_IMAGE,
+        "HEINZEL_WAREHOUSE_LIFECYCLE_RETENTION_DEADLINE": "2026-08-28T12:00:00Z",
+        "HEINZEL_WAREHOUSE_LIFECYCLE_CREDENTIAL_CANARIES": json.dumps(
             [f"private-credential-marker-{index}" for index in range(8)]
         ),
-        "PILLARMESH_PLAN3A_STATE_ENCRYPTION_KEY": "private-state-encryption-marker",
-        "PILLARMESH_PLAN3A_EVIDENCE_SIGNING_KEY": "private-evidence-signing-marker",
+        "HEINZEL_WAREHOUSE_LIFECYCLE_STATE_ENCRYPTION_KEY": "private-state-encryption-marker",
+        "HEINZEL_WAREHOUSE_LIFECYCLE_EVIDENCE_SIGNING_KEY": "private-evidence-signing-marker",
     }
 
 
@@ -165,12 +165,12 @@ def _commit_pure_rename(
     repository.mkdir()
     subprocess.run(["git", "init", "--quiet"], cwd=repository, check=True)
     subprocess.run(
-        ["git", "config", "user.email", "workflow-test@pillarmesh.invalid"],
+        ["git", "config", "user.email", "workflow-test@heinzel.invalid"],
         cwd=repository,
         check=True,
     )
     subprocess.run(
-        ["git", "config", "user.name", "PillarMesh Workflow Test"],
+        ["git", "config", "user.name", "Heinzel Workflow Test"],
         cwd=repository,
         check=True,
     )
@@ -239,11 +239,11 @@ def test_change_detector_covers_every_component_the_lifecycle_depends_on(
     "changed_path",
     (
         "packages/provider-sdk/tests/test_models.py",
-        "packages/contract-model/src/pillarmesh_contract_model/artifacts.py",
+        "packages/contract-model/src/heinzel_contract_model/artifacts.py",
         "pyproject.toml",
         "uv.lock",
         ".python-version",
-        "docs/plan3a/acceptance.md",
+        "docs/warehouse-lifecycle/acceptance.md",
         "docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md",
         "docs/superpowers/specs/2026-08-24-plan-3a-managed-warehouse-lifecycle-design.md",
         "docs/superpowers/plans/2026-08-24-plan-3a-managed-warehouse-lifecycle.md",
@@ -251,7 +251,7 @@ def test_change_detector_covers_every_component_the_lifecycle_depends_on(
         "tests/end-to-end/test_managed_warehouse_lifecycle.py",
         "tests/integration/test_postgresql_warehouse_live.py",
         "tests/integration/test_clickhouse_warehouse_live.py",
-        "tests/ci/run_plan3a_witness.py",
+        "tests/ci/run_warehouse_lifecycle_witness.py",
     ),
 )
 def test_change_detector_runs_for_every_lifecycle_dependency(
@@ -423,8 +423,8 @@ esac
         ("docs/unrelated.py", "packages/provider-sdk/destination.py"),
         ("packages/provider-sdk/source [odd]\nname.py", "docs/unrelated [odd].py"),
         ("docs/unrelated [odd]\nname.py", "packages/provider-sdk/destination [odd].py"),
-        ("tests/ci/run_plan3a_witness.py", "docs/unrelated-witness.py"),
-        ("docs/unrelated-witness.py", "tests/ci/run_plan3a_witness.py"),
+        ("tests/ci/run_warehouse_lifecycle_witness.py", "docs/unrelated-witness.py"),
+        ("docs/unrelated-witness.py", "tests/ci/run_warehouse_lifecycle_witness.py"),
     ),
 )
 def test_change_detector_evaluates_both_paths_of_a_pure_rename(
@@ -529,9 +529,9 @@ def test_private_environment_masks_generated_credentials_before_export(
         line.split("=", 1) for line in github_environment.read_text(encoding="utf-8").splitlines()
     )
     generated_values = (
-        exported["PILLARMESH_PLAN3A_STATE_ENCRYPTION_KEY"],
-        exported["PILLARMESH_PLAN3A_EVIDENCE_SIGNING_KEY"],
-        *json.loads(exported["PILLARMESH_PLAN3A_CREDENTIAL_CANARIES"]),
+        exported["HEINZEL_WAREHOUSE_LIFECYCLE_STATE_ENCRYPTION_KEY"],
+        exported["HEINZEL_WAREHOUSE_LIFECYCLE_EVIDENCE_SIGNING_KEY"],
+        *json.loads(exported["HEINZEL_WAREHOUSE_LIFECYCLE_CREDENTIAL_CANARIES"]),
     )
     masked_values = tuple(
         line.removeprefix("::add-mask::")
@@ -560,7 +560,7 @@ def test_generated_canaries_satisfy_the_acceptance_parser(
     the witness parses the environment inside its scope loader. Execute the real prepare step
     and feed its output to the real parser, so the two cannot drift apart again.
     """
-    from tests.acceptance.run_plan3a import _parse_canaries
+    from tests.acceptance.run_warehouse_lifecycle import _parse_canaries
 
     prepare_step = next(
         step
@@ -586,7 +586,7 @@ def test_generated_canaries_satisfy_the_acceptance_parser(
         line.split("=", 1) for line in github_environment.read_text(encoding="utf-8").splitlines()
     )
 
-    _parse_canaries(exported["PILLARMESH_PLAN3A_CREDENTIAL_CANARIES"])
+    _parse_canaries(exported["HEINZEL_WAREHOUSE_LIFECYCLE_CREDENTIAL_CANARIES"])
 
 
 def test_live_job_executes_only_the_task9_acceptance_authority(
@@ -617,12 +617,14 @@ def test_live_job_executes_only_the_task9_acceptance_authority(
     assert completed.returncode == 0, completed.stderr
     invocations = log.read_text(encoding="utf-8").splitlines()
     assert len(invocations) == 2
-    assert invocations[0].startswith("run python -m tests.ci.run_plan3a_witness ")
+    assert invocations[0].startswith("run python -m tests.ci.run_warehouse_lifecycle_witness ")
     assert "--timeout-seconds 600" in invocations[0]
     assert invocations[1] == (
-        "run python -m tests.acceptance.run_plan3a run --authorize-retention-cleanup"
+        "run python -m tests.acceptance.run_warehouse_lifecycle run --authorize-retention-cleanup"
     )
-    cost = json.loads((runner_directory / "plan3a-cost.json").read_text(encoding="utf-8"))
+    cost = json.loads(
+        (runner_directory / "warehouse-lifecycle-cost.json").read_text(encoding="utf-8")
+    )
     assert cost["sample_count"] >= 1
 
 
@@ -651,7 +653,9 @@ def test_witness_failure_records_numeric_cost_without_changing_exit_status(
         },
     )
 
-    cost = json.loads((runner_directory / "plan3a-cost.json").read_text(encoding="utf-8"))
+    cost = json.loads(
+        (runner_directory / "warehouse-lifecycle-cost.json").read_text(encoding="utf-8")
+    )
     assert completed.returncode == 7
     assert set(cost) == {
         "duration_seconds",
@@ -689,7 +693,7 @@ def test_live_job_tears_down_exactly_even_after_failure(workflow: dict[str, Any]
     assert teardown, "the live job has no teardown step"
     for step in teardown:
         assert str(step["if"]).strip() == "always()"
-        assert "run_plan3a teardown" in str(step["run"])
+        assert "run_warehouse_lifecycle teardown" in str(step["run"])
 
 
 def test_teardown_recovers_from_private_state_without_public_evidence(
@@ -714,14 +718,15 @@ def test_teardown_recovers_from_private_state_without_public_evidence(
         environment={
             "PATH": f"{command_directory}:{os.environ['PATH']}",
             "FAKE_UV_LOG": str(log),
-            "PILLARMESH_PLAN3A_RESERVATION_PATH": str(reservation),
-            "PILLARMESH_PLAN3A_STATE_PATH": str(state),
+            "HEINZEL_WAREHOUSE_LIFECYCLE_RESERVATION_PATH": str(reservation),
+            "HEINZEL_WAREHOUSE_LIFECYCLE_STATE_PATH": str(state),
         },
     )
 
     assert completed.returncode == 0, completed.stderr
     assert log.read_text(encoding="utf-8").splitlines() == [
-        "run python -m tests.acceptance.run_plan3a teardown --authorize-retention-cleanup"
+        "run python -m tests.acceptance.run_warehouse_lifecycle teardown "
+        "--authorize-retention-cleanup"
     ]
 
 
@@ -734,7 +739,7 @@ def test_successful_witness_strictly_validates_and_uploads_only_public_evidence(
     cost_upload = _job_step(workflow, "lifecycle", "Upload the sanitized cost artifact")
 
     assert str(validation["run"]).strip() == (
-        "uv run python -m tests.acceptance.run_plan3a validate-evidence"
+        "uv run python -m tests.acceptance.run_warehouse_lifecycle validate-evidence"
     )
     assert evidence_upload["uses"] == (
         "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
@@ -745,13 +750,16 @@ def test_successful_witness_strictly_validates_and_uploads_only_public_evidence(
     assert str(evidence_upload["if"]).strip() == "always()"
     assert evidence_upload["with"] == {
         "name": "warehouse-lifecycle-evidence",
-        "path": "${{ env.PILLARMESH_PLAN3A_EVIDENCE_DIRECTORY }}/plan3a-evidence.json",
+        "path": (
+            "${{ env.HEINZEL_WAREHOUSE_LIFECYCLE_EVIDENCE_DIRECTORY }}"
+            "/warehouse-lifecycle-evidence.json"
+        ),
         "if-no-files-found": "warn",
     }
     assert str(cost_upload["if"]).strip() == "always()"
     assert cost_upload["with"] == {
         "name": "warehouse-lifecycle-cost",
-        "path": "${{ runner.temp }}/plan3a-cost.json",
+        "path": "${{ runner.temp }}/warehouse-lifecycle-cost.json",
         "if-no-files-found": "error",
     }
     assert lifecycle_steps.index(validation) < lifecycle_steps.index(evidence_upload)
@@ -780,7 +788,7 @@ def test_failed_evidence_validation_still_uploads_the_evidence(workflow: dict[st
 
 
 def test_every_checkout_records_a_resolvable_source_commit(workflow: dict[str, Any]) -> None:
-    """run_plan3a records the checked-out commit as the evidence provenance.
+    """run_warehouse_lifecycle records the checked-out commit as the evidence provenance.
 
     On a pull_request event `actions/checkout` defaults to the ephemeral
     refs/pull/N/merge commit, which is unreachable from any branch and is

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from pillarmesh_contract_model import ContractFormationStatus
-from pillarmesh_semantic_registry import ApprovedSemanticCompiler
+from heinzel_contract_model import ContractFormationStatus
+from heinzel_semantic_registry import ApprovedSemanticCompiler
 
 from .test_approval import NOW, _StrictSemanticVersionRepository, valid_input
 

@@ -4,33 +4,33 @@ x-clickhouse-service: &clickhouse-service
     - /bin/bash
     - -ceu
     - |
-      install -d -m 0700 -o clickhouse -g clickhouse /var/lib/clickhouse/pillarmesh-tls
-      install -m 0600 -o clickhouse -g clickhouse /pillarmesh-private/server.key /var/lib/clickhouse/pillarmesh-tls/server.key
-      install -m 0644 -o clickhouse -g clickhouse /pillarmesh-private/server.crt /var/lib/clickhouse/pillarmesh-tls/server.crt
-      install -m 0644 -o clickhouse -g clickhouse /pillarmesh-private/ca.crt /var/lib/clickhouse/pillarmesh-tls/ca.crt
+      install -d -m 0700 -o clickhouse -g clickhouse /var/lib/clickhouse/heinzel-tls
+      install -m 0600 -o clickhouse -g clickhouse /heinzel-private/server.key /var/lib/clickhouse/heinzel-tls/server.key
+      install -m 0644 -o clickhouse -g clickhouse /heinzel-private/server.crt /var/lib/clickhouse/heinzel-tls/server.crt
+      install -m 0644 -o clickhouse -g clickhouse /heinzel-private/ca.crt /var/lib/clickhouse/heinzel-tls/ca.crt
       install -d -m 0700 -o clickhouse -g clickhouse /var/lib/clickhouse/backups
-      install -m 0644 -o clickhouse -g clickhouse /pillarmesh-private/${PILLARMESH_CLICKHOUSE_USERS_FILE:?required} /etc/clickhouse-server/users.d/pillarmesh-bootstrap.xml
-      if [ -s /pillarmesh-private/clickhouse-restore.zip ]; then
-        install -m 0600 -o clickhouse -g clickhouse /pillarmesh-private/clickhouse-restore.zip /var/lib/clickhouse/backups/restore.zip
+      install -m 0644 -o clickhouse -g clickhouse /heinzel-private/${HEINZEL_CLICKHOUSE_USERS_FILE:?required} /etc/clickhouse-server/users.d/heinzel-bootstrap.xml
+      if [ -s /heinzel-private/clickhouse-restore.zip ]; then
+        install -m 0600 -o clickhouse -g clickhouse /heinzel-private/clickhouse-restore.zip /var/lib/clickhouse/backups/restore.zip
       fi
       chown clickhouse:clickhouse /var/lib/clickhouse
       exec runuser --user clickhouse -- clickhouse-server --config-file=/etc/clickhouse-server/config.xml
   healthcheck:
     disable: true
   volumes:
-    - ./config.xml:/etc/clickhouse-server/config.d/pillarmesh.xml:ro
-    - ${PILLARMESH_CLICKHOUSE_PRIVATE_DIRECTORY:?required}:/pillarmesh-private:ro
+    - ./config.xml:/etc/clickhouse-server/config.d/heinzel.xml:ro
+    - ${HEINZEL_CLICKHOUSE_PRIVATE_DIRECTORY:?required}:/heinzel-private:ro
 
 services:
   clickhouse:
     <<: *clickhouse-service
-    container_name: ${PILLARMESH_CLICKHOUSE_CONTAINER_NAME:?required}
+    container_name: ${HEINZEL_CLICKHOUSE_CONTAINER_NAME:?required}
     ports:
-      - "127.0.0.1:${PILLARMESH_CLICKHOUSE_HOST_PORT:?required}:8443"
+      - "127.0.0.1:${HEINZEL_CLICKHOUSE_HOST_PORT:?required}:8443"
     volumes:
       - clickhouse_data:/var/lib/clickhouse
-      - ./config.xml:/etc/clickhouse-server/config.d/pillarmesh.xml:ro
-      - ${PILLARMESH_CLICKHOUSE_PRIVATE_DIRECTORY:?required}:/pillarmesh-private:ro
+      - ./config.xml:/etc/clickhouse-server/config.d/heinzel.xml:ro
+      - ${HEINZEL_CLICKHOUSE_PRIVATE_DIRECTORY:?required}:/heinzel-private:ro
     networks:
       - clickhouse_internal
       - host_loopback
@@ -38,11 +38,11 @@ services:
   clickhouse_restore:
     <<: *clickhouse-service
     profiles: ["restore"]
-    container_name: ${PILLARMESH_CLICKHOUSE_RESTORE_CONTAINER_NAME:-clickhouse-restore-inactive}
+    container_name: ${HEINZEL_CLICKHOUSE_RESTORE_CONTAINER_NAME:-clickhouse-restore-inactive}
     volumes:
       - clickhouse_restore_data:/var/lib/clickhouse
-      - ./config.xml:/etc/clickhouse-server/config.d/pillarmesh.xml:ro
-      - ${PILLARMESH_CLICKHOUSE_PRIVATE_DIRECTORY:?required}:/pillarmesh-private:ro
+      - ./config.xml:/etc/clickhouse-server/config.d/heinzel.xml:ro
+      - ${HEINZEL_CLICKHOUSE_PRIVATE_DIRECTORY:?required}:/heinzel-private:ro
     networks:
       - clickhouse_restore_internal
       - restore_host_loopback
@@ -50,7 +50,7 @@ services:
   clickhouse_isolation_probe:
     image: clickhouse/clickhouse-server:25.8.32.4@sha256:7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0
     profiles: ["restore"]
-    container_name: ${PILLARMESH_CLICKHOUSE_RESTORE_ISOLATION_PROBE_CONTAINER_NAME:-clickhouse-restore-isolation-probe-inactive}
+    container_name: ${HEINZEL_CLICKHOUSE_RESTORE_ISOLATION_PROBE_CONTAINER_NAME:-clickhouse-restore-isolation-probe-inactive}
     entrypoint:
       - /bin/bash
       - -ceu
@@ -60,22 +60,22 @@ services:
 
 volumes:
   clickhouse_data:
-    name: ${PILLARMESH_CLICKHOUSE_DATA_VOLUME_NAME:?required}
+    name: ${HEINZEL_CLICKHOUSE_DATA_VOLUME_NAME:?required}
   clickhouse_restore_data:
-    name: ${PILLARMESH_CLICKHOUSE_RESTORE_DATA_VOLUME_NAME:-clickhouse-restore-data-inactive}
+    name: ${HEINZEL_CLICKHOUSE_RESTORE_DATA_VOLUME_NAME:-clickhouse-restore-data-inactive}
 
 networks:
   clickhouse_internal:
-    name: ${PILLARMESH_CLICKHOUSE_PRIVATE_NETWORK_NAME:?required}
+    name: ${HEINZEL_CLICKHOUSE_PRIVATE_NETWORK_NAME:?required}
     internal: true
   host_loopback:
-    name: ${PILLARMESH_CLICKHOUSE_LOOPBACK_NETWORK_NAME:?required}
+    name: ${HEINZEL_CLICKHOUSE_LOOPBACK_NETWORK_NAME:?required}
   clickhouse_restore_internal:
-    name: ${PILLARMESH_CLICKHOUSE_RESTORE_PRIVATE_NETWORK_NAME:-clickhouse-restore-private-inactive}
+    name: ${HEINZEL_CLICKHOUSE_RESTORE_PRIVATE_NETWORK_NAME:-clickhouse-restore-private-inactive}
     internal: true
   restore_host_loopback:
-    name: ${PILLARMESH_CLICKHOUSE_RESTORE_LOOPBACK_NETWORK_NAME:-clickhouse-restore-loopback-inactive}
+    name: ${HEINZEL_CLICKHOUSE_RESTORE_LOOPBACK_NETWORK_NAME:-clickhouse-restore-loopback-inactive}
     internal: true
   isolation_probe_network:
-    name: ${PILLARMESH_CLICKHOUSE_ISOLATION_PROBE_NETWORK_NAME:-clickhouse-isolation-probe-network-inactive}
+    name: ${HEINZEL_CLICKHOUSE_ISOLATION_PROBE_NETWORK_NAME:-clickhouse-isolation-probe-network-inactive}
     external: true

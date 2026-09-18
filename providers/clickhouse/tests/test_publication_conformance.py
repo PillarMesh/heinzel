@@ -4,14 +4,14 @@ from collections.abc import Mapping
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_clickhouse import (
+from heinzel_contract_model import digest
+from heinzel_provider_clickhouse import (
     CLICKHOUSE_SERVER_VERSION,
     ClickHousePublicationConformanceProbe,
     ClickHousePublicationConformanceRequest,
     ClickHousePublicationConformanceSettings,
 )
-from pillarmesh_provider_sdk import ProviderError
+from heinzel_provider_sdk import ProviderError
 from pydantic import SecretStr
 
 _NOW = datetime(2026, 9, 15, 22, tzinfo=UTC)

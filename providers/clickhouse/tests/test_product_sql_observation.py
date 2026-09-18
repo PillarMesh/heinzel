@@ -8,27 +8,27 @@ from typing import cast
 import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import digest
-from pillarmesh_dbt_adapter import (
+from heinzel_contract_model import digest
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtDecimalMagnitudeCheck,
     SignedCompiledDbtModel,
     compiled_dbt_model_signing_bytes,
 )
-from pillarmesh_provider_clickhouse import (
+from heinzel_provider_clickhouse import (
     ClickHouseProductMagnitudeObservationRequest,
     ClickHouseProductMagnitudeObserver,
     ClickHouseProductSqlObservationRequest,
     ClickHouseProductSqlObservationSettings,
     ClickHouseProductSqlObserver,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     InvalidProductSqlProviderObservation,
     ProductSqlProviderObservationSigner,
     ProductSqlProviderObservationVerifier,
     ProviderError,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     WarehouseValidationEvidence,

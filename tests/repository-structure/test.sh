@@ -5,7 +5,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 REPOSITORY_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 VALIDATOR="$SCRIPT_DIR/validate.sh"
-TEMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/pillarmesh-structure.XXXXXX")
+TEMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/heinzel-structure.XXXXXX")
 
 cleanup() {
     rm -rf -- "$TEMP_ROOT"

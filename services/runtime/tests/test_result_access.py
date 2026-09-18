@@ -4,12 +4,12 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     AccessEffectCommand,
     AccessEffectProviderError,
     run_access_provider_conformance,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AnswerResultAccessAuthorityUnavailable,
     AnswerResultAccessEffectProvider,
     AnswerResultAccessTarget,

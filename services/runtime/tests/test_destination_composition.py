@@ -5,17 +5,17 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import (
     CommitObservation,
     DestinationProviderKind,
     LandReceipt,
     ProviderError,
     raw_generation_key,
 )
-from pillarmesh_provider_sdk.destination_conformance import destination_segment, destination_target
-from pillarmesh_runtime import DestinationLandingRuntime, GenerationLedger, LandingResult
-from pillarmesh_warehouse_control import (
+from heinzel_provider_sdk.destination_conformance import destination_segment, destination_target
+from heinzel_runtime import DestinationLandingRuntime, GenerationLedger, LandingResult
+from heinzel_warehouse_control import (
     EngineKind,
     WarehouseBinding,
     WarehouseBindingState,

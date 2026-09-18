@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pillarmesh_compiler.clickhouse_sql import emit_clickhouse
-from pillarmesh_compiler.postgresql_sql import emit_postgresql
-from pillarmesh_iir import (
+from heinzel_compiler.clickhouse_sql import emit_clickhouse
+from heinzel_compiler.postgresql_sql import emit_postgresql
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ColumnDeclaration,

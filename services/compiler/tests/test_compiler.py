@@ -3,17 +3,17 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-import pillarmesh_compiler.legality as legality_module
+import heinzel_compiler.legality as legality_module
 import pytest
-from pillarmesh_compiler import (
+from heinzel_compiler import (
     CompilerDefect,
     NoValidPlan,
     compile_contract,
     evaluate_legality,
 )
-from pillarmesh_contract_model import FIXED_PROJECTION, IntegrationContract, canonical_bytes, digest
-from pillarmesh_execution_graph import GraphSigner, GraphVerifier, InvalidGraph
-from pillarmesh_provider_sdk import ColumnObservation, ProviderObservation
+from heinzel_contract_model import FIXED_PROJECTION, IntegrationContract, canonical_bytes, digest
+from heinzel_execution_graph import GraphSigner, GraphVerifier, InvalidGraph
+from heinzel_provider_sdk import ColumnObservation, ProviderObservation
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
@@ -33,7 +33,7 @@ def contract() -> IntegrationContract:
             },
             "destination": {
                 "connection_handle": "sf-m0",
-                "database": "PILLARMESH_M0",
+                "database": "HEINZEL_M0",
                 "schema": "PUBLIC",
                 "table": "ORDERS",
                 "key": "order_id",
@@ -107,7 +107,7 @@ def observations() -> tuple[ProviderObservation, ProviderObservation]:
     destination = ProviderObservation(
         provider="snowflake",
         connection_handle="sf-m0",
-        object_identity="sf:PILLARMESH_M0.PUBLIC.ORDERS",
+        object_identity="sf:HEINZEL_M0.PUBLIC.ORDERS",
         object_kind="base_table",
         schema_digest="2" * 64,
         columns=columns(destination=True),
@@ -264,7 +264,7 @@ def test_unsafe_required_evidence_redaction_is_not_admitted(
             ),
             5,
             "Snowflake target and commit ledger schemas must exactly match M0",
-            ("sf:PILLARMESH_M0.PUBLIC.ORDERS",),
+            ("sf:HEINZEL_M0.PUBLIC.ORDERS",),
             id="precondition-5-mutmut-144",
         ),
         pytest.param(

@@ -3,14 +3,14 @@ from __future__ import annotations
 import hashlib
 from datetime import UTC, datetime, timedelta, timezone
 
-import pillarmesh_catalog_control as catalog_control
+import heinzel_catalog_control as catalog_control
 import pytest
-from pillarmesh_catalog_control import (
+from heinzel_catalog_control import (
     CatalogBinding,
     CatalogBindingState,
     CatalogValidationEvidence,
 )
-from pillarmesh_contract_model import canonical_bytes, digest
+from heinzel_contract_model import canonical_bytes, digest
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 19, 12, tzinfo=UTC)

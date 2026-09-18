@@ -8,10 +8,10 @@ from datetime import UTC, datetime
 from threading import Event, Lock
 
 import pytest
-from pillarmesh_console import create_app
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.backend import AuthorizedLink, PreviewContent
-from pillarmesh_console.contracts import (
+from heinzel_console import create_app
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.backend import AuthorizedLink, PreviewContent
+from heinzel_console.contracts import (
     AccessLifecycleView,
     AccessRevocationCommand,
     ActorRole,
@@ -19,8 +19,8 @@ from pillarmesh_console.contracts import (
     OperationView,
     WarehouseBindingCommand,
 )
-from pillarmesh_console.fixture_backend import FixtureConsoleBackend
-from pillarmesh_console.fixture_data import build_fixture_seed
+from heinzel_console.fixture_backend import FixtureConsoleBackend
+from heinzel_console.fixture_data import build_fixture_seed
 from starlette.testclient import TestClient
 
 
@@ -746,11 +746,11 @@ def test_fixture_preview_and_authorized_link_use_opaque_references() -> None:
     assert preview.headers["content-type"] == "image/png"
     assert preview.content.startswith(b"\x89PNG\r\n\x1a\n")
     assert preview.headers["x-correlation-id"].startswith("correlation-")
-    assert preview.headers["x-pillarmesh-data-provenance"] == "demo_fixture"
+    assert preview.headers["x-heinzel-data-provenance"] == "demo_fixture"
     assert link.status_code == 307
     assert link.headers["location"] == "/demo/catalog/revenue"
     assert link.headers["x-correlation-id"].startswith("correlation-")
-    assert link.headers["x-pillarmesh-data-provenance"] == "demo_fixture"
+    assert link.headers["x-heinzel-data-provenance"] == "demo_fixture"
 
 
 def test_authorized_external_link_requires_the_exact_configured_https_origin() -> None:
@@ -849,7 +849,7 @@ def test_every_json_response_has_generated_correlation_and_provenance_headers(
         response = client.request(method, path, headers=headers, json=json_body)
 
     assert response.headers["x-correlation-id"].startswith("correlation-")
-    assert response.headers["x-pillarmesh-data-provenance"] == "demo_fixture"
+    assert response.headers["x-heinzel-data-provenance"] == "demo_fixture"
 
 
 @pytest.mark.parametrize("kind", ("preview", "link"))

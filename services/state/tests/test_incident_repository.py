@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes
-from pillarmesh_state import (
+from heinzel_contract_model import canonical_bytes
+from heinzel_state import (
     IncidentConflictError,
     IncidentIntegrityError,
     IncidentNotFoundError,

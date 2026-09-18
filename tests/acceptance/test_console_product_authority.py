@@ -3,14 +3,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_compiler import ProductGenerationReference, QueryReference
-from pillarmesh_contract_model import ArtifactReference
-from pillarmesh_contract_model import digest as artifact_digest
-from pillarmesh_contract_service import (
+from heinzel_compiler import ProductGenerationReference, QueryReference
+from heinzel_contract_model import ArtifactReference
+from heinzel_contract_model import digest as artifact_digest
+from heinzel_contract_service import (
     SourceFreshnessObservation,
     SQLiteSourceFreshnessObservationRepository,
 )
-from pillarmesh_execution_graph import (
+from heinzel_execution_graph import (
     Decimal57OutputCheck,
     GenerationScopedProductSource,
     ProductExecutionAuthorizationSigner,
@@ -19,7 +19,7 @@ from pillarmesh_execution_graph import (
     ProductPhysicalPlan,
     ProductTarget,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AnswerProductGenerationReference,
     MaterializationObservation,
     MaterializationRequest,
@@ -31,7 +31,7 @@ from pillarmesh_runtime import (
     QueryGenerationState,
     SQLiteProductInputCardinalityEvidenceRepository,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     ApprovedProductVersionMetadata,
     SQLiteApprovedProductVersionRepository,
 )

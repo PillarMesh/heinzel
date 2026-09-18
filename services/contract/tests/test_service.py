@@ -2,14 +2,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_compiler import AdmittedPlan, NoValidPlan, evaluate_legality
-from pillarmesh_contract_model import (
+from heinzel_compiler import AdmittedPlan, NoValidPlan, evaluate_legality
+from heinzel_contract_model import (
     FIXED_PROJECTION,
     IntegrationContract,
     canonical_bytes,
     digest,
 )
-from pillarmesh_contract_service import (
+from heinzel_contract_service import (
     AcquisitionContractLifecycleNotFoundError,
     ActivationSummary,
     ContractAuthorityBoundaryError,
@@ -17,10 +17,10 @@ from pillarmesh_contract_service import (
     SQLiteAcquisitionContractLifecycleRepository,
     StaleAcquisitionContractLifecycleError,
 )
-from pillarmesh_evidence import SQLiteStore
-from pillarmesh_execution_graph import GraphSigner
-from pillarmesh_iir import lower_contract
-from pillarmesh_provider_sdk import ColumnObservation, ProviderObservation
+from heinzel_evidence import SQLiteStore
+from heinzel_execution_graph import GraphSigner
+from heinzel_iir import lower_contract
+from heinzel_provider_sdk import ColumnObservation, ProviderObservation
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
@@ -38,7 +38,7 @@ def contract(version: int = 1) -> IntegrationContract:
             },
             "destination": {
                 "connection_handle": "sf-m0",
-                "database": "PILLARMESH_M0",
+                "database": "HEINZEL_M0",
                 "schema": "PUBLIC",
                 "table": "ORDERS",
                 "key": "order_id",

@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 import psycopg
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_compiler import (
+from heinzel_compiler import (
     GovernedQueryInput,
     GovernedQueryPlan,
     ProductGenerationReference,
@@ -29,16 +29,16 @@ from pillarmesh_compiler import (
     QueryScanEstimate,
     compile_governed_query,
 )
-from pillarmesh_compiler.query_repository import SQLiteQueryPlanRepository
-from pillarmesh_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_postgresql import (
+from heinzel_compiler.query_repository import SQLiteQueryPlanRepository
+from heinzel_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_postgresql import (
     PostgreSQLAnswerGenerationBinding,
     PostgreSQLAnswerGenerationBindingAuthority,
     PostgreSQLAnswerQueryProvider,
     PostgreSQLAnswerQuerySettings,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AnswerExecutionAuthorization,
     AnswerProductGenerationReference,
     AnswerQueryReference,
@@ -115,7 +115,7 @@ def _fixture_generation_authority(
 
 
 def _postgresql_binary(name: str) -> str:
-    configured_directory = os.getenv("PILLARMESH_TEST_POSTGRES_BIN_DIR")
+    configured_directory = os.getenv("HEINZEL_TEST_POSTGRES_BIN_DIR")
     candidate = (
         str(Path(configured_directory) / name)
         if configured_directory is not None
@@ -297,7 +297,7 @@ def _query_generation_binding(
     generation = plan.product_generation_refs[0]
     receipt_plan_digest = digest(
         {
-            "domain": "pillarmesh-live-fixture-materialization-plan-v1",
+            "domain": "heinzel-live-fixture-materialization-plan-v1",
             "tenant_id": plan.tenant_id,
             "product_ref": generation.product_ref,
             "generation": generation.generation,
@@ -305,7 +305,7 @@ def _query_generation_binding(
     )
     provider_commit_reference = digest(
         {
-            "domain": "pillarmesh-postgresql-product-generation-v1",
+            "domain": "heinzel-postgresql-product-generation-v1",
             "tenant_id": plan.tenant_id,
             "product_id": generation.product_ref.artifact_id,
             "product_revision": generation.product_ref.version,
@@ -360,7 +360,7 @@ def test_fresh_postgresql_compiler_plan_executes_and_persists_exact_result() -> 
     if os.geteuid() == 0:
         pytest.skip("initdb refuses to initialize a cluster as root")
     now = datetime.now(UTC)
-    with TemporaryDirectory(prefix="pillarmesh-answer-postgresql-") as root_text:
+    with TemporaryDirectory(prefix="heinzel-answer-postgresql-") as root_text:
         root = Path(root_text)
         runtime_password = secrets.token_urlsafe(32)
         with _fresh_postgresql_cluster(root) as bootstrap_dsn:

@@ -27,18 +27,18 @@ uv lock --check
 git rev-parse HEAD
 git status --short
 
-export PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT=/absolute/private/request-to-product
-case "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT" in
+export HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT=/absolute/private/request-to-product
+case "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT" in
   /*) ;;
   *) exit 1 ;;
 esac
-case "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT" in
+case "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT" in
   "$PWD"|"$PWD"/*) exit 1 ;;
 esac
-mkdir -m 0700 "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT"
-test "$(stat -f '%Lp' "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT")" = 700
-test -z "$(find "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT" -mindepth 1 -print -quit)"
-touch "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT/.pillarmesh-request-product-run"
+mkdir -m 0700 "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT"
+test "$(stat -f '%Lp' "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT")" = 700
+test -z "$(find "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT" -mindepth 1 -print -quit)"
+touch "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT/.heinzel-request-product-run"
 ```
 
 Replace the example path with a new location owned by the current operator. The absolute-path,

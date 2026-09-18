@@ -4,14 +4,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import pytest
-from pillarmesh_compiler import (
+from heinzel_compiler import (
     NoValidPlan,
     ProductPhysicalPlanAuthority,
     compile_product_iir,
     compose_product_physical_plan_candidate,
 )
-from pillarmesh_contract_model import digest
-from pillarmesh_execution_graph import (
+from heinzel_contract_model import digest
+from heinzel_execution_graph import (
     GenerationScopedProductSource,
     ProductInputCardinalityEvidence,
     ProductInputCardinalityEvidenceSigner,
@@ -21,7 +21,7 @@ from pillarmesh_execution_graph import (
     ProductTarget,
     SignedProductInputCardinalityEvidence,
 )
-from pillarmesh_iir import (
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ColumnDeclaration,
@@ -31,7 +31,7 @@ from pillarmesh_iir import (
     ProjectOperation,
     SourceRelation,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     ProductSqlColumnObservation,
     ProductSqlProviderObservation,
     ProductSqlSumSemantics,
@@ -575,7 +575,7 @@ def _fully_evidenced_postgresql_compile() -> NoValidPlan:
     or one of these three is flipped without review, the packet is no longer accurate.
     """
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-    from pillarmesh_provider_sdk import (
+    from heinzel_provider_sdk import (
         ProductSqlProviderObservationSigner,
         ProductSqlProviderObservationVerifier,
     )
@@ -664,7 +664,7 @@ def test_the_rule_record_pins_the_decode_guard_the_emitter_uses() -> None:
     import json
     from pathlib import Path
 
-    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+    from heinzel_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
 
     rule = json.loads(
         (

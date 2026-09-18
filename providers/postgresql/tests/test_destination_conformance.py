@@ -5,20 +5,20 @@ from datetime import UTC, datetime
 
 import psycopg
 import pytest
-from pillarmesh_provider_postgresql.destination import (
+from heinzel_provider_postgresql.destination import (
     PostgreSQLDestinationProvider,
     PostgreSQLLandStore,
     PostgreSQLLandStoreError,
     PostgreSQLLandStoreSettings,
     compose_postgresql_destination_provider,
 )
-from pillarmesh_provider_sdk import LandReceipt, ProviderError
-from pillarmesh_provider_sdk.destination_conformance import (
+from heinzel_provider_sdk import LandReceipt, ProviderError
+from heinzel_provider_sdk.destination_conformance import (
     destination_segment,
     destination_target,
     run_destination_conformance,
 )
-from pillarmesh_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
+from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
 
 
 class _Store:
@@ -193,7 +193,7 @@ def test_concrete_postgresql_store_commits_rows_and_receipt_once() -> None:
     connection = _Connection()
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn="postgresql://ingestion:secret@127.0.0.1/pillarmesh",
+            dsn="postgresql://ingestion:secret@127.0.0.1/heinzel",
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",
@@ -236,7 +236,7 @@ def test_concrete_postgresql_store_reconciles_timeout_after_commit() -> None:
 
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn="postgresql://ingestion:secret@127.0.0.1/pillarmesh",
+            dsn="postgresql://ingestion:secret@127.0.0.1/heinzel",
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",
@@ -263,7 +263,7 @@ def test_concrete_postgresql_store_classifies_connection_failure() -> None:
 
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn="postgresql://ingestion:secret@127.0.0.1/pillarmesh",
+            dsn="postgresql://ingestion:secret@127.0.0.1/heinzel",
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",
@@ -285,7 +285,7 @@ def test_concrete_postgresql_store_classifies_connection_failure() -> None:
 
 def test_postgresql_binding_composition_resolves_private_settings_without_receipt_leakage() -> None:
     connection = _Connection()
-    secret_dsn = "postgresql://ingestion:private-password@127.0.0.1/pillarmesh"
+    secret_dsn = "postgresql://ingestion:private-password@127.0.0.1/heinzel"
     resolved: list[tuple[str, str, int]] = []
 
     class SettingsAuthority:
@@ -335,7 +335,7 @@ def test_postgresql_binding_composition_resolves_private_settings_without_receip
 
 
 _PASSWORD_DSN = (
-    "host=warehouse.internal dbname=pillarmesh user=ingestion password=private-secret "
+    "host=warehouse.internal dbname=heinzel user=ingestion password=private-secret "
     "sslmode=disable gssencmode=disable"
 )
 
@@ -413,7 +413,7 @@ def test_store_classifies_a_structured_authorization_rejection_before_transport(
 
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn="postgresql://ingestion:secret@127.0.0.1/pillarmesh",
+            dsn="postgresql://ingestion:secret@127.0.0.1/heinzel",
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",

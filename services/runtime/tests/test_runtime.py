@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import FIXED_PROJECTION, digest
-from pillarmesh_evidence import SQLiteStore
-from pillarmesh_execution_graph import (
+from heinzel_contract_model import FIXED_PROJECTION, digest
+from heinzel_evidence import SQLiteStore
+from heinzel_execution_graph import (
     EvidenceRequirement,
     ExecutionGraph,
     GraphSigner,
@@ -16,7 +16,7 @@ from pillarmesh_execution_graph import (
     InvalidGraph,
     SignedExecutionGraph,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     CommitReceipt,
     DriftProbe,
     OrderRow,
@@ -25,8 +25,8 @@ from pillarmesh_provider_sdk import (
     SourceBoundary,
     VisibilityProof,
 )
-from pillarmesh_provider_sdk.errors import ProviderErrorClassification
-from pillarmesh_runtime import FaultHook, Runtime, noop_fault_hook, retry_bounded
+from heinzel_provider_sdk.errors import ProviderErrorClassification
+from heinzel_runtime import FaultHook, Runtime, noop_fault_hook, retry_bounded
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 

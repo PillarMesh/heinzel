@@ -14,19 +14,19 @@ from typing import Literal
 import httpx
 import psycopg
 import pytest
-from pillarmesh_provider_clickhouse import (
+from heinzel_provider_clickhouse import (
     ClickHouseAccessColumnBinding,
     ClickHouseAccessEffectProvider,
     ClickHouseAccessSettings,
     ClickHouseAccessTarget,
 )
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLAccessColumnBinding,
     PostgreSQLAccessEffectProvider,
     PostgreSQLAccessSettings,
     PostgreSQLAccessTarget,
 )
-from pillarmesh_provider_sdk import AccessEffectCommand
+from heinzel_provider_sdk import AccessEffectCommand
 from psycopg import sql
 from pydantic import SecretStr
 
@@ -42,8 +42,8 @@ _NOW = datetime(2026, 9, 14, 12, tzinfo=UTC)
 pytestmark = [
     pytest.mark.emulator,
     pytest.mark.skipif(
-        os.environ.get("PILLARMESH_RUN_ACCESS_EMULATORS") != "1",
-        reason="set PILLARMESH_RUN_ACCESS_EMULATORS=1",
+        os.environ.get("HEINZEL_RUN_ACCESS_EMULATORS") != "1",
+        reason="set HEINZEL_RUN_ACCESS_EMULATORS=1",
     ),
 ]
 
@@ -117,7 +117,7 @@ class _PostgreSQLAuthority:
 
 @contextmanager
 def _postgresql_fixture() -> Iterator[_PostgreSQLFixture]:
-    container_name = f"pillarmesh-access-pg-{uuid.uuid4().hex[:12]}"
+    container_name = f"heinzel-access-pg-{uuid.uuid4().hex[:12]}"
     bootstrap_password = f"admin-{uuid.uuid4().hex}"
     requester_password = f"requester-{uuid.uuid4().hex}"
     port = _available_loopback_port()
@@ -302,7 +302,7 @@ def _clickhouse_is_denied(fixture: _ClickHouseFixture, statement: str) -> bool:
 
 @contextmanager
 def _clickhouse_fixture() -> Iterator[_ClickHouseFixture]:
-    container_name = f"pillarmesh-access-ch-{uuid.uuid4().hex[:12]}"
+    container_name = f"heinzel-access-ch-{uuid.uuid4().hex[:12]}"
     administrative_password = f"admin-{uuid.uuid4().hex}"
     requester_password = f"requester-{uuid.uuid4().hex}"
     port = _available_loopback_port()

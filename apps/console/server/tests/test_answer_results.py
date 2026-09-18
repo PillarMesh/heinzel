@@ -6,27 +6,27 @@ from decimal import Decimal
 from typing import Never
 
 import pytest
-from pillarmesh_console import create_app
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.governed_adapters import (
+from heinzel_console import create_app
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.governed_adapters import (
     AnswerDownloadReceipt,
     AnswerDownloadReceiptWriter,
     GovernedWorkspaceIdentity,
     SQLiteAnswerDownloadReceiptRepository,
 )
-from pillarmesh_console.governed_backend import GovernedConsoleBackend
-from pillarmesh_console.operation_handles import InMemoryOperationHandleRepository
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
-from pillarmesh_request_management import (
+from heinzel_console.governed_backend import GovernedConsoleBackend
+from heinzel_console.operation_handles import InMemoryOperationHandleRepository
+from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
+from heinzel_request_management import (
     GovernedAnswer,
     GovernedAnswerNotVisible,
     InboxRequest,
     RequestState,
     StakeholderAnswerDraft,
 )
-from pillarmesh_request_management import RequesterRequestView as ServiceRequesterRequestView
-from pillarmesh_request_management.models import StakeholderQuestion
-from pillarmesh_runtime import (
+from heinzel_request_management import RequesterRequestView as ServiceRequesterRequestView
+from heinzel_request_management.models import StakeholderQuestion
+from heinzel_runtime import (
     AnswerExecutionReceipt,
     AnswerProductGenerationReference,
     AnswerQueryColumn,
@@ -313,7 +313,7 @@ def test_expired_result_exposes_no_rows_or_result_reference() -> None:
 
 
 def test_cross_tenant_and_wrong_requester_are_non_enumerating() -> None:
-    from pillarmesh_console.errors import ConsoleNotFound
+    from heinzel_console.errors import ConsoleNotFound
 
     store = SQLiteAnswerResultStore.in_memory(clock=lambda: NOW)
     _record_result(store, rows=(("A", "1.25"),), expires_at=NOW + timedelta(hours=1))
@@ -342,7 +342,7 @@ def test_csv_download_uses_safe_filename_and_records_durable_receipt() -> None:
 
 
 def test_csv_download_requires_current_download_permission_in_addition_to_view() -> None:
-    from pillarmesh_console.errors import ConsoleNotFound
+    from heinzel_console.errors import ConsoleNotFound
 
     store = SQLiteAnswerResultStore.in_memory(clock=lambda: NOW)
     _record_result(store, rows=(("A", "1.25"),), expires_at=NOW + timedelta(hours=1))
@@ -358,7 +358,7 @@ def test_csv_download_requires_current_download_permission_in_addition_to_view()
 
 
 def test_csv_download_fails_closed_when_receipt_cannot_be_recorded() -> None:
-    from pillarmesh_console.errors import ConsoleUnavailable
+    from heinzel_console.errors import ConsoleUnavailable
 
     class _FailingDownloads:
         def record(self, receipt: AnswerDownloadReceipt) -> None:
@@ -401,7 +401,7 @@ def test_result_routes_return_the_page_envelope_and_stream_csv() -> None:
 
 @pytest.mark.parametrize("download", [False, True])
 def test_revoked_result_access_is_denied_on_every_read(download: bool) -> None:
-    from pillarmesh_console.errors import ConsoleNotFound
+    from heinzel_console.errors import ConsoleNotFound
 
     store = SQLiteAnswerResultStore.in_memory(clock=lambda: NOW)
     _record_result(store, rows=(("A", "1.25"),), expires_at=NOW + timedelta(hours=1))

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
-from pillarmesh_contract_model import (
+from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -19,15 +19,15 @@ from pillarmesh_contract_model import (
     canonical_bytes,
     digest,
 )
-from pillarmesh_provider_openmetadata import CatalogObjectRef, CatalogObjectSnapshot
-from pillarmesh_request_management import InboxRequest, RequestState
-from pillarmesh_request_management.models import StakeholderQuestion
-from pillarmesh_semantic_registry import (
+from heinzel_provider_openmetadata import CatalogObjectRef, CatalogObjectSnapshot
+from heinzel_request_management import InboxRequest, RequestState
+from heinzel_request_management.models import StakeholderQuestion
+from heinzel_semantic_registry import (
     FulfillmentAuthorityObservation,
     SemanticFulfillmentSnapshotAdapter,
     SQLiteCatalogPublicationRepository,
 )
-from pillarmesh_semantic_registry.publication import CatalogPublicationReceipt, publication_intent
+from heinzel_semantic_registry.publication import CatalogPublicationReceipt, publication_intent
 
 NOW = datetime(2026, 8, 31, 12, tzinfo=UTC)
 DIGEST = "0" * 64

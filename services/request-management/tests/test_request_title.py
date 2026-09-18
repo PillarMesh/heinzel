@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_request_management import RequestManagementService, RequestState
-from pillarmesh_request_management.repository import SQLiteRequestRepository
+from heinzel_request_management import RequestManagementService, RequestState
+from heinzel_request_management.repository import SQLiteRequestRepository
 from pydantic import ValidationError
 
 NOW = datetime(2026, 9, 8, tzinfo=UTC)

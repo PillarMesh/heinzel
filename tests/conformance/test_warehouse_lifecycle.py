@@ -7,8 +7,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_warehouse_control import (
+from heinzel_contract_model import digest
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     InitialWarehouseValidationResult,

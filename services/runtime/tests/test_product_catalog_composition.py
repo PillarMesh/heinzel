@@ -5,12 +5,12 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from pillarmesh_catalog_control import (
+from heinzel_catalog_control import (
     CatalogBinding,
     CatalogBindingState,
     SQLiteCatalogRepository,
 )
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -25,8 +25,8 @@ from pillarmesh_contract_model import (
     TriggerRequirement,
     digest,
 )
-from pillarmesh_contract_service import SourceFreshnessObservation
-from pillarmesh_execution_graph import (
+from heinzel_contract_service import SourceFreshnessObservation
+from heinzel_execution_graph import (
     Decimal57OutputCheck,
     GenerationScopedProductSource,
     ProductExecutionAuthorizationSigner,
@@ -35,14 +35,14 @@ from pillarmesh_execution_graph import (
     ProductPhysicalPlan,
     ProductTarget,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     CatalogNativeTableDefinition,
     CatalogNativeTableObservation,
     CatalogProductDefinition,
     CatalogProductObservation,
     ProviderError,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AuthoritativeProductCatalog,
     MaterializationAuthorityError,
     MaterializationObservation,
@@ -52,12 +52,12 @@ from pillarmesh_runtime import (
     ProductMaterializationRunner,
     compose_authoritative_product_catalog,
 )
-from pillarmesh_runtime.product_input_cardinality import (
+from heinzel_runtime.product_input_cardinality import (
     ProductInputCardinalityEvidence,
     ProductInputReceiptCardinality,
     SQLiteProductInputCardinalityEvidenceRepository,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     ProductCatalogColumnAuthority,
     ProductCatalogDefinitionAuthority,
     ProductCatalogPublicationExecutionService,
@@ -72,12 +72,12 @@ from pillarmesh_semantic_registry import (
     SQLiteProductCatalogPublicationRepository,
     SQLiteProductQueryBindingRepository,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EngineKind,
     WarehouseBinding,
     WarehouseBindingState,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 
 NOW = datetime(2026, 9, 14, 12, tzinfo=UTC)
 _AUTHORIZATION_SIGNER = ProductExecutionAuthorizationSigner.generate("runtime-authority-1")
@@ -383,7 +383,7 @@ def _catalog(
                 observed_at=NOW,
             ),
         ),
-        database_name="pillarmesh",
+        database_name="heinzel",
     )
     return catalog, provider, repository
 
@@ -620,7 +620,7 @@ def test_production_composition_resolves_catalog_binding_from_its_authority(
     catalog = compose_authoritative_product_catalog(
         config=ProductCatalogCompositionConfig(
             catalog_binding_id=catalog_binding.binding_id,
-            database_name="pillarmesh",
+            database_name="heinzel",
         ),
         warehouse_bindings=warehouse_bindings,
         catalog_bindings=catalog_bindings,
@@ -702,7 +702,7 @@ def test_production_composition_rejects_a_catalog_binding_owned_by_another_tenan
         compose_authoritative_product_catalog(
             config=ProductCatalogCompositionConfig(
                 catalog_binding_id="catalog-a",
-                database_name="pillarmesh",
+                database_name="heinzel",
             ),
             warehouse_bindings=_WarehouseBindings(
                 WarehouseBinding(

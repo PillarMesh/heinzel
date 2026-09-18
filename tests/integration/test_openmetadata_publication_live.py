@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Protocol
 
 import pytest
-from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
-from pillarmesh_contract_model import (
+from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -25,20 +25,20 @@ from pillarmesh_contract_model import (
     TriggerRequirement,
     digest,
 )
-from pillarmesh_provider_openmetadata import (
+from heinzel_provider_openmetadata import (
     CatalogProviderError,
     GlossaryTermPayload,
     OpenMetadataClient,
     OpenMetadataPublicationProvider,
     OpenMetadataSettings,
 )
-from pillarmesh_provider_openmetadata.client import _OpenMetadataCredentials
-from pillarmesh_request_management import (
+from heinzel_provider_openmetadata.client import _OpenMetadataCredentials
+from heinzel_request_management import (
     RequestManagementService,
     RequestState,
     SQLiteRequestRepository,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     SemanticPublicationService,
     SQLiteCatalogPublicationRepository,
     SQLiteSemanticRepository,
@@ -139,14 +139,14 @@ def _contract(semantic_version: ApprovedSemanticVersion) -> ManagedIntegrationCo
 def test_openmetadata_publication_round_trip_is_executable_when_emulator_is_explicitly_enabled(
     tmp_path: Path,
 ) -> None:
-    if os.environ.get("PILLARMESH_OPENMETADATA_EMULATOR") != "1":
-        pytest.skip("Set PILLARMESH_OPENMETADATA_EMULATOR=1 after starting the local emulator.")
+    if os.environ.get("HEINZEL_OPENMETADATA_EMULATOR") != "1":
+        pytest.skip("Set HEINZEL_OPENMETADATA_EMULATOR=1 after starting the local emulator.")
 
     tenant_a = "task8-" + secrets.token_hex(8)
     tenant_b = tenant_a + "-other"
     credentials = _OpenMetadataCredentials(
         username="admin@open-metadata.org",
-        password=SecretStr(os.environ["PILLARMESH_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD"]),
+        password=SecretStr(os.environ["HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD"]),
         runtime_password=SecretStr(secrets.token_urlsafe(24)),
         administrator_password=SecretStr(secrets.token_urlsafe(24)),
     )

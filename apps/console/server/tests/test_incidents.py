@@ -4,15 +4,15 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_console import create_app
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.contracts import ActorRole, IncidentRecoveryCommand
-from pillarmesh_console.errors import ConsoleNotFound
-from pillarmesh_console.fixture_backend import FixtureConsoleBackend
-from pillarmesh_console.governed_adapters import GovernedWorkspaceIdentity
-from pillarmesh_console.governed_backend import GovernedConsoleBackend
-from pillarmesh_console.operation_handles import InMemoryOperationHandleRepository
-from pillarmesh_state import (
+from heinzel_console import create_app
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.contracts import ActorRole, IncidentRecoveryCommand
+from heinzel_console.errors import ConsoleNotFound
+from heinzel_console.fixture_backend import FixtureConsoleBackend
+from heinzel_console.governed_adapters import GovernedWorkspaceIdentity
+from heinzel_console.governed_backend import GovernedConsoleBackend
+from heinzel_console.operation_handles import InMemoryOperationHandleRepository
+from heinzel_state import (
     IncidentRecord,
     RecoveryCommandService,
     RunIntent,

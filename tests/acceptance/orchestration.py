@@ -12,8 +12,8 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from pillarmesh_contract_model import FIXED_PROJECTION, digest
-from pillarmesh_provider_sdk import SegmentManifest, VisibilityProof
+from heinzel_contract_model import FIXED_PROJECTION, digest
+from heinzel_provider_sdk import SegmentManifest, VisibilityProof
 
 from .config import AcceptanceConfig, HarnessError
 from .private_files import RunReservation, write_private_file
@@ -104,24 +104,24 @@ def build_contract(
 ) -> dict[str, object]:
     environment = config.environment
     target = (
-        environment["PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE"]
+        environment["HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE"]
         if negative
-        else environment["PILLARMESH_SNOWFLAKE_TARGET_TABLE"]
+        else environment["HEINZEL_SNOWFLAKE_TARGET_TABLE"]
     )
     return {
         "schema_version": "1",
         "contract_id": contract_id,
         "version": 1,
         "source": {
-            "connection_handle": environment["PILLARMESH_POSTGRES_CONNECTION_HANDLE"],
-            "schema": environment["PILLARMESH_POSTGRES_SCHEMA"],
-            "table": environment["PILLARMESH_POSTGRES_TABLE"],
+            "connection_handle": environment["HEINZEL_POSTGRES_CONNECTION_HANDLE"],
+            "schema": environment["HEINZEL_POSTGRES_SCHEMA"],
+            "table": environment["HEINZEL_POSTGRES_TABLE"],
             "primary_key": "order_id",
         },
         "destination": {
-            "connection_handle": environment["PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE"],
-            "database": environment["PILLARMESH_SNOWFLAKE_DATABASE"],
-            "schema": environment["PILLARMESH_SNOWFLAKE_SCHEMA"],
+            "connection_handle": environment["HEINZEL_SNOWFLAKE_CONNECTION_HANDLE"],
+            "database": environment["HEINZEL_SNOWFLAKE_DATABASE"],
+            "schema": environment["HEINZEL_SNOWFLAKE_SCHEMA"],
             "table": target,
             "key": "order_id",
         },
@@ -132,7 +132,7 @@ def build_contract(
         "freshness_seconds": 300,
         "data_classification": "synthetic_non_sensitive",
         "evidence_retention": "m0_30_days",
-        "producer": "pillarmesh-contract-service",
+        "producer": "heinzel-contract-service",
     }
 
 
@@ -213,31 +213,31 @@ class AcceptanceHarness:
         values = {
             "source_row": (
                 "postgresql:"
-                f"{environment['PILLARMESH_POSTGRES_CONNECTION_HANDLE']}:"
-                f"{environment['PILLARMESH_POSTGRES_DATABASE']}."
-                f"{environment['PILLARMESH_POSTGRES_SCHEMA']}."
-                f"{environment['PILLARMESH_POSTGRES_TABLE']}:order_id={acceptance_key}"
+                f"{environment['HEINZEL_POSTGRES_CONNECTION_HANDLE']}:"
+                f"{environment['HEINZEL_POSTGRES_DATABASE']}."
+                f"{environment['HEINZEL_POSTGRES_SCHEMA']}."
+                f"{environment['HEINZEL_POSTGRES_TABLE']}:order_id={acceptance_key}"
             ),
             "target_row": (
                 "snowflake:"
-                f"{environment['PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE']}:"
-                f"{environment['PILLARMESH_SNOWFLAKE_DATABASE']}."
-                f"{environment['PILLARMESH_SNOWFLAKE_SCHEMA']}."
-                f"{environment['PILLARMESH_SNOWFLAKE_TARGET_TABLE']}:order_id={acceptance_key}"
+                f"{environment['HEINZEL_SNOWFLAKE_CONNECTION_HANDLE']}:"
+                f"{environment['HEINZEL_SNOWFLAKE_DATABASE']}."
+                f"{environment['HEINZEL_SNOWFLAKE_SCHEMA']}."
+                f"{environment['HEINZEL_SNOWFLAKE_TARGET_TABLE']}:order_id={acceptance_key}"
             ),
             "staged_segment": (
                 "snowflake-stage:"
-                f"{environment['PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE']}:"
-                f"{environment['PILLARMESH_SNOWFLAKE_DATABASE']}."
-                f"{environment['PILLARMESH_SNOWFLAKE_SCHEMA']}."
-                f"{environment['PILLARMESH_SNOWFLAKE_STAGE']}/runs/{batch_id}"
+                f"{environment['HEINZEL_SNOWFLAKE_CONNECTION_HANDLE']}:"
+                f"{environment['HEINZEL_SNOWFLAKE_DATABASE']}."
+                f"{environment['HEINZEL_SNOWFLAKE_SCHEMA']}."
+                f"{environment['HEINZEL_SNOWFLAKE_STAGE']}/runs/{batch_id}"
             ),
             "commit_ledger_entry": (
                 "snowflake-ledger:"
-                f"{environment['PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE']}:"
-                f"{environment['PILLARMESH_SNOWFLAKE_DATABASE']}."
-                f"{environment['PILLARMESH_SNOWFLAKE_SCHEMA']}."
-                f"{environment['PILLARMESH_SNOWFLAKE_LEDGER_TABLE']}:batch_id={batch_id}"
+                f"{environment['HEINZEL_SNOWFLAKE_CONNECTION_HANDLE']}:"
+                f"{environment['HEINZEL_SNOWFLAKE_DATABASE']}."
+                f"{environment['HEINZEL_SNOWFLAKE_SCHEMA']}."
+                f"{environment['HEINZEL_SNOWFLAKE_LEDGER_TABLE']}:batch_id={batch_id}"
             ),
         }
         return {
@@ -273,10 +273,10 @@ class AcceptanceHarness:
             kind="source_row",
             exact_identifier=(
                 "postgresql:"
-                f"{environment['PILLARMESH_POSTGRES_CONNECTION_HANDLE']}:"
-                f"{environment['PILLARMESH_POSTGRES_DATABASE']}."
-                f"{environment['PILLARMESH_POSTGRES_SCHEMA']}."
-                f"{environment['PILLARMESH_POSTGRES_TABLE']}:order_id={acceptance_key}"
+                f"{environment['HEINZEL_POSTGRES_CONNECTION_HANDLE']}:"
+                f"{environment['HEINZEL_POSTGRES_DATABASE']}."
+                f"{environment['HEINZEL_POSTGRES_SCHEMA']}."
+                f"{environment['HEINZEL_POSTGRES_TABLE']}:order_id={acceptance_key}"
             ),
             retention_seconds=THIRTY_DAYS,
             cleanup_operation="delete_synthetic_rows",
@@ -381,7 +381,7 @@ class AcceptanceHarness:
             )
             ledger.set_context(
                 owner_authorization_reference=self._config.environment[
-                    "PILLARMESH_OWNER_AUTHORIZATION_REFERENCE"
+                    "HEINZEL_OWNER_AUTHORIZATION_REFERENCE"
                 ],
                 environment_identity=self._config.environment_identity,
             )
@@ -427,7 +427,7 @@ class AcceptanceHarness:
                 self._providers.insert_fixture(
                     FixtureRow(
                         order_id=acceptance_key,
-                        customer_ref=environment["PILLARMESH_ROW_VALUE_CANARY"],
+                        customer_ref=environment["HEINZEL_ROW_VALUE_CANARY"],
                         amount=Decimal("10.50"),
                         currency="USD",
                         status="acceptance",
@@ -523,8 +523,8 @@ class AcceptanceHarness:
                     build_contract(self._config, negative_id, negative=True),
                 )
                 negative_environment = self._config.child_environment()
-                negative_environment["PILLARMESH_SNOWFLAKE_TARGET_TABLE"] = environment[
-                    "PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE"
+                negative_environment["HEINZEL_SNOWFLAKE_TARGET_TABLE"] = environment[
+                    "HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE"
                 ]
                 self._invoke(
                     ("create-draft", str(negative_path)),
@@ -569,9 +569,9 @@ class AcceptanceHarness:
                     "commit_sha": commit_sha,
                     "uv_lock_digest": lock_digest,
                     "python_version": python_version,
-                    "mcp_protocol_version": environment["PILLARMESH_MCP_PROTOCOL_VERSION"],
-                    "operator_pseudonym": environment["PILLARMESH_OPERATOR_PSEUDONYM"],
-                    "host_pseudonym": environment["PILLARMESH_HOST_PSEUDONYM"],
+                    "mcp_protocol_version": environment["HEINZEL_MCP_PROTOCOL_VERSION"],
+                    "operator_pseudonym": environment["HEINZEL_OPERATOR_PSEUDONYM"],
+                    "host_pseudonym": environment["HEINZEL_HOST_PSEUDONYM"],
                     "transport_decision": "cli-fallback",
                     "resources": ledger.sanitized_dispositions(),
                     "limitations": (
@@ -586,7 +586,7 @@ class AcceptanceHarness:
                 )
                 scan_input = {
                     "credential_canaries": self._config.credential_canaries,
-                    "row_value_canaries": (environment["PILLARMESH_ROW_VALUE_CANARY"],),
+                    "row_value_canaries": (environment["HEINZEL_ROW_VALUE_CANARY"],),
                     "acceptance_keys": (acceptance_key,),
                     "local_path_prefixes": (
                         str(self._config.state_path.parent),
@@ -594,7 +594,7 @@ class AcceptanceHarness:
                     ),
                 }
                 package_environment = self._config.child_environment()
-                package_environment["PILLARMESH_SCAN_INPUT_JSON"] = json.dumps(
+                package_environment["HEINZEL_SCAN_INPUT_JSON"] = json.dumps(
                     scan_input, sort_keys=True, separators=(",", ":")
                 )
                 ledger.persist(run_state="running")
@@ -717,7 +717,7 @@ class SQLiteRunInspector:
             raise HarnessError("activation summary graph is invalid")
         activation_identity = digest(
             {
-                "domain": "pillarmesh-m0-activation-v1",
+                "domain": "heinzel-activation-v1",
                 "contract_digest": contract_digest,
                 "summary_digest": summary_digest,
                 "acceptance_key": acceptance_key,
@@ -726,7 +726,7 @@ class SQLiteRunInspector:
         run_id = f"run-{activation_identity[:24]}"
         batch_id = digest(
             {
-                "domain": "pillarmesh-m0-batch-v1",
+                "domain": "heinzel-batch-v1",
                 "run_id": run_id,
                 "graph": signed_graph["graph"],
             }

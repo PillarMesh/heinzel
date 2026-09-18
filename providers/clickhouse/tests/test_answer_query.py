@@ -8,21 +8,21 @@ from decimal import Decimal
 
 import httpx
 import pytest
-from pillarmesh_provider_clickhouse import (
+from heinzel_provider_clickhouse import (
     ClickHouseAnswerQueryProvider,
     ClickHouseAnswerQuerySettings,
     compose_clickhouse_answer_query_provider,
 )
-from pillarmesh_provider_clickhouse.answer_query import _clickhouse_value_type
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import (
+from heinzel_provider_clickhouse.answer_query import _clickhouse_value_type
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import (
     AnswerProductGenerationReference,
     AnswerQueryParameter,
     AnswerQueryReference,
     AnswerQueryTimedOut,
     ReadOnlyAnswerQuery,
 )
-from pillarmesh_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
+from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
 from pydantic import SecretStr
 
 

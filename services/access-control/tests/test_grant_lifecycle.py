@@ -4,7 +4,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     AccessEffectReceipt,
     AccessGrant,
     AccessGrantAuthorizationService,
@@ -14,7 +14,7 @@ from pillarmesh_access_control import (
     CurrentEntitlementSnapshot,
     SQLiteAccessGrantRepository,
 )
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
+from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
 
 NOW = datetime(2026, 9, 12, 21, tzinfo=UTC)
 PRODUCT = ArtifactReference(artifact_id="product:revenue", version=1, digest="a" * 64)

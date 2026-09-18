@@ -105,10 +105,10 @@ For diagnosis, the equivalent activation command is `activate-stdin`; the retire
 the process argument list:
 
 ```sh
-read -r -s PILLARMESH_PRIVATE_ACCEPTANCE_KEY
-printf '%s\n' "$PILLARMESH_PRIVATE_ACCEPTANCE_KEY" |
-  uv run pillarmesh-m0 activate-stdin "$CONTRACT_DIGEST" "$SUMMARY_DIGEST"
-unset PILLARMESH_PRIVATE_ACCEPTANCE_KEY
+read -r -s HEINZEL_PRIVATE_ACCEPTANCE_KEY
+printf '%s\n' "$HEINZEL_PRIVATE_ACCEPTANCE_KEY" |
+  uv run heinzel-authoring activate-stdin "$CONTRACT_DIGEST" "$SUMMARY_DIGEST"
+unset HEINZEL_PRIVATE_ACCEPTANCE_KEY
 ```
 
 Contract and summary digests are non-secret. Do not paste the acceptance key, a DSN, a password,

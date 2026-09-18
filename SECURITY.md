@@ -10,4 +10,4 @@ Include the affected component, impact, reproduction conditions, and any safe mi
 
 ## Security Boundaries
 
-PillarMesh must preserve tenant isolation, opaque connection handles, short-lived capability grants, signed execution graphs, single-writer epoch fencing, and attributable evidence. Raw secrets must never appear in MCP results, logs, evidence payloads, or committed repository files.
+Heinzel must preserve tenant isolation, opaque connection handles, short-lived capability grants, signed execution graphs, single-writer epoch fencing, and attributable evidence. Raw secrets must never appear in MCP results, logs, evidence payloads, or committed repository files.

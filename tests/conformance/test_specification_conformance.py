@@ -14,7 +14,7 @@ from enum import StrEnum
 from pathlib import Path
 
 import pytest
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     ConnectedAuthorityProvenance,
     CurrentEntitlementSnapshot,
     EnterpriseEntitlementAssertion,
@@ -24,22 +24,22 @@ from pillarmesh_access_control import (
     SignedEntitlementBody,
     SignedEntitlementEnvelope,
 )
-from pillarmesh_bi_control import DashboardContract
-from pillarmesh_catalog_control import CatalogBinding
-from pillarmesh_catalog_control.service import _TRANSITIONS as CATALOG_TRANSITIONS
-from pillarmesh_compiler import GovernedQueryPlan
-from pillarmesh_connection_broker import (
+from heinzel_bi_control import DashboardContract
+from heinzel_catalog_control import CatalogBinding
+from heinzel_catalog_control.service import _TRANSITIONS as CATALOG_TRANSITIONS
+from heinzel_compiler import GovernedQueryPlan
+from heinzel_connection_broker import (
     SourceBindingValidationEvidence,
     SourceConnectionBinding,
 )
-from pillarmesh_connection_broker.service import _TRANSITIONS as SOURCE_BINDING_TRANSITIONS
-from pillarmesh_contract_model import (
+from heinzel_connection_broker.service import _TRANSITIONS as SOURCE_BINDING_TRANSITIONS
+from heinzel_contract_model import (
     ApprovedSemanticVersion,
     InformationKind,
     ManagedIntegrationContract,
 )
-from pillarmesh_contract_service import SourceFreshnessObservation
-from pillarmesh_provider_sdk import (
+from heinzel_contract_service import SourceFreshnessObservation
+from heinzel_provider_sdk import (
     AcquisitionAcknowledgement,
     AcquisitionBatchManifest,
     AcquisitionBoundary,
@@ -56,7 +56,7 @@ from pillarmesh_provider_sdk import (
     AcquisitionSourceObservation,
     ResynchronizationRequired,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     AccessScopePreview,
     AnswerIntentValidation,
     AnswerQuestionIntent,
@@ -78,9 +78,9 @@ from pillarmesh_request_management import (
     RequestNoValidPlan,
     StakeholderAnswerDraft,
 )
-from pillarmesh_request_management.service import _TRANSITIONS as REQUEST_TRANSITIONS
-from pillarmesh_runtime import AnswerExecutionReceipt
-from pillarmesh_semantic_registry import (
+from heinzel_request_management.service import _TRANSITIONS as REQUEST_TRANSITIONS
+from heinzel_runtime import AnswerExecutionReceipt
+from heinzel_semantic_registry import (
     ApprovedProductVersionMetadata,
     AuthorityObservation,
     OntologyReviewBundle,
@@ -88,13 +88,13 @@ from pillarmesh_semantic_registry import (
     ReviewItemDecision,
     SemanticCandidateSet,
 )
-from pillarmesh_warehouse_control.evidence import (
+from heinzel_warehouse_control.evidence import (
     WarehouseRestoreVerification,
     WarehouseResumeValidationEvidence,
     WarehouseRetirementEvidence,
     WarehouseValidationEvidence,
 )
-from pillarmesh_warehouse_control.models import (
+from heinzel_warehouse_control.models import (
     EncryptionAtRestDisposition,
     EngineKind,
     WarehouseBinding,
@@ -102,7 +102,7 @@ from pillarmesh_warehouse_control.models import (
     WarehousePrincipalClass,
     WarehouseValidationProfile,
 )
-from pillarmesh_warehouse_control.service import _TRANSITIONS as WAREHOUSE_TRANSITIONS
+from heinzel_warehouse_control.service import _TRANSITIONS as WAREHOUSE_TRANSITIONS
 from pydantic import BaseModel
 from pydantic_core import PydanticUndefined
 
@@ -270,7 +270,9 @@ def test_request_terminal_states_match_section_13_3_1_prose() -> None:
         (FulfillmentEvidenceReceipt, "#### FulfillmentEvidenceReceipt"),
     ),
 )
-def test_plan3b_artifact_fields_match_section_13_7(artifact: type[BaseModel], heading: str) -> None:
+def test_request_fulfillment_artifact_fields_match_section_13_7(
+    artifact: type[BaseModel], heading: str
+) -> None:
     assert _fenced_fields(heading) == [artifact.__name__, *artifact.model_fields]
 
 
@@ -315,13 +317,13 @@ def test_governed_answer_artifact_fields_match_section_13_8(
         (ResynchronizationRequired, "#### ResynchronizationRequired"),
     ),
 )
-def test_plan4a_acquisition_fields_match_section_11_4(
+def test_source_acquisition_acquisition_fields_match_section_11_4(
     artifact: type[BaseModel], heading: str
 ) -> None:
     assert _fenced_fields(heading) == [artifact.__name__, *artifact.model_fields]
 
 
-def test_plan3b_approval_matrix_matches_section_13_7() -> None:
+def test_request_fulfillment_approval_matrix_matches_section_13_7() -> None:
     assert _markdown_rows("#### Plan 3B approval matrix", 3) == [
         (
             "Stakeholder answer",
@@ -342,7 +344,7 @@ def test_plan3b_approval_matrix_matches_section_13_7() -> None:
     ]
 
 
-def test_plan3b_authority_records_remain_disjoint() -> None:
+def test_request_fulfillment_authority_records_remain_disjoint() -> None:
     assert _markdown_rows("#### Plan 3B authority record boundary", 3) == [
         (
             "`DecisionBinding`",
@@ -357,7 +359,7 @@ def test_plan3b_authority_records_remain_disjoint() -> None:
     ]
 
 
-def test_plan3b_admission_predicate_is_pinned_term_by_term() -> None:
+def test_request_fulfillment_admission_predicate_is_pinned_term_by_term() -> None:
     assert _normalized_fenced_lines("#### Plan 3B admission predicate") == [
         "request_state awaiting_approval",
         "proposal_revision latest",
@@ -372,7 +374,7 @@ def test_plan3b_admission_predicate_is_pinned_term_by_term() -> None:
     ]
 
 
-def test_plan3b_control_plane_non_claims_are_exact() -> None:
+def test_request_fulfillment_control_plane_non_claims_are_exact() -> None:
     assert _fenced_fields("#### Plan 3B execution non-claims") == [
         "query_execution",
         "grant_application",
@@ -383,7 +385,7 @@ def test_plan3b_control_plane_non_claims_are_exact() -> None:
     ]
 
 
-def test_plan3b_outcome_matrix_is_pinned() -> None:
+def test_request_fulfillment_outcome_matrix_is_pinned() -> None:
     assert _markdown_rows("#### Plan 3B outcome matrix", 3) == [
         ("Unsettled restatement", "Clarification pending", "`clarifying`"),
         ("Approved assets and scope", "Answer or access proposal", "`proposed`"),
@@ -402,7 +404,7 @@ def test_plan3b_outcome_matrix_is_pinned() -> None:
     ]
 
 
-def test_plan3b_visibility_matrix_is_pinned() -> None:
+def test_request_fulfillment_visibility_matrix_is_pinned() -> None:
     assert _markdown_rows("#### Plan 3B visibility matrix", 6) == [
         (
             "Requester",
@@ -754,7 +756,7 @@ def test_catalog_and_semantic_lookup_denies_cross_tenant_access_before_deseriali
 
 
 def test_contradiction_groups_match_section_9_2_1() -> None:
-    from pillarmesh_semantic_registry.authority import _CONTRADICTION_GROUPS
+    from heinzel_semantic_registry.authority import _CONTRADICTION_GROUPS
 
     documented = {
         frozenset(member.strip() for member in line.split(","))
@@ -781,7 +783,7 @@ def test_section_9_2_1_partitions_every_information_kind_exactly_once() -> None:
 
 
 def test_governing_information_kind_matches_section_9_2_2() -> None:
-    from pillarmesh_semantic_registry.authority import _CANDIDATE_GOVERNING_KIND
+    from heinzel_semantic_registry.authority import _CANDIDATE_GOVERNING_KIND
 
     documented = {
         candidate: information for candidate, information in _markdown_table_rows("### 9.2.2")

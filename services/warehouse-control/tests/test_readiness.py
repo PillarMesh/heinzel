@@ -3,10 +3,10 @@ from __future__ import annotations
 import sqlite3
 from datetime import UTC, datetime, timedelta
 
-import pillarmesh_warehouse_control as warehouse_control
+import heinzel_warehouse_control as warehouse_control
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_warehouse_control import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     PrivateWarehouseOperation,
@@ -30,7 +30,7 @@ from pillarmesh_warehouse_control import (
     WarehouseValidationEvidence,
     WarehouseValidationProfile,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 
 NOW = datetime(2026, 8, 24, 12, tzinfo=UTC)
 LATER = NOW + timedelta(minutes=1)

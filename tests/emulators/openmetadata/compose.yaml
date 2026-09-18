@@ -6,7 +6,7 @@ services:
     restart: unless-stopped
     command: --sort_buffer_size=10M
     environment:
-      MYSQL_ROOT_PASSWORD: ${PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD:?required}
+      MYSQL_ROOT_PASSWORD: ${HEINZEL_OPENMETADATA_MYSQL_ROOT_PASSWORD:?required}
     volumes:
       - mysql-data:/var/lib/mysql
     healthcheck:
@@ -39,9 +39,9 @@ services:
     image: docker.getcollate.io/openmetadata/db@sha256:8a77669a2e64769dbb3ba4684fd527cc4a68e54879b199a6a8f1e74fa14da557
     platform: linux/amd64
     environment:
-      MYSQL_PWD: ${PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD:?required}
-      OPENMETADATA_DATABASE_PASSWORD: ${PILLARMESH_OPENMETADATA_DATABASE_PASSWORD:?required}
-      AIRFLOW_DATABASE_PASSWORD: ${PILLARMESH_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD:?required}
+      MYSQL_PWD: ${HEINZEL_OPENMETADATA_MYSQL_ROOT_PASSWORD:?required}
+      OPENMETADATA_DATABASE_PASSWORD: ${HEINZEL_OPENMETADATA_DATABASE_PASSWORD:?required}
+      AIRFLOW_DATABASE_PASSWORD: ${HEINZEL_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD:?required}
     volumes:
       - mysql-data:/var/lib/mysql
     command: >-
@@ -68,7 +68,7 @@ services:
       DB_PORT: "3306"
       DB_SCHEME: mysql
       DB_USER: openmetadata_user
-      DB_USER_PASSWORD: ${PILLARMESH_OPENMETADATA_DATABASE_PASSWORD:?required}
+      DB_USER_PASSWORD: ${HEINZEL_OPENMETADATA_DATABASE_PASSWORD:?required}
       ELASTICSEARCH_HOST: elasticsearch
       ELASTICSEARCH_PORT: "9200"
       ELASTICSEARCH_SCHEME: http
@@ -119,7 +119,7 @@ services:
       AIRFLOW_DB: airflow_db
       DB_SCHEME: mysql+mysqldb
       DB_USER: airflow_user
-      DB_PASSWORD: ${PILLARMESH_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD:?required}
+      DB_PASSWORD: ${HEINZEL_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD:?required}
     entrypoint: /bin/bash
     command: ["/opt/airflow/ingestion_dependency.sh"]
     depends_on:

@@ -14,17 +14,17 @@ from threading import Barrier, Event, Thread
 from types import SimpleNamespace
 from typing import IO
 
-import pillarmesh_provider_openmetadata.provisioner as provisioner_module
+import heinzel_provider_openmetadata.provisioner as provisioner_module
 import pytest
 from cryptography.fernet import Fernet
-from pillarmesh_catalog_control import (
+from heinzel_catalog_control import (
     CatalogBindingState,
     CatalogControlService,
     SQLiteCatalogRepository,
 )
-from pillarmesh_catalog_control.repository import CatalogPersistenceError
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_openmetadata import (
+from heinzel_catalog_control.repository import CatalogPersistenceError
+from heinzel_contract_model import digest
+from heinzel_provider_openmetadata import (
     CORE_UPSTREAM_IMAGES,
     UPSTREAM_IMAGES,
     CatalogObjectRef,
@@ -35,7 +35,7 @@ from pillarmesh_provider_openmetadata import (
     ProviderBuildIdentity,
     ProviderHealth,
 )
-from pillarmesh_provider_openmetadata.client import _OpenMetadataCredentials
+from heinzel_provider_openmetadata.client import _OpenMetadataCredentials
 from pydantic import SecretStr
 
 _FAKE_LINEAGE_IDENTIFIER = (
@@ -252,7 +252,7 @@ class CredentialRejectingCompose(RecordingCompose):
         super().up(project_name=project_name, environment=environment)
         raise RuntimeError(
             "OpenMetadata Compose rejected private credential "
-            + environment["PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD"]
+            + environment["HEINZEL_OPENMETADATA_MYSQL_ROOT_PASSWORD"]
         )
 
 
@@ -689,9 +689,9 @@ def no_supported_catalog(*, tenant_id: str, binding_id: str) -> str:
 
 def compose_environment() -> dict[str, str]:
     return {
-        "PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD": "test-only-root-password",
-        "PILLARMESH_OPENMETADATA_DATABASE_PASSWORD": "test-only-database-password",
-        "PILLARMESH_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD": "test-only-airflow-password",
+        "HEINZEL_OPENMETADATA_MYSQL_ROOT_PASSWORD": "test-only-root-password",
+        "HEINZEL_OPENMETADATA_DATABASE_PASSWORD": "test-only-database-password",
+        "HEINZEL_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD": "test-only-airflow-password",
     }
 
 
@@ -1083,7 +1083,7 @@ def test_backup_uses_the_root_password_inside_the_mysql_container(
 
     assert "util.dumpSchemas" in commands[0][-1]
     assert "--socket=/var/lib/mysql/mysql.sock" in commands[0][-1]
-    assert "tar --create --directory=/tmp pillarmesh-openmetadata-dump" in commands[0][-1]
+    assert "tar --create --directory=/tmp heinzel-openmetadata-dump" in commands[0][-1]
 
 
 def test_restore_uses_the_root_password_inside_the_mysql_container(
@@ -1349,11 +1349,11 @@ def test_compose_controller_preserves_explicit_docker_caller_config_without_ambi
         '  printf "PATH=%s\\n" "${PATH-}"\n'
         '  printf "DOCKER_CONFIG=%s\\n" "${DOCKER_CONFIG-}"\n'
         '  printf "DOCKER_HOST=%s\\n" "${DOCKER_HOST-}"\n'
-        '  printf "MYSQL_ROOT=%s\\n" "${PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD-}"\n'
-        '  printf "DATABASE=%s\\n" "${PILLARMESH_OPENMETADATA_DATABASE_PASSWORD-}"\n'
-        '  printf "AIRFLOW=%s\\n" "${PILLARMESH_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD-}"\n'
-        '  printf "AMBIENT_SECRET=%s\\n" "${PILLARMESH_AMBIENT_SECRET-}"\n'
-        '  printf "TASK_SECRET=%s\\n" "${PILLARMESH_UNRELATED_TASK_SECRET-}"\n'
+        '  printf "MYSQL_ROOT=%s\\n" "${HEINZEL_OPENMETADATA_MYSQL_ROOT_PASSWORD-}"\n'
+        '  printf "DATABASE=%s\\n" "${HEINZEL_OPENMETADATA_DATABASE_PASSWORD-}"\n'
+        '  printf "AIRFLOW=%s\\n" "${HEINZEL_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD-}"\n'
+        '  printf "AMBIENT_SECRET=%s\\n" "${HEINZEL_AMBIENT_SECRET-}"\n'
+        '  printf "TASK_SECRET=%s\\n" "${HEINZEL_UNRELATED_TASK_SECRET-}"\n'
         '} > "$capture_path"\n'
         "printf '%s\\n' "
         '\'{"services":{"server":{}},"volumes":{"database":{}},'
@@ -1363,7 +1363,7 @@ def test_compose_controller_preserves_explicit_docker_caller_config_without_ambi
     monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.setenv("DOCKER_CONFIG", "/tmp/test-docker-config")
     monkeypatch.setenv("DOCKER_HOST", "tcp://caller.example.test:2376")
-    monkeypatch.setenv("PILLARMESH_AMBIENT_SECRET", "must-not-cross-boundary")
+    monkeypatch.setenv("HEINZEL_AMBIENT_SECRET", "must-not-cross-boundary")
 
     try:
         resources = controller(tmp_path).planned_resources(
@@ -1371,7 +1371,7 @@ def test_compose_controller_preserves_explicit_docker_caller_config_without_ambi
             environment=compose_environment()
             | {
                 "DOCKER_HOST": "tcp://operation.example.test:2376",
-                "PILLARMESH_UNRELATED_TASK_SECRET": "must-not-cross-boundary",
+                "HEINZEL_UNRELATED_TASK_SECRET": "must-not-cross-boundary",
             },
         )
     except FileNotFoundError:

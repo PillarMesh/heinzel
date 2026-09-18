@@ -5,8 +5,8 @@ from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import (
     AcquisitionCeilingExceeded,
     AcquisitionIntent,
     AcquisitionObjectSchema,
@@ -16,13 +16,13 @@ from pillarmesh_provider_sdk import (
     CompletedAcquisition,
     acquisition_intent_key,
 )
-from pillarmesh_provider_stripe import (
+from heinzel_provider_stripe import (
     STRIPE_API_VERSION,
     StripeClient,
     StripeEventCursor,
     StripeSettings,
 )
-from pillarmesh_provider_stripe.acquisition import StripeAcquisitionProvider
+from heinzel_provider_stripe.acquisition import StripeAcquisitionProvider
 from pydantic import ValidationError
 
 from providers.stripe.tests.test_codecs import charge_payload, invoice_payload

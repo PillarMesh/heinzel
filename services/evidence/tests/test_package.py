@@ -9,9 +9,9 @@ from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import FIXED_PROJECTION, IntegrationContract, canonical_bytes, digest
-from pillarmesh_contract_service import ActivationSummary, ContractService
-from pillarmesh_evidence import (
+from heinzel_contract_model import FIXED_PROJECTION, IntegrationContract, canonical_bytes, digest
+from heinzel_contract_service import ActivationSummary, ContractService
+from heinzel_evidence import (
     PackageError,
     PackageMetadata,
     ResourceDisposition,
@@ -20,8 +20,8 @@ from pillarmesh_evidence import (
     export_package,
     verify_package,
 )
-from pillarmesh_execution_graph import GraphSigner, GraphVerifier
-from pillarmesh_provider_sdk import (
+from heinzel_execution_graph import GraphSigner, GraphVerifier
+from heinzel_provider_sdk import (
     ColumnObservation,
     CommitReceipt,
     ProviderObservation,
@@ -62,7 +62,7 @@ def _contract() -> IntegrationContract:
             },
             "destination": {
                 "connection_handle": "sf-m0",
-                "database": "PILLARMESH_M0",
+                "database": "HEINZEL_M0",
                 "schema": "PUBLIC",
                 "table": "ORDERS",
                 "key": "order_id",
@@ -243,7 +243,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         ),
     )
     for event_type, attributes in lifecycle:
-        store.append_event(RUN_ID, event_type, NOW, "pillarmesh-contract-service", attributes)
+        store.append_event(RUN_ID, event_type, NOW, "heinzel-contract-service", attributes)
     store.advance_checkpoint_with_event(
         RUN_ID,
         expected_checkpoint="created",
@@ -251,7 +251,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         state="running",
         event_type="graph_verified",
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
         attributes={"graph_digest": summary.graph_digest, "key_id": "package-key"},
     )
     store.advance_checkpoint_with_event(
@@ -261,7 +261,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         state="running",
         event_type="drift_revalidated",
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
         attributes={"drift_probe_digest": "3" * 64},
     )
     store.advance_checkpoint_with_event(
@@ -271,7 +271,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         state="running",
         event_type="snapshot_opened",
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
         attributes={
             "object_identity": "pg:opaque-source",
             "schema_digest": source.schema_digest,
@@ -310,7 +310,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         row_count=1,
         encoded_bytes=128,
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
     )
     store.advance_checkpoint_with_event(
         RUN_ID,
@@ -319,7 +319,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         state="running",
         event_type="manifest_created",
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
         attributes={"manifest_digest": digest(manifest)},
     )
     store.advance_checkpoint_with_event(
@@ -329,7 +329,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         state="running",
         event_type="commit_attempted",
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
         attributes={"batch_id": manifest.batch_id, "manifest_digest": digest(manifest)},
     )
     receipt = CommitReceipt(
@@ -348,7 +348,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         state="running",
         event_type="commit_resolved",
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
         attributes={"receipt_digest": receipt_digest, "replayed": False},
     )
     proof = VisibilityProof(
@@ -365,7 +365,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         state="running",
         event_type="visibility_verified",
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
         attributes={"visibility_digest": proof_digest},
     )
     store.advance_checkpoint_with_event(
@@ -375,7 +375,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         state="succeeded",
         event_type="terminal_success",
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
         attributes={
             "manifest_digest": digest(manifest),
             "receipt_digest": receipt_digest,
@@ -890,7 +890,7 @@ def test_verifier_rejects_qualified_commit_ledger_identity(tmp_path: Path) -> No
     entry = next(item for item in index["artifacts"] if item["kind"] == "commit_receipt")
     artifact = package.path / entry["relative_path"]
     value = json.loads(artifact.read_bytes())
-    value["ledger_identity"] = "PILLARMESH_M0.PUBLIC.COMMIT_LEDGER"
+    value["ledger_identity"] = "HEINZEL_M0.PUBLIC.COMMIT_LEDGER"
     payload = canonical_bytes(value)
     replacement_digest = hashlib.sha256(payload).hexdigest()
     replacement_path = f"artifacts/commit_receipt/{replacement_digest}.json"

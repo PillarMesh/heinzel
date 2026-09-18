@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import (
     AcquisitionCeilingExceeded,
     AcquisitionIntent,
     AcquisitionObjectSchema,
@@ -15,13 +15,13 @@ from pillarmesh_provider_sdk import (
     AcquisitionSessionIncomplete,
     acquisition_intent_key,
 )
-from pillarmesh_provider_stripe import (
+from heinzel_provider_stripe import (
     StripeAcquisitionProvider,
     StripeObjectDeclaration,
     StripeObjectKind,
     StripeSettings,
 )
-from pillarmesh_provider_stripe.settings import (
+from heinzel_provider_stripe.settings import (
     _APPROVED_EVENT_TYPES,
     _NORMALIZED_FIELDS,
     _SOURCE_FIELDS,
@@ -64,7 +64,7 @@ def _settings() -> StripeSettings:
         supported_creation_versions=(_API_VERSION,),
         objects=_declarations(),
         event_types=_APPROVED_EVENT_TYPES,
-        customer_identity_metadata_key="pillarmesh_customer_id",
+        customer_identity_metadata_key="heinzel_customer_id",
     )
 
 
@@ -124,7 +124,7 @@ def _payload(
         "metadata": {},
     }
     if object_kind == "customer":
-        common["metadata"] = {"pillarmesh_customer_id": f"crm-{object_id}"}
+        common["metadata"] = {"heinzel_customer_id": f"crm-{object_id}"}
     elif object_kind == "invoice":
         common.update(
             {

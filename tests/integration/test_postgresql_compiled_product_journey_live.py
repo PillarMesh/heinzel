@@ -36,14 +36,14 @@ from pathlib import Path
 import psycopg
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_compiler import (
+from heinzel_compiler import (
     NoValidPlan,
     ProductPhysicalPlanAuthority,
     compile_product_iir,
     compose_product_physical_plan_candidate,
 )
-from pillarmesh_contract_model import digest
-from pillarmesh_dbt_adapter import (
+from heinzel_contract_model import digest
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtColumnTest,
     DbtDecimalMagnitudeCheck,
@@ -53,7 +53,7 @@ from pillarmesh_dbt_adapter import (
     SubprocessDbtRunner,
     compiled_dbt_model_signing_bytes,
 )
-from pillarmesh_execution_graph import (
+from heinzel_execution_graph import (
     GenerationScopedProductSource,
     ProductExecutionAuthorizationSigner,
     ProductExecutionAuthorizationVerifier,
@@ -62,7 +62,7 @@ from pillarmesh_execution_graph import (
     ProductJsonFieldBinding,
     ProductTarget,
 )
-from pillarmesh_iir import (
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ColumnDeclaration,
@@ -72,7 +72,7 @@ from pillarmesh_iir import (
     ProjectOperation,
     SourceRelation,
 )
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLMaterializationSettings,
     PostgreSQLMaterializationWarehouse,
     PostgreSQLMaterializedColumn,
@@ -81,12 +81,12 @@ from pillarmesh_provider_postgresql import (
     PostgreSQLProductSqlObserver,
     postgresql_materialized_schema_digest,
 )
-from pillarmesh_provider_postgresql.product_sql_observation import _pinned_image_digest
-from pillarmesh_provider_sdk import (
+from heinzel_provider_postgresql.product_sql_observation import _pinned_image_digest
+from heinzel_provider_sdk import (
     ProductSqlProviderObservationSigner,
     ProductSqlProviderObservationVerifier,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     GenerationLedger,
     MaterializationRequest,
     ProductInputCardinalityResolver,
@@ -95,7 +95,7 @@ from pillarmesh_runtime import (
     ProductMaterializationRunner,
     SQLiteProductInputCardinalityEvidenceRepository,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     WarehouseValidationEvidence,
@@ -114,7 +114,7 @@ from tests.integration.test_postgresql_product_materialization_live import (
     _write_dbt_profile,
 )
 
-_RUN_LIVE = os.environ.get("PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
+_RUN_LIVE = os.environ.get("HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
 _TENANT = "tenant-live-a"
 _CONTRACT_REF = "contract-live-a"
 _CONTRACT_DIGEST = "2" * 64
@@ -176,7 +176,7 @@ def _warehouse_validation(dsn: str) -> WarehouseValidationEvidence:
         engine_version=f"{int(version_number) // 10_000}.{int(version_number) % 10_000}",
         engine_build_digest=digest(
             {
-                "domain": "pillarmesh-postgresql-engine-build-v1",
+                "domain": "heinzel-postgresql-engine-build-v1",
                 "version": {"server_version_num": version_number, "server_version": version_text},
             }
         ),
@@ -201,7 +201,7 @@ def _warehouse_validation(dsn: str) -> WarehouseValidationEvidence:
 
 @pytest.mark.live
 @pytest.mark.emulator
-@pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1")
+@pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1")
 def test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on_the_pinned_engine(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -375,7 +375,7 @@ def test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on
             )
         profiles_directory = tmp_path / "dbt-profiles"
         _write_dbt_profile(profiles_directory, bootstrap_dsn, target_schema=target_schema)
-        monkeypatch.setenv("PILLARMESH_DBT_TEST_PASSWORD", materialization_password)
+        monkeypatch.setenv("HEINZEL_DBT_TEST_PASSWORD", materialization_password)
         compiler_key = Ed25519PrivateKey.generate()
         model = CompiledDbtModel(
             model_name=_MODEL_NAME,
@@ -404,7 +404,7 @@ def test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on
         cardinality_evidence_digest = cardinality_repository.record(signed_cardinality.evidence)
         unadmitted_decision_digest = digest(
             {
-                "domain": "pillarmesh-unadmitted-live-composition-v1",
+                "domain": "heinzel-unadmitted-live-composition-v1",
                 "compiler_outcome_digest": digest(outcome),
             }
         )
@@ -442,7 +442,7 @@ def test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on
                             profiles_directory=profiles_directory,
                             workspace_directory=tmp_path,
                             timeout_seconds=180,
-                            credential_environment_names=("PILLARMESH_DBT_TEST_PASSWORD",),
+                            credential_environment_names=("HEINZEL_DBT_TEST_PASSWORD",),
                         )
                     ),
                 ),

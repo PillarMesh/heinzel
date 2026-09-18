@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import (
     AnswerScopePolicy,
     AnswerScopePolicyApproval,
     AnswerScopePolicyDraft,

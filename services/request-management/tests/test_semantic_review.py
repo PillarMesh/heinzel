@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     DecisionKind,
     InboxRequest,
     RequestManagementService,

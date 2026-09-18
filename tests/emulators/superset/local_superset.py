@@ -105,7 +105,7 @@ class LocalSuperset:
     def database_uri(self) -> str:
         return (
             "postgresql+psycopg2://superset_reader:"
-            f"{self.warehouse_password}@warehouse:5432/pillarmesh_warehouse"
+            f"{self.warehouse_password}@warehouse:5432/heinzel_warehouse"
         )
 
     def resource_counts(self) -> dict[str, int]:
@@ -153,7 +153,7 @@ class LocalSuperset:
             "AND has_schema_privilege(current_user, 'analytics', 'USAGE') "
             "AND NOT has_schema_privilege(current_user, 'analytics', 'CREATE') "
             "AND NOT has_database_privilege(current_user, "
-            "'pillarmesh_warehouse', 'CREATE')"
+            "'heinzel_warehouse', 'CREATE')"
         )
         return output == "t"
 
@@ -184,9 +184,9 @@ class LocalSuperset:
             "warehouse",
             "/bin/sh",
             "-ceu",
-            'PGPASSWORD="$PILLARMESH_SUPERSET_WAREHOUSE_PASSWORD" '
+            'PGPASSWORD="$HEINZEL_SUPERSET_WAREHOUSE_PASSWORD" '
             "psql --host=127.0.0.1 --username=superset_reader "
-            '--dbname=pillarmesh_warehouse --tuples-only --no-align --field-separator="|" '
+            '--dbname=heinzel_warehouse --tuples-only --no-align --field-separator="|" '
             ' --command="$1"',
             "query",
             statement,
@@ -246,20 +246,20 @@ class SupersetAccessPrincipal:
 
 @contextmanager
 def fresh_superset_stack() -> Iterator[LocalSuperset]:
-    project_name = f"pillarmesh-superset-{secrets.token_hex(6)}"
-    with TemporaryDirectory(prefix="pillarmesh-superset-private-") as root_text:
+    project_name = f"heinzel-superset-{secrets.token_hex(6)}"
+    with TemporaryDirectory(prefix="heinzel-superset-private-") as root_text:
         private_directory = Path(root_text) / "tls"
         write_tls_material(private_directory, generate_tls_material())
         port = _available_port()
         admin_password = secrets.token_urlsafe(24)
         warehouse_password = secrets.token_urlsafe(24)
         environment = os.environ | {
-            "PILLARMESH_SUPERSET_ADMIN_PASSWORD": admin_password,
-            "PILLARMESH_SUPERSET_SECRET_KEY": secrets.token_urlsafe(48),
-            "PILLARMESH_SUPERSET_WAREHOUSE_PASSWORD": warehouse_password,
-            "PILLARMESH_SUPERSET_HOST_PORT": str(port),
-            "PILLARMESH_SUPERSET_PROJECT_NAME": project_name,
-            "PILLARMESH_SUPERSET_PRIVATE_DIRECTORY": str(private_directory),
+            "HEINZEL_SUPERSET_ADMIN_PASSWORD": admin_password,
+            "HEINZEL_SUPERSET_SECRET_KEY": secrets.token_urlsafe(48),
+            "HEINZEL_SUPERSET_WAREHOUSE_PASSWORD": warehouse_password,
+            "HEINZEL_SUPERSET_HOST_PORT": str(port),
+            "HEINZEL_SUPERSET_PROJECT_NAME": project_name,
+            "HEINZEL_SUPERSET_PRIVATE_DIRECTORY": str(private_directory),
         }
         stack = LocalSuperset(
             project_name=project_name,

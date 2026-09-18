@@ -4,12 +4,12 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
-from pillarmesh_catalog_control import CatalogBindingState
-from pillarmesh_request_management import RequestState
+from heinzel_catalog_control import CatalogBindingState
+from heinzel_request_management import RequestState
 
-from tests.acceptance.plan2_orchestration import (
+from tests.acceptance.semantic_formation_orchestration import (
     ExactCleanupTarget,
-    OfflinePlan2Harness,
+    OfflineSemanticFormationHarness,
     OwnerDecision,
     legacy_refund_attribute_catalog,
     refund_entity_package,
@@ -22,8 +22,8 @@ from tests.acceptance.plan2_orchestration import (
 def test_revenue_to_cash_forms_approved_contract_and_verified_publication(
     tmp_path: Path,
 ) -> None:
-    harness = OfflinePlan2Harness(
-        database_path=tmp_path / "plan2.db",
+    harness = OfflineSemanticFormationHarness(
+        database_path=tmp_path / "semantic-formation.db",
         catalog=strict_validating_catalog(),
     )
 
@@ -49,7 +49,9 @@ def test_refund_cross_kind_conflict_ends_in_no_valid_plan_without_effects(
     tmp_path: Path,
 ) -> None:
     catalog = legacy_refund_attribute_catalog()
-    harness = OfflinePlan2Harness(database_path=tmp_path / "plan2.db", catalog=catalog)
+    harness = OfflineSemanticFormationHarness(
+        database_path=tmp_path / "semantic-formation.db", catalog=catalog
+    )
 
     result = harness.run(
         tenant_id="tenant-a",
@@ -71,8 +73,8 @@ def test_tenant_cannot_read_any_other_tenant_acceptance_artifact_with_identifier
     tmp_path: Path,
 ) -> None:
     catalog = strict_validating_catalog()
-    harness = OfflinePlan2Harness(
-        database_path=tmp_path / "plan2.db",
+    harness = OfflineSemanticFormationHarness(
+        database_path=tmp_path / "semantic-formation.db",
         catalog=catalog,
     )
     tenant_a = harness.run(
@@ -122,7 +124,9 @@ def test_tenant_cannot_read_any_other_tenant_acceptance_artifact_with_identifier
 
 def test_replay_converges_without_duplicate_semantic_or_provider_effects(tmp_path: Path) -> None:
     catalog = strict_validating_catalog()
-    harness = OfflinePlan2Harness(database_path=tmp_path / "plan2.db", catalog=catalog)
+    harness = OfflineSemanticFormationHarness(
+        database_path=tmp_path / "semantic-formation.db", catalog=catalog
+    )
 
     first = harness.run(
         tenant_id="tenant-a",
@@ -142,8 +146,8 @@ def test_replay_converges_without_duplicate_semantic_or_provider_effects(tmp_pat
 
 
 def test_replay_rejects_changed_manifest_source_bytes(tmp_path: Path) -> None:
-    harness = OfflinePlan2Harness(
-        database_path=tmp_path / "plan2.db", catalog=strict_validating_catalog()
+    harness = OfflineSemanticFormationHarness(
+        database_path=tmp_path / "semantic-formation.db", catalog=strict_validating_catalog()
     )
     package = revenue_to_cash_package()
     harness.run(
@@ -162,14 +166,14 @@ def test_replay_rejects_changed_manifest_source_bytes(tmp_path: Path) -> None:
 
 def test_replay_rehydrates_from_durable_correlation_in_a_fresh_harness(tmp_path: Path) -> None:
     catalog = strict_validating_catalog()
-    database_path = tmp_path / "plan2.db"
-    first_harness = OfflinePlan2Harness(database_path=database_path, catalog=catalog)
+    database_path = tmp_path / "semantic-formation.db"
+    first_harness = OfflineSemanticFormationHarness(database_path=database_path, catalog=catalog)
     first = first_harness.run(
         tenant_id="tenant-a",
         process_package=revenue_to_cash_package(),
         correlation_id="durable-correlation",
     )
-    replay_harness = OfflinePlan2Harness(database_path=database_path, catalog=catalog)
+    replay_harness = OfflineSemanticFormationHarness(database_path=database_path, catalog=catalog)
 
     replay = replay_harness.run(
         tenant_id="tenant-a",
@@ -185,7 +189,9 @@ def test_replay_rehydrates_from_durable_correlation_in_a_fresh_harness(tmp_path:
 
 def test_no_valid_plan_replay_preserves_every_conflicting_observation(tmp_path: Path) -> None:
     catalog = legacy_refund_attribute_catalog()
-    harness = OfflinePlan2Harness(database_path=tmp_path / "plan2.db", catalog=catalog)
+    harness = OfflineSemanticFormationHarness(
+        database_path=tmp_path / "semantic-formation.db", catalog=catalog
+    )
     first = harness.run(
         tenant_id="tenant-a",
         process_package=refund_entity_package(),
@@ -208,7 +214,9 @@ def test_persisted_approval_ids_from_an_older_review_are_denied_before_publicati
     tmp_path: Path,
 ) -> None:
     catalog = strict_validating_catalog()
-    harness = OfflinePlan2Harness(database_path=tmp_path / "plan2.db", catalog=catalog)
+    harness = OfflineSemanticFormationHarness(
+        database_path=tmp_path / "semantic-formation.db", catalog=catalog
+    )
     original = harness.run(
         tenant_id="tenant-a",
         process_package=revenue_to_cash_package(),
@@ -233,7 +241,9 @@ def test_persisted_approval_ids_from_an_older_review_are_denied_before_publicati
 
 def test_stale_synthetic_owner_decision_is_denied_before_formation(tmp_path: Path) -> None:
     catalog = strict_validating_catalog()
-    harness = OfflinePlan2Harness(database_path=tmp_path / "plan2.db", catalog=catalog)
+    harness = OfflineSemanticFormationHarness(
+        database_path=tmp_path / "semantic-formation.db", catalog=catalog
+    )
 
     with pytest.raises(ValueError, match="stale approval"):
         harness.run(
@@ -263,7 +273,9 @@ def test_cleanup_denies_unrecorded_or_broad_targets(
     target: ExactCleanupTarget,
 ) -> None:
     catalog = strict_validating_catalog()
-    harness = OfflinePlan2Harness(database_path=tmp_path / "plan2.db", catalog=catalog)
+    harness = OfflineSemanticFormationHarness(
+        database_path=tmp_path / "semantic-formation.db", catalog=catalog
+    )
 
     with pytest.raises(ValueError, match="exact recorded cleanup target required"):
         harness.cleanup(tenant_id="tenant-a", targets=(target,))

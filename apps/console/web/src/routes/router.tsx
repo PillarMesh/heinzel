@@ -153,7 +153,7 @@ export function ConsoleRoutes({
     (setupEnvelope === undefined || setupEnvelope.data.workspace_ref === workspaceReference)
   if (!provenanceMatches || !identityMatches) {
     return (
-      <main aria-label="PillarMesh console" className="standalone-state">
+      <main aria-label="Heinzel console" className="standalone-state">
         <RecoveryPage kind="projection" />
       </main>
     )

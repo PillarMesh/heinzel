@@ -4,22 +4,21 @@ from datetime import UTC, datetime
 from typing import ClassVar
 
 import pytest
-from httpx import Response
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_provider_openmetadata import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_provider_openmetadata import (
     CatalogProviderError,
     OpenMetadataClient,
     OpenMetadataProductCatalogProvider,
     OpenMetadataSettings,
     ProviderHealth,
 )
-from pillarmesh_provider_openmetadata.client import (
+from heinzel_provider_openmetadata.client import (
     _description_metadata,
     _object_name,
     _OpenMetadataCredentials,
 )
-from pillarmesh_provider_openmetadata.models import CatalogFailureClassification
-from pillarmesh_provider_sdk import (
+from heinzel_provider_openmetadata.models import CatalogFailureClassification
+from heinzel_provider_sdk import (
     CatalogColumn,
     CatalogLineageSource,
     CatalogNativeTableDefinition,
@@ -32,6 +31,7 @@ from pillarmesh_provider_sdk import (
     catalog_product_external_key,
     catalog_warehouse_service_external_key,
 )
+from httpx import Response
 from pydantic import SecretStr
 
 
@@ -90,7 +90,7 @@ def _native_table_definition(**warehouse_changes: object) -> CatalogNativeTableD
         "database_service_name": catalog_warehouse_service_external_key(
             tenant_id=tenant_id, warehouse_binding_id=binding_id
         ),
-        "database_name": "pillarmesh",
+        "database_name": "heinzel",
         "schema_name": "analytics",
         "table_name": "revenue_by_region",
     }
@@ -330,9 +330,9 @@ class _NativeTableTransport:
     def _entity_response(self, collection: str) -> dict[str, object]:
         payload = self.payloads[collection]
         service_name = str(
-            self.payloads.get("databaseServices", {}).get("name", "pillarmesh_postgresql")
+            self.payloads.get("databaseServices", {}).get("name", "heinzel_postgresql")
         )
-        database_name = str(self.payloads.get("databases", {}).get("name", "pillarmesh"))
+        database_name = str(self.payloads.get("databases", {}).get("name", "heinzel"))
         schema_name = str(self.payloads.get("databaseSchemas", {}).get("name", "analytics"))
         fqns = {
             "databaseServices": service_name,

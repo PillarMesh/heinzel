@@ -1,17 +1,17 @@
 [project]
-name = "pillarmesh-provider-superset"
+name = "heinzel-provider-superset"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
   "httpx>=0.28,<1",
-  "pillarmesh-contract-model",
-  "pillarmesh-provider-sdk",
+  "heinzel-contract-model",
+  "heinzel-provider-sdk",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-provider-sdk = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

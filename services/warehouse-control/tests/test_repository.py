@@ -8,8 +8,8 @@ from queue import Queue
 from threading import Barrier, Thread
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_warehouse_control import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     PrivateWarehouseOperation,
@@ -34,8 +34,8 @@ from pillarmesh_warehouse_control import (
     WarehouseValidationEvidence,
     WarehouseValidationProfile,
 )
-from pillarmesh_warehouse_control import repository as repository_module
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository, StaleRevisionError
+from heinzel_warehouse_control import repository as repository_module
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository, StaleRevisionError
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 LATER = NOW + timedelta(minutes=1)

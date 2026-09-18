@@ -14,12 +14,12 @@ COMPOSE_FILE = EMULATOR_ROOT / "compose.yaml"
 
 def _render_compose_config() -> dict[str, Any]:
     environment = {
-        "PILLARMESH_SUPERSET_ADMIN_PASSWORD": secrets.token_urlsafe(24),
-        "PILLARMESH_SUPERSET_SECRET_KEY": secrets.token_urlsafe(48),
-        "PILLARMESH_SUPERSET_WAREHOUSE_PASSWORD": secrets.token_urlsafe(24),
-        "PILLARMESH_SUPERSET_HOST_PORT": "18088",
-        "PILLARMESH_SUPERSET_PROJECT_NAME": "pillarmesh-superset-contract-test",
-        "PILLARMESH_SUPERSET_PRIVATE_DIRECTORY": "/private/tmp/pillarmesh-superset-test",
+        "HEINZEL_SUPERSET_ADMIN_PASSWORD": secrets.token_urlsafe(24),
+        "HEINZEL_SUPERSET_SECRET_KEY": secrets.token_urlsafe(48),
+        "HEINZEL_SUPERSET_WAREHOUSE_PASSWORD": secrets.token_urlsafe(24),
+        "HEINZEL_SUPERSET_HOST_PORT": "18088",
+        "HEINZEL_SUPERSET_PROJECT_NAME": "heinzel-superset-contract-test",
+        "HEINZEL_SUPERSET_PRIVATE_DIRECTORY": "/private/tmp/heinzel-superset-test",
     }
     result = subprocess.run(
         [
@@ -69,7 +69,7 @@ def test_superset_stack_is_loopback_only_and_waits_for_governed_postgresql() -> 
         "curl",
         "--fail",
         "--cacert",
-        "/pillarmesh-private/ca.crt",
+        "/heinzel-private/ca.crt",
         "https://127.0.0.1:8088/health",
     ]
 
@@ -88,7 +88,7 @@ def test_superset_stack_uses_pinned_images_and_private_secret_inputs() -> None:
     assert int(superset["mem_limit"]) >= 1024 * 1024 * 1024
     assert int(warehouse["mem_limit"]) >= 256 * 1024 * 1024
     assert set(superset["environment"]) >= {
-        "PILLARMESH_SUPERSET_ADMIN_PASSWORD",
-        "PILLARMESH_SUPERSET_SECRET_KEY",
-        "PILLARMESH_SUPERSET_WAREHOUSE_PASSWORD",
+        "HEINZEL_SUPERSET_ADMIN_PASSWORD",
+        "HEINZEL_SUPERSET_SECRET_KEY",
+        "HEINZEL_SUPERSET_WAREHOUSE_PASSWORD",
     }

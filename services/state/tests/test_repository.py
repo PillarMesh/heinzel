@@ -11,15 +11,15 @@ from pathlib import Path
 from typing import Literal, cast
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import canonical_bytes
+from heinzel_provider_sdk import (
     AcquisitionAcknowledgement,
     AcquisitionCheckpointReceipt,
     AcquisitionNoValidPlan,
     AcquisitionPreparedReceipt,
 )
-from pillarmesh_provider_sdk.errors import AcquisitionProviderKind
-from pillarmesh_state import (
+from heinzel_provider_sdk.errors import AcquisitionProviderKind
+from heinzel_state import (
     AcquisitionStateConflictError,
     AcquisitionStateNotFoundError,
     AcquisitionStatePersistenceError,

@@ -22,12 +22,12 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from cryptography.x509.oid import NameOID
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     SignedEntitlementBody,
     SignedHttpConnectedPolicyAuthority,
     SignedHttpPolicyAuthoritySettings,
 )
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardCompositionService,
     DashboardContract,
     DashboardContractSigner,
@@ -39,8 +39,8 @@ from pillarmesh_bi_control import (
     SQLiteDashboardContractRepository,
     SQLiteDashboardRepository,
 )
-from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
-from pillarmesh_compiler import (
+from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_compiler import (
     GovernedQueryInput,
     GovernedQueryPlan,
     ProductGenerationReference,
@@ -54,9 +54,9 @@ from pillarmesh_compiler import (
     QueryScanEstimate,
     compile_governed_query,
 )
-from pillarmesh_compiler.postgresql_sql import emit_generation_scoped_postgresql
-from pillarmesh_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
-from pillarmesh_contract_model import (
+from heinzel_compiler.postgresql_sql import emit_generation_scoped_postgresql
+from heinzel_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -72,11 +72,11 @@ from pillarmesh_contract_model import (
     TriggerRequirement,
     digest,
 )
-from pillarmesh_contract_service import (
+from heinzel_contract_service import (
     SourceFreshnessObservation,
     SQLiteSourceFreshnessObservationRepository,
 )
-from pillarmesh_dbt_adapter import (
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtColumnTest,
     DbtDecimalMagnitudeCheck,
@@ -86,7 +86,7 @@ from pillarmesh_dbt_adapter import (
     SubprocessDbtRunner,
     compiled_dbt_model_signing_bytes,
 )
-from pillarmesh_execution_graph import (
+from heinzel_execution_graph import (
     Decimal57OutputCheck,
     GenerationScopedProductSource,
     ProductExecutionAuthorizationSigner,
@@ -95,7 +95,7 @@ from pillarmesh_execution_graph import (
     ProductPhysicalPlan,
     ProductTarget,
 )
-from pillarmesh_iir import (
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ColumnDeclaration,
@@ -105,7 +105,7 @@ from pillarmesh_iir import (
     ProjectOperation,
     SourceRelation,
 )
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLAnswerGenerationAuthority,
     PostgreSQLAnswerQueryProvider,
     PostgreSQLAnswerQuerySettings,
@@ -118,7 +118,7 @@ from pillarmesh_provider_postgresql import (
     PostgreSQLProductGenerationAuthority,
     postgresql_materialized_schema_digest,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     CatalogNativeTableDefinition,
     CatalogNativeTableObservation,
     CatalogProductDefinition,
@@ -127,8 +127,8 @@ from pillarmesh_provider_sdk import (
     StagedSegment,
     staged_segment_digest,
 )
-from pillarmesh_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
-from pillarmesh_request_management import (
+from heinzel_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
+from heinzel_request_management import (
     AnswerIntentCandidate,
     AnswerQuestion,
     AnswerScopePolicyApproval,
@@ -139,10 +139,10 @@ from pillarmesh_request_management import (
     ProductOwnerAuthority,
     RequestState,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     AnswerProductGenerationReference as RequestProductGenerationReference,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     GenerationLedger,
     LandingResult,
     LandingRunner,
@@ -155,7 +155,7 @@ from pillarmesh_runtime import (
     SQLiteProductInputCardinalityEvidenceRepository,
     compose_authoritative_product_catalog,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     ApprovedProductQueryBinding,
     ApprovedProductVersionMetadata,
     ProductCatalogColumnAuthority,
@@ -169,7 +169,7 @@ from pillarmesh_semantic_registry import (
     SQLiteProductCatalogPublicationRepository,
     SQLiteProductQueryBindingRepository,
 )
-from pillarmesh_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
+from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
 from psycopg import sql
 from pydantic import SecretStr
 
@@ -838,7 +838,7 @@ def fresh_native_materialized_product(
         freshness_observation = SourceFreshnessObservation(
             observation_id=digest(
                 {
-                    "domain": "pillarmesh-source-freshness-v1",
+                    "domain": "heinzel-source-freshness-v1",
                     "source_ref": "source-live-a",
                     "input_generation_digest": input_generation_digest,
                 }
@@ -866,7 +866,7 @@ def fresh_native_materialized_product(
             )
         profiles = root / "dbt-profiles"
         _write_dbt_profile(profiles, bootstrap_dsn, target_schema=target_schema)
-        monkeypatch.setenv("PILLARMESH_DBT_TEST_PASSWORD", materialization_password)
+        monkeypatch.setenv("HEINZEL_DBT_TEST_PASSWORD", materialization_password)
         compiler_key = Ed25519PrivateKey.generate()
         signed_model = _signed_product_model(
             compiler_key,
@@ -938,7 +938,7 @@ def fresh_native_materialized_product(
                         profiles_directory=profiles,
                         workspace_directory=root,
                         timeout_seconds=180,
-                        credential_environment_names=("PILLARMESH_DBT_TEST_PASSWORD",),
+                        credential_environment_names=("HEINZEL_DBT_TEST_PASSWORD",),
                     )
                 ),
             ),
@@ -1474,7 +1474,7 @@ def fresh_native_answer_deployment(
             runtime.execute_answer(
                 tenant_id=TENANT,
                 request_id=request.request_id,
-                actor_id="pillarmesh-runtime",
+                actor_id="heinzel-runtime",
                 expected_revision=admission.request.revision,
             )
             delivered = deployment.requests.get(TENANT, request.request_id)

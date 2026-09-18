@@ -8,7 +8,7 @@
       "contract_id": "contract-fixture-001",
       "version": 1,
       "source": {"connection_handle": "pg-m0", "schema": "m0_source", "table": "orders", "primary_key": "order_id"},
-      "destination": {"connection_handle": "sf-m0", "database": "PILLARMESH_M0", "schema": "PUBLIC", "table": "ORDERS", "key": "order_id"},
+      "destination": {"connection_handle": "sf-m0", "database": "HEINZEL_M0", "schema": "PUBLIC", "table": "ORDERS", "key": "order_id"},
       "projection": [
         {"source": "order_id", "destination": "order_id"},
         {"source": "customer_ref", "destination": "customer_ref"},
@@ -23,7 +23,7 @@
       "freshness_seconds": 300,
       "data_classification": "synthetic_non_sensitive",
       "evidence_retention": "m0_30_days",
-      "producer": "pillarmesh-contract-service"
+      "producer": "heinzel-contract-service"
     },
     "source_observation": {
       "schema_version": "1",

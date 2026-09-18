@@ -21,7 +21,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     ActivatedAcquisitionRunContracts,
     GenerationLedger,
     LeasedRunExecutor,
@@ -30,11 +30,11 @@ from pillarmesh_runtime import (
     RunStage,
     compose_acquisition_run_stages,
 )
-from pillarmesh_state import RunAttemptClaim, RunService
-from pillarmesh_state.run_repository import SQLiteRunRepository
-from pillarmesh_trigger import DailyTriggerPolicy, TriggerRunService
+from heinzel_state import RunAttemptClaim, RunService
+from heinzel_state.run_repository import SQLiteRunRepository
+from heinzel_trigger import DailyTriggerPolicy, TriggerRunService
 
-from tests.acceptance.run_plan4a import _MutableClock
+from tests.acceptance.run_source_acquisition import _MutableClock
 from tests.integration.test_postgresql_acquisition_land_live import (
     _BINDING_REF,
     _CONTRACT_REF,
@@ -53,14 +53,14 @@ from tests.integration.test_postgresql_product_materialization_live import (
     _role_dsn,
 )
 
-_RUN_LIVE = os.environ.get("PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
+_RUN_LIVE = os.environ.get("HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
 _LEASE_SECONDS = 60
 _DAILY = DailyTriggerPolicy(policy_version="daily-v1", hour_utc=0, minute_utc=0)
 
 
 @pytest.mark.live
 @pytest.mark.emulator
-@pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1")
+@pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1")
 def test_a_due_run_resumes_from_its_durable_boundary_after_lease_loss(tmp_path: Path) -> None:
     acquisition_clock = _MutableClock(_NOW)
     run_clock = _MutableClock(_NOW)

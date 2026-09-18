@@ -9,17 +9,17 @@ evidence file:
 
 ```sh
 set -eu
-test -n "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT"
-case "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT" in
+test -n "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT"
+case "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT" in
   /*) ;;
   *) exit 1 ;;
 esac
-case "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT" in
+case "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT" in
   "$PWD"|"$PWD"/*) exit 1 ;;
 esac
-test "$(stat -f '%Lp' "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT")" = 700
-test -f "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT/.pillarmesh-request-product-run"
-find "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT" -maxdepth 4 -print
+test "$(stat -f '%Lp' "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT")" = 700
+test -f "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT/.heinzel-request-product-run"
+find "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT" -maxdepth 4 -print
 git status --short
 find . -type f \( -name 'requests.sqlite3' -o -name 'product-publications.sqlite3' \) -print
 ```
@@ -29,18 +29,18 @@ root:
 
 ```sh
 set -eu
-test -n "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT"
-case "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT" in
+test -n "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT"
+case "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT" in
   /*) ;;
   *) exit 1 ;;
 esac
-case "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT" in
+case "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT" in
   "$PWD"|"$PWD"/*) exit 1 ;;
 esac
-test "$(stat -f '%Lp' "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT")" = 700
-test -f "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT/.pillarmesh-request-product-run"
-rm -rf -- "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT"
-unset PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT
+test "$(stat -f '%Lp' "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT")" = 700
+test -f "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT/.heinzel-request-product-run"
+rm -rf -- "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT"
+unset HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT
 ```
 
 Do not run the removal when the variable is empty, the directory is shared, or any entry is

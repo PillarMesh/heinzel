@@ -10,14 +10,14 @@ from tempfile import TemporaryDirectory
 import psycopg
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_compiler.query_signing import QueryPlanSigner
-from pillarmesh_provider_postgresql import (
+from heinzel_compiler.query_signing import QueryPlanSigner
+from heinzel_provider_postgresql import (
     PostgreSQLAnswerGenerationBinding,
     PostgreSQLAnswerQueryProvider,
     PostgreSQLAnswerQuerySettings,
 )
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import AnswerQueryPlan, ReadOnlyAnswerQuery
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import AnswerQueryPlan, ReadOnlyAnswerQuery
 from psycopg import sql
 from pydantic import SecretStr
 
@@ -70,7 +70,7 @@ def _assert_provider_denial(
 def test_fresh_postgresql_generation_guard_denies_mutable_or_stale_authority() -> None:
     if os.geteuid() == 0:
         pytest.skip("initdb refuses to initialize a cluster as root")
-    with TemporaryDirectory(prefix="pillarmesh-answer-generation-postgresql-") as root_text:
+    with TemporaryDirectory(prefix="heinzel-answer-generation-postgresql-") as root_text:
         runtime_password = secrets.token_urlsafe(32)
         with _fresh_postgresql_cluster(Path(root_text)) as bootstrap_dsn:
             runtime_dsn = _provision_fresh_data(bootstrap_dsn, runtime_password)

@@ -4,11 +4,11 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 
 import pytest
-from pillarmesh_console import create_app
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.contracts import ActorRole
-from pillarmesh_console.fixture_backend import FixtureConsoleBackend
-from pillarmesh_console.fixture_data import build_fixture_seed
+from heinzel_console import create_app
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.contracts import ActorRole
+from heinzel_console.fixture_backend import FixtureConsoleBackend
+from heinzel_console.fixture_data import build_fixture_seed
 from starlette.requests import Request
 from starlette.testclient import TestClient
 

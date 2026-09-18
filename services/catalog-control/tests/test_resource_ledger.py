@@ -8,14 +8,14 @@ from pathlib import Path
 from typing import Literal, cast
 
 import pytest
-from pillarmesh_catalog_control import (
+from heinzel_catalog_control import (
     CatalogBinding,
     CatalogBindingState,
     CatalogControlService,
     CatalogValidationEvidence,
     SQLiteCatalogRepository,
 )
-from pillarmesh_catalog_control.repository import (
+from heinzel_catalog_control.repository import (
     CatalogOperationConflictError,
     CatalogResourceCleanupFailureClassification,
     CatalogResourceCleanupStatus,

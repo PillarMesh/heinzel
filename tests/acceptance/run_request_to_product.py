@@ -7,13 +7,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
-from pillarmesh_compiler import NoValidPlan, compile_product_iir
-from pillarmesh_console.governed_adapters import (
+from heinzel_compiler import NoValidPlan, compile_product_iir
+from heinzel_console.governed_adapters import (
     GovernedApprovedProductIntentSources,
     GovernedProductIntentAuthority,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import (
     AcquisitionActivationApproval,
     ActivatedAcquisitionContract,
     ActivatedAcquisitionContractRecord,
@@ -23,7 +23,7 @@ from pillarmesh_contract_service import (
     SQLiteSourceObservationRepository,
     ValidatedSourceBinding,
 )
-from pillarmesh_iir import (
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ColumnDeclaration,
@@ -33,8 +33,8 @@ from pillarmesh_iir import (
     ProjectOperation,
     SourceRelation,
 )
-from pillarmesh_provider_sdk import AcquisitionField, AcquisitionObjectSchema
-from pillarmesh_request_management import (
+from heinzel_provider_sdk import AcquisitionField, AcquisitionObjectSchema
+from heinzel_request_management import (
     ApprovedProductIntent,
     DeliveryIntent,
     DimensionIntent,
@@ -51,7 +51,7 @@ from pillarmesh_request_management import (
     RequestManagementService,
     SQLiteRequestRepository,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     SQLiteProductCatalogPublicationRepository,
     SQLiteSemanticVersionRepository,
 )

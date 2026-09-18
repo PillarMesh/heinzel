@@ -5,7 +5,7 @@ import { defineConfig, devices } from "@playwright/test"
 // suite exercises what production serves rather than the dev proxy.
 // The server admits a command only from its own configured origin. The suite
 // uses the port `create_app` trusts by default; another port would need
-// `PILLARMESH_CONSOLE_ALLOWED_ORIGIN` set to match, and a mismatch turns every
+// `HEINZEL_CONSOLE_ALLOWED_ORIGIN` set to match, and a mismatch turns every
 // command in the journey into `same_origin_required`.
 const PORT = 8000
 const ORIGIN = `http://127.0.0.1:${PORT}`
@@ -37,7 +37,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `npm run build && PILLARMESH_CONSOLE_API_PORT=${PORT} node scripts/serve-built.mjs`,
+    command: `npm run build && HEINZEL_CONSOLE_API_PORT=${PORT} node scripts/serve-built.mjs`,
     url: `${ORIGIN}/healthz`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

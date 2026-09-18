@@ -3,10 +3,10 @@ from __future__ import annotations
 import re
 
 import pytest
-from pillarmesh_compiler.clickhouse_sql import emit_generation_scoped_clickhouse
-from pillarmesh_compiler.postgresql_sql import emit_generation_scoped_postgresql
-from pillarmesh_execution_graph import GenerationScopedProductSource, ProductJsonFieldBinding
-from pillarmesh_iir import (
+from heinzel_compiler.clickhouse_sql import emit_generation_scoped_clickhouse
+from heinzel_compiler.postgresql_sql import emit_generation_scoped_postgresql
+from heinzel_execution_graph import GenerationScopedProductSource, ProductJsonFieldBinding
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ColumnDeclaration,
@@ -81,13 +81,13 @@ def test_postgresql_emits_one_generation_scoped_json_source() -> None:
         'NUMERIC(57,9)) AS "total_revenue" FROM (SELECT (CASE WHEN '
         "pg_catalog.jsonb_typeof(\"payload\" OPERATOR(pg_catalog.->) 'region') "
         "OPERATOR(pg_catalog.=) 'string' THEN \"payload\" OPERATOR(pg_catalog.->>) 'region' "
-        "ELSE CAST(CAST('pillarmesh refused a string landing value in generation ' "
+        "ELSE CAST(CAST('heinzel refused a string landing value in generation ' "
         'OPERATOR(pg_catalog.||) "generation_id" AS NUMERIC) AS pg_catalog.text) END) COLLATE '
         'pg_catalog."C" AS "region", CAST(CASE WHEN pg_catalog.jsonb_typeof("payload" '
         "OPERATOR(pg_catalog.->) 'revenue') OPERATOR(pg_catalog.=) 'string' AND \"payload\" "
         "OPERATOR(pg_catalog.->>) 'revenue' OPERATOR(pg_catalog.~) "
         "'^-?(0|[1-9][0-9]{0,28})([.][0-9]{1,9})?$' THEN \"payload\" OPERATOR(pg_catalog.->>) "
-        "'revenue' ELSE 'pillarmesh refused a decimal landing value in generation ' "
+        "'revenue' ELSE 'heinzel refused a decimal landing value in generation ' "
         'OPERATOR(pg_catalog.||) "generation_id" END AS NUMERIC(38,9)) AS "revenue" FROM '
         '"raw"."raw_sales" WHERE "generation_id" OPERATOR(pg_catalog.=) '
         "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS "
@@ -206,7 +206,7 @@ def test_generation_source_rejects_hostile_physical_and_json_identifiers() -> No
     ),
 )
 def test_postgresql_canonical_decimal_pattern_admits_exact_decimal38_9_literals(value: str) -> None:
-    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+    from heinzel_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
 
     assert re.fullmatch(_POSTGRESQL_CANONICAL_DECIMAL, value) is not None
 
@@ -243,7 +243,7 @@ def test_postgresql_canonical_decimal_pattern_refuses_every_permissive_numeric_f
     Live against the pinned image the guarded statement refuses every one with SQLSTATE 22P02,
     recorded in the checked SUM evidence. This test pins the pattern itself.
     """
-    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+    from heinzel_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
 
     assert re.fullmatch(_POSTGRESQL_CANONICAL_DECIMAL, value) is None
 
@@ -273,8 +273,8 @@ def test_every_in_range_decimal_the_landing_encoder_writes_passes_the_decode_gua
     """
     from decimal import Decimal
 
-    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
-    from pillarmesh_contract_model import canonical_value
+    from heinzel_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+    from heinzel_contract_model import canonical_value
 
     encoded = canonical_value({"revenue": Decimal(value)})
     assert isinstance(encoded, dict)
@@ -293,8 +293,8 @@ def test_the_decode_guard_refuses_what_the_landing_encoder_writes_for_inadmissib
 ) -> None:
     from decimal import Decimal
 
-    from pillarmesh_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
-    from pillarmesh_contract_model import canonical_value
+    from heinzel_compiler.generation_sql import _POSTGRESQL_CANONICAL_DECIMAL
+    from heinzel_contract_model import canonical_value
 
     encoded = canonical_value({"revenue": Decimal(value)})
     assert isinstance(encoded, dict)

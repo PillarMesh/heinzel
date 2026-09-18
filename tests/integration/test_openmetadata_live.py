@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
-from pillarmesh_catalog_control import CatalogBindingState
+from heinzel_catalog_control import CatalogBindingState
 
 from tests.integration.openmetadata_live_harness import LocalOpenMetadata
 
@@ -73,8 +73,8 @@ def test_supplemental_cleanup_rejects_a_residual_provider_object() -> None:
 def test_live_harness_skips_safely_when_local_credentials_are_absent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.delenv("PILLARMESH_OPENMETADATA_SECRET_STORE_KEY", raising=False)
-    monkeypatch.delenv("PILLARMESH_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
+    monkeypatch.delenv("HEINZEL_OPENMETADATA_SECRET_STORE_KEY", raising=False)
+    monkeypatch.delenv("HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD", raising=False)
 
     with pytest.raises(pytest.skip.Exception, match="OpenMetadata live credentials are required"):
         LocalOpenMetadata(tmp_path)

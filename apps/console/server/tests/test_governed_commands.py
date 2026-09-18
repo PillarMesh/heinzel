@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Literal, Never
 
 import pytest
-from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
-from pillarmesh_console.auth import InFlightCommandKeys, TrustedActorContext
-from pillarmesh_console.contracts import (
+from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_console.auth import InFlightCommandKeys, TrustedActorContext
+from heinzel_console.contracts import (
     AcquisitionRunNowCommand,
     ActorRole,
     BusinessProcessManifestCommand,
@@ -33,36 +33,36 @@ from pillarmesh_console.contracts import (
     RetryOperationCommand,
     WarehouseBindingCommand,
 )
-from pillarmesh_console.errors import (
+from heinzel_console.errors import (
     ConsoleConflict,
     ConsoleInvalidRequest,
     ConsoleNotFound,
     ConsoleUnavailable,
 )
-from pillarmesh_console.governed_adapters import (
+from heinzel_console.governed_adapters import (
     GovernedWorkspaceIdentity,
     InMemoryWorkspacePrincipalDirectory,
     WarehouseConfirmation,
     WarehouseOperationIdentity,
 )
-from pillarmesh_console.governed_backend import (
+from heinzel_console.governed_backend import (
     CAPABILITY_NOT_DELIVERED,
     GovernedConsoleBackend,
 )
-from pillarmesh_console.operation_handles import (
+from heinzel_console.operation_handles import (
     CONSOLE_HANDLE_PATTERN,
     InMemoryOperationHandleRepository,
 )
-from pillarmesh_console.request_intake import request_intake_content
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import (
+from heinzel_console.request_intake import request_intake_content
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import (
     BusinessProcessManifest,
     ProcessPackageService,
     SQLiteProcessPackageRepository,
 )
-from pillarmesh_evidence import AcquisitionEvidenceReceipt
-from pillarmesh_provider_sdk import AcquisitionNoValidPlan
-from pillarmesh_request_management import (
+from heinzel_evidence import AcquisitionEvidenceReceipt
+from heinzel_provider_sdk import AcquisitionNoValidPlan
+from heinzel_request_management import (
     ArchitectRequestView,
     ClarifiedOutcomeStatement,
     DeliveryIntent,
@@ -85,16 +85,16 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
     StakeholderAnswerDraft,
 )
-from pillarmesh_request_management.fulfillment_models import (
+from heinzel_request_management.fulfillment_models import (
     AccessScopePreview,
     ApprovalRequirement,
     DisclosureDenial,
 )
-from pillarmesh_request_management.requester_view import OwnDecisionView
-from pillarmesh_runtime import AcquisitionOwnershipError, AcquisitionPreparationResult
-from pillarmesh_semantic_registry import OntologyReviewBundle, OntologyReviewItem
-from pillarmesh_semantic_registry.review import ReviewItemDecision
-from pillarmesh_warehouse_control import (
+from heinzel_request_management.requester_view import OwnDecisionView
+from heinzel_runtime import AcquisitionOwnershipError, AcquisitionPreparationResult
+from heinzel_semantic_registry import OntologyReviewBundle, OntologyReviewItem
+from heinzel_semantic_registry.review import ReviewItemDecision
+from heinzel_warehouse_control import (
     EngineKind,
     WarehouseBinding,
     WarehouseBindingState,

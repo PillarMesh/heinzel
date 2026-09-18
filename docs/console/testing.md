@@ -23,25 +23,25 @@ requester and approval roles in separate terminals, using the same directory:
 
 ```sh
 uv run python -m tests.acceptance.run_console_governed \
-  --directory /private/tmp/pillarmesh-ui-test-session \
+  --directory /private/tmp/heinzel-ui-test-session \
   --port 8130 --actor architect-a --no-seed
 ```
 
 ```sh
 uv run python -m tests.acceptance.run_console_governed \
-  --directory /private/tmp/pillarmesh-ui-test-session \
+  --directory /private/tmp/heinzel-ui-test-session \
   --port 8131 --actor requester-a --no-seed
 ```
 
 ```sh
 uv run python -m tests.acceptance.run_console_governed \
-  --directory /private/tmp/pillarmesh-ui-test-session \
+  --directory /private/tmp/heinzel-ui-test-session \
   --port 8132 --actor data-owner-a --no-seed
 ```
 
 ```sh
 uv run python -m tests.acceptance.run_console_governed \
-  --directory /private/tmp/pillarmesh-ui-test-session \
+  --directory /private/tmp/heinzel-ui-test-session \
   --port 8133 --actor policy-approver-a --no-seed
 ```
 

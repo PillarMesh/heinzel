@@ -23,7 +23,7 @@ class PostgreSQLTLSMaterial:
 def generate_tls_material(*, now: datetime | None = None) -> PostgreSQLTLSMaterial:
     observed_at = datetime.now(UTC) if now is None else now
     ca_key = ec.generate_private_key(ec.SECP256R1())
-    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "PillarMesh local warehouse CA")])
+    ca_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "Heinzel local warehouse CA")])
     ca_certificate = (
         x509.CertificateBuilder()
         .subject_name(ca_name)
@@ -70,7 +70,7 @@ def generate_tls_material(*, now: datetime | None = None) -> PostgreSQLTLSMateri
     )
     client_key = ec.generate_private_key(ec.SECP256R1())
     client_certificate = _leaf_certificate(
-        common_name="pillarmesh-warehouse-client",
+        common_name="heinzel-warehouse-client",
         public_key=client_key.public_key(),
         ca_name=ca_name,
         ca_key=ca_key,

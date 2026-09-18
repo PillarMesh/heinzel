@@ -8,8 +8,8 @@ from functools import partial
 from typing import Literal, cast
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_warehouse_control import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     InitialWarehouseValidationResult,
@@ -34,7 +34,7 @@ from pillarmesh_warehouse_control import (
     WarehouseValidationEvidence,
     WarehouseValidationProfile,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 25, 12, tzinfo=UTC)
@@ -586,7 +586,7 @@ def test_provision_orders_transition_claim_provider_and_evidence_admission() -> 
         "wop-"
         + digest(
             {
-                "domain": "pillarmesh-warehouse-operation-v1",
+                "domain": "heinzel-warehouse-operation-v1",
                 "tenant_id": binding.tenant_id,
                 "sequence": 1,
             }
@@ -1169,7 +1169,7 @@ def test_stale_live_operation_is_reconciled_and_closed_before_a_new_claim() -> N
         "wop-"
         + digest(
             {
-                "domain": "pillarmesh-warehouse-operation-v1",
+                "domain": "heinzel-warehouse-operation-v1",
                 "tenant_id": ready.tenant_id,
                 "sequence": 1,
             }

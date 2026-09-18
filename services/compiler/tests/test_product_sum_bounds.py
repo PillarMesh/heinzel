@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from pillarmesh_compiler.numeric_bounds import (
+from heinzel_compiler.numeric_bounds import (
     MAX_PRODUCT_INPUT_ROWS,
     prove_decimal_sum_bound,
 )

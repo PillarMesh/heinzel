@@ -5,8 +5,8 @@ from datetime import timedelta
 from typing import TypedDict
 
 import pytest
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.contracts import (
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.contracts import (
     ActorRole,
     ClarifiedOutcomeAcceptanceCommand,
     DecisionCommand,
@@ -16,9 +16,9 @@ from pillarmesh_console.contracts import (
     WarehouseBindingCommand,
     setup_snapshot_digest,
 )
-from pillarmesh_console.errors import ConsoleConflict, ConsoleNotFound, ConsoleUnavailable
-from pillarmesh_console.fixture_backend import FixtureConsoleBackend
-from pillarmesh_console.fixture_data import build_fixture_seed
+from heinzel_console.errors import ConsoleConflict, ConsoleNotFound, ConsoleUnavailable
+from heinzel_console.fixture_backend import FixtureConsoleBackend
+from heinzel_console.fixture_data import build_fixture_seed
 
 _SETUP_DIGEST = build_fixture_seed().setup.setup_digest
 _BLOCKED_REQUEST_DIGEST = "b" * 64
@@ -496,7 +496,7 @@ def test_retry_token_authority_denials_are_non_enumerating(context: TrustedActor
 
 
 def test_retry_token_expires_at_the_exact_private_binding_boundary() -> None:
-    from pillarmesh_console.fixture_data import FIXED_TIME
+    from heinzel_console.fixture_data import FIXED_TIME
 
     class MutableClock:
         current = FIXED_TIME
@@ -648,7 +648,7 @@ def test_clock_failure_leaves_all_acceptance_projections_and_replay_unchanged() 
         def __call__(self):  # type: ignore[no-untyped-def]
             if self.fail:
                 raise RuntimeError("clock failure canary")
-            from pillarmesh_console.fixture_data import FIXED_TIME
+            from heinzel_console.fixture_data import FIXED_TIME
 
             return FIXED_TIME
 

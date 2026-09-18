@@ -6,8 +6,8 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 import snowflake.connector
-from pillarmesh_provider_sdk import ProviderObservation
-from pillarmesh_provider_snowflake import SnowflakeProvider, SnowflakeSettings
+from heinzel_provider_sdk import ProviderObservation
+from heinzel_provider_snowflake import SnowflakeProvider, SnowflakeSettings
 
 type KeyConstraint = Literal["primary_key", "unique", "none"]
 
@@ -32,8 +32,8 @@ def localstack_settings() -> SnowflakeSettings:
         user="test",
         password="test",
         role="test",
-        warehouse="PILLARMESH_M0_WH",
-        database="PILLARMESH_M0",
+        warehouse="HEINZEL_M0_WH",
+        database="HEINZEL_M0",
         schema_name="TRANSFER",
         stage="M0_STAGE",
         target_table="ORDERS",

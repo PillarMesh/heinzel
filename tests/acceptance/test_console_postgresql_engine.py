@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EngineKind,
     LocalAcceptanceWarehouseReadinessPolicy,
     PrivateWarehouseOperation,
@@ -18,8 +18,8 @@ from pillarmesh_warehouse_control import (
     WarehouseResourceCreationState,
     WarehouseResourceKind,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
-from pillarmesh_warehouse_control.service import WarehouseControlService
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.service import WarehouseControlService
 
 from tests.acceptance.console_postgresql_engine import (
     DeferredPostgreSQLProvider,

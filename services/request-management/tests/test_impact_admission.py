@@ -4,7 +4,7 @@ import runpy
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     ArtifactReference,
     ImpactAdmissionBinding,
     ImpactApprovalRequirement,
@@ -12,7 +12,7 @@ from pillarmesh_contract_model import (
     ImpactSubject,
     digest,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     FulfillmentAdmissionReceipt,
     FulfillmentGroundingError,
     FulfillmentIntegrityError,

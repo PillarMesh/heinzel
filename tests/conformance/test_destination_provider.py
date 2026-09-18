@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from pillarmesh_provider_sdk import StagedSegment, staged_segment_digest
+from heinzel_provider_sdk import StagedSegment, staged_segment_digest
 from pydantic import ValidationError
 
 

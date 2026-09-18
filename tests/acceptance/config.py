@@ -12,63 +12,63 @@ from pathlib import Path
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 
 REQUIRED_VARIABLES = (
-    "PILLARMESH_STATE_PATH",
-    "PILLARMESH_OUTPUT_DIR",
-    "PILLARMESH_CLEANUP_LEDGER_PATH",
-    "PILLARMESH_SIGNING_KEY_ID",
-    "PILLARMESH_SIGNING_PRIVATE_KEY_B64",
-    "PILLARMESH_POSTGRES_DSN",
-    "PILLARMESH_POSTGRES_DATABASE",
-    "PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL",
-    "PILLARMESH_POSTGRES_OWNER_PRINCIPAL",
-    "PILLARMESH_POSTGRES_CONNECTION_HANDLE",
-    "PILLARMESH_POSTGRES_SCHEMA",
-    "PILLARMESH_POSTGRES_TABLE",
-    "PILLARMESH_POSTGRES_DENIAL_SCHEMA",
-    "PILLARMESH_POSTGRES_FIXTURE_DSN",
-    "PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL",
-    "PILLARMESH_SNOWFLAKE_ACCOUNT",
-    "PILLARMESH_SNOWFLAKE_USER",
-    "PILLARMESH_SNOWFLAKE_PASSWORD",
-    "PILLARMESH_SNOWFLAKE_OWNER_USER",
-    "PILLARMESH_SNOWFLAKE_ROLE",
-    "PILLARMESH_SNOWFLAKE_WAREHOUSE",
-    "PILLARMESH_SNOWFLAKE_DATABASE",
-    "PILLARMESH_SNOWFLAKE_SCHEMA",
-    "PILLARMESH_SNOWFLAKE_STAGE",
-    "PILLARMESH_SNOWFLAKE_TARGET_TABLE",
-    "PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE",
-    "PILLARMESH_SNOWFLAKE_LEDGER_TABLE",
-    "PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE",
-    "PILLARMESH_SNOWFLAKE_DENIAL_DATABASE",
-    "PILLARMESH_CREDENTIAL_CANARIES_JSON",
-    "PILLARMESH_ROW_VALUE_CANARY",
-    "PILLARMESH_OPERATOR_PSEUDONYM",
-    "PILLARMESH_HOST_PSEUDONYM",
-    "PILLARMESH_MCP_PROTOCOL_VERSION",
-    "PILLARMESH_OWNER_AUTHORIZATION_REFERENCE",
+    "HEINZEL_STATE_PATH",
+    "HEINZEL_OUTPUT_DIR",
+    "HEINZEL_CLEANUP_LEDGER_PATH",
+    "HEINZEL_SIGNING_KEY_ID",
+    "HEINZEL_SIGNING_PRIVATE_KEY_B64",
+    "HEINZEL_POSTGRES_DSN",
+    "HEINZEL_POSTGRES_DATABASE",
+    "HEINZEL_POSTGRES_RUNTIME_PRINCIPAL",
+    "HEINZEL_POSTGRES_OWNER_PRINCIPAL",
+    "HEINZEL_POSTGRES_CONNECTION_HANDLE",
+    "HEINZEL_POSTGRES_SCHEMA",
+    "HEINZEL_POSTGRES_TABLE",
+    "HEINZEL_POSTGRES_DENIAL_SCHEMA",
+    "HEINZEL_POSTGRES_FIXTURE_DSN",
+    "HEINZEL_POSTGRES_FIXTURE_PRINCIPAL",
+    "HEINZEL_SNOWFLAKE_ACCOUNT",
+    "HEINZEL_SNOWFLAKE_USER",
+    "HEINZEL_SNOWFLAKE_PASSWORD",
+    "HEINZEL_SNOWFLAKE_OWNER_USER",
+    "HEINZEL_SNOWFLAKE_ROLE",
+    "HEINZEL_SNOWFLAKE_WAREHOUSE",
+    "HEINZEL_SNOWFLAKE_DATABASE",
+    "HEINZEL_SNOWFLAKE_SCHEMA",
+    "HEINZEL_SNOWFLAKE_STAGE",
+    "HEINZEL_SNOWFLAKE_TARGET_TABLE",
+    "HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE",
+    "HEINZEL_SNOWFLAKE_LEDGER_TABLE",
+    "HEINZEL_SNOWFLAKE_CONNECTION_HANDLE",
+    "HEINZEL_SNOWFLAKE_DENIAL_DATABASE",
+    "HEINZEL_CREDENTIAL_CANARIES_JSON",
+    "HEINZEL_ROW_VALUE_CANARY",
+    "HEINZEL_OPERATOR_PSEUDONYM",
+    "HEINZEL_HOST_PSEUDONYM",
+    "HEINZEL_MCP_PROTOCOL_VERSION",
+    "HEINZEL_OWNER_AUTHORIZATION_REFERENCE",
 )
 
 PRODUCT_VARIABLES = (
-    "PILLARMESH_STATE_PATH",
-    "PILLARMESH_OUTPUT_DIR",
-    "PILLARMESH_SIGNING_KEY_ID",
-    "PILLARMESH_SIGNING_PRIVATE_KEY_B64",
-    "PILLARMESH_POSTGRES_DSN",
-    "PILLARMESH_POSTGRES_CONNECTION_HANDLE",
-    "PILLARMESH_POSTGRES_SCHEMA",
-    "PILLARMESH_POSTGRES_TABLE",
-    "PILLARMESH_SNOWFLAKE_ACCOUNT",
-    "PILLARMESH_SNOWFLAKE_USER",
-    "PILLARMESH_SNOWFLAKE_PASSWORD",
-    "PILLARMESH_SNOWFLAKE_ROLE",
-    "PILLARMESH_SNOWFLAKE_WAREHOUSE",
-    "PILLARMESH_SNOWFLAKE_DATABASE",
-    "PILLARMESH_SNOWFLAKE_SCHEMA",
-    "PILLARMESH_SNOWFLAKE_STAGE",
-    "PILLARMESH_SNOWFLAKE_TARGET_TABLE",
-    "PILLARMESH_SNOWFLAKE_LEDGER_TABLE",
-    "PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE",
+    "HEINZEL_STATE_PATH",
+    "HEINZEL_OUTPUT_DIR",
+    "HEINZEL_SIGNING_KEY_ID",
+    "HEINZEL_SIGNING_PRIVATE_KEY_B64",
+    "HEINZEL_POSTGRES_DSN",
+    "HEINZEL_POSTGRES_CONNECTION_HANDLE",
+    "HEINZEL_POSTGRES_SCHEMA",
+    "HEINZEL_POSTGRES_TABLE",
+    "HEINZEL_SNOWFLAKE_ACCOUNT",
+    "HEINZEL_SNOWFLAKE_USER",
+    "HEINZEL_SNOWFLAKE_PASSWORD",
+    "HEINZEL_SNOWFLAKE_ROLE",
+    "HEINZEL_SNOWFLAKE_WAREHOUSE",
+    "HEINZEL_SNOWFLAKE_DATABASE",
+    "HEINZEL_SNOWFLAKE_SCHEMA",
+    "HEINZEL_SNOWFLAKE_STAGE",
+    "HEINZEL_SNOWFLAKE_TARGET_TABLE",
+    "HEINZEL_SNOWFLAKE_LEDGER_TABLE",
+    "HEINZEL_SNOWFLAKE_CONNECTION_HANDLE",
 )
 
 PASSTHROUGH_VARIABLES = (
@@ -91,7 +91,7 @@ PASSTHROUGH_VARIABLES = (
 _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_$]*$")
 POSTGRES_MARKER_TABLE = "environment_marker"
 POSTGRES_AUDIT_FUNCTION = "runtime_source_read_count"
-SNOWFLAKE_OWNER_ROLE = "PILLARMESH_M0_OWNER"
+SNOWFLAKE_OWNER_ROLE = "HEINZEL_M0_OWNER"
 SNOWFLAKE_FILE_FORMAT = "M0_CSV"
 SNOWFLAKE_ENVIRONMENT_MARKER = "ENVIRONMENT_MARKER"
 
@@ -130,24 +130,24 @@ def _identifier(value: str, variable: str) -> str:
 
 def derive_environment_identity(environment: Mapping[str, str]) -> str:
     shared_boundary = {
-        "postgres_database": environment["PILLARMESH_POSTGRES_DATABASE"],
-        "postgres_schema": environment["PILLARMESH_POSTGRES_SCHEMA"],
-        "postgres_table": environment["PILLARMESH_POSTGRES_TABLE"],
-        "snowflake_account": environment["PILLARMESH_SNOWFLAKE_ACCOUNT"],
-        "snowflake_database": environment["PILLARMESH_SNOWFLAKE_DATABASE"],
-        "snowflake_schema": environment["PILLARMESH_SNOWFLAKE_SCHEMA"],
-        "snowflake_stage": environment["PILLARMESH_SNOWFLAKE_STAGE"],
-        "snowflake_target": environment["PILLARMESH_SNOWFLAKE_TARGET_TABLE"],
-        "snowflake_negative_target": environment["PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE"],
-        "snowflake_ledger": environment["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"],
+        "postgres_database": environment["HEINZEL_POSTGRES_DATABASE"],
+        "postgres_schema": environment["HEINZEL_POSTGRES_SCHEMA"],
+        "postgres_table": environment["HEINZEL_POSTGRES_TABLE"],
+        "snowflake_account": environment["HEINZEL_SNOWFLAKE_ACCOUNT"],
+        "snowflake_database": environment["HEINZEL_SNOWFLAKE_DATABASE"],
+        "snowflake_schema": environment["HEINZEL_SNOWFLAKE_SCHEMA"],
+        "snowflake_stage": environment["HEINZEL_SNOWFLAKE_STAGE"],
+        "snowflake_target": environment["HEINZEL_SNOWFLAKE_TARGET_TABLE"],
+        "snowflake_negative_target": environment["HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE"],
+        "snowflake_ledger": environment["HEINZEL_SNOWFLAKE_LEDGER_TABLE"],
     }
     normalized = {name: value.casefold() for name, value in shared_boundary.items()}
     payload = json.dumps(normalized, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(b"pillarmesh-m0-environment-v1\0" + payload).hexdigest()
+    return hashlib.sha256(b"heinzel-environment-v1\0" + payload).hexdigest()
 
 
 def _reservation_path(environment_identity: str) -> Path:
-    parent = Path(tempfile.gettempdir()).resolve() / f"pillarmesh-m0-reservations-{os.getuid()}"
+    parent = Path(tempfile.gettempdir()).resolve() / f"heinzel-reservations-{os.getuid()}"
     return parent / f"{environment_identity}.lock"
 
 
@@ -175,11 +175,11 @@ class AcceptanceConfig:
             raise HarnessError("missing required variables: " + ", ".join(missing))
 
         raw_paths = (
-            ("PILLARMESH_STATE_PATH", Path(environment["PILLARMESH_STATE_PATH"])),
-            ("PILLARMESH_OUTPUT_DIR", Path(environment["PILLARMESH_OUTPUT_DIR"])),
+            ("HEINZEL_STATE_PATH", Path(environment["HEINZEL_STATE_PATH"])),
+            ("HEINZEL_OUTPUT_DIR", Path(environment["HEINZEL_OUTPUT_DIR"])),
             (
-                "PILLARMESH_CLEANUP_LEDGER_PATH",
-                Path(environment["PILLARMESH_CLEANUP_LEDGER_PATH"]),
+                "HEINZEL_CLEANUP_LEDGER_PATH",
+                Path(environment["HEINZEL_CLEANUP_LEDGER_PATH"]),
             ),
         )
         checked_paths = tuple((name, _absolute_lexical(path)) for name, path in raw_paths)
@@ -193,66 +193,66 @@ class AcceptanceConfig:
         if len(set(path_by_name.values())) != 3:
             errors.extend(name for name, _path in checked_paths)
 
-        state_path = path_by_name["PILLARMESH_STATE_PATH"]
-        output_dir = path_by_name["PILLARMESH_OUTPUT_DIR"]
-        ledger_path = path_by_name["PILLARMESH_CLEANUP_LEDGER_PATH"]
+        state_path = path_by_name["HEINZEL_STATE_PATH"]
+        output_dir = path_by_name["HEINZEL_OUTPUT_DIR"]
+        ledger_path = path_by_name["HEINZEL_CLEANUP_LEDGER_PATH"]
         environment_identity = derive_environment_identity(environment)
         reservation_path = _reservation_path(environment_identity)
         if not allow_reuse:
             if state_path.exists() or state_path.is_symlink():
-                errors.append("PILLARMESH_STATE_PATH")
+                errors.append("HEINZEL_STATE_PATH")
             if output_dir.exists() or output_dir.is_symlink():
-                errors.append("PILLARMESH_OUTPUT_DIR")
+                errors.append("HEINZEL_OUTPUT_DIR")
             if ledger_path.exists() or ledger_path.is_symlink():
-                errors.append("PILLARMESH_CLEANUP_LEDGER_PATH")
+                errors.append("HEINZEL_CLEANUP_LEDGER_PATH")
         if errors:
             raise HarnessError("invalid or reused private paths: " + ", ".join(sorted(set(errors))))
 
-        postgres_runtime = environment["PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL"].casefold()
-        postgres_fixture = environment["PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL"].casefold()
-        postgres_owner = environment["PILLARMESH_POSTGRES_OWNER_PRINCIPAL"].casefold()
+        postgres_runtime = environment["HEINZEL_POSTGRES_RUNTIME_PRINCIPAL"].casefold()
+        postgres_fixture = environment["HEINZEL_POSTGRES_FIXTURE_PRINCIPAL"].casefold()
+        postgres_owner = environment["HEINZEL_POSTGRES_OWNER_PRINCIPAL"].casefold()
         if postgres_fixture == postgres_owner:
             raise HarnessError("fixture principal is not isolated from declared owner")
         if postgres_runtime in {postgres_fixture, postgres_owner}:
             raise HarnessError("runtime principal is not isolated")
         if (
-            environment["PILLARMESH_SNOWFLAKE_USER"].casefold()
-            == environment["PILLARMESH_SNOWFLAKE_OWNER_USER"].casefold()
+            environment["HEINZEL_SNOWFLAKE_USER"].casefold()
+            == environment["HEINZEL_SNOWFLAKE_OWNER_USER"].casefold()
         ):
             raise HarnessError("runtime principal is not isolated")
 
         identifier_variables = (
-            "PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL",
-            "PILLARMESH_POSTGRES_OWNER_PRINCIPAL",
-            "PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL",
-            "PILLARMESH_POSTGRES_SCHEMA",
-            "PILLARMESH_POSTGRES_TABLE",
-            "PILLARMESH_POSTGRES_DENIAL_SCHEMA",
-            "PILLARMESH_SNOWFLAKE_USER",
-            "PILLARMESH_SNOWFLAKE_OWNER_USER",
-            "PILLARMESH_SNOWFLAKE_ROLE",
-            "PILLARMESH_SNOWFLAKE_WAREHOUSE",
-            "PILLARMESH_SNOWFLAKE_DATABASE",
-            "PILLARMESH_SNOWFLAKE_SCHEMA",
-            "PILLARMESH_SNOWFLAKE_STAGE",
-            "PILLARMESH_SNOWFLAKE_TARGET_TABLE",
-            "PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE",
-            "PILLARMESH_SNOWFLAKE_LEDGER_TABLE",
-            "PILLARMESH_SNOWFLAKE_DENIAL_DATABASE",
+            "HEINZEL_POSTGRES_RUNTIME_PRINCIPAL",
+            "HEINZEL_POSTGRES_OWNER_PRINCIPAL",
+            "HEINZEL_POSTGRES_FIXTURE_PRINCIPAL",
+            "HEINZEL_POSTGRES_SCHEMA",
+            "HEINZEL_POSTGRES_TABLE",
+            "HEINZEL_POSTGRES_DENIAL_SCHEMA",
+            "HEINZEL_SNOWFLAKE_USER",
+            "HEINZEL_SNOWFLAKE_OWNER_USER",
+            "HEINZEL_SNOWFLAKE_ROLE",
+            "HEINZEL_SNOWFLAKE_WAREHOUSE",
+            "HEINZEL_SNOWFLAKE_DATABASE",
+            "HEINZEL_SNOWFLAKE_SCHEMA",
+            "HEINZEL_SNOWFLAKE_STAGE",
+            "HEINZEL_SNOWFLAKE_TARGET_TABLE",
+            "HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE",
+            "HEINZEL_SNOWFLAKE_LEDGER_TABLE",
+            "HEINZEL_SNOWFLAKE_DENIAL_DATABASE",
         )
         for name in identifier_variables:
             _identifier(environment[name], name)
         fixed_boundary = {
-            "PILLARMESH_POSTGRES_SCHEMA": "pillarmesh_m0",
-            "PILLARMESH_POSTGRES_TABLE": "orders",
-            "PILLARMESH_SNOWFLAKE_ROLE": "PILLARMESH_M0_RUNTIME",
-            "PILLARMESH_SNOWFLAKE_WAREHOUSE": "PILLARMESH_M0_WH",
-            "PILLARMESH_SNOWFLAKE_DATABASE": "PILLARMESH_M0",
-            "PILLARMESH_SNOWFLAKE_SCHEMA": "TRANSFER",
-            "PILLARMESH_SNOWFLAKE_STAGE": "M0_STAGE",
-            "PILLARMESH_SNOWFLAKE_TARGET_TABLE": "ORDERS",
-            "PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE": "ORDERS_UNSUPPORTED_KEY",
-            "PILLARMESH_SNOWFLAKE_LEDGER_TABLE": "COMMIT_LEDGER",
+            "HEINZEL_POSTGRES_SCHEMA": "heinzel_m0",
+            "HEINZEL_POSTGRES_TABLE": "orders",
+            "HEINZEL_SNOWFLAKE_ROLE": "HEINZEL_M0_RUNTIME",
+            "HEINZEL_SNOWFLAKE_WAREHOUSE": "HEINZEL_M0_WH",
+            "HEINZEL_SNOWFLAKE_DATABASE": "HEINZEL_M0",
+            "HEINZEL_SNOWFLAKE_SCHEMA": "TRANSFER",
+            "HEINZEL_SNOWFLAKE_STAGE": "M0_STAGE",
+            "HEINZEL_SNOWFLAKE_TARGET_TABLE": "ORDERS",
+            "HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE": "ORDERS_UNSUPPORTED_KEY",
+            "HEINZEL_SNOWFLAKE_LEDGER_TABLE": "COMMIT_LEDGER",
         }
         if any(
             environment[name].casefold() != expected.casefold()
@@ -260,15 +260,15 @@ class AcceptanceConfig:
         ):
             raise HarnessError("provider object is outside the dedicated acceptance boundary")
         try:
-            raw_canaries = json.loads(environment["PILLARMESH_CREDENTIAL_CANARIES_JSON"])
+            raw_canaries = json.loads(environment["HEINZEL_CREDENTIAL_CANARIES_JSON"])
         except json.JSONDecodeError:
-            raise HarnessError("invalid variable: PILLARMESH_CREDENTIAL_CANARIES_JSON") from None
+            raise HarnessError("invalid variable: HEINZEL_CREDENTIAL_CANARIES_JSON") from None
         if (
             not isinstance(raw_canaries, list)
             or not raw_canaries
             or not all(isinstance(item, str) and item for item in raw_canaries)
         ):
-            raise HarnessError("invalid variable: PILLARMESH_CREDENTIAL_CANARIES_JSON")
+            raise HarnessError("invalid variable: HEINZEL_CREDENTIAL_CANARIES_JSON")
         return cls(
             environment=dict(environment),
             repository_root=_absolute_lexical(repository_root),

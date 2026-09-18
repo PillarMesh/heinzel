@@ -5,14 +5,14 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AnswerExecutionIncidentProjectionUnavailable,
     AnswerExecutionIncidentProjector,
     AnswerExecutionReceipt,
     AnswerProductGenerationReference,
     AnswerQueryReference,
 )
-from pillarmesh_state import IncidentPersistenceError, IncidentRecord, SQLiteIncidentRepository
+from heinzel_state import IncidentPersistenceError, IncidentRecord, SQLiteIncidentRepository
 
 NOW = datetime(2026, 9, 12, 20, tzinfo=UTC)
 

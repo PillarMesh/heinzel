@@ -7,15 +7,15 @@ from typing import Literal
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     ConnectedAuthorityProvenance,
     EnterpriseEntitlementAssertion,
 )
-from pillarmesh_compiler import GovernedQueryPlan
-from pillarmesh_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import SourceFreshnessObservation
-from pillarmesh_request_management import (
+from heinzel_compiler import GovernedQueryPlan
+from heinzel_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import SourceFreshnessObservation
+from heinzel_request_management import (
     AnswerIntentCandidate,
     AnswerQuestion,
     AnswerScopePolicy,
@@ -27,10 +27,10 @@ from pillarmesh_request_management import (
     ProductOwnerAuthority,
     RequestState,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     AnswerProductGenerationReference as RequestProductGenerationReference,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AnswerProductGenerationReference,
     AnswerQueryColumn,
     AnswerQueryCursor,
@@ -38,9 +38,9 @@ from pillarmesh_runtime import (
     QueryGenerationState,
     ReadOnlyAnswerQuery,
 )
-from pillarmesh_runtime.answer_models import AnswerQueryValue
-from pillarmesh_semantic_registry import ApprovedProductVersionMetadata
-from pillarmesh_state import IncidentRecord
+from heinzel_runtime.answer_models import AnswerQueryValue
+from heinzel_semantic_registry import ApprovedProductVersionMetadata
+from heinzel_state import IncidentRecord
 from starlette.testclient import TestClient
 
 from tests.acceptance.console_answer_runtime import GovernedAnswerRuntimeConfiguration
@@ -455,13 +455,13 @@ def test_fresh_query_reaches_delivered_and_serves_persisted_http_result_and_csv(
         answer = runtime.execute_answer(
             tenant_id=TENANT,
             request_id=request.request_id,
-            actor_id="pillarmesh-runtime",
+            actor_id="heinzel-runtime",
             expected_revision=admission.request.revision,
         )
         replay = runtime.execute_answer(
             tenant_id=TENANT,
             request_id=request.request_id,
-            actor_id="pillarmesh-runtime",
+            actor_id="heinzel-runtime",
             expected_revision=admission.request.revision,
         )
         runtime.incidents.append(

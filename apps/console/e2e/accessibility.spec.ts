@@ -95,7 +95,7 @@ test("the skip link is the first stop of the keyboard order and moves focus to t
   await page.keyboard.press("Shift+Tab")
   await expect(skipLink).toBeFocused()
   await page.keyboard.press("Enter")
-  await expect(page.getByRole("main", {name: "PillarMesh console"})).toBeFocused()
+  await expect(page.getByRole("main", {name: "Heinzel console"})).toBeFocused()
 })
 
 test("keyboard alone completes the setup foundation stage", async ({page, request}) => {

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from pillarmesh_dbt_adapter import (
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtColumnTest,
     DbtInvocationSpec,
@@ -56,7 +56,7 @@ def test_subprocess_runner_disables_dbt_telemetry_for_every_process(
     )
 
     with patch(
-        "pillarmesh_dbt_adapter.invocation.subprocess.run",
+        "heinzel_dbt_adapter.invocation.subprocess.run",
         side_effect=(
             SimpleNamespace(stdout="Core installed: 1.10.13", stderr="", returncode=0),
             SimpleNamespace(stdout=b"", stderr=b"", returncode=0),
@@ -78,7 +78,7 @@ def test_subprocess_runner_generates_declared_tests_and_only_forwards_approved_c
     executable.touch()
     profiles = tmp_path / "profiles"
     profiles.mkdir()
-    monkeypatch.setenv("PILLARMESH_DBT_PASSWORD", "approved-secret")
+    monkeypatch.setenv("HEINZEL_DBT_PASSWORD", "approved-secret")
     monkeypatch.setenv("UNRELATED_SECRET", "must-not-leak")
     observed: dict[str, object] = {}
 
@@ -96,7 +96,7 @@ def test_subprocess_runner_generates_declared_tests_and_only_forwards_approved_c
             profiles_directory=profiles,
             workspace_directory=tmp_path,
             timeout_seconds=30,
-            credential_environment_names=("PILLARMESH_DBT_PASSWORD",),
+            credential_environment_names=("HEINZEL_DBT_PASSWORD",),
         )
     )
     invocation = DbtInvocationSpec(
@@ -116,12 +116,12 @@ def test_subprocess_runner_generates_declared_tests_and_only_forwards_approved_c
         ),
     )
 
-    with patch("pillarmesh_dbt_adapter.invocation.subprocess.run", side_effect=run_process):
+    with patch("heinzel_dbt_adapter.invocation.subprocess.run", side_effect=run_process):
         runner.run(invocation)
 
     environment = observed["environment"]
     assert isinstance(environment, dict)
-    assert environment["PILLARMESH_DBT_PASSWORD"] == "approved-secret"
+    assert environment["HEINZEL_DBT_PASSWORD"] == "approved-secret"
     assert "UNRELATED_SECRET" not in environment
     assert observed["schema"] == (
         "version: 2\n"

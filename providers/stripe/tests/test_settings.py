@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import AcquisitionField
-from pillarmesh_provider_stripe import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import AcquisitionField
+from heinzel_provider_stripe import (
     STRIPE_API_VERSION,
     StripeEventCursor,
     StripeObjectDeclaration,
@@ -164,7 +164,7 @@ def _settings_values() -> dict[str, object]:
         "supported_creation_versions": ("2026-02-25.clover",),
         "objects": _approved_objects(),
         "event_types": _APPROVED_EVENT_TYPES,
-        "customer_identity_metadata_key": "pillarmesh_customer_id",
+        "customer_identity_metadata_key": "heinzel_customer_id",
     }
 
 
@@ -246,7 +246,7 @@ def test_settings_reject_account_modes_outside_test_and_live(account_mode: str) 
 
 @pytest.mark.parametrize(
     "metadata_key",
-    ("*", "customer.*", "metadata", "pillarmesh_customer_id,other_key", "", "   "),
+    ("*", "customer.*", "metadata", "heinzel_customer_id,other_key", "", "   "),
 )
 def test_settings_reject_unrestricted_or_malformed_metadata_configuration(
     metadata_key: str,

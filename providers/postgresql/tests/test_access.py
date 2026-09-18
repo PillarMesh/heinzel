@@ -4,13 +4,13 @@ from datetime import UTC, datetime, timedelta
 
 import psycopg
 import pytest
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLAccessColumnBinding,
     PostgreSQLAccessEffectProvider,
     PostgreSQLAccessSettings,
     PostgreSQLAccessTarget,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     AccessEffectCommand,
     AccessEffectProviderError,
     run_access_provider_conformance,

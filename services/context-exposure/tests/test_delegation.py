@@ -4,12 +4,12 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 
 import pytest
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     CurrentEntitlementSnapshot,
     EntitlementFilterDomain,
     EntitlementResolutionDenied,
 )
-from pillarmesh_context_exposure import (
+from heinzel_context_exposure import (
     AgentAccessDenied,
     AgentAuthorityUnavailable,
     AgentInvocationGuard,
@@ -17,8 +17,8 @@ from pillarmesh_context_exposure import (
     DelegatedAgentContext,
     FixedWindowPrincipalRateLimiter,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import AnswerScopePolicy, FilterDomain
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import AnswerScopePolicy, FilterDomain
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
 TENANT = "tenant-a"

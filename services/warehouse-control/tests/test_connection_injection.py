@@ -13,14 +13,14 @@ import sqlite3
 from datetime import UTC, datetime
 from threading import Thread
 
-from pillarmesh_warehouse_control import EngineKind
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control import EngineKind
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 
 NOW = datetime(2026, 9, 2, 12, tzinfo=UTC)
 
 
 def _draft(repository: SQLiteWarehouseRepository) -> str:
-    from pillarmesh_warehouse_control import WarehouseControlService
+    from heinzel_warehouse_control import WarehouseControlService
 
     service = WarehouseControlService(repository, clock=lambda: NOW)
     binding = service.create_draft(

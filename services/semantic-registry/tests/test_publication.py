@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 
 import pytest
-from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
-from pillarmesh_contract_model import (
+from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -22,19 +22,19 @@ from pillarmesh_contract_model import (
     TriggerRequirement,
     digest,
 )
-from pillarmesh_provider_openmetadata import (
+from heinzel_provider_openmetadata import (
     CatalogObjectRef,
     CatalogObjectSnapshot,
     CatalogProviderError,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     RequestManagementService,
     RequestState,
     SQLiteRequestRepository,
 )
 
 if TYPE_CHECKING:
-    from pillarmesh_semantic_registry.publication import (
+    from heinzel_semantic_registry.publication import (
         CatalogPublicationIntent,
         CatalogPublicationProvider,
     )
@@ -124,7 +124,7 @@ def _contract(semantic_version: ApprovedSemanticVersion) -> ManagedIntegrationCo
 
 
 def test_publication_module_exposes_the_governed_publication_service() -> None:
-    from pillarmesh_semantic_registry.publication import SemanticPublicationService
+    from heinzel_semantic_registry.publication import SemanticPublicationService
 
     assert SemanticPublicationService.__name__ == "SemanticPublicationService"
 
@@ -142,7 +142,7 @@ def test_publish_rejects_a_binding_that_is_not_ready() -> None:
 
 
 def test_publication_intent_binds_exact_tenant_versions_and_stable_identities() -> None:
-    from pillarmesh_semantic_registry.publication import (
+    from heinzel_semantic_registry.publication import (
         CatalogPublicationIntent,
         publication_intent,
     )
@@ -162,7 +162,7 @@ def test_publication_intent_binds_exact_tenant_versions_and_stable_identities() 
 
 
 def test_publication_intent_carries_approved_objects_and_exact_contract_reference() -> None:
-    from pillarmesh_semantic_registry.publication import publication_intent
+    from heinzel_semantic_registry.publication import publication_intent
 
     semantic_version = _semantic_version()
     contract = _contract(semantic_version)
@@ -182,7 +182,7 @@ def test_publication_intent_carries_approved_objects_and_exact_contract_referenc
 
 
 def test_publish_rejects_replay_when_persisted_semantic_bytes_differ_from_caller_input() -> None:
-    from pillarmesh_semantic_registry.publication import SQLiteCatalogPublicationRepository
+    from heinzel_semantic_registry.publication import SQLiteCatalogPublicationRepository
 
     provider = _PublicationProvider()
     repository = SQLiteCatalogPublicationRepository(":memory:")
@@ -206,7 +206,7 @@ def test_publish_rejects_replay_when_persisted_semantic_bytes_differ_from_caller
 
 
 def test_publication_recovery_loads_the_exact_persisted_intent_with_tenant_isolation() -> None:
-    from pillarmesh_semantic_registry.publication import (
+    from heinzel_semantic_registry.publication import (
         SQLiteCatalogPublicationRepository,
         publication_intent,
     )
@@ -240,7 +240,7 @@ def test_publication_recovery_loads_the_exact_persisted_intent_with_tenant_isola
 
 
 def test_publication_effect_count_is_tenant_scoped_and_replay_stable() -> None:
-    from pillarmesh_semantic_registry.publication import SQLiteCatalogPublicationRepository
+    from heinzel_semantic_registry.publication import SQLiteCatalogPublicationRepository
 
     repository = SQLiteCatalogPublicationRepository(":memory:")
     service = _service(_PublicationProvider(), repository=repository)
@@ -264,7 +264,7 @@ def test_publication_effect_count_is_tenant_scoped_and_replay_stable() -> None:
 
 
 def test_receipt_never_exposes_an_opaque_provider_identifier() -> None:
-    from pillarmesh_semantic_registry.publication import CatalogPublicationReceipt
+    from heinzel_semantic_registry.publication import CatalogPublicationReceipt
 
     receipt = CatalogPublicationReceipt(
         publication_id="publication-a",
@@ -572,8 +572,8 @@ def _service(
     semantic_repository: object | None = None,
     semantic_version_repository: object | None = None,
 ):
-    from pillarmesh_semantic_registry import SQLiteSemanticRepository
-    from pillarmesh_semantic_registry.publication import (
+    from heinzel_semantic_registry import SQLiteSemanticRepository
+    from heinzel_semantic_registry.publication import (
         SemanticPublicationService,
         SQLiteCatalogPublicationRepository,
     )
@@ -630,7 +630,7 @@ def test_lost_publication_response_replay_creates_one_receipt_and_no_duplicate_i
 
 
 def test_repository_lists_only_the_tenants_publications_newest_first() -> None:
-    from pillarmesh_semantic_registry.publication import SQLiteCatalogPublicationRepository
+    from heinzel_semantic_registry.publication import SQLiteCatalogPublicationRepository
 
     repository = SQLiteCatalogPublicationRepository(":memory:")
     provider = _PublicationProvider()
@@ -857,7 +857,7 @@ def test_description_only_catalog_drift_is_explicitly_allowed_without_a_change_r
 
 
 def test_drift_persists_tenant_scoped_immutable_before_and_after_authority_observations() -> None:
-    from pillarmesh_semantic_registry import SQLiteSemanticRepository
+    from heinzel_semantic_registry import SQLiteSemanticRepository
 
     provider = _PublicationProvider()
     semantic_repository = SQLiteSemanticRepository(":memory:")

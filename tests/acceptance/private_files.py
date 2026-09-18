@@ -333,7 +333,7 @@ class RunReservation:
             try:
                 os.mkdir(self._config.output_dir, mode=0o700)
             except FileExistsError:
-                raise HarnessError("PILLARMESH_OUTPUT_DIR already exists") from None
+                raise HarnessError("HEINZEL_OUTPUT_DIR already exists") from None
             output = self._config.output_dir.lstat()
             self._output_identity = (output.st_dev, output.st_ino)
             self._state.__enter__()

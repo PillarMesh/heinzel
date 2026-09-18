@@ -39,7 +39,7 @@ A fresh high-risk data-access request was accepted and appeared in the architect
 Its detail exposed no clarification, preparation, denial, or cancellation action, so it
 remained permanently `submitted`. The governed backend explicitly returns no preparation
 actions for every request that is not a stakeholder question
-(`apps/console/server/src/pillarmesh_console/governed_backend.py:966-980`).
+(`apps/console/server/src/heinzel_console/governed_backend.py:966-980`).
 
 **User impact:** the UI offers a product request that no user can complete.
 
@@ -58,7 +58,7 @@ it. The console catalog read returns `503 capability_not_delivered` even for ref
 that were freshly published and read back directly from OpenMetadata.
 
 **User impact:** configuring the live services produces no inspectable catalog or
-data-product experience inside PillarMesh.
+data-product experience inside Heinzel.
 
 **Fix:** add tenant-scoped catalog and data-product list/detail contracts backed by the
 owning publication and product services, then route from the summary pages to those

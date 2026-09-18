@@ -4,8 +4,8 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import (
     AcquisitionActivationApproval,
     AcquisitionContractActivationConflictError,
     AcquisitionContractActivationDeniedError,
@@ -16,7 +16,7 @@ from pillarmesh_contract_service import (
     StaleAcquisitionContractLifecycleError,
     ValidatedSourceBinding,
 )
-from pillarmesh_provider_sdk import AcquisitionField, AcquisitionObjectSchema
+from heinzel_provider_sdk import AcquisitionField, AcquisitionObjectSchema
 
 NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 

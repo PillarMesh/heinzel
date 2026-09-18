@@ -6,8 +6,8 @@ from hashlib import sha256
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_dbt_adapter import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_dbt_adapter import (
     DBT_CORE_VERSION,
     CompiledDbtModel,
     DbtDecimalMagnitudeCheck,

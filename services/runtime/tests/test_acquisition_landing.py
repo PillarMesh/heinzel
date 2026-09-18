@@ -5,11 +5,11 @@ import io
 import json
 from datetime import UTC, datetime
 
-import pillarmesh_runtime as runtime
+import heinzel_runtime as runtime
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_evidence import AcquisitionEvidenceReceipt
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_evidence import AcquisitionEvidenceReceipt
+from heinzel_provider_sdk import (
     AcquisitionAcknowledgement,
     AcquisitionBatchManifest,
     AcquisitionCheckpointReceipt,
@@ -28,7 +28,7 @@ from pillarmesh_provider_sdk import (
     raw_generation_key,
     staged_segment_digest,
 )
-from pillarmesh_runtime import AcquisitionPreparationResult
+from heinzel_runtime import AcquisitionPreparationResult
 from pydantic import ValidationError
 
 _NOW = datetime(2026, 9, 14, 12, tzinfo=UTC)
@@ -244,7 +244,7 @@ class _Landing:
         acknowledgement = AcquisitionAcknowledgement(
             acknowledgement_id=digest(
                 {
-                    "domain": "pillarmesh-land-acknowledgement-v1",
+                    "domain": "heinzel-land-acknowledgement-v1",
                     "consumer_ref": consumer_ref,
                     "batch_id": batch_id,
                     "consumer_receipt_digest": digest(receipt),
@@ -435,7 +435,7 @@ def test_landed_rows_are_flat_field_objects_that_generation_scoped_sql_decodes()
     record_fields = json.loads(record_line)["fields"]
     record = json.loads(record_line)
     assert json.loads(segment.rows[0]) == {
-        "pillarmesh:record": {
+        "heinzel:record": {
             "record_key": record["record_key"],
             "source_created_at": record["source_created_at"],
             "source_updated_at": record["source_updated_at"],
@@ -542,7 +542,7 @@ def test_multi_record_segments_keep_record_order_and_count() -> None:
         "value-1",
         "value-2",
     ]
-    assert [json.loads(row)["pillarmesh:record"]["record_key"] for row in accounts.rows] == [
+    assert [json.loads(row)["heinzel:record"]["record_key"] for row in accounts.rows] == [
         "accounts-0",
         "accounts-1",
         "accounts-2",
@@ -553,7 +553,7 @@ def test_a_field_named_like_the_reserved_identity_key_is_refused_before_land() -
     intent = _intent()
     preparation, artifacts = _preparation(
         intent,
-        fields=(AcquisitionFieldValue(name="pillarmesh:record", value="forged"),),
+        fields=(AcquisitionFieldValue(name="heinzel:record", value="forged"),),
     )
     landing = _Landing()
     coordinator = runtime.AcquisitionLandingCoordinator(

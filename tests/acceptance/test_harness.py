@@ -12,8 +12,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pillarmesh_contract_model import FIXED_PROJECTION, IntegrationContract
-from pillarmesh_evidence import PackageMetadata
+from heinzel_contract_model import FIXED_PROJECTION, IntegrationContract
+from heinzel_evidence import PackageMetadata
 
 from tests.acceptance import run_m0
 from tests.acceptance.config import REQUIRED_VARIABLES
@@ -54,41 +54,41 @@ KEY = 984_201
 
 def _environment(tmp_path: Path) -> dict[str, str]:
     return {
-        "PILLARMESH_STATE_PATH": str(tmp_path / "operator-state.db"),
-        "PILLARMESH_OUTPUT_DIR": str(tmp_path / "operator-output"),
-        "PILLARMESH_CLEANUP_LEDGER_PATH": str(tmp_path / "cleanup-ledger.json"),
-        "PILLARMESH_SIGNING_KEY_ID": "operator-one-key",
-        "PILLARMESH_SIGNING_PRIVATE_KEY_B64": "signing-private-canary",
-        "PILLARMESH_POSTGRES_DSN": "postgresql://runtime-one:secret@db/m0_acceptance",
-        "PILLARMESH_POSTGRES_DATABASE": "m0_acceptance",
-        "PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL": "runtime_one",
-        "PILLARMESH_POSTGRES_OWNER_PRINCIPAL": "m0_owner",
-        "PILLARMESH_POSTGRES_CONNECTION_HANDLE": "pg-operator-one",
-        "PILLARMESH_POSTGRES_SCHEMA": "pillarmesh_m0",
-        "PILLARMESH_POSTGRES_TABLE": "orders",
-        "PILLARMESH_POSTGRES_DENIAL_SCHEMA": "unrelated_private",
-        "PILLARMESH_POSTGRES_FIXTURE_DSN": "postgresql://fixture:secret@db/m0_acceptance",
-        "PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL": "fixture",
-        "PILLARMESH_SNOWFLAKE_ACCOUNT": "DEDICATED_ACCOUNT",
-        "PILLARMESH_SNOWFLAKE_USER": "RUNTIME_ONE",
-        "PILLARMESH_SNOWFLAKE_PASSWORD": "snowflake-password-canary",
-        "PILLARMESH_SNOWFLAKE_OWNER_USER": "M0_OWNER",
-        "PILLARMESH_SNOWFLAKE_ROLE": "PILLARMESH_M0_RUNTIME",
-        "PILLARMESH_SNOWFLAKE_WAREHOUSE": "PILLARMESH_M0_WH",
-        "PILLARMESH_SNOWFLAKE_DATABASE": "PILLARMESH_M0",
-        "PILLARMESH_SNOWFLAKE_SCHEMA": "TRANSFER",
-        "PILLARMESH_SNOWFLAKE_STAGE": "M0_STAGE",
-        "PILLARMESH_SNOWFLAKE_TARGET_TABLE": "ORDERS",
-        "PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE": "ORDERS_UNSUPPORTED_KEY",
-        "PILLARMESH_SNOWFLAKE_LEDGER_TABLE": "COMMIT_LEDGER",
-        "PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE": "sf-operator-one",
-        "PILLARMESH_SNOWFLAKE_DENIAL_DATABASE": "UNRELATED_PRIVATE",
-        "PILLARMESH_CREDENTIAL_CANARIES_JSON": '["credential-one","credential-two"]',
-        "PILLARMESH_ROW_VALUE_CANARY": "synthetic-row-canary",
-        "PILLARMESH_OPERATOR_PSEUDONYM": "operator-one",
-        "PILLARMESH_HOST_PSEUDONYM": "host-one",
-        "PILLARMESH_MCP_PROTOCOL_VERSION": "2025-06-18",
-        "PILLARMESH_OWNER_AUTHORIZATION_REFERENCE": "approval-ticket-opaque",
+        "HEINZEL_STATE_PATH": str(tmp_path / "operator-state.db"),
+        "HEINZEL_OUTPUT_DIR": str(tmp_path / "operator-output"),
+        "HEINZEL_CLEANUP_LEDGER_PATH": str(tmp_path / "cleanup-ledger.json"),
+        "HEINZEL_SIGNING_KEY_ID": "operator-one-key",
+        "HEINZEL_SIGNING_PRIVATE_KEY_B64": "signing-private-canary",
+        "HEINZEL_POSTGRES_DSN": "postgresql://runtime-one:secret@db/m0_acceptance",
+        "HEINZEL_POSTGRES_DATABASE": "m0_acceptance",
+        "HEINZEL_POSTGRES_RUNTIME_PRINCIPAL": "runtime_one",
+        "HEINZEL_POSTGRES_OWNER_PRINCIPAL": "m0_owner",
+        "HEINZEL_POSTGRES_CONNECTION_HANDLE": "pg-operator-one",
+        "HEINZEL_POSTGRES_SCHEMA": "heinzel_m0",
+        "HEINZEL_POSTGRES_TABLE": "orders",
+        "HEINZEL_POSTGRES_DENIAL_SCHEMA": "unrelated_private",
+        "HEINZEL_POSTGRES_FIXTURE_DSN": "postgresql://fixture:secret@db/m0_acceptance",
+        "HEINZEL_POSTGRES_FIXTURE_PRINCIPAL": "fixture",
+        "HEINZEL_SNOWFLAKE_ACCOUNT": "DEDICATED_ACCOUNT",
+        "HEINZEL_SNOWFLAKE_USER": "RUNTIME_ONE",
+        "HEINZEL_SNOWFLAKE_PASSWORD": "snowflake-password-canary",
+        "HEINZEL_SNOWFLAKE_OWNER_USER": "M0_OWNER",
+        "HEINZEL_SNOWFLAKE_ROLE": "HEINZEL_M0_RUNTIME",
+        "HEINZEL_SNOWFLAKE_WAREHOUSE": "HEINZEL_M0_WH",
+        "HEINZEL_SNOWFLAKE_DATABASE": "HEINZEL_M0",
+        "HEINZEL_SNOWFLAKE_SCHEMA": "TRANSFER",
+        "HEINZEL_SNOWFLAKE_STAGE": "M0_STAGE",
+        "HEINZEL_SNOWFLAKE_TARGET_TABLE": "ORDERS",
+        "HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE": "ORDERS_UNSUPPORTED_KEY",
+        "HEINZEL_SNOWFLAKE_LEDGER_TABLE": "COMMIT_LEDGER",
+        "HEINZEL_SNOWFLAKE_CONNECTION_HANDLE": "sf-operator-one",
+        "HEINZEL_SNOWFLAKE_DENIAL_DATABASE": "UNRELATED_PRIVATE",
+        "HEINZEL_CREDENTIAL_CANARIES_JSON": '["credential-one","credential-two"]',
+        "HEINZEL_ROW_VALUE_CANARY": "synthetic-row-canary",
+        "HEINZEL_OPERATOR_PSEUDONYM": "operator-one",
+        "HEINZEL_HOST_PSEUDONYM": "host-one",
+        "HEINZEL_MCP_PROTOCOL_VERSION": "2025-06-18",
+        "HEINZEL_OWNER_AUTHORIZATION_REFERENCE": "approval-ticket-opaque",
     }
 
 
@@ -134,13 +134,13 @@ def _attestation(environment_identity: str) -> DedicatedEnvironmentAttestation:
         postgres_denial_schema_exists=True,
         snowflake_account="DEDICATED_ACCOUNT",
         snowflake_account_locator="DEDICATED_ACCOUNT_LOCATOR",
-        snowflake_role="PILLARMESH_M0_RUNTIME",
-        snowflake_user_roles=("PILLARMESH_M0_RUNTIME",),
+        snowflake_role="HEINZEL_M0_RUNTIME",
+        snowflake_user_roles=("HEINZEL_M0_RUNTIME",),
         snowflake_marker_environment_identity=environment_identity,
         snowflake_marker_owner_user="M0_OWNER",
-        snowflake_marker_owner_role="PILLARMESH_M0_OWNER",
+        snowflake_marker_owner_role="HEINZEL_M0_OWNER",
         snowflake_marker_denial_database="UNRELATED_PRIVATE",
-        snowflake_marker_denial_database_owner_role="PILLARMESH_M0_OWNER",
+        snowflake_marker_denial_database_owner_role="HEINZEL_M0_OWNER",
         snowflake_object_kinds=(
             ("database", "DATABASE"),
             ("environment_marker", "TABLE"),
@@ -153,38 +153,38 @@ def _attestation(environment_identity: str) -> DedicatedEnvironmentAttestation:
             ("warehouse", "WAREHOUSE"),
         ),
         snowflake_object_owners=(
-            ("database", "PILLARMESH_M0_OWNER"),
-            ("environment_marker", "PILLARMESH_M0_OWNER"),
-            ("file_format", "PILLARMESH_M0_OWNER"),
-            ("ledger", "PILLARMESH_M0_OWNER"),
-            ("negative_target", "PILLARMESH_M0_OWNER"),
-            ("schema", "PILLARMESH_M0_OWNER"),
-            ("stage", "PILLARMESH_M0_OWNER"),
-            ("target", "PILLARMESH_M0_OWNER"),
-            ("warehouse", "PILLARMESH_M0_OWNER"),
+            ("database", "HEINZEL_M0_OWNER"),
+            ("environment_marker", "HEINZEL_M0_OWNER"),
+            ("file_format", "HEINZEL_M0_OWNER"),
+            ("ledger", "HEINZEL_M0_OWNER"),
+            ("negative_target", "HEINZEL_M0_OWNER"),
+            ("schema", "HEINZEL_M0_OWNER"),
+            ("stage", "HEINZEL_M0_OWNER"),
+            ("target", "HEINZEL_M0_OWNER"),
+            ("warehouse", "HEINZEL_M0_OWNER"),
         ),
         snowflake_object_grants=(
-            ("database", "OWNERSHIP", "PILLARMESH_M0_OWNER"),
-            ("database", "USAGE", "PILLARMESH_M0_RUNTIME"),
-            ("environment_marker", "OWNERSHIP", "PILLARMESH_M0_OWNER"),
-            ("environment_marker", "SELECT", "PILLARMESH_M0_RUNTIME"),
-            ("file_format", "OWNERSHIP", "PILLARMESH_M0_OWNER"),
-            ("ledger", "INSERT", "PILLARMESH_M0_RUNTIME"),
-            ("ledger", "OWNERSHIP", "PILLARMESH_M0_OWNER"),
-            ("ledger", "SELECT", "PILLARMESH_M0_RUNTIME"),
-            ("negative_target", "OWNERSHIP", "PILLARMESH_M0_OWNER"),
-            ("negative_target", "SELECT", "PILLARMESH_M0_RUNTIME"),
-            ("schema", "OWNERSHIP", "PILLARMESH_M0_OWNER"),
-            ("schema", "USAGE", "PILLARMESH_M0_RUNTIME"),
-            ("stage", "OWNERSHIP", "PILLARMESH_M0_OWNER"),
-            ("stage", "READ", "PILLARMESH_M0_RUNTIME"),
-            ("stage", "WRITE", "PILLARMESH_M0_RUNTIME"),
-            ("target", "INSERT", "PILLARMESH_M0_RUNTIME"),
-            ("target", "OWNERSHIP", "PILLARMESH_M0_OWNER"),
-            ("target", "SELECT", "PILLARMESH_M0_RUNTIME"),
-            ("target", "UPDATE", "PILLARMESH_M0_RUNTIME"),
-            ("warehouse", "OWNERSHIP", "PILLARMESH_M0_OWNER"),
-            ("warehouse", "USAGE", "PILLARMESH_M0_RUNTIME"),
+            ("database", "OWNERSHIP", "HEINZEL_M0_OWNER"),
+            ("database", "USAGE", "HEINZEL_M0_RUNTIME"),
+            ("environment_marker", "OWNERSHIP", "HEINZEL_M0_OWNER"),
+            ("environment_marker", "SELECT", "HEINZEL_M0_RUNTIME"),
+            ("file_format", "OWNERSHIP", "HEINZEL_M0_OWNER"),
+            ("ledger", "INSERT", "HEINZEL_M0_RUNTIME"),
+            ("ledger", "OWNERSHIP", "HEINZEL_M0_OWNER"),
+            ("ledger", "SELECT", "HEINZEL_M0_RUNTIME"),
+            ("negative_target", "OWNERSHIP", "HEINZEL_M0_OWNER"),
+            ("negative_target", "SELECT", "HEINZEL_M0_RUNTIME"),
+            ("schema", "OWNERSHIP", "HEINZEL_M0_OWNER"),
+            ("schema", "USAGE", "HEINZEL_M0_RUNTIME"),
+            ("stage", "OWNERSHIP", "HEINZEL_M0_OWNER"),
+            ("stage", "READ", "HEINZEL_M0_RUNTIME"),
+            ("stage", "WRITE", "HEINZEL_M0_RUNTIME"),
+            ("target", "INSERT", "HEINZEL_M0_RUNTIME"),
+            ("target", "OWNERSHIP", "HEINZEL_M0_OWNER"),
+            ("target", "SELECT", "HEINZEL_M0_RUNTIME"),
+            ("target", "UPDATE", "HEINZEL_M0_RUNTIME"),
+            ("warehouse", "OWNERSHIP", "HEINZEL_M0_OWNER"),
+            ("warehouse", "USAGE", "HEINZEL_M0_RUNTIME"),
         ),
         snowflake_runtime_grants=(
             "INSERT_LEDGER",
@@ -360,7 +360,7 @@ class FakeCli:
                     "decision_digest": "f" * 64,
                     "legality_decision": {
                         "result": "no_valid_plan",
-                        "rule_id": "M0-PG-SNAPSHOT-SNOWFLAKE-001",
+                        "rule_id": "SNAPSHOT-POSTGRESQL-SNOWFLAKE-001",
                         "preconditions": [
                             {
                                 "number": 6,
@@ -475,16 +475,16 @@ def test_preflight_aggregates_missing_names_before_constructing_providers(
 
     with pytest.raises(HarnessError) as caught:
         preflight(
-            {"PILLARMESH_POSTGRES_DSN": supplied_secret},
+            {"HEINZEL_POSTGRES_DSN": supplied_secret},
             repository_root=tmp_path,
             provider_factory=provider_factory,
         )
 
     message = str(caught.value)
     assert calls == 0
-    assert "PILLARMESH_STATE_PATH" in message
-    assert "PILLARMESH_SNOWFLAKE_PASSWORD" in message
-    assert "PILLARMESH_POSTGRES_DSN" not in message
+    assert "HEINZEL_STATE_PATH" in message
+    assert "HEINZEL_SNOWFLAKE_PASSWORD" in message
+    assert "HEINZEL_POSTGRES_DSN" not in message
     assert supplied_secret not in message
 
 
@@ -512,17 +512,17 @@ def test_documented_preflight_command_fails_names_only_without_credentials(
     assert result.returncode == 2
     assert result.stdout == ""
     assert result.stderr.startswith("missing required variables: ")
-    assert "PILLARMESH_POSTGRES_DSN" in result.stderr
-    assert "PILLARMESH_SNOWFLAKE_PASSWORD" in result.stderr
+    assert "HEINZEL_POSTGRES_DSN" in result.stderr
+    assert "HEINZEL_SNOWFLAKE_PASSWORD" in result.stderr
     assert "Traceback" not in result.stderr
 
 
 @pytest.mark.parametrize(
     "path_variable",
     [
-        "PILLARMESH_STATE_PATH",
-        "PILLARMESH_OUTPUT_DIR",
-        "PILLARMESH_CLEANUP_LEDGER_PATH",
+        "HEINZEL_STATE_PATH",
+        "HEINZEL_OUTPUT_DIR",
+        "HEINZEL_CLEANUP_LEDGER_PATH",
     ],
 )
 def test_preflight_refuses_repository_local_private_paths(
@@ -539,28 +539,28 @@ def test_preflight_refuses_repository_local_private_paths(
 
 def test_preflight_refuses_reused_state_and_nonempty_output(tmp_path: Path) -> None:
     environment = _environment(tmp_path)
-    Path(environment["PILLARMESH_STATE_PATH"]).write_text("existing", encoding="utf-8")
-    output = Path(environment["PILLARMESH_OUTPUT_DIR"])
+    Path(environment["HEINZEL_STATE_PATH"]).write_text("existing", encoding="utf-8")
+    output = Path(environment["HEINZEL_OUTPUT_DIR"])
     output.mkdir()
     (output / "existing").write_text("existing", encoding="utf-8")
 
     with pytest.raises(HarnessError) as caught:
         AcceptanceConfig.from_environment(environment, repository_root=tmp_path / "repository")
 
-    assert "PILLARMESH_STATE_PATH" in str(caught.value)
-    assert "PILLARMESH_OUTPUT_DIR" in str(caught.value)
+    assert "HEINZEL_STATE_PATH" in str(caught.value)
+    assert "HEINZEL_OUTPUT_DIR" in str(caught.value)
 
 
 @pytest.mark.parametrize(
     ("variable", "outside_value"),
     [
-        ("PILLARMESH_POSTGRES_SCHEMA", "shared_public"),
-        ("PILLARMESH_POSTGRES_TABLE", "shared_orders"),
-        ("PILLARMESH_SNOWFLAKE_DATABASE", "SHARED_PRODUCTION"),
-        ("PILLARMESH_SNOWFLAKE_SCHEMA", "PUBLIC"),
-        ("PILLARMESH_SNOWFLAKE_TARGET_TABLE", "SHARED_ORDERS"),
-        ("PILLARMESH_SNOWFLAKE_STAGE", "SHARED_STAGE"),
-        ("PILLARMESH_SNOWFLAKE_LEDGER_TABLE", "SHARED_LEDGER"),
+        ("HEINZEL_POSTGRES_SCHEMA", "shared_public"),
+        ("HEINZEL_POSTGRES_TABLE", "shared_orders"),
+        ("HEINZEL_SNOWFLAKE_DATABASE", "SHARED_PRODUCTION"),
+        ("HEINZEL_SNOWFLAKE_SCHEMA", "PUBLIC"),
+        ("HEINZEL_SNOWFLAKE_TARGET_TABLE", "SHARED_ORDERS"),
+        ("HEINZEL_SNOWFLAKE_STAGE", "SHARED_STAGE"),
+        ("HEINZEL_SNOWFLAKE_LEDGER_TABLE", "SHARED_LEDGER"),
     ],
 )
 def test_preflight_refuses_objects_outside_fixed_dedicated_boundary(
@@ -574,9 +574,9 @@ def test_preflight_refuses_objects_outside_fixed_dedicated_boundary(
 
 
 def test_run_refuses_an_existing_empty_output_directory(tmp_path: Path) -> None:
-    Path(_environment(tmp_path)["PILLARMESH_OUTPUT_DIR"]).mkdir(parents=True)
+    Path(_environment(tmp_path)["HEINZEL_OUTPUT_DIR"]).mkdir(parents=True)
 
-    with pytest.raises(HarnessError, match="PILLARMESH_OUTPUT_DIR"):
+    with pytest.raises(HarnessError, match="HEINZEL_OUTPUT_DIR"):
         AcceptanceConfig.from_environment(
             _environment(tmp_path), repository_root=tmp_path / "repository"
         )
@@ -585,9 +585,9 @@ def test_run_refuses_an_existing_empty_output_directory(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("variable", "other"),
     [
-        ("PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL", "PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL"),
-        ("PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL", "PILLARMESH_POSTGRES_OWNER_PRINCIPAL"),
-        ("PILLARMESH_SNOWFLAKE_USER", "PILLARMESH_SNOWFLAKE_OWNER_USER"),
+        ("HEINZEL_POSTGRES_RUNTIME_PRINCIPAL", "HEINZEL_POSTGRES_FIXTURE_PRINCIPAL"),
+        ("HEINZEL_POSTGRES_RUNTIME_PRINCIPAL", "HEINZEL_POSTGRES_OWNER_PRINCIPAL"),
+        ("HEINZEL_SNOWFLAKE_USER", "HEINZEL_SNOWFLAKE_OWNER_USER"),
     ],
 )
 def test_preflight_rejects_fixture_or_owner_runtime_principals(
@@ -602,8 +602,8 @@ def test_preflight_rejects_fixture_or_owner_runtime_principals(
 
 def test_preflight_rejects_fixture_principal_equal_to_declared_owner(tmp_path: Path) -> None:
     environment = _environment(tmp_path)
-    environment["PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL"] = environment[
-        "PILLARMESH_POSTGRES_OWNER_PRINCIPAL"
+    environment["HEINZEL_POSTGRES_FIXTURE_PRINCIPAL"] = environment[
+        "HEINZEL_POSTGRES_OWNER_PRINCIPAL"
     ]
 
     with pytest.raises(HarnessError, match="fixture principal is not isolated"):
@@ -658,7 +658,7 @@ def test_preflight_rejects_connected_principal_mismatch(tmp_path: Path) -> None:
         ("postgres_denial_schema_exists", False),
         ("snowflake_account", "PRODUCTION"),
         ("snowflake_role", "ACCOUNTADMIN"),
-        ("snowflake_user_roles", ("PILLARMESH_M0_RUNTIME", "ACCOUNTADMIN")),
+        ("snowflake_user_roles", ("HEINZEL_M0_RUNTIME", "ACCOUNTADMIN")),
         ("snowflake_marker_environment_identity", "wrong-environment"),
         ("snowflake_marker_owner_user", "WRONG_OWNER"),
         ("snowflake_marker_owner_role", "ACCOUNTADMIN"),
@@ -668,7 +668,7 @@ def test_preflight_rejects_connected_principal_mismatch(tmp_path: Path) -> None:
         ("snowflake_object_owners", (("target", "ACCOUNTADMIN"),)),
         (
             "snowflake_object_grants",
-            (("target", "SELECT", "PILLARMESH_M0_RUNTIME"), ("target", "SELECT", "PUBLIC")),
+            (("target", "SELECT", "HEINZEL_M0_RUNTIME"), ("target", "SELECT", "PUBLIC")),
         ),
         ("snowflake_runtime_grants", ("OWNERSHIP",)),
     ],
@@ -747,41 +747,41 @@ def test_env_example_matches_exact_required_variable_inventory() -> None:
 
 def test_acceptance_contract_has_exactly_the_approved_35_variable_names() -> None:
     assert REQUIRED_VARIABLES == (
-        "PILLARMESH_STATE_PATH",
-        "PILLARMESH_OUTPUT_DIR",
-        "PILLARMESH_CLEANUP_LEDGER_PATH",
-        "PILLARMESH_SIGNING_KEY_ID",
-        "PILLARMESH_SIGNING_PRIVATE_KEY_B64",
-        "PILLARMESH_POSTGRES_DSN",
-        "PILLARMESH_POSTGRES_DATABASE",
-        "PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL",
-        "PILLARMESH_POSTGRES_OWNER_PRINCIPAL",
-        "PILLARMESH_POSTGRES_CONNECTION_HANDLE",
-        "PILLARMESH_POSTGRES_SCHEMA",
-        "PILLARMESH_POSTGRES_TABLE",
-        "PILLARMESH_POSTGRES_DENIAL_SCHEMA",
-        "PILLARMESH_POSTGRES_FIXTURE_DSN",
-        "PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL",
-        "PILLARMESH_SNOWFLAKE_ACCOUNT",
-        "PILLARMESH_SNOWFLAKE_USER",
-        "PILLARMESH_SNOWFLAKE_PASSWORD",
-        "PILLARMESH_SNOWFLAKE_OWNER_USER",
-        "PILLARMESH_SNOWFLAKE_ROLE",
-        "PILLARMESH_SNOWFLAKE_WAREHOUSE",
-        "PILLARMESH_SNOWFLAKE_DATABASE",
-        "PILLARMESH_SNOWFLAKE_SCHEMA",
-        "PILLARMESH_SNOWFLAKE_STAGE",
-        "PILLARMESH_SNOWFLAKE_TARGET_TABLE",
-        "PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE",
-        "PILLARMESH_SNOWFLAKE_LEDGER_TABLE",
-        "PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE",
-        "PILLARMESH_SNOWFLAKE_DENIAL_DATABASE",
-        "PILLARMESH_CREDENTIAL_CANARIES_JSON",
-        "PILLARMESH_ROW_VALUE_CANARY",
-        "PILLARMESH_OPERATOR_PSEUDONYM",
-        "PILLARMESH_HOST_PSEUDONYM",
-        "PILLARMESH_MCP_PROTOCOL_VERSION",
-        "PILLARMESH_OWNER_AUTHORIZATION_REFERENCE",
+        "HEINZEL_STATE_PATH",
+        "HEINZEL_OUTPUT_DIR",
+        "HEINZEL_CLEANUP_LEDGER_PATH",
+        "HEINZEL_SIGNING_KEY_ID",
+        "HEINZEL_SIGNING_PRIVATE_KEY_B64",
+        "HEINZEL_POSTGRES_DSN",
+        "HEINZEL_POSTGRES_DATABASE",
+        "HEINZEL_POSTGRES_RUNTIME_PRINCIPAL",
+        "HEINZEL_POSTGRES_OWNER_PRINCIPAL",
+        "HEINZEL_POSTGRES_CONNECTION_HANDLE",
+        "HEINZEL_POSTGRES_SCHEMA",
+        "HEINZEL_POSTGRES_TABLE",
+        "HEINZEL_POSTGRES_DENIAL_SCHEMA",
+        "HEINZEL_POSTGRES_FIXTURE_DSN",
+        "HEINZEL_POSTGRES_FIXTURE_PRINCIPAL",
+        "HEINZEL_SNOWFLAKE_ACCOUNT",
+        "HEINZEL_SNOWFLAKE_USER",
+        "HEINZEL_SNOWFLAKE_PASSWORD",
+        "HEINZEL_SNOWFLAKE_OWNER_USER",
+        "HEINZEL_SNOWFLAKE_ROLE",
+        "HEINZEL_SNOWFLAKE_WAREHOUSE",
+        "HEINZEL_SNOWFLAKE_DATABASE",
+        "HEINZEL_SNOWFLAKE_SCHEMA",
+        "HEINZEL_SNOWFLAKE_STAGE",
+        "HEINZEL_SNOWFLAKE_TARGET_TABLE",
+        "HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE",
+        "HEINZEL_SNOWFLAKE_LEDGER_TABLE",
+        "HEINZEL_SNOWFLAKE_CONNECTION_HANDLE",
+        "HEINZEL_SNOWFLAKE_DENIAL_DATABASE",
+        "HEINZEL_CREDENTIAL_CANARIES_JSON",
+        "HEINZEL_ROW_VALUE_CANARY",
+        "HEINZEL_OPERATOR_PSEUDONYM",
+        "HEINZEL_HOST_PSEUDONYM",
+        "HEINZEL_MCP_PROTOCOL_VERSION",
+        "HEINZEL_OWNER_AUTHORIZATION_REFERENCE",
     )
 
 
@@ -792,11 +792,11 @@ def test_environment_identity_ignores_operator_paths_but_changes_with_provider_b
     second_environment = _environment(tmp_path / "operator-two")
     second_environment.update(
         {
-            "PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL": "runtime_two",
-            "PILLARMESH_POSTGRES_CONNECTION_HANDLE": "pg-operator-two",
-            "PILLARMESH_SNOWFLAKE_USER": "RUNTIME_TWO",
-            "PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE": "sf-operator-two",
-            "PILLARMESH_OPERATOR_PSEUDONYM": "operator-two",
+            "HEINZEL_POSTGRES_RUNTIME_PRINCIPAL": "runtime_two",
+            "HEINZEL_POSTGRES_CONNECTION_HANDLE": "pg-operator-two",
+            "HEINZEL_SNOWFLAKE_USER": "RUNTIME_TWO",
+            "HEINZEL_SNOWFLAKE_CONNECTION_HANDLE": "sf-operator-two",
+            "HEINZEL_OPERATOR_PSEUDONYM": "operator-two",
         }
     )
     first = AcceptanceConfig.from_environment(
@@ -811,13 +811,13 @@ def test_environment_identity_ignores_operator_paths_but_changes_with_provider_b
 
     case_only_environment = dict(second_environment)
     for name in (
-        "PILLARMESH_SNOWFLAKE_ACCOUNT",
-        "PILLARMESH_SNOWFLAKE_DATABASE",
-        "PILLARMESH_SNOWFLAKE_SCHEMA",
-        "PILLARMESH_SNOWFLAKE_STAGE",
-        "PILLARMESH_SNOWFLAKE_TARGET_TABLE",
-        "PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE",
-        "PILLARMESH_SNOWFLAKE_LEDGER_TABLE",
+        "HEINZEL_SNOWFLAKE_ACCOUNT",
+        "HEINZEL_SNOWFLAKE_DATABASE",
+        "HEINZEL_SNOWFLAKE_SCHEMA",
+        "HEINZEL_SNOWFLAKE_STAGE",
+        "HEINZEL_SNOWFLAKE_TARGET_TABLE",
+        "HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE",
+        "HEINZEL_SNOWFLAKE_LEDGER_TABLE",
     ):
         case_only_environment[name] = case_only_environment[name].lower()
     case_only = AcceptanceConfig.from_environment(
@@ -827,7 +827,7 @@ def test_environment_identity_ignores_operator_paths_but_changes_with_provider_b
     assert case_only.reservation_path == first.reservation_path
 
     changed_environment = dict(second_environment)
-    changed_environment["PILLARMESH_SNOWFLAKE_ACCOUNT"] = "other-dedicated-account"
+    changed_environment["HEINZEL_SNOWFLAKE_ACCOUNT"] = "other-dedicated-account"
     changed = AcceptanceConfig.from_environment(
         changed_environment, repository_root=tmp_path / "repository"
     )
@@ -849,8 +849,8 @@ def test_run_uses_stdin_activation_and_exact_replay(tmp_path: Path) -> None:
     assert activations[0][1] == f"{KEY}\n"
     assert str(KEY) not in " ".join(activations[0][0])
     assert all(
-        "PILLARMESH_POSTGRES_FIXTURE_DSN" not in invocation[2]
-        and "PILLARMESH_POSTGRES_OWNER_PRINCIPAL" not in invocation[2]
+        "HEINZEL_POSTGRES_FIXTURE_DSN" not in invocation[2]
+        and "HEINZEL_POSTGRES_OWNER_PRINCIPAL" not in invocation[2]
         for invocation in cli.invocations
     )
 
@@ -862,12 +862,12 @@ def test_run_keeps_attestation_details_only_in_private_ledger(tmp_path: Path) ->
 
     environment = _environment(tmp_path)
     ledger = json.loads(
-        Path(environment["PILLARMESH_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
+        Path(environment["HEINZEL_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
     )
     attestation = ledger["context"]["attestation"]
     assert attestation["status"] == "passed"
     assert attestation["declared"]["postgres_runtime_principal"] == "runtime_one"
-    assert attestation["declared"]["snowflake_role"] == "PILLARMESH_M0_RUNTIME"
+    assert attestation["declared"]["snowflake_role"] == "HEINZEL_M0_RUNTIME"
     assert attestation["observed"]["snowflake_account_locator"] == ("DEDICATED_ACCOUNT_LOCATOR")
     assert attestation["observed"]["postgres_fixture_grants"] == [
         "CONNECT_DATABASE",
@@ -879,17 +879,17 @@ def test_run_keeps_attestation_details_only_in_private_ledger(tmp_path: Path) ->
 
     private_attestation = json.dumps(attestation, sort_keys=True)
     for secret in (
-        environment["PILLARMESH_POSTGRES_DSN"],
-        environment["PILLARMESH_POSTGRES_FIXTURE_DSN"],
-        environment["PILLARMESH_SNOWFLAKE_PASSWORD"],
-        environment["PILLARMESH_SIGNING_PRIVATE_KEY_B64"],
+        environment["HEINZEL_POSTGRES_DSN"],
+        environment["HEINZEL_POSTGRES_FIXTURE_DSN"],
+        environment["HEINZEL_SNOWFLAKE_PASSWORD"],
+        environment["HEINZEL_SIGNING_PRIVATE_KEY_B64"],
         "credential-one",
         "credential-two",
-        environment["PILLARMESH_ROW_VALUE_CANARY"],
+        environment["HEINZEL_ROW_VALUE_CANARY"],
     ):
         assert secret not in private_attestation
 
-    output_dir = Path(environment["PILLARMESH_OUTPUT_DIR"])
+    output_dir = Path(environment["HEINZEL_OUTPUT_DIR"])
     public_bytes = b"".join(
         path.read_bytes()
         for path in output_dir.rglob("*")
@@ -897,9 +897,9 @@ def test_run_keeps_attestation_details_only_in_private_ledger(tmp_path: Path) ->
     )
     for private_identifier in (
         "DEDICATED_ACCOUNT_LOCATOR",
-        "PILLARMESH_M0_RUNTIME",
+        "HEINZEL_M0_RUNTIME",
         "m0_owner",
-        "pillarmesh_m0.orders",
+        "heinzel_m0.orders",
     ):
         assert private_identifier.encode() not in public_bytes
 
@@ -976,7 +976,7 @@ def test_failed_run_persists_registered_private_resources(tmp_path: Path) -> Non
     with pytest.raises(RuntimeError, match="injected fixture failure"):
         harness.run()
 
-    ledger_path = Path(_environment(tmp_path)["PILLARMESH_CLEANUP_LEDGER_PATH"])
+    ledger_path = Path(_environment(tmp_path)["HEINZEL_CLEANUP_LEDGER_PATH"])
     private = json.loads(ledger_path.read_text(encoding="utf-8"))
     source = next(item for item in private["resources"] if item["kind"] == "source_row")
     assert source["exact_identifier"].endswith(f"order_id={KEY}")
@@ -993,7 +993,7 @@ def test_failure_before_batch_identity_preserves_source_retention(
         harness.run()
 
     private = json.loads(
-        Path(_environment(tmp_path)["PILLARMESH_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
+        Path(_environment(tmp_path)["HEINZEL_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
     )
     source = next(item for item in private["resources"] if item["kind"] == "source_row")
     assert source["creation_state"] == "created"
@@ -1009,7 +1009,7 @@ def test_failure_after_terminal_activation_records_created_destination_resources
     with pytest.raises(RuntimeError, match="injected CLI failure"):
         harness.run()
 
-    ledger_path = Path(_environment(tmp_path)["PILLARMESH_CLEANUP_LEDGER_PATH"])
+    ledger_path = Path(_environment(tmp_path)["HEINZEL_CLEANUP_LEDGER_PATH"])
     private = json.loads(ledger_path.read_text(encoding="utf-8"))
     by_kind = {item["kind"]: item for item in private["resources"]}
     assert by_kind["target_row"]["creation_state"] == "created"
@@ -1036,7 +1036,7 @@ def test_ambiguous_activation_failure_quarantines_recoverable_batch_resources(
         harness.run()
 
     private = json.loads(
-        Path(_environment(tmp_path)["PILLARMESH_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
+        Path(_environment(tmp_path)["HEINZEL_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
     )
     by_kind = {item["kind"]: item for item in private["resources"]}
     assert by_kind["staged_segment"]["cleanup_status"] == "quarantined"
@@ -1086,7 +1086,7 @@ def test_precommit_source_cleanup_requires_definitive_provider_effect_absence(
         harness.run()
 
     private = json.loads(
-        Path(_environment(tmp_path)["PILLARMESH_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
+        Path(_environment(tmp_path)["HEINZEL_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
     )
     by_kind = {item["kind"]: item for item in private["resources"]}
     source = by_kind["source_row"]
@@ -1115,7 +1115,7 @@ def test_precommit_reconciliation_exception_preserves_source_retention(tmp_path:
         harness.run()
 
     private = json.loads(
-        Path(_environment(tmp_path)["PILLARMESH_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
+        Path(_environment(tmp_path)["HEINZEL_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
     )
     source = next(item for item in private["resources"] if item["kind"] == "source_row")
     assert source["retention_deadline"] == "2026-09-12T12:00:00Z"
@@ -1194,7 +1194,7 @@ def test_resource_dispositions_expose_digests_without_provider_identifiers(
     metadata = json.loads(metadata_payload.decode("utf-8"))
     serialized = json.dumps(metadata["resources"], sort_keys=True)
     private = json.loads(
-        Path(_environment(tmp_path)["PILLARMESH_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
+        Path(_environment(tmp_path)["HEINZEL_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
     )
     package_digest = next(
         item["resource_digest"]
@@ -1204,8 +1204,8 @@ def test_resource_dispositions_expose_digests_without_provider_identifiers(
     assert metadata["resources"]
     assert package_digest in {item["resource_digest"] for item in metadata["resources"]}
     assert all(len(item["resource_digest"]) == 64 for item in metadata["resources"])
-    assert "PILLARMESH_M0" not in serialized
-    assert "pillarmesh_m0" not in serialized
+    assert "HEINZEL_M0" not in serialized
+    assert "heinzel_m0" not in serialized
     assert str(KEY) not in serialized
 
 
@@ -1331,7 +1331,7 @@ def test_reservation_serializes_distinct_operator_paths_for_same_environment(
     (tmp_path / "operator-two").mkdir(mode=0o700)
     first_environment = _environment(tmp_path / "operator-one")
     second_environment = _environment(tmp_path / "operator-two")
-    second_environment["PILLARMESH_CLEANUP_LEDGER_PATH"] = str(
+    second_environment["HEINZEL_CLEANUP_LEDGER_PATH"] = str(
         tmp_path / "operator-two" / "second-ledger.json"
     )
     first = AcceptanceConfig.from_environment(
@@ -1374,9 +1374,9 @@ def test_config_rejects_private_path_through_symlink(tmp_path: Path) -> None:
     linked = tmp_path / "linked"
     linked.symlink_to(actual, target_is_directory=True)
     environment = _environment(tmp_path)
-    environment["PILLARMESH_STATE_PATH"] = str(linked / "state.db")
+    environment["HEINZEL_STATE_PATH"] = str(linked / "state.db")
 
-    with pytest.raises(HarnessError, match="PILLARMESH_STATE_PATH"):
+    with pytest.raises(HarnessError, match="HEINZEL_STATE_PATH"):
         AcceptanceConfig.from_environment(environment, repository_root=tmp_path / "repository")
 
 
@@ -1457,13 +1457,13 @@ def test_real_subprocess_cli_applies_exact_environment_allowlist(tmp_path: Path)
             "HOME": str(tmp_path),
             "AWS_SECRET_ACCESS_KEY": "must-not-pass",
             "LEAK_ME": "must-not-pass",
-            "PILLARMESH_POSTGRES_DSN": "allowed-product-value",
+            "HEINZEL_POSTGRES_DSN": "allowed-product-value",
         },
     )
 
     assert isinstance(result, dict)
     assert result["PATH"] == os.environ["PATH"]
-    assert result["PILLARMESH_POSTGRES_DSN"] == "allowed-product-value"
+    assert result["HEINZEL_POSTGRES_DSN"] == "allowed-product-value"
     assert "AWS_SECRET_ACCESS_KEY" not in result
     assert "LEAK_ME" not in result
 
@@ -1529,7 +1529,7 @@ def test_real_subprocess_timeout_quarantines_pessimistically_registered_resource
         harness.run()
 
     private = json.loads(
-        Path(_environment(tmp_path)["PILLARMESH_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
+        Path(_environment(tmp_path)["HEINZEL_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
     )
     by_kind = {item["kind"]: item for item in private["resources"]}
     assert by_kind["target_row"]["creation_state"] == "created"
@@ -1554,7 +1554,7 @@ def test_base_exception_persists_pessimistic_resource_ledger(tmp_path: Path) -> 
         harness.run()
 
     private = json.loads(
-        Path(_environment(tmp_path)["PILLARMESH_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
+        Path(_environment(tmp_path)["HEINZEL_CLEANUP_LEDGER_PATH"]).read_text(encoding="utf-8")
     )
     source = next(item for item in private["resources"] if item["kind"] == "source_row")
     assert source["creation_state"] == "created"
@@ -1572,7 +1572,7 @@ def test_cli_reports_a_note_attached_to_a_failure(
         raise error
 
     monkeypatch.setattr(run_m0, "cleanup_status", failing)
-    monkeypatch.setenv("PILLARMESH_CLEANUP_LEDGER_PATH", str(tmp_path / "ledger.json"))
+    monkeypatch.setenv("HEINZEL_CLEANUP_LEDGER_PATH", str(tmp_path / "ledger.json"))
 
     assert run_m0.main(["cleanup-status"]) == 2
 

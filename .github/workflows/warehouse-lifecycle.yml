@@ -62,7 +62,7 @@ jobs:
             echo 'affected=true' >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          changed_paths="$RUNNER_TEMP/plan3a-changed-paths"
+          changed_paths="$RUNNER_TEMP/warehouse-lifecycle-changed-paths"
           if ! git diff --no-renames --name-only -z "$range" > "$changed_paths"; then
             echo 'affected=true' >> "$GITHUB_OUTPUT"
             exit 0
@@ -76,7 +76,7 @@ jobs:
                 services/warehouse-control/*|providers/postgresql/*|providers/clickhouse/*) affected=true ;;
                 packages/provider-sdk/*|packages/contract-model/*) affected=true ;;
                 pyproject.toml|uv.lock|.python-version) affected=true ;;
-                docs/plan3a/*) affected=true ;;
+                docs/warehouse-lifecycle/*) affected=true ;;
                 docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md) affected=true ;;
                 docs/superpowers/specs/2026-08-24-plan-3a-managed-warehouse-lifecycle-design.md) affected=true ;;
                 docs/superpowers/plans/2026-08-24-plan-3a-managed-warehouse-lifecycle.md) affected=true ;;
@@ -84,7 +84,7 @@ jobs:
                 tests/fault-injection/*|tests/end-to-end/*) affected=true ;;
                 tests/integration/test_postgresql_warehouse_live.py) affected=true ;;
                 tests/integration/test_clickhouse_warehouse_live.py) affected=true ;;
-                tests/ci/run_plan3a_witness.py) affected=true ;;
+                tests/ci/run_warehouse_lifecycle_witness.py) affected=true ;;
                 tests/ci/test_warehouse_lifecycle_workflow.py) affected=true ;;
                 .github/workflows/warehouse-lifecycle.yml) affected=true ;;
               esac
@@ -118,45 +118,45 @@ jobs:
       - name: Prepare the private witness environment
         run: |
           set -euo pipefail
-          root="$RUNNER_TEMP/plan3a"
+          root="$RUNNER_TEMP/warehouse-lifecycle"
           mkdir -m 0700 "$root"
           {
-            echo "PILLARMESH_PLAN3A_STATE_PATH=$root/state"
-            echo "PILLARMESH_PLAN3A_SECRET_DIRECTORY=$root/secrets"
-            echo "PILLARMESH_PLAN3A_BACKUP_DIRECTORY=$root/backups"
-            echo "PILLARMESH_PLAN3A_EVIDENCE_DIRECTORY=$root/evidence"
-            echo "PILLARMESH_PLAN3A_RESERVATION_PATH=$root/reservation.json"
-            echo "PILLARMESH_PLAN3A_SOURCE_COMMIT=$(git rev-parse HEAD)"
-            echo "PILLARMESH_PLAN3A_RETENTION_DEADLINE=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_STATE_PATH=$root/state"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_SECRET_DIRECTORY=$root/secrets"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_BACKUP_DIRECTORY=$root/backups"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_EVIDENCE_DIRECTORY=$root/evidence"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_RESERVATION_PATH=$root/reservation.json"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_SOURCE_COMMIT=$(git rev-parse HEAD)"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_RETENTION_DEADLINE=$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           } >> "$GITHUB_ENV"
-          echo "PILLARMESH_PLAN3A_POSTGRES_IMAGE=postgres:18.6-bookworm@sha256:33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935" >> "$GITHUB_ENV"
-          echo "PILLARMESH_PLAN3A_CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:25.8.32.4@sha256:7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0" >> "$GITHUB_ENV"
+          echo "HEINZEL_WAREHOUSE_LIFECYCLE_POSTGRES_IMAGE=postgres:18.6-bookworm@sha256:33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935" >> "$GITHUB_ENV"
+          echo "HEINZEL_WAREHOUSE_LIFECYCLE_CLICKHOUSE_IMAGE=clickhouse/clickhouse-server:25.8.32.4@sha256:7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0" >> "$GITHUB_ENV"
           state_encryption_key="$(uv run python -c 'import secrets; print(secrets.token_urlsafe(48))')"
           evidence_signing_key="$(uv run python -c 'import secrets; print(secrets.token_urlsafe(48))')"
           credential_canaries="$(uv run python -c 'import json,secrets; print(json.dumps([secrets.token_urlsafe(24) for _ in range(8)]))')"
-          credential_masks="$(PILLARMESH_CREDENTIAL_CANARIES="$credential_canaries" uv run python -c 'import json,os; print(*json.loads(os.environ["PILLARMESH_CREDENTIAL_CANARIES"]), sep="\n")')"
+          credential_masks="$(HEINZEL_CREDENTIAL_CANARIES="$credential_canaries" uv run python -c 'import json,os; print(*json.loads(os.environ["HEINZEL_CREDENTIAL_CANARIES"]), sep="\n")')"
           printf '::add-mask::%s\n' "$state_encryption_key" "$evidence_signing_key"
           while IFS= read -r credential_canary; do
             test -n "$credential_canary"
             printf '::add-mask::%s\n' "$credential_canary"
           done <<< "$credential_masks"
           {
-            echo "PILLARMESH_PLAN3A_STATE_ENCRYPTION_KEY=$state_encryption_key"
-            echo "PILLARMESH_PLAN3A_EVIDENCE_SIGNING_KEY=$evidence_signing_key"
-            echo "PILLARMESH_PLAN3A_CREDENTIAL_CANARIES=$credential_canaries"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_STATE_ENCRYPTION_KEY=$state_encryption_key"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_EVIDENCE_SIGNING_KEY=$evidence_signing_key"
+            echo "HEINZEL_WAREHOUSE_LIFECYCLE_CREDENTIAL_CANARIES=$credential_canaries"
           } >> "$GITHUB_ENV"
       - name: Run witnessed Plan 3A acceptance
         id: witness
         run: |
-          uv run python -m tests.ci.run_plan3a_witness \
-            --output "$RUNNER_TEMP/plan3a-cost.json" \
+          uv run python -m tests.ci.run_warehouse_lifecycle_witness \
+            --output "$RUNNER_TEMP/warehouse-lifecycle-cost.json" \
             --timeout-seconds 600 \
             --sample-interval-seconds 1 \
             -- \
-            uv run python -m tests.acceptance.run_plan3a run \
+            uv run python -m tests.acceptance.run_warehouse_lifecycle run \
               --authorize-retention-cleanup
       - name: Validate sanitized Plan 3A evidence
-        run: uv run python -m tests.acceptance.run_plan3a validate-evidence
+        run: uv run python -m tests.acceptance.run_warehouse_lifecycle validate-evidence
       - name: Upload sanitized Plan 3A evidence
         # Always: a failed validate-evidence step is exactly when the evidence
         # is needed, and skipping the upload discards it with the runner.
@@ -164,7 +164,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: warehouse-lifecycle-evidence
-          path: ${{ env.PILLARMESH_PLAN3A_EVIDENCE_DIRECTORY }}/plan3a-evidence.json
+          path: ${{ env.HEINZEL_WAREHOUSE_LIFECYCLE_EVIDENCE_DIRECTORY }}/warehouse-lifecycle-evidence.json
           # Warn, not error: an earlier failure can leave no evidence at all, and
           # that must not replace the real failure with a missing-artifact error.
           if-no-files-found: warn
@@ -173,18 +173,18 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: warehouse-lifecycle-cost
-          path: ${{ runner.temp }}/plan3a-cost.json
+          path: ${{ runner.temp }}/warehouse-lifecycle-cost.json
           if-no-files-found: error
       - name: Exact teardown
         if: always()
         run: |
           set -euo pipefail
-          ledger="$PILLARMESH_PLAN3A_STATE_PATH/private-ledger.json.encrypted"
-          if test -e "$PILLARMESH_PLAN3A_RESERVATION_PATH" \
-            || test -L "$PILLARMESH_PLAN3A_RESERVATION_PATH" \
+          ledger="$HEINZEL_WAREHOUSE_LIFECYCLE_STATE_PATH/private-ledger.json.encrypted"
+          if test -e "$HEINZEL_WAREHOUSE_LIFECYCLE_RESERVATION_PATH" \
+            || test -L "$HEINZEL_WAREHOUSE_LIFECYCLE_RESERVATION_PATH" \
             || test -e "$ledger" \
             || test -L "$ledger"; then
-            uv run python -m tests.acceptance.run_plan3a teardown \
+            uv run python -m tests.acceptance.run_warehouse_lifecycle teardown \
               --authorize-retention-cleanup
           fi
 

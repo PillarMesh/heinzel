@@ -6,7 +6,7 @@ import { App } from "./app"
 const rootElement = document.getElementById("root")
 
 if (rootElement === null) {
-  throw new Error("PillarMesh console root element is missing")
+  throw new Error("Heinzel console root element is missing")
 }
 
 createRoot(rootElement).render(

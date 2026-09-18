@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 import pytest
-from pillarmesh_state import (
+from heinzel_state import (
     IncidentRecord,
     RecoveryActionNotAllowedError,
     RecoveryCommand,
@@ -15,8 +15,8 @@ from pillarmesh_state import (
     SQLiteRunRepository,
     StaleIncidentRevisionError,
 )
-from pillarmesh_state.run_models import RunIntent, TriggerWindow
-from pillarmesh_state.run_service import RunService
+from heinzel_state.run_models import RunIntent, TriggerWindow
+from heinzel_state.run_service import RunService
 
 NOW = datetime(2026, 9, 12, 20, tzinfo=UTC)
 

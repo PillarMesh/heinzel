@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardAccessAuthorityError,
     DashboardAccessAuthorization,
     DashboardControlService,
@@ -17,9 +17,9 @@ from pillarmesh_bi_control import (
     DashboardProductGenerationReference,
     SQLiteDashboardRepository,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
-from pillarmesh_request_management import DashboardAnswerAuthority
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
+from heinzel_request_management import DashboardAnswerAuthority
 
 NOW = datetime(2026, 9, 14, 18, tzinfo=UTC)
 PRODUCT_REF = ArtifactReference(artifact_id="product:orders", version=2, digest="a" * 64)

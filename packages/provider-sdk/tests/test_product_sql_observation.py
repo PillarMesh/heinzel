@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import (
     InvalidProductSqlProviderObservation,
     ProductSqlColumnObservation,
     ProductSqlProviderObservation,

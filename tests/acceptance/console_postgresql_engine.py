@@ -12,7 +12,7 @@ evidence that admits the binding to `ready`.
 It still validates under `WarehouseValidationProfile.LOCAL_ACCEPTANCE`, which is
 the provider's own choice: encryption at rest is deferred on this profile, so the
 run proves the lifecycle and not a production posture. Read
-`docs/plan3a/acceptance-run.md` for what that profile does and does not assert.
+`docs/warehouse-lifecycle/acceptance-run.md` for what that profile does and does not assert.
 
 The operation secrets follow whichever operation the orchestrator actually minted,
 which is why the provider is built per operation rather than at startup.
@@ -32,14 +32,14 @@ from typing import Protocol
 
 import psycopg
 from cryptography.fernet import Fernet
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_postgresql import (
+from heinzel_contract_model import digest
+from heinzel_provider_postgresql import (
     PostgreSQLBackupCommandBoundary,
     PostgreSQLWarehouseProvider,
     PostgreSQLWarehouseSettings,
 )
-from pillarmesh_provider_sdk import DockerComposeProcess
-from pillarmesh_warehouse_control import (
+from heinzel_provider_sdk import DockerComposeProcess
+from heinzel_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
     PrivateWarehouseResource,
@@ -55,8 +55,8 @@ from pillarmesh_warehouse_control import (
     WarehouseRetirementEvidence,
     WarehouseValidationResult,
 )
-from pillarmesh_warehouse_control import secrets as warehouse_secrets
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control import secrets as warehouse_secrets
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 from pydantic import SecretStr
 
 from tests.emulators.warehouses.postgresql.init_tls import generate_tls_material
@@ -98,7 +98,7 @@ class PostgreSQLAcceptanceWarehouseRepository(SQLiteWarehouseRepository):
         super().__init__(connection=connection)
         namespace_digest = digest(
             {
-                "domain": "pillarmesh-postgresql-acceptance-workspace-v1",
+                "domain": "heinzel-postgresql-acceptance-workspace-v1",
                 "workspace_directory": str(workspace_directory.resolve()),
             }
         )

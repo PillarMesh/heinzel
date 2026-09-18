@@ -7,15 +7,15 @@ from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import FIXED_PROJECTION, digest
-from pillarmesh_evidence import SQLiteStore
-from pillarmesh_execution_graph import (
+from heinzel_contract_model import FIXED_PROJECTION, digest
+from heinzel_evidence import SQLiteStore
+from heinzel_execution_graph import (
     ExecutionGraph,
     GraphSigner,
     GraphVerifier,
     SignedExecutionGraph,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     CommitReceipt,
     DriftProbe,
     OrderRow,
@@ -24,8 +24,8 @@ from pillarmesh_provider_sdk import (
     SourceBoundary,
     VisibilityProof,
 )
-from pillarmesh_provider_snowflake import encode_segment
-from pillarmesh_runtime import FaultHook, Runtime
+from heinzel_provider_snowflake import encode_segment
+from heinzel_runtime import FaultHook, Runtime
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 ACCEPTANCE_KEY = 984201
@@ -199,7 +199,7 @@ def _runtime(
 def _expected_batch_id(signed_graph: SignedExecutionGraph) -> str:
     return digest(
         {
-            "domain": "pillarmesh-m0-batch-v1",
+            "domain": "heinzel-batch-v1",
             "run_id": "run-fault-matrix",
             "graph": signed_graph.graph,
         }

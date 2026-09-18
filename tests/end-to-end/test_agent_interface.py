@@ -6,29 +6,29 @@ from datetime import UTC, datetime, timedelta
 from typing import Never
 
 import pytest
-from mcp.server.mcpserver.exceptions import ToolError
-from pillarmesh_access_control import CurrentEntitlementSnapshot
-from pillarmesh_context_exposure import (
+from heinzel_access_control import CurrentEntitlementSnapshot
+from heinzel_context_exposure import (
     CurrentDelegationAssertion,
     DescribeMetricQuery,
     GetImpactQuery,
     RequestManagementAgentAdapter,
     SearchCatalogQuery,
 )
-from pillarmesh_context_exposure.app import (
+from heinzel_context_exposure.app import (
     AgentInterfaceConfigurationError,
     AgentInterfacePorts,
     build_application,
     build_production_application,
 )
-from pillarmesh_context_exposure.mcp_server import build_server
-from pillarmesh_context_exposure.settings import AppSettings
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_context_exposure.mcp_server import build_server
+from heinzel_context_exposure.settings import AppSettings
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import (
     AnswerScopePolicy,
     RequestManagementService,
     SQLiteRequestRepository,
 )
+from mcp.server.mcpserver.exceptions import ToolError
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
 PURPOSE = "monthly revenue analysis"

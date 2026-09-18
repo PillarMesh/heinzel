@@ -7,14 +7,14 @@ from decimal import Decimal
 
 import psycopg
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_postgresql import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_postgresql import (
     PostgreSQLAcquisitionProvider,
     PostgreSQLAcquisitionSettings,
     PostgreSQLIncrementalCursor,
     PostgreSQLSourceObjectDeclaration,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     AcquisitionCeilingExceeded,
     AcquisitionIntent,
     AcquisitionObjectSchema,
@@ -504,7 +504,7 @@ def test_incremental_falls_back_to_declared_lag_when_statistics_are_denied() -> 
         parameters for query, parameters, _name in connection.calls if "incremental_upper" in query
     )
     assert upper_parameters == (datetime(2026, 9, 1, 11, 55, tzinfo=UTC),)
-    assert "ROLLBACK TO SAVEPOINT pillarmesh_xact_horizon" in tuple(
+    assert "ROLLBACK TO SAVEPOINT heinzel_xact_horizon" in tuple(
         query for query, _parameters, _name in connection.calls
     )
     assert connection.committed and connection.closed
@@ -1024,7 +1024,7 @@ def test_reconciliation_streams_complete_snapshot_without_advancing_incremental_
     reconciliation_query = next(
         query
         for query, _parameters, name in connection.calls
-        if name == "pillarmesh_reconciliation_0000"
+        if name == "heinzel_reconciliation_0000"
     )
     assert 'ORDER BY "order""id"' in reconciliation_query
 

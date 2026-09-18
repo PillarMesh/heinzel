@@ -4,8 +4,8 @@ import runpy
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import digest
+from heinzel_request_management import (
     DecisionKind,
     FulfillmentIntegrityError,
     FulfillmentNotVisible,
@@ -127,7 +127,7 @@ def test_verified_delivery_publishes_the_exact_approved_answer_to_the_requester(
     receipt = fulfillment.deliver_answer(
         tenant_id="tenant-a",
         request_id=proposal.request_id,
-        actor_id="pillarmesh-runtime",
+        actor_id="heinzel-runtime",
         expected_revision=admission.resulting_request_revision,
         executed_answer=proposal.subject,
         verification_refs=(proposal.subject.governed_dataset_refs[0],),
@@ -176,7 +176,7 @@ def test_a_retried_delivery_returns_the_receipt_it_already_recorded() -> None:
     delivery = {
         "tenant_id": "tenant-a",
         "request_id": proposal.request_id,
-        "actor_id": "pillarmesh-runtime",
+        "actor_id": "heinzel-runtime",
         "expected_revision": admission.resulting_request_revision,
         "executed_answer": proposal.subject,
         "verification_refs": (proposal.subject.governed_dataset_refs[0],),
@@ -217,7 +217,7 @@ def test_delivery_rejects_an_answer_that_differs_from_the_approved_proposal() ->
         fulfillment.deliver_answer(
             tenant_id="tenant-a",
             request_id=proposal.request_id,
-            actor_id="pillarmesh-runtime",
+            actor_id="heinzel-runtime",
             expected_revision=admission.resulting_request_revision,
             executed_answer=changed,
             verification_refs=(proposal.subject.governed_dataset_refs[0],),

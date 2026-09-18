@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk.acquisition_models import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk.acquisition_models import (
     AcquisitionAcknowledgement,
     AcquisitionBatchManifest,
     AcquisitionBoundary,
@@ -327,8 +327,8 @@ def test_governed_outcomes_keep_private_constraints_out_of_public_shapes() -> No
 
 
 def test_provider_sdk_exports_acquisition_contracts_and_observes_stripe() -> None:
-    from pillarmesh_provider_sdk import AcquisitionIntent as PublicAcquisitionIntent
-    from pillarmesh_provider_sdk import ProviderObservation
+    from heinzel_provider_sdk import AcquisitionIntent as PublicAcquisitionIntent
+    from heinzel_provider_sdk import ProviderObservation
 
     observation = ProviderObservation(
         provider="stripe",

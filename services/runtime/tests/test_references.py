@@ -3,8 +3,8 @@ from __future__ import annotations
 import re
 
 import pytest
-from pillarmesh_evidence import AcquisitionEvidenceReceipt
-from pillarmesh_runtime import opaque_reference_factory
+from heinzel_evidence import AcquisitionEvidenceReceipt
+from heinzel_runtime import opaque_reference_factory
 
 _DIGEST = re.compile(r"^[0-9a-f]{64}$")
 

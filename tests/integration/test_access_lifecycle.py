@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import pytest
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     AccessGrantApplicationService,
     AccessGrantDenied,
     CurrentEntitlementSnapshot,
@@ -13,9 +13,9 @@ from pillarmesh_access_control import (
     RequestManagementAdmittedAccessProposalReader,
     SQLiteAccessGrantRepository,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_provider_sdk import AccessEffectCommand, AccessEffectResult
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_provider_sdk import AccessEffectCommand, AccessEffectResult
+from heinzel_request_management import (
     AccessGrantAdmissionBinding,
     AccessGrantEffectTarget,
     AccessScopePreview,
@@ -33,7 +33,7 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
     StakeholderAnswerDraft,
 )
-from pillarmesh_runtime import AnswerResultAccessEffectProvider, AnswerResultAccessTarget
+from heinzel_runtime import AnswerResultAccessEffectProvider, AnswerResultAccessTarget
 
 NOW = datetime(2026, 9, 13, 12, tzinfo=UTC)
 EXPIRES_AT = NOW + timedelta(minutes=30)
@@ -385,7 +385,7 @@ def test_admitted_access_is_delivered_only_after_effects_and_is_revoked_at_expir
     delivery = fulfillment.execute_access(
         tenant_id="tenant-a",
         request_id=submitted.request_id,
-        actor_id="pillarmesh-access-control",
+        actor_id="heinzel-access-control",
         expected_revision=admission.resulting_request_revision,
     )
     requester_view = FulfillmentReadService(

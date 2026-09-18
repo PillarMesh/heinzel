@@ -9,14 +9,14 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardAnswerAuthority,
     DashboardControlService,
     DashboardDesiredState,
     DashboardProductGenerationReference,
     SQLiteDashboardRepository,
 )
-from pillarmesh_console.contracts import (
+from heinzel_console.contracts import (
     AccessRevocationCommand,
     AdmissionCommand,
     CreateRequestCommand,
@@ -25,17 +25,17 @@ from pillarmesh_console.contracts import (
     RequestClarificationCommand,
     WarehouseBindingCommand,
 )
-from pillarmesh_console.governed_backend import _catalog_classification_label
-from pillarmesh_console.request_intake import request_intake_content
-from pillarmesh_contract_model import (
+from heinzel_console.governed_backend import _catalog_classification_label
+from heinzel_console.request_intake import request_intake_content
+from heinzel_contract_model import (
     ApprovedSemanticVersion,
     ArtifactReference,
     SemanticObject,
     digest,
 )
-from pillarmesh_contract_service import SourceObservation, SQLiteSourceObservationRepository
-from pillarmesh_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
-from pillarmesh_request_management import (
+from heinzel_contract_service import SourceObservation, SQLiteSourceObservationRepository
+from heinzel_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
+from heinzel_request_management import (
     ApprovedProductIntent,
     DeliveryIntent,
     DimensionIntent,
@@ -49,9 +49,9 @@ from pillarmesh_request_management import (
     RequestState,
     SQLiteRequestRepository,
 )
-from pillarmesh_semantic_registry import SQLiteSemanticVersionRepository
-from pillarmesh_state import RunIntent, RunService, SQLiteRunRepository, TriggerWindow
-from pillarmesh_warehouse_control import EngineKind
+from heinzel_semantic_registry import SQLiteSemanticVersionRepository
+from heinzel_state import RunIntent, RunService, SQLiteRunRepository, TriggerWindow
+from heinzel_warehouse_control import EngineKind
 from starlette.testclient import TestClient
 
 import tests.acceptance.console_postgresql_engine as postgresql_engine
@@ -69,7 +69,7 @@ from tests.acceptance.run_console_governed import (
     _PublishedAuthorityResolver,
     default_state_directory,
 )
-from tests.acceptance.run_plan3b import ScenarioAnswerProvider
+from tests.acceptance.run_request_fulfillment import ScenarioAnswerProvider
 
 _NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 
@@ -263,7 +263,7 @@ def test_the_catalog_lists_only_the_publication_questions_are_answered_from(
 ) -> None:
     from datetime import timedelta
 
-    from tests.acceptance.run_plan3b import _SEMANTIC_SUPPORT as support
+    from tests.acceptance.run_request_fulfillment import _SEMANTIC_SUPPORT as support
 
     # A newer publication recorded after the deployment chose its active one. Listing it would
     # advertise a term that preparation refuses, because answers come from the active publication.
@@ -721,12 +721,12 @@ def test_interactive_actor_identifiers_are_projected_as_display_names(
 
     with TestClient(deployment.build_app()) as client:
         architect = client.get("/api/v1/session").json()["data"]
-        requester = client.get("/api/v1/session", headers={"x-pillarmesh-actor": REQUESTER}).json()[
+        requester = client.get("/api/v1/session", headers={"x-heinzel-actor": REQUESTER}).json()[
             "data"
         ]
         conversation = client.get(
             f"/api/v1/requests/{seeded.request_id}/conversation",
-            headers={"x-pillarmesh-actor": REQUESTER},
+            headers={"x-heinzel-actor": REQUESTER},
         ).json()["data"]
 
     assert architect["actor"]["display_name"] == "Data architect"
@@ -829,8 +829,8 @@ def test_the_longest_published_term_wins_over_a_term_it_contains() -> None:
     from types import SimpleNamespace
     from typing import Any, cast
 
-    from pillarmesh_request_management import InboxRequest
-    from pillarmesh_request_management.models import StakeholderQuestion
+    from heinzel_request_management import InboxRequest
+    from heinzel_request_management.models import StakeholderQuestion
 
     from tests.acceptance.run_console_governed import _semantic_match
 
@@ -867,8 +867,8 @@ def test_a_term_is_not_found_inside_a_word_that_contains_non_ascii_letters() -> 
     from types import SimpleNamespace
     from typing import Any, cast
 
-    from pillarmesh_request_management import InboxRequest
-    from pillarmesh_request_management.models import StakeholderQuestion
+    from heinzel_request_management import InboxRequest
+    from heinzel_request_management.models import StakeholderQuestion
 
     from tests.acceptance.run_console_governed import _semantic_match
 
@@ -906,7 +906,7 @@ def test_the_deployment_serves_governed_reads_rather_than_fixtures(
         workspace = client.get("/api/v1/workspace")
 
     assert session.status_code == 200
-    assert session.headers["X-PillarMesh-Data-Provenance"] == "governed_local"
+    assert session.headers["X-Heinzel-Data-Provenance"] == "governed_local"
     assert workspace.json()["meta"]["data_provenance"] == "governed_local"
 
 
@@ -933,7 +933,7 @@ def test_the_seeded_decision_reaches_the_architect_inbox(
 
 
 def _withdraw(client: TestClient, request_id: str, expected_revision: int, key: str):
-    requester = {"x-pillarmesh-actor": REQUESTER}
+    requester = {"x-heinzel-actor": REQUESTER}
     token = client.get("/api/v1/session", headers=requester).json()["data"]["csrf_token"]
     return client.post(
         f"/api/v1/requests/{request_id}/withdrawal",
@@ -1061,7 +1061,7 @@ def test_admission_executes_and_delivers_the_admitted_answer(
 def test_a_delivery_that_fails_after_admission_can_be_retried(
     deployment: GovernedConsoleDeployment,
 ) -> None:
-    from pillarmesh_console.errors import ConsoleConflict
+    from heinzel_console.errors import ConsoleConflict
 
     seeded = deployment.seed()
     proposal = deployment.fulfillment_repository.list_proposals(TENANT, seeded.request_id)[-1]
@@ -1129,7 +1129,7 @@ def test_a_delivery_that_fails_after_admission_can_be_retried(
 def test_data_access_intake_availability_is_published_as_a_capability(
     deployment: GovernedConsoleDeployment,
 ) -> None:
-    from pillarmesh_console.fixture_data import build_fixture_seed
+    from heinzel_console.fixture_data import build_fixture_seed
 
     governed = {
         capability.capability_id: capability
@@ -1149,7 +1149,7 @@ def test_data_access_intake_availability_is_published_as_a_capability(
 def test_a_publication_store_from_another_catalog_binding_names_the_mismatch(
     tmp_path: Path,
 ) -> None:
-    from tests.acceptance.run_plan3b import published_repository
+    from tests.acceptance.run_request_fulfillment import published_repository
 
     repository, _, _ = published_repository(check_same_thread=False)
 
@@ -1186,8 +1186,8 @@ def test_the_actor_header_selects_the_requester_surface(
 
     with TestClient(deployment.build_app()) as client:
         architect = client.get("/api/v1/session")
-        requester = client.get("/api/v1/session", headers={"x-pillarmesh-actor": REQUESTER})
-        unknown = client.get("/api/v1/session", headers={"x-pillarmesh-actor": "nobody"})
+        requester = client.get("/api/v1/session", headers={"x-heinzel-actor": REQUESTER})
+        unknown = client.get("/api/v1/session", headers={"x-heinzel-actor": "nobody"})
 
     assert architect.json()["data"]["actor"]["display_name"] == "Data architect"
     assert requester.json()["data"]["active_role"] == "requester"
@@ -1246,11 +1246,11 @@ def test_access_approvers_can_open_the_request_their_authority_must_decide(
     with TestClient(deployment.build_app()) as client:
         owner = client.get(
             f"/api/v1/inbox/{created.request_id}",
-            headers={"x-pillarmesh-actor": DATA_OWNER},
+            headers={"x-heinzel-actor": DATA_OWNER},
         )
         policy = client.get(
             f"/api/v1/inbox/{created.request_id}",
-            headers={"x-pillarmesh-actor": POLICY_APPROVER},
+            headers={"x-heinzel-actor": POLICY_APPROVER},
         )
 
     assert owner.status_code == 200
@@ -2189,7 +2189,7 @@ def test_a_receipt_the_acquisition_runtime_recorded_reaches_the_console(
     made against what the served route returns. That is the only evidence that the
     capability the workspace now reports as ready is one the product can serve.
     """
-    from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter
+    from heinzel_evidence import SQLiteAcquisitionEvidenceWriter
 
     runtime_support = runpy.run_path(
         str(Path(__file__).parents[2] / "services/runtime/tests/test_acquisition.py")
@@ -2222,7 +2222,7 @@ def test_a_receipt_belonging_to_another_tenant_is_not_listed(
     refusal is the runtime's boundary and is tested there; this asserts the
     console's, which has to hold even for a row the runtime would never write.
     """
-    from pillarmesh_evidence import AcquisitionEvidenceReceipt
+    from heinzel_evidence import AcquisitionEvidenceReceipt
 
     deployment.evidence.append_acquisition_receipt(
         AcquisitionEvidenceReceipt(
@@ -2276,7 +2276,7 @@ def test_a_requester_cannot_read_acquisition_or_run_evidence(
     refuses them. An unauthorized read answers exactly as an unknown resource does.
     """
     with TestClient(deployment.build_app()) as client:
-        response = client.get(path, headers={"x-pillarmesh-actor": REQUESTER})
+        response = client.get(path, headers={"x-heinzel-actor": REQUESTER})
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
@@ -2294,7 +2294,7 @@ def test_a_requester_cannot_read_the_architect_surface(
     warehouse binding and every open decision the demo refuses them.
     """
     with TestClient(deployment.build_app()) as client:
-        response = client.get(path, headers={"x-pillarmesh-actor": REQUESTER})
+        response = client.get(path, headers={"x-heinzel-actor": REQUESTER})
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
@@ -2309,7 +2309,7 @@ def test_the_architect_cannot_read_a_requesters_own_request_list(
     reports "you have no requests" to an actor who may never have one.
     """
     with TestClient(deployment.build_app()) as client:
-        response = client.get("/api/v1/requests/mine", headers={"x-pillarmesh-actor": ARCHITECT})
+        response = client.get("/api/v1/requests/mine", headers={"x-heinzel-actor": ARCHITECT})
 
     assert response.status_code == 404
     assert response.json()["error"]["code"] == "not_found"
@@ -2329,9 +2329,9 @@ def test_a_data_owner_reads_the_queue_but_is_refused_an_item_from_it(
     seeded = deployment.seed()
 
     with TestClient(deployment.build_app()) as client:
-        queue = client.get("/api/v1/inbox", headers={"x-pillarmesh-actor": ARCHITECT})
+        queue = client.get("/api/v1/inbox", headers={"x-heinzel-actor": ARCHITECT})
         detail = client.get(
-            f"/api/v1/inbox/{seeded.request_id}", headers={"x-pillarmesh-actor": ARCHITECT}
+            f"/api/v1/inbox/{seeded.request_id}", headers={"x-heinzel-actor": ARCHITECT}
         )
 
     assert queue.status_code == 200
@@ -2344,7 +2344,7 @@ def test_a_fixed_requester_browser_session_cannot_be_overridden_by_a_header(
     deployment = GovernedConsoleDeployment(tmp_path)
     try:
         with TestClient(deployment.build_app(actor=REQUESTER)) as client:
-            session = client.get("/api/v1/session", headers={"x-pillarmesh-actor": ARCHITECT})
+            session = client.get("/api/v1/session", headers={"x-heinzel-actor": ARCHITECT})
             inbox = client.get("/api/v1/inbox")
 
         assert session.json()["data"]["active_role"] == "requester"

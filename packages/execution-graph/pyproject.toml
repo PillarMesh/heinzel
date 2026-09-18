@@ -1,11 +1,11 @@
 [project]
-name = "pillarmesh-execution-graph"
+name = "heinzel-execution-graph"
 version = "0.1.0"
 requires-python = "==3.13.*"
-dependencies = ["cryptography>=45,<47", "pillarmesh-contract-model"]
+dependencies = ["cryptography>=45,<47", "heinzel-contract-model"]
 
 [tool.uv.sources]
-pillarmesh-contract-model = { workspace = true }
+heinzel-contract-model = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

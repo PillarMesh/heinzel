@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import pytest
-from pillarmesh_context_exposure.app import (
+from heinzel_context_exposure.app import (
     AgentInterfaceConfigurationError,
     build_production_application,
 )
-from pillarmesh_context_exposure.settings import AppSettings
+from heinzel_context_exposure.settings import AppSettings
 from pydantic import ValidationError
 
 

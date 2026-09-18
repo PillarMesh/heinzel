@@ -8,13 +8,13 @@ from typing import Literal
 
 import psycopg
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_postgresql import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_postgresql import (
     PostgreSQLAcquisitionProvider,
     PostgreSQLAcquisitionSettings,
     PostgreSQLSourceObjectDeclaration,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     AcquisitionCeilingExceeded,
     AcquisitionField,
     AcquisitionIntent,

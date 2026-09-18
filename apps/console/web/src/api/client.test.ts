@@ -108,7 +108,7 @@ function jsonResponse(payload: unknown, init?: ResponseInit): Response {
   const headers = new Headers({
     "Content-Type": "application/json",
     "X-Correlation-ID": "correlation-header",
-    "X-PillarMesh-Data-Provenance": "demo_fixture",
+    "X-Heinzel-Data-Provenance": "demo_fixture",
   })
   new Headers(init?.headers).forEach((value, name) => headers.set(name, value))
   return new Response(JSON.stringify(payload), {
@@ -271,7 +271,7 @@ describe("ConsoleApiClient response boundary", () => {
       {
         headers: {
           "X-Correlation-ID": "correlation-safe-header",
-          "X-PillarMesh-Data-Provenance": "demo_fixture",
+          "X-Heinzel-Data-Provenance": "demo_fixture",
         },
       },
     )
@@ -292,7 +292,7 @@ describe("ConsoleApiClient response boundary", () => {
     const client = clientReturning({meta: workspaceEnvelope.meta}, {
       headers: {
         "X-Correlation-ID": "INVALID PRIVATE HEADER",
-        "X-PillarMesh-Data-Provenance": "provider_private",
+        "X-Heinzel-Data-Provenance": "provider_private",
       },
     })
 

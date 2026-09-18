@@ -5,8 +5,8 @@ import struct
 
 import psycopg
 import pytest
-from pillarmesh_provider_postgresql import warehouse_protocol
-from pillarmesh_provider_postgresql.startup_denial import recover_startup_denial
+from heinzel_provider_postgresql import warehouse_protocol
+from heinzel_provider_postgresql.startup_denial import recover_startup_denial
 
 _SSL_REQUEST = struct.pack("!II", 8, 80877103)
 _DSN = (

@@ -39,12 +39,12 @@ What the identity fields do and do not bind:
 
 ## Statement
 
-Every statement case ran this exact statement, digest `8e01c7af598220f012014bbf6d04ca9e02eeccbdc0221a912cfefe13f4f2d543`. An offline test
+Every statement case ran this exact statement, digest `21bf1cf19fae5a92451fd84f5e8c7812cbf6a58bbe617e2aa282367a79a9eebe`. An offline test
 fails if the compiler's emitted statement ever differs from it, so this evidence cannot silently
 outlive a change to the emitter.
 
 ```sql
-SELECT "revenue_events"."region" AS "region", CAST(pg_catalog.sum(CAST("revenue_events"."revenue" AS NUMERIC(57,9))) AS NUMERIC(57,9)) AS "total_revenue" FROM (SELECT (CASE WHEN pg_catalog.jsonb_typeof("payload" OPERATOR(pg_catalog.->) 'region') OPERATOR(pg_catalog.=) 'string' THEN "payload" OPERATOR(pg_catalog.->>) 'region' ELSE CAST(CAST('pillarmesh refused a string landing value in generation ' OPERATOR(pg_catalog.||) "generation_id" AS NUMERIC) AS pg_catalog.text) END) COLLATE pg_catalog."C" AS "region", CAST(CASE WHEN pg_catalog.jsonb_typeof("payload" OPERATOR(pg_catalog.->) 'revenue') OPERATOR(pg_catalog.=) 'string' AND "payload" OPERATOR(pg_catalog.->>) 'revenue' OPERATOR(pg_catalog.~) '^-?(0|[1-9][0-9]{0,28})([.][0-9]{1,9})?$' THEN "payload" OPERATOR(pg_catalog.->>) 'revenue' ELSE 'pillarmesh refused a decimal landing value in generation ' OPERATOR(pg_catalog.||) "generation_id" END AS NUMERIC(38,9)) AS "revenue" FROM "raw"."raw_sales" WHERE "generation_id" OPERATOR(pg_catalog.=) 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS "revenue_events" GROUP BY "revenue_events"."region"
+SELECT "revenue_events"."region" AS "region", CAST(pg_catalog.sum(CAST("revenue_events"."revenue" AS NUMERIC(57,9))) AS NUMERIC(57,9)) AS "total_revenue" FROM (SELECT (CASE WHEN pg_catalog.jsonb_typeof("payload" OPERATOR(pg_catalog.->) 'region') OPERATOR(pg_catalog.=) 'string' THEN "payload" OPERATOR(pg_catalog.->>) 'region' ELSE CAST(CAST('heinzel refused a string landing value in generation ' OPERATOR(pg_catalog.||) "generation_id" AS NUMERIC) AS pg_catalog.text) END) COLLATE pg_catalog."C" AS "region", CAST(CASE WHEN pg_catalog.jsonb_typeof("payload" OPERATOR(pg_catalog.->) 'revenue') OPERATOR(pg_catalog.=) 'string' AND "payload" OPERATOR(pg_catalog.->>) 'revenue' OPERATOR(pg_catalog.~) '^-?(0|[1-9][0-9]{0,28})([.][0-9]{1,9})?$' THEN "payload" OPERATOR(pg_catalog.->>) 'revenue' ELSE 'heinzel refused a decimal landing value in generation ' OPERATOR(pg_catalog.||) "generation_id" END AS NUMERIC(38,9)) AS "revenue" FROM "raw"."raw_sales" WHERE "generation_id" OPERATOR(pg_catalog.=) 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS "revenue_events" GROUP BY "revenue_events"."region"
 ```
 
 The inner select is the landing decode guard. Each field must be present as a JSON string; the
@@ -164,8 +164,8 @@ the provider's own bound constant, on the pinned engine.
 ## Reproducing
 
 ```sh
-PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest tests/integration/test_postgresql_checked_sum_evidence.py -m live
+HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest tests/integration/test_postgresql_checked_sum_evidence.py -m live
 ```
 
 The run starts the pinned image, captures every case, and fails if any result differs from the
-bundle. Adding `PILLARMESH_WRITE_CHECKED_SUM_EVIDENCE=1` rewrites the bundle from the run instead.
+bundle. Adding `HEINZEL_WRITE_CHECKED_SUM_EVIDENCE=1` rewrites the bundle from the run instead.

@@ -4,9 +4,9 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from pillarmesh_connection_broker import SQLiteSourceBindingRepository
-from pillarmesh_contract_model import canonical_bytes
-from pillarmesh_runtime import AcquisitionRuntimeError, source_binding_resolver
+from heinzel_connection_broker import SQLiteSourceBindingRepository
+from heinzel_contract_model import canonical_bytes
+from heinzel_runtime import AcquisitionRuntimeError, source_binding_resolver
 
 from services.runtime.tests.test_acquisition import BINDING_REF, _intent, _runner
 from services.runtime.tests.test_binding_resolution import _binding, _capability

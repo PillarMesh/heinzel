@@ -4,9 +4,9 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from pillarmesh_compiler import GovernedQueryPlan
-from pillarmesh_compiler.query_repository import QueryPlanConflict, SQLiteQueryPlanRepository
-from pillarmesh_contract_model import digest
+from heinzel_compiler import GovernedQueryPlan
+from heinzel_compiler.query_repository import QueryPlanConflict, SQLiteQueryPlanRepository
+from heinzel_contract_model import digest
 
 
 def _plan() -> GovernedQueryPlan:
@@ -82,7 +82,7 @@ def test_persisted_plan_keeps_decimal_and_timestamp_parameter_types() -> None:
     from datetime import UTC, datetime
     from decimal import Decimal
 
-    from pillarmesh_compiler import SqlParameter
+    from heinzel_compiler import SqlParameter
 
     parameters = (
         SqlParameter(name="p0", value_type="decimal", value=Decimal("-1.250")),
@@ -107,7 +107,7 @@ def test_persisted_plan_keeps_decimal_and_timestamp_parameter_types() -> None:
 
 
 def test_invalid_decimal_json_is_a_model_validation_error() -> None:
-    from pillarmesh_compiler import SqlParameter
+    from heinzel_compiler import SqlParameter
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):

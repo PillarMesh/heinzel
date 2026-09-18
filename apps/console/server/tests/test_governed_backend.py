@@ -6,24 +6,24 @@ from pathlib import Path
 from typing import Never
 
 import pytest
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     AccessGrant,
     AccessGrantDenied,
     AccessGrantIntegrityError,
     AccessGrantState,
 )
-from pillarmesh_bi_control import DashboardPublication
-from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
-from pillarmesh_console import fixture_backend, fixture_data
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.contracts import (
+from heinzel_bi_control import DashboardPublication
+from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_console import fixture_backend, fixture_data
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.contracts import (
     AccessRevocationCommand,
     ActorRole,
     ResetCommand,
     WorkspaceView,
 )
-from pillarmesh_console.errors import ConsoleConflict, ConsoleNotFound, ConsoleUnavailable
-from pillarmesh_console.governed_adapters import (
+from heinzel_console.errors import ConsoleConflict, ConsoleNotFound, ConsoleUnavailable
+from heinzel_console.governed_adapters import (
     AccessGrantCommands,
     AccessGrantReader,
     AccessGrantRevocationCommands,
@@ -45,31 +45,31 @@ from pillarmesh_console.governed_adapters import (
     WarehouseOperationIdentity,
     WarehouseOperationReader,
 )
-from pillarmesh_console.governed_backend import (
+from heinzel_console.governed_backend import (
     CAPABILITY_NOT_DELIVERED,
     GovernedConsoleBackend,
 )
-from pillarmesh_console.operation_handles import (
+from heinzel_console.operation_handles import (
     InMemoryOperationHandleRepository,
     OperationHandleRecord,
     OperationHandleRepository,
     mint_console_handle,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_evidence import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_evidence import (
     AcquisitionEvidenceOutcome,
     AcquisitionEvidenceReceipt,
     AcquisitionPublicReasonCode,
     RunRecord,
     RunState,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     CatalogColumn,
     CatalogLineageSource,
     CatalogProductDefinition,
     catalog_product_external_key,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     ApprovalRequirement,
     ArchitectRequestView,
     ClarifiedOutcomeStatement,
@@ -81,15 +81,15 @@ from pillarmesh_request_management import (
     RequestState,
     StakeholderAnswerDraft,
 )
-from pillarmesh_request_management.requester_view import OwnDecisionView
-from pillarmesh_state import (
+from heinzel_request_management.requester_view import OwnDecisionView
+from heinzel_state import (
     RunIntent,
     RunLifecycleSnapshot,
     RunService,
     SQLiteRunRepository,
     TriggerWindow,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
     WarehouseBinding,
@@ -325,7 +325,7 @@ class _AccessRevocations:
     def revoke_for_request(self, **values: object) -> AccessGrant:
         self.calls.append(values)
         if self.stale:
-            from pillarmesh_access_control import AccessGrantStaleRevision
+            from heinzel_access_control import AccessGrantStaleRevision
 
             raise AccessGrantStaleRevision("access grant revision is stale")
         return self.result
@@ -707,7 +707,7 @@ def test_governed_backend_reports_governed_local_provenance() -> None:
 
 
 def test_governed_module_does_not_import_the_fixture_backend() -> None:
-    source = Path(__file__).resolve().parents[1] / "src" / "pillarmesh_console"
+    source = Path(__file__).resolve().parents[1] / "src" / "heinzel_console"
 
     for module in ("governed_backend.py", "governed_adapters.py", "operation_handles.py"):
         text = (source / module).read_text(encoding="utf-8")
@@ -2002,12 +2002,12 @@ def test_the_console_acquisition_vocabulary_mirrors_the_owning_receipt_exactly()
     """
     from typing import get_args
 
-    from pillarmesh_console.contracts import (
+    from heinzel_console.contracts import (
         AcquisitionModeView,
         AcquisitionOutcomeView,
         AcquisitionReasonCodeView,
     )
-    from pillarmesh_evidence import AcquisitionEvidenceReceipt
+    from heinzel_evidence import AcquisitionEvidenceReceipt
 
     fields = AcquisitionEvidenceReceipt.model_fields
 
@@ -2146,7 +2146,7 @@ def test_every_governed_read_is_gated_or_deliberately_ungated() -> None:
     import ast
 
     source = (
-        Path(__file__).resolve().parents[1] / "src" / "pillarmesh_console" / "governed_backend.py"
+        Path(__file__).resolve().parents[1] / "src" / "heinzel_console" / "governed_backend.py"
     ).read_text(encoding="utf-8")
     backend = next(
         node
@@ -2197,8 +2197,8 @@ def test_every_governed_read_is_gated_or_deliberately_ungated() -> None:
 
 def test_distinct_terminal_outcomes_keep_distinct_console_states() -> None:
     """A delivered answer and a refusal must never share one lifecycle label."""
-    from pillarmesh_console.governed_backend import _REQUEST_STATES
-    from pillarmesh_request_management import RequestState
+    from heinzel_console.governed_backend import _REQUEST_STATES
+    from heinzel_request_management import RequestState
 
     assert _REQUEST_STATES[RequestState.DELIVERED] == "delivered"
     assert _REQUEST_STATES[RequestState.MONITORING] == "delivered"

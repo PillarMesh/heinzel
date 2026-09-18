@@ -3,14 +3,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_request_management import (
     InboxRequest,
     RequestManagementService,
     SQLiteRequestRepository,
 )
-from pillarmesh_request_management.intake import RequestDigestMismatch, RequestIntakeContent
-from pillarmesh_request_management.models import DataAccessRequest, StakeholderQuestion
+from heinzel_request_management.intake import RequestDigestMismatch, RequestIntakeContent
+from heinzel_request_management.models import DataAccessRequest, StakeholderQuestion
 
 NOW = datetime(2026, 9, 8, tzinfo=UTC)
 

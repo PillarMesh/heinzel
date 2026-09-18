@@ -13,15 +13,15 @@ import socket
 
 import psycopg
 import pytest
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLLandStore,
     PostgreSQLLandStoreSettings,
     PostgreSQLMaterializationSettings,
     PostgreSQLProductGenerationAuthority,
 )
-from pillarmesh_provider_postgresql.destination import PostgreSQLLandStoreError
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import AnswerProductGenerationReference, AnswerQueryReference
+from heinzel_provider_postgresql.destination import PostgreSQLLandStoreError
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import AnswerProductGenerationReference, AnswerQueryReference
 from pydantic import SecretStr
 
 from tests.integration.test_postgresql_checked_sum_evidence import _pinned_postgresql
@@ -30,11 +30,11 @@ from tests.integration.test_postgresql_product_materialization_live import (
     _role_dsn,
 )
 
-_RUN_LIVE = os.environ.get("PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
+_RUN_LIVE = os.environ.get("HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
 
 pytestmark = [
     pytest.mark.emulator,
-    pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1"),
+    pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1"),
 ]
 
 

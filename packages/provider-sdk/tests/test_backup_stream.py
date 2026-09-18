@@ -5,7 +5,7 @@ import struct
 from typing import cast
 
 import pytest
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     BackupStreamIntegrityError,
     decrypt_backup_stream,
     encrypt_backup_stream,

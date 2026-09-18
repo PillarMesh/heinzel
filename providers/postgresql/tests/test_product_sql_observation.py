@@ -7,19 +7,19 @@ from typing import cast
 import psycopg
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_postgresql import (
+from heinzel_contract_model import digest
+from heinzel_provider_postgresql import (
     PostgreSQLProductSqlObservationRequest,
     PostgreSQLProductSqlObservationSettings,
     PostgreSQLProductSqlObserver,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     InvalidProductSqlProviderObservation,
     ProductSqlProviderObservationSigner,
     ProductSqlProviderObservationVerifier,
     ProviderError,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     WarehouseValidationEvidence,
@@ -31,7 +31,7 @@ _NOW = datetime(2026, 9, 15, 12, tzinfo=UTC)
 _IMAGE_DIGEST = "33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935"
 _BUILD_DIGEST = digest(
     {
-        "domain": "pillarmesh-postgresql-engine-build-v1",
+        "domain": "heinzel-postgresql-engine-build-v1",
         "version": {
             "server_version_num": "180006",
             "server_version": "18.6 (Debian 18.6-1.pgdg13+1)",

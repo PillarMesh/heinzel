@@ -4,14 +4,14 @@ import base64
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardContract,
     DashboardContractSigner,
     DashboardContractVerifier,
     InvalidDashboardContract,
     SignedDashboardContract,
 )
-from pillarmesh_contract_model import ArtifactReference, FreshnessRequirement, canonical_bytes
+from heinzel_contract_model import ArtifactReference, FreshnessRequirement, canonical_bytes
 from pydantic import ValidationError
 
 
@@ -100,7 +100,7 @@ def test_verifier_rejects_a_signature_from_another_artifact_domain() -> None:
         private_key.sign(
             canonical_bytes(
                 {
-                    "domain": "pillarmesh-governed-query-plan-v1",
+                    "domain": "heinzel-governed-query-plan-v1",
                     "tenant_id": signed.tenant_id,
                     "contract_digest": signed.contract_digest,
                 }

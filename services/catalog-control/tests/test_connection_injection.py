@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from pillarmesh_catalog_control.repository import SQLiteCatalogRepository
+from heinzel_catalog_control.repository import SQLiteCatalogRepository
 
 
 def test_a_borrowed_connection_serves_a_worker_thread(tmp_path: Path) -> None:

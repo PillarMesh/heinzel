@@ -5,8 +5,8 @@ from typing import Literal
 
 import httpx
 import pytest
-from pillarmesh_provider_sdk import AcquisitionProviderError
-from pillarmesh_provider_stripe.client import HttpxStripeClient, StripeClient
+from heinzel_provider_sdk import AcquisitionProviderError
+from heinzel_provider_stripe.client import HttpxStripeClient, StripeClient
 from pydantic import SecretStr
 
 type StripeObjectKind = Literal["customer", "invoice", "charge", "refund"]

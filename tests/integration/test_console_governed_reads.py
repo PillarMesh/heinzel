@@ -14,10 +14,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pillarmesh_catalog_control import CatalogControlService, SQLiteCatalogRepository
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.errors import ConsoleUnavailable
-from pillarmesh_console.governed_adapters import (
+from heinzel_catalog_control import CatalogControlService, SQLiteCatalogRepository
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.errors import ConsoleUnavailable
+from heinzel_console.governed_adapters import (
     CatalogControlBindingReader,
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceBindingDirectory,
@@ -25,19 +25,19 @@ from pillarmesh_console.governed_adapters import (
     WarehouseOperationIdentity,
     WarehouseRepositoryOperationReader,
 )
-from pillarmesh_console.governed_backend import CAPABILITY_NOT_DELIVERED, GovernedConsoleBackend
-from pillarmesh_console.operation_handles import (
+from heinzel_console.governed_backend import CAPABILITY_NOT_DELIVERED, GovernedConsoleBackend
+from heinzel_console.operation_handles import (
     InMemoryOperationHandleRepository,
     OperationHandleRecord,
     mint_console_handle,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     FulfillmentReadService,
     RequestManagementService,
     SQLiteFulfillmentRepository,
     SQLiteRequestRepository,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
     WarehouseControlService,
@@ -45,7 +45,7 @@ from pillarmesh_warehouse_control import (
     WarehouseOperationPhase,
     WarehouseOperationStatus,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 
 _TENANT = "tenant-governed"
 _ARCHITECT = "actor-architect"

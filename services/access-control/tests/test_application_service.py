@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import pytest
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     AccessGrant,
     AccessGrantAdmissionAuthorityInvalid,
     AccessGrantApplicationService,
@@ -16,8 +16,8 @@ from pillarmesh_access_control import (
     CurrentEntitlementSnapshot,
     SQLiteAccessGrantRepository,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_provider_sdk import (
     AccessEffectCommand,
     AccessEffectFailure,
     AccessEffectProvider,

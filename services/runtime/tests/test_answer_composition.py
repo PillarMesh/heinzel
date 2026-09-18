@@ -4,13 +4,13 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import pytest
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import (
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import (
     AnswerQueryCursor,
     AnswerQueryProviderResolver,
     ReadOnlyAnswerQuery,
 )
-from pillarmesh_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
+from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
 
 
 class _Provider:

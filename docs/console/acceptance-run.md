@@ -72,7 +72,7 @@ uv run python -m tests.acceptance.run_console_governed
 
 It serves `http://127.0.0.1:8000`, seeds one stakeholder question through the owning
 services, and carries it to `awaiting_approval` so the inbox has a real decision. The
-architect is the default actor; the `x-pillarmesh-actor: requester-a` header selects
+architect is the default actor; the `x-heinzel-actor: requester-a` header selects
 the requester surface for HTTP tests. For ordinary browsers use the fixed-session
 URLs described in [Local UI testing](testing.md); no header extension is needed.
 

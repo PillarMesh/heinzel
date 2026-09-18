@@ -5,13 +5,13 @@ from threading import Barrier, Thread
 from typing import cast
 
 import pytest
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EngineKind,
     WarehouseBinding,
     WarehouseBindingState,
     WarehouseControlService,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)

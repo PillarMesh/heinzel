@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-from pillarmesh_bi_control import DashboardContract, DashboardPublication
-from pillarmesh_contract_model import ArtifactReference, FreshnessRequirement
+from heinzel_bi_control import DashboardContract, DashboardPublication
+from heinzel_contract_model import ArtifactReference, FreshnessRequirement
 from pydantic import ValidationError
 
 

@@ -4,10 +4,10 @@ from datetime import UTC, datetime
 from typing import cast
 
 import pytest
-from pillarmesh_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import ActivatedAcquisitionContractRecord
-from pillarmesh_provider_sdk import (
+from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import ActivatedAcquisitionContractRecord
+from heinzel_provider_sdk import (
     AcquisitionField,
     AcquisitionNoValidPlan,
     AcquisitionObjectObservation,
@@ -18,7 +18,7 @@ from pillarmesh_provider_sdk import (
     ColumnObservation,
     ProviderObservation,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AcquisitionArtifactStore,
     AcquisitionContractError,
     AcquisitionEvidenceWriter,
@@ -33,8 +33,8 @@ from pillarmesh_runtime import (
     compose_acquisition_application,
     landing_contract_resolver,
 )
-from pillarmesh_state import AcquisitionStateNotFoundError, RunService, SQLiteRunRepository
-from pillarmesh_trigger import (
+from heinzel_state import AcquisitionStateNotFoundError, RunService, SQLiteRunRepository
+from heinzel_trigger import (
     ActivatedRunContract,
     ContractNotActivatedError,
     RunNowPolicy,

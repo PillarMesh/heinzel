@@ -14,7 +14,7 @@ for the connected authority. Contract approval identifiers have consequently bee
 composition sites even though an approval proves a decision about one artifact and says nothing
 about the requester's current access.
 
-Task 12 also introduces a PillarMesh `AccessGrant` lifecycle. That grant is a capability PillarMesh
+Task 12 also introduces a Heinzel `AccessGrant` lifecycle. That grant is a capability Heinzel
 applies after request-management admission. It is not the enterprise entitlement against which the
 proposal was checked. A third concept, the warehouse principal, is an engine identity provisioned
 and probed by warehouse-control. Conflating any two of these lets a local approval manufacture its
@@ -70,12 +70,12 @@ is historical evidence and is never a live entitlement adapter. Before governed-
 deployment can claim entitlement enforcement, it must compose a concrete authenticated
 connected-policy adapter for the tenant's declared enterprise policy system. That adapter must
 authenticate the upstream response, verify its source revision and payload digest, normalize exact
-PillarMesh artifact references and closed filter domains, and return the strict assertion model.
+Heinzel artifact references and closed filter domains, and return the strict assertion model.
 Scripted or fixture assertions cannot satisfy this requirement.
 
 ### Applied access grants
 
-An `AccessGrant` is a PillarMesh-owned applied capability. It is created only from an admitted
+An `AccessGrant` is a Heinzel-owned applied capability. It is created only from an admitted
 request-management access proposal and is narrowed against a freshly resolved current entitlement
 snapshot. In addition to the fields in Task 12, it binds that snapshot's digest. Append-only grant
 revisions carry `pending`, `active`, `revocation_pending`, `revoked`, or `failed` state; exact
@@ -131,7 +131,7 @@ an exact tenant, principal, and purpose lookup to a configured HTTPS
 configured TLS trust. Its strict response envelope identifies one configured Ed25519 key and holds
 only a signed entitlement body and signature. The source payload digest covers the canonical body
 claims excluding that digest field. The signature has the
-`pillarmesh-enterprise-entitlement-v1` domain and covers the complete body including the digest.
+`heinzel-enterprise-entitlement-v1` domain and covers the complete body including the digest.
 Authority reference, connection binding, authentication method and key, evidence digest, and
 adapter reference come from verified bytes and adapter configuration rather than response claims.
 

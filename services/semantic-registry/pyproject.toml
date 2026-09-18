@@ -1,24 +1,24 @@
 [project]
-name = "pillarmesh-semantic-registry"
+name = "heinzel-semantic-registry"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
-  "pillarmesh-catalog-control",
-  "pillarmesh-contract-model",
-  "pillarmesh-contract-service",
-  "pillarmesh-provider-openmetadata",
-  "pillarmesh-provider-sdk",
-  "pillarmesh-request-management",
+  "heinzel-catalog-control",
+  "heinzel-contract-model",
+  "heinzel-contract-service",
+  "heinzel-provider-openmetadata",
+  "heinzel-provider-sdk",
+  "heinzel-request-management",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-contract-service = { workspace = true }
-pillarmesh-catalog-control = { workspace = true }
-pillarmesh-provider-openmetadata = { workspace = true }
-pillarmesh-provider-sdk = { workspace = true }
-pillarmesh-request-management = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-contract-service = { workspace = true }
+heinzel-catalog-control = { workspace = true }
+heinzel-provider-openmetadata = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-request-management = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

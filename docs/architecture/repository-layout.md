@@ -1,4 +1,4 @@
-# PillarMesh Repository Layout
+# Heinzel Repository Layout
 
 This document is the canonical repository placement guide. Component directories are created lazily with their first substantive implementation; the map defines permitted ownership boundaries before those directories exist.
 

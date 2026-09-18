@@ -4,23 +4,23 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_sdk import (
     AcquisitionAcknowledgement,
     AcquisitionBatchManifest,
     AcquisitionCheckpointReceipt,
     AcquisitionIntent,
     AcquisitionPreparedReceipt,
 )
-from pillarmesh_provider_sdk.errors import AcquisitionProviderKind
-from pillarmesh_runtime import (
+from heinzel_provider_sdk.errors import AcquisitionProviderKind
+from heinzel_runtime import (
     AcquisitionAuthorizationError,
     AcquisitionIntegrityError,
     AcquisitionOwnershipError,
     AcquisitionPreparationResult,
     AcquisitionStaleRevision,
 )
-from pillarmesh_state import (
+from heinzel_state import (
     AcquisitionStateConflictError,
     AcquisitionStatePersistenceError,
     PreparedAcquisitionState,

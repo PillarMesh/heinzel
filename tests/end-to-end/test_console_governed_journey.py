@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from pillarmesh_console.app import create_app
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.governed_adapters import (
+from heinzel_console.app import create_app
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.governed_adapters import (
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceBindingDirectory,
     InMemoryWorkspacePrincipalDirectory,
@@ -27,10 +27,10 @@ from pillarmesh_console.governed_adapters import (
     WarehouseControlLifecycleCommands,
     WarehouseRepositoryOperationReader,
 )
-from pillarmesh_console.governed_backend import CAPABILITY_NOT_DELIVERED, GovernedConsoleBackend
-from pillarmesh_console.operation_handles import InMemoryOperationHandleRepository
-from pillarmesh_contract_model import digest
-from pillarmesh_request_management import (
+from heinzel_console.governed_backend import CAPABILITY_NOT_DELIVERED, GovernedConsoleBackend
+from heinzel_console.operation_handles import InMemoryOperationHandleRepository
+from heinzel_contract_model import digest
+from heinzel_request_management import (
     DataAccessRequest,
     FulfillmentPolicyCompiler,
     FulfillmentProposal,
@@ -44,8 +44,8 @@ from pillarmesh_request_management import (
     StakeholderAnswerDraft,
     StakeholderQuestion,
 )
-from pillarmesh_semantic_registry import SemanticFulfillmentSnapshotAdapter
-from pillarmesh_warehouse_control import (
+from heinzel_semantic_registry import SemanticFulfillmentSnapshotAdapter
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     InitialWarehouseValidationResult,
@@ -61,10 +61,10 @@ from pillarmesh_warehouse_control import (
     WarehouseValidationEvidence,
     WarehouseValidationProfile,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 from starlette.testclient import TestClient
 
-from tests.acceptance.run_plan3b import (
+from tests.acceptance.run_request_fulfillment import (
     NOW,
     ScenarioAnswerProvider,
     ScenarioAuthorityResolver,
@@ -453,7 +453,7 @@ def test_a_requester_journey_commits_every_step_to_the_owning_request_service(
     )
 
     assert created.status_code == 200
-    assert created.headers["X-PillarMesh-Data-Provenance"] == "governed_local"
+    assert created.headers["X-Heinzel-Data-Provenance"] == "governed_local"
     assert replied.status_code == 200
     assert len(replied.json()["data"]["messages"]) == 1
 

@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_evidence import package_fulfillment_receipts
-from pillarmesh_request_management import FulfillmentEvidenceReceipt, RequestState
+from heinzel_evidence import package_fulfillment_receipts
+from heinzel_request_management import FulfillmentEvidenceReceipt, RequestState
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 31, 12, tzinfo=UTC)

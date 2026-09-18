@@ -12,9 +12,9 @@ from pathlib import Path
 import psycopg
 import pytest
 import snowflake.connector
-from pillarmesh_authoring_mcp import AppSettings, build_application
-from pillarmesh_contract_model import FIXED_PROJECTION, digest
-from pillarmesh_provider_snowflake import SnowflakeSettings
+from heinzel_authoring_mcp import AppSettings, build_application
+from heinzel_contract_model import FIXED_PROJECTION, digest
+from heinzel_provider_snowflake import SnowflakeSettings
 from psycopg import sql
 
 from tests.acceptance.resource_ledger import (
@@ -23,26 +23,26 @@ from tests.acceptance.resource_ledger import (
 )
 
 _APP_VARIABLES = (
-    "PILLARMESH_SIGNING_KEY_ID",
-    "PILLARMESH_SIGNING_PRIVATE_KEY_B64",
-    "PILLARMESH_POSTGRES_DSN",
-    "PILLARMESH_POSTGRES_DATABASE",
-    "PILLARMESH_POSTGRES_CONNECTION_HANDLE",
-    "PILLARMESH_POSTGRES_SCHEMA",
-    "PILLARMESH_POSTGRES_TABLE",
-    "PILLARMESH_SNOWFLAKE_ACCOUNT",
-    "PILLARMESH_SNOWFLAKE_USER",
-    "PILLARMESH_SNOWFLAKE_PASSWORD",
-    "PILLARMESH_SNOWFLAKE_ROLE",
-    "PILLARMESH_SNOWFLAKE_WAREHOUSE",
-    "PILLARMESH_SNOWFLAKE_DATABASE",
-    "PILLARMESH_SNOWFLAKE_SCHEMA",
-    "PILLARMESH_SNOWFLAKE_STAGE",
-    "PILLARMESH_SNOWFLAKE_TARGET_TABLE",
-    "PILLARMESH_SNOWFLAKE_LEDGER_TABLE",
-    "PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE",
-    "PILLARMESH_TEST_POSTGRES_FIXTURE_DSN",
-    "PILLARMESH_LIVE_DIAGNOSTIC_LEDGER_DIR",
+    "HEINZEL_SIGNING_KEY_ID",
+    "HEINZEL_SIGNING_PRIVATE_KEY_B64",
+    "HEINZEL_POSTGRES_DSN",
+    "HEINZEL_POSTGRES_DATABASE",
+    "HEINZEL_POSTGRES_CONNECTION_HANDLE",
+    "HEINZEL_POSTGRES_SCHEMA",
+    "HEINZEL_POSTGRES_TABLE",
+    "HEINZEL_SNOWFLAKE_ACCOUNT",
+    "HEINZEL_SNOWFLAKE_USER",
+    "HEINZEL_SNOWFLAKE_PASSWORD",
+    "HEINZEL_SNOWFLAKE_ROLE",
+    "HEINZEL_SNOWFLAKE_WAREHOUSE",
+    "HEINZEL_SNOWFLAKE_DATABASE",
+    "HEINZEL_SNOWFLAKE_SCHEMA",
+    "HEINZEL_SNOWFLAKE_STAGE",
+    "HEINZEL_SNOWFLAKE_TARGET_TABLE",
+    "HEINZEL_SNOWFLAKE_LEDGER_TABLE",
+    "HEINZEL_SNOWFLAKE_CONNECTION_HANDLE",
+    "HEINZEL_TEST_POSTGRES_FIXTURE_DSN",
+    "HEINZEL_LIVE_DIAGNOSTIC_LEDGER_DIR",
 )
 
 
@@ -83,7 +83,7 @@ def test_new_postgres_row_reaches_real_snowflake_visibility(
         kind="source_row",
         exact_identifier=(
             f"postgresql:{settings.postgres_connection_handle}:"
-            f"{os.environ['PILLARMESH_POSTGRES_DATABASE']}."
+            f"{os.environ['HEINZEL_POSTGRES_DATABASE']}."
             f"{settings.postgres_schema}.{settings.postgres_table}:"
             f"order_id={acceptance_key}"
         ),
@@ -126,7 +126,7 @@ def test_new_postgres_row_reaches_real_snowflake_visibility(
     try:
         resource_ledger.mark_attempted(source_resource)
         resource_ledger.persist(run_state="running")
-        with psycopg.connect(os.environ["PILLARMESH_TEST_POSTGRES_FIXTURE_DSN"]) as connection:
+        with psycopg.connect(os.environ["HEINZEL_TEST_POSTGRES_FIXTURE_DSN"]) as connection:
             connection.execute(
                 sql.SQL(
                     "INSERT INTO {}.{} "
@@ -176,7 +176,7 @@ def test_new_postgres_row_reaches_real_snowflake_visibility(
         verified = application.verify(contract_id, 1)
         activation_identity = digest(
             {
-                "domain": "pillarmesh-m0-activation-v1",
+                "domain": "heinzel-activation-v1",
                 "contract_digest": created["contract_digest"],  # type: ignore[index]
                 "summary_digest": verified["summary_digest"],  # type: ignore[index]
                 "acceptance_key": acceptance_key,
@@ -186,7 +186,7 @@ def test_new_postgres_row_reaches_real_snowflake_visibility(
         graph = verified["activation_summary"]["signed_graph"]["graph"]  # type: ignore[index]
         batch_id = digest(
             {
-                "domain": "pillarmesh-m0-batch-v1",
+                "domain": "heinzel-batch-v1",
                 "run_id": run_id,
                 "graph": graph,
             }
@@ -298,7 +298,7 @@ def test_new_postgres_row_reaches_real_snowflake_visibility(
                 )
                 resource_ledger.mark_attempted(resource)
         if fixture_inserted and not commit_attempted:
-            with psycopg.connect(os.environ["PILLARMESH_TEST_POSTGRES_FIXTURE_DSN"]) as connection:
+            with psycopg.connect(os.environ["HEINZEL_TEST_POSTGRES_FIXTURE_DSN"]) as connection:
                 connection.execute(
                     sql.SQL("DELETE FROM {}.{} WHERE order_id = %s").format(
                         sql.Identifier(settings.postgres_schema),
@@ -321,4 +321,4 @@ def test_new_postgres_row_reaches_real_snowflake_visibility(
         digests = ",".join(
             str(item["resource_digest"]) for item in resource_ledger.sanitized_dispositions()
         )
-        record_property("pillarmesh_resource_digests", digests)
+        record_property("heinzel_resource_digests", digests)

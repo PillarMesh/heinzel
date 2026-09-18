@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_semantic_registry import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_semantic_registry import (
     ApprovedProductQueryBinding,
     ProductQueryBindingApproval,
     ProductQueryBindingDeclaration,
@@ -75,7 +75,7 @@ def _binding() -> ApprovedProductQueryBinding:
             version=7,
             digest=digest(
                 {
-                    "domain": "pillarmesh-product-query-consumption-v1",
+                    "domain": "heinzel-product-query-consumption-v1",
                     "tenant_id": "tenant-a",
                     "product_ref": PRODUCT,
                     "generation": 7,

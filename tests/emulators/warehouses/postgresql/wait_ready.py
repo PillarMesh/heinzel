@@ -14,12 +14,12 @@ def main(arguments: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", required=True, type=int)
-    parser.add_argument("--database", default="pillarmesh_warehouse")
+    parser.add_argument("--database", default="heinzel_warehouse")
     parser.add_argument("--username", default="postgres")
     parser.add_argument("--tls-directory", required=True, type=Path)
     parser.add_argument("--timeout-seconds", default=120.0, type=float)
     parsed = parser.parse_args(arguments)
-    password = os.environ.get("PILLARMESH_POSTGRES_READY_PASSWORD")
+    password = os.environ.get("HEINZEL_POSTGRES_READY_PASSWORD")
     if not password:
         print("ERROR: PostgreSQL readiness credential is unavailable", file=sys.stderr)
         return 2

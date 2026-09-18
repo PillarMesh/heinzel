@@ -4,7 +4,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     ConnectedAuthorityProvenance,
     ConnectedPolicyAuthorityUnavailable,
     CurrentEntitlementResolver,
@@ -12,10 +12,10 @@ from pillarmesh_access_control import (
     EntitlementFilterDomain,
     SQLiteEntitlementRepository,
 )
-from pillarmesh_compiler import GovernedQueryPlan, ProductGenerationReference
-from pillarmesh_compiler.query_repository import SQLiteQueryPlanRepository
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_compiler import GovernedQueryPlan, ProductGenerationReference
+from heinzel_compiler.query_repository import SQLiteQueryPlanRepository
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import (
     AnswerExecutionEvidence,
     AnswerIntentValidation,
     AnswerPlanEvidence,
@@ -45,7 +45,7 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
     StakeholderQuestion,
 )
-from pillarmesh_request_management.answer_admission import PolicyScanReservation
+from heinzel_request_management.answer_admission import PolicyScanReservation
 
 from tests.acceptance.console_answer_authority import CurrentAnswerAuthority, ProductAnswerAuthority
 

@@ -4,8 +4,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_state import RunService, SQLiteRunRepository
-from pillarmesh_trigger import (
+from heinzel_state import RunService, SQLiteRunRepository
+from heinzel_trigger import (
     ActivatedRunContract,
     BackfillWindowError,
     ContractNotActivatedError,

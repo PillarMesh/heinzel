@@ -11,8 +11,8 @@ from typing import Any, Protocol, cast
 
 import psycopg
 import snowflake.connector
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import OrderRow
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import OrderRow
 from psycopg import sql
 
 from .config import (
@@ -71,7 +71,7 @@ SELECT coalesce(sum(s.calls), 0)::bigint
 FROM public.pg_stat_statements AS s
 JOIN pg_catalog.pg_roles AS r ON r.oid = s.userid
 WHERE pg_catalog.pg_has_role(session_user, r.oid, 'MEMBER')
-  AND s.query ILIKE '%pillarmesh_m0%orders%'
+  AND s.query ILIKE '%heinzel_m0%orders%'
   AND s.query ~* '^[[:space:]]*(select|declare)'
 """.strip()
 
@@ -305,25 +305,24 @@ def validate_attestation(
     postgres_runtime_current = identities.postgres_runtime_current.casefold()
     postgres_fixture_session = identities.postgres_fixture_session.casefold()
     postgres_fixture_current = identities.postgres_fixture_current.casefold()
-    declared_runtime = env["PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL"].casefold()
-    declared_fixture = env["PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL"].casefold()
-    declared_owner = env["PILLARMESH_POSTGRES_OWNER_PRINCIPAL"].casefold()
+    declared_runtime = env["HEINZEL_POSTGRES_RUNTIME_PRINCIPAL"].casefold()
+    declared_fixture = env["HEINZEL_POSTGRES_FIXTURE_PRINCIPAL"].casefold()
+    declared_owner = env["HEINZEL_POSTGRES_OWNER_PRINCIPAL"].casefold()
     if (
         postgres_runtime_session != declared_runtime
         or postgres_runtime_current != declared_runtime
         or postgres_fixture_session != declared_fixture
         or postgres_fixture_current != declared_fixture
-        or identities.snowflake_runtime.casefold() != env["PILLARMESH_SNOWFLAKE_USER"].casefold()
+        or identities.snowflake_runtime.casefold() != env["HEINZEL_SNOWFLAKE_USER"].casefold()
         or postgres_runtime_session in {declared_fixture, declared_owner}
         or postgres_runtime_current in {declared_fixture, declared_owner}
         or postgres_fixture_session == declared_owner
         or postgres_fixture_current == declared_owner
-        or identities.snowflake_runtime.casefold()
-        == env["PILLARMESH_SNOWFLAKE_OWNER_USER"].casefold()
+        or identities.snowflake_runtime.casefold() == env["HEINZEL_SNOWFLAKE_OWNER_USER"].casefold()
     ):
         raise HarnessError("connected runtime principal is not isolated")
 
-    owner = env["PILLARMESH_POSTGRES_OWNER_PRINCIPAL"].casefold()
+    owner = env["HEINZEL_POSTGRES_OWNER_PRINCIPAL"].casefold()
     snowflake_owner = SNOWFLAKE_OWNER_ROLE.casefold()
     expected_owners = tuple((name, SNOWFLAKE_OWNER_ROLE) for name, _ in SNOWFLAKE_OBJECT_KINDS)
     expected_object_grants = tuple(
@@ -333,23 +332,23 @@ def validate_attestation(
                     (name, "OWNERSHIP", SNOWFLAKE_OWNER_ROLE)
                     for name, _kind in SNOWFLAKE_OBJECT_KINDS
                 ),
-                ("database", "USAGE", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("schema", "USAGE", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("warehouse", "USAGE", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("stage", "READ", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("stage", "WRITE", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("target", "SELECT", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("target", "INSERT", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("target", "UPDATE", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("negative_target", "SELECT", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("ledger", "SELECT", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("ledger", "INSERT", env["PILLARMESH_SNOWFLAKE_ROLE"]),
-                ("environment_marker", "SELECT", env["PILLARMESH_SNOWFLAKE_ROLE"]),
+                ("database", "USAGE", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("schema", "USAGE", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("warehouse", "USAGE", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("stage", "READ", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("stage", "WRITE", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("target", "SELECT", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("target", "INSERT", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("target", "UPDATE", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("negative_target", "SELECT", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("ledger", "SELECT", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("ledger", "INSERT", env["HEINZEL_SNOWFLAKE_ROLE"]),
+                ("environment_marker", "SELECT", env["HEINZEL_SNOWFLAKE_ROLE"]),
             )
         )
     )
     dedicated = (
-        attestation.postgres_database == env["PILLARMESH_POSTGRES_DATABASE"]
+        attestation.postgres_database == env["HEINZEL_POSTGRES_DATABASE"]
         and attestation.postgres_database_owner.casefold() == owner
         and attestation.postgres_schema_owner.casefold() == owner
         and attestation.postgres_marker_environment_id == config.environment_identity
@@ -368,20 +367,20 @@ def validate_attestation(
         and attestation.postgres_runtime_grants == POSTGRES_RUNTIME_GRANTS
         and attestation.postgres_fixture_grants == POSTGRES_FIXTURE_GRANTS
         and attestation.postgres_denial_schema_exists
-        and env["PILLARMESH_SNOWFLAKE_ACCOUNT"].casefold()
+        and env["HEINZEL_SNOWFLAKE_ACCOUNT"].casefold()
         in {
             attestation.snowflake_account.casefold(),
             attestation.snowflake_account_locator.casefold(),
         }
-        and attestation.snowflake_role.casefold() == env["PILLARMESH_SNOWFLAKE_ROLE"].casefold()
+        and attestation.snowflake_role.casefold() == env["HEINZEL_SNOWFLAKE_ROLE"].casefold()
         and tuple(value.casefold() for value in attestation.snowflake_user_roles)
-        == (env["PILLARMESH_SNOWFLAKE_ROLE"].casefold(),)
+        == (env["HEINZEL_SNOWFLAKE_ROLE"].casefold(),)
         and attestation.snowflake_marker_environment_identity == config.environment_identity
         and attestation.snowflake_marker_owner_user.casefold()
-        == env["PILLARMESH_SNOWFLAKE_OWNER_USER"].casefold()
+        == env["HEINZEL_SNOWFLAKE_OWNER_USER"].casefold()
         and attestation.snowflake_marker_owner_role.casefold() == snowflake_owner
         and attestation.snowflake_marker_denial_database.casefold()
-        == env["PILLARMESH_SNOWFLAKE_DENIAL_DATABASE"].casefold()
+        == env["HEINZEL_SNOWFLAKE_DENIAL_DATABASE"].casefold()
         and attestation.snowflake_marker_denial_database_owner_role.casefold() == snowflake_owner
         and tuple((name, kind.upper()) for name, kind in attestation.snowflake_object_kinds)
         == SNOWFLAKE_OBJECT_KINDS
@@ -419,25 +418,25 @@ def private_attestation_record(
         "status": "passed",
         "environment_identity": config.environment_identity,
         "declared": {
-            "postgres_database": env["PILLARMESH_POSTGRES_DATABASE"],
-            "postgres_runtime_principal": env["PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL"],
-            "postgres_fixture_principal": env["PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL"],
-            "postgres_owner_principal": env["PILLARMESH_POSTGRES_OWNER_PRINCIPAL"],
-            "postgres_schema": env["PILLARMESH_POSTGRES_SCHEMA"],
-            "postgres_table": env["PILLARMESH_POSTGRES_TABLE"],
-            "postgres_denial_schema": env["PILLARMESH_POSTGRES_DENIAL_SCHEMA"],
-            "snowflake_account": env["PILLARMESH_SNOWFLAKE_ACCOUNT"],
-            "snowflake_runtime_user": env["PILLARMESH_SNOWFLAKE_USER"],
-            "snowflake_owner_user": env["PILLARMESH_SNOWFLAKE_OWNER_USER"],
-            "snowflake_role": env["PILLARMESH_SNOWFLAKE_ROLE"],
-            "snowflake_warehouse": env["PILLARMESH_SNOWFLAKE_WAREHOUSE"],
-            "snowflake_database": env["PILLARMESH_SNOWFLAKE_DATABASE"],
-            "snowflake_schema": env["PILLARMESH_SNOWFLAKE_SCHEMA"],
-            "snowflake_stage": env["PILLARMESH_SNOWFLAKE_STAGE"],
-            "snowflake_target": env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"],
-            "snowflake_negative_target": env["PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE"],
-            "snowflake_ledger": env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"],
-            "snowflake_denial_database": env["PILLARMESH_SNOWFLAKE_DENIAL_DATABASE"],
+            "postgres_database": env["HEINZEL_POSTGRES_DATABASE"],
+            "postgres_runtime_principal": env["HEINZEL_POSTGRES_RUNTIME_PRINCIPAL"],
+            "postgres_fixture_principal": env["HEINZEL_POSTGRES_FIXTURE_PRINCIPAL"],
+            "postgres_owner_principal": env["HEINZEL_POSTGRES_OWNER_PRINCIPAL"],
+            "postgres_schema": env["HEINZEL_POSTGRES_SCHEMA"],
+            "postgres_table": env["HEINZEL_POSTGRES_TABLE"],
+            "postgres_denial_schema": env["HEINZEL_POSTGRES_DENIAL_SCHEMA"],
+            "snowflake_account": env["HEINZEL_SNOWFLAKE_ACCOUNT"],
+            "snowflake_runtime_user": env["HEINZEL_SNOWFLAKE_USER"],
+            "snowflake_owner_user": env["HEINZEL_SNOWFLAKE_OWNER_USER"],
+            "snowflake_role": env["HEINZEL_SNOWFLAKE_ROLE"],
+            "snowflake_warehouse": env["HEINZEL_SNOWFLAKE_WAREHOUSE"],
+            "snowflake_database": env["HEINZEL_SNOWFLAKE_DATABASE"],
+            "snowflake_schema": env["HEINZEL_SNOWFLAKE_SCHEMA"],
+            "snowflake_stage": env["HEINZEL_SNOWFLAKE_STAGE"],
+            "snowflake_target": env["HEINZEL_SNOWFLAKE_TARGET_TABLE"],
+            "snowflake_negative_target": env["HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE"],
+            "snowflake_ledger": env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"],
+            "snowflake_denial_database": env["HEINZEL_SNOWFLAKE_DENIAL_DATABASE"],
         },
         "observed": {
             "postgres_runtime_session": identities.postgres_runtime_session,
@@ -517,15 +516,15 @@ class LiveProviderActions:
     def _snowflake_connection(self) -> Any:
         env = self._environment
         return self._snowflake_connect(
-            account=env["PILLARMESH_SNOWFLAKE_ACCOUNT"],
-            user=env["PILLARMESH_SNOWFLAKE_USER"],
-            password=env["PILLARMESH_SNOWFLAKE_PASSWORD"],
-            role=env["PILLARMESH_SNOWFLAKE_ROLE"],
-            warehouse=env["PILLARMESH_SNOWFLAKE_WAREHOUSE"],
-            database=env["PILLARMESH_SNOWFLAKE_DATABASE"],
-            schema=env["PILLARMESH_SNOWFLAKE_SCHEMA"],
+            account=env["HEINZEL_SNOWFLAKE_ACCOUNT"],
+            user=env["HEINZEL_SNOWFLAKE_USER"],
+            password=env["HEINZEL_SNOWFLAKE_PASSWORD"],
+            role=env["HEINZEL_SNOWFLAKE_ROLE"],
+            warehouse=env["HEINZEL_SNOWFLAKE_WAREHOUSE"],
+            database=env["HEINZEL_SNOWFLAKE_DATABASE"],
+            schema=env["HEINZEL_SNOWFLAKE_SCHEMA"],
             autocommit=True,
-            session_parameters={"QUERY_TAG": "pillarmesh-m0-acceptance-observer"},
+            session_parameters={"QUERY_TAG": "heinzel-acceptance-observer"},
         )
 
     @contextmanager
@@ -537,7 +536,7 @@ class LiveProviderActions:
             int.from_bytes(raw[:4], "big", signed=True),
             int.from_bytes(raw[4:8], "big", signed=True),
         )
-        connection = self._postgres_connect(self._environment["PILLARMESH_POSTGRES_DSN"])
+        connection = self._postgres_connect(self._environment["HEINZEL_POSTGRES_DSN"])
         admission: _PostgresAdmission | None = None
         try:
             with connection.cursor() as cursor:
@@ -548,13 +547,13 @@ class LiveProviderActions:
                 database, backend_pid, admitted = _required_row(
                     cursor.fetchone(), "provider admission probe"
                 )
-                if str(database) != self._environment["PILLARMESH_POSTGRES_DATABASE"]:
+                if str(database) != self._environment["HEINZEL_POSTGRES_DATABASE"]:
                     raise HarnessError("provider admission database does not match")
                 if not bool(admitted):
                     raise HarnessError("acceptance environment is already admitted")
                 admission = _PostgresAdmission(
                     connection=connection,
-                    expected_database=self._environment["PILLARMESH_POSTGRES_DATABASE"],
+                    expected_database=self._environment["HEINZEL_POSTGRES_DATABASE"],
                     expected_backend_pid=int(backend_pid),
                 )
             try:
@@ -592,82 +591,82 @@ class LiveProviderActions:
 
     def _qualified(self, name: str) -> str:
         env = self._environment
-        return f"{env['PILLARMESH_SNOWFLAKE_DATABASE']}.{env['PILLARMESH_SNOWFLAKE_SCHEMA']}.{name}"
+        return f"{env['HEINZEL_SNOWFLAKE_DATABASE']}.{env['HEINZEL_SNOWFLAKE_SCHEMA']}.{name}"
 
     def _postgres_grants(self, cursor: Any, principal: str) -> tuple[str, ...]:
         env = self._environment
-        function = f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_AUDIT_FUNCTION}()"
+        function = f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_AUDIT_FUNCTION}()"
         checks = {
             "CONNECT_DATABASE": (
                 "has_database_privilege(%s, %s, 'CONNECT')",
-                (principal, env["PILLARMESH_POSTGRES_DATABASE"]),
+                (principal, env["HEINZEL_POSTGRES_DATABASE"]),
             ),
             "CREATE_DATABASE": (
                 "has_database_privilege(%s, %s, 'CREATE')",
-                (principal, env["PILLARMESH_POSTGRES_DATABASE"]),
+                (principal, env["HEINZEL_POSTGRES_DATABASE"]),
             ),
             "TEMP_DATABASE": (
                 "has_database_privilege(%s, %s, 'TEMPORARY')",
-                (principal, env["PILLARMESH_POSTGRES_DATABASE"]),
+                (principal, env["HEINZEL_POSTGRES_DATABASE"]),
             ),
             "USAGE_SCHEMA": (
                 "has_schema_privilege(%s, %s, 'USAGE')",
-                (principal, env["PILLARMESH_POSTGRES_SCHEMA"]),
+                (principal, env["HEINZEL_POSTGRES_SCHEMA"]),
             ),
             "SELECT_SOURCE": (
                 "has_table_privilege(%s, %s, 'SELECT')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "INSERT_SOURCE": (
                 "has_table_privilege(%s, %s, 'INSERT')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "UPDATE_SOURCE": (
                 "has_table_privilege(%s, %s, 'UPDATE')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "DELETE_SOURCE": (
                 "has_table_privilege(%s, %s, 'DELETE')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "TRUNCATE_SOURCE": (
                 "has_table_privilege(%s, %s, 'TRUNCATE')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "REFERENCES_SOURCE": (
                 "has_table_privilege(%s, %s, 'REFERENCES')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "TRIGGER_SOURCE": (
                 "has_table_privilege(%s, %s, 'TRIGGER')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "MAINTAIN_SOURCE": (
                 "has_table_privilege(%s, %s, 'MAINTAIN')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "COLUMN_INSERT_SOURCE": (
@@ -675,9 +674,9 @@ class LiveProviderActions:
                 "AND NOT has_table_privilege(%s, %s, 'INSERT')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "COLUMN_UPDATE_SOURCE": (
@@ -685,9 +684,9 @@ class LiveProviderActions:
                 "AND NOT has_table_privilege(%s, %s, 'UPDATE')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "COLUMN_REFERENCES_SOURCE": (
@@ -695,20 +694,20 @@ class LiveProviderActions:
                 "AND NOT has_table_privilege(%s, %s, 'REFERENCES')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}",
                 ),
             ),
             "CREATE_SCHEMA_OBJECT": (
                 "has_schema_privilege(%s, %s, 'CREATE')",
-                (principal, env["PILLARMESH_POSTGRES_SCHEMA"]),
+                (principal, env["HEINZEL_POSTGRES_SCHEMA"]),
             ),
             "SELECT_MARKER": (
                 "has_table_privilege(%s, %s, 'SELECT')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "COLUMN_SELECT_MARKER": (
@@ -716,58 +715,58 @@ class LiveProviderActions:
                 "AND NOT has_table_privilege(%s, %s, 'SELECT')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "INSERT_MARKER": (
                 "has_table_privilege(%s, %s, 'INSERT')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "UPDATE_MARKER": (
                 "has_table_privilege(%s, %s, 'UPDATE')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "DELETE_MARKER": (
                 "has_table_privilege(%s, %s, 'DELETE')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "TRUNCATE_MARKER": (
                 "has_table_privilege(%s, %s, 'TRUNCATE')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "REFERENCES_MARKER": (
                 "has_table_privilege(%s, %s, 'REFERENCES')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "TRIGGER_MARKER": (
                 "has_table_privilege(%s, %s, 'TRIGGER')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "MAINTAIN_MARKER": (
                 "has_table_privilege(%s, %s, 'MAINTAIN')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "COLUMN_INSERT_MARKER": (
@@ -775,9 +774,9 @@ class LiveProviderActions:
                 "AND NOT has_table_privilege(%s, %s, 'INSERT')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "COLUMN_UPDATE_MARKER": (
@@ -785,9 +784,9 @@ class LiveProviderActions:
                 "AND NOT has_table_privilege(%s, %s, 'UPDATE')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "COLUMN_REFERENCES_MARKER": (
@@ -795,14 +794,14 @@ class LiveProviderActions:
                 "AND NOT has_table_privilege(%s, %s, 'REFERENCES')",
                 (
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                     principal,
-                    f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
+                    f"{env['HEINZEL_POSTGRES_SCHEMA']}.{POSTGRES_MARKER_TABLE}",
                 ),
             ),
             "EXECUTE_AUDIT": ("has_function_privilege(%s, %s, 'EXECUTE')", (principal, function)),
         }
-        source_table = f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}"
+        source_table = f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}"
         for column in (
             "order_id",
             "customer_ref",
@@ -835,8 +834,8 @@ class LiveProviderActions:
             "FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
             "WHERE n.nspname=%s AND c.relname IN (%s,%s)",
             (
-                env["PILLARMESH_POSTGRES_SCHEMA"],
-                env["PILLARMESH_POSTGRES_TABLE"],
+                env["HEINZEL_POSTGRES_SCHEMA"],
+                env["HEINZEL_POSTGRES_TABLE"],
                 POSTGRES_MARKER_TABLE,
             ),
         )
@@ -846,7 +845,7 @@ class LiveProviderActions:
         }
         try:
             return (
-                values[env["PILLARMESH_POSTGRES_TABLE"]],
+                values[env["HEINZEL_POSTGRES_TABLE"]],
                 values[POSTGRES_MARKER_TABLE],
             )
         except KeyError:
@@ -865,7 +864,7 @@ class LiveProviderActions:
             "JOIN pg_catalog.pg_language l ON l.oid=p.prolang "
             "WHERE n.nspname=%s AND p.proname=%s AND p.pronargs=0",
             (
-                env["PILLARMESH_POSTGRES_SCHEMA"],
+                env["HEINZEL_POSTGRES_SCHEMA"],
                 POSTGRES_AUDIT_FUNCTION,
             ),
         )
@@ -913,7 +912,7 @@ class LiveProviderActions:
         _user, account, account_locator, role = _required_row(
             cursor.fetchone(), "Snowflake identity probe"
         )
-        cursor.execute(f"SHOW GRANTS TO USER {env['PILLARMESH_SNOWFLAKE_USER']}")
+        cursor.execute(f"SHOW GRANTS TO USER {env['HEINZEL_SNOWFLAKE_USER']}")
         user_grants = self._rows_as_dicts(cursor)
         user_roles = tuple(
             sorted(
@@ -923,7 +922,7 @@ class LiveProviderActions:
             )
         )
         objects = {
-            "database": ("DATABASE", env["PILLARMESH_SNOWFLAKE_DATABASE"]),
+            "database": ("DATABASE", env["HEINZEL_SNOWFLAKE_DATABASE"]),
             "environment_marker": (
                 "TABLE",
                 self._qualified(SNOWFLAKE_ENVIRONMENT_MARKER),
@@ -934,16 +933,16 @@ class LiveProviderActions:
             ),
             "schema": (
                 "SCHEMA",
-                f"{env['PILLARMESH_SNOWFLAKE_DATABASE']}.{env['PILLARMESH_SNOWFLAKE_SCHEMA']}",
+                f"{env['HEINZEL_SNOWFLAKE_DATABASE']}.{env['HEINZEL_SNOWFLAKE_SCHEMA']}",
             ),
-            "warehouse": ("WAREHOUSE", env["PILLARMESH_SNOWFLAKE_WAREHOUSE"]),
-            "stage": ("STAGE", self._qualified(env["PILLARMESH_SNOWFLAKE_STAGE"])),
-            "target": ("TABLE", self._qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"])),
+            "warehouse": ("WAREHOUSE", env["HEINZEL_SNOWFLAKE_WAREHOUSE"]),
+            "stage": ("STAGE", self._qualified(env["HEINZEL_SNOWFLAKE_STAGE"])),
+            "target": ("TABLE", self._qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"])),
             "negative_target": (
                 "TABLE",
-                self._qualified(env["PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE"]),
             ),
-            "ledger": ("TABLE", self._qualified(env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"])),
+            "ledger": ("TABLE", self._qualified(env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"])),
         }
         owners: list[tuple[str, str]] = []
         object_grants: list[tuple[str, str, str]] = []
@@ -956,46 +955,46 @@ class LiveProviderActions:
             if len(object_owners) != 1:
                 raise HarnessError("Snowflake object ownership attestation failed")
             owners.append((name, object_owners[0]))
-        cursor.execute(f"SHOW GRANTS TO ROLE {env['PILLARMESH_SNOWFLAKE_ROLE']}")
+        cursor.execute(f"SHOW GRANTS TO ROLE {env['HEINZEL_SNOWFLAKE_ROLE']}")
         rows = self._rows_as_dicts(cursor)
         expected = {
-            ("WAREHOUSE", env["PILLARMESH_SNOWFLAKE_WAREHOUSE"], "USAGE"): "USAGE_WAREHOUSE",
-            ("DATABASE", env["PILLARMESH_SNOWFLAKE_DATABASE"], "USAGE"): "USAGE_DATABASE",
+            ("WAREHOUSE", env["HEINZEL_SNOWFLAKE_WAREHOUSE"], "USAGE"): "USAGE_WAREHOUSE",
+            ("DATABASE", env["HEINZEL_SNOWFLAKE_DATABASE"], "USAGE"): "USAGE_DATABASE",
             (
                 "SCHEMA",
-                f"{env['PILLARMESH_SNOWFLAKE_DATABASE']}.{env['PILLARMESH_SNOWFLAKE_SCHEMA']}",
+                f"{env['HEINZEL_SNOWFLAKE_DATABASE']}.{env['HEINZEL_SNOWFLAKE_SCHEMA']}",
                 "USAGE",
             ): "USAGE_SCHEMA",
-            ("STAGE", self._qualified(env["PILLARMESH_SNOWFLAKE_STAGE"]), "READ"): "READ_STAGE",
-            ("STAGE", self._qualified(env["PILLARMESH_SNOWFLAKE_STAGE"]), "WRITE"): "WRITE_STAGE",
+            ("STAGE", self._qualified(env["HEINZEL_SNOWFLAKE_STAGE"]), "READ"): "READ_STAGE",
+            ("STAGE", self._qualified(env["HEINZEL_SNOWFLAKE_STAGE"]), "WRITE"): "WRITE_STAGE",
             (
                 "TABLE",
-                self._qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"]),
                 "SELECT",
             ): "SELECT_TARGET",
             (
                 "TABLE",
-                self._qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"]),
                 "INSERT",
             ): "INSERT_TARGET",
             (
                 "TABLE",
-                self._qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"]),
                 "UPDATE",
             ): "UPDATE_TARGET",
             (
                 "TABLE",
-                self._qualified(env["PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE"]),
                 "SELECT",
             ): "SELECT_NEGATIVE_TARGET",
             (
                 "TABLE",
-                self._qualified(env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"]),
                 "SELECT",
             ): "SELECT_LEDGER",
             (
                 "TABLE",
-                self._qualified(env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"]),
                 "INSERT",
             ): "INSERT_LEDGER",
             (
@@ -1037,7 +1036,7 @@ class LiveProviderActions:
     def preflight(self) -> DedicatedEnvironmentAttestation:
         env = self._environment
         with (
-            self._postgres_connect(env["PILLARMESH_POSTGRES_DSN"]) as connection,
+            self._postgres_connect(env["HEINZEL_POSTGRES_DSN"]) as connection,
             connection.cursor() as cursor,
         ):
             cursor.execute(
@@ -1051,7 +1050,7 @@ class LiveProviderActions:
             cursor.execute(
                 "SELECT pg_catalog.pg_get_userbyid(n.nspowner) "
                 "FROM pg_catalog.pg_namespace n WHERE n.nspname=%s",
-                (env["PILLARMESH_POSTGRES_SCHEMA"],),
+                (env["HEINZEL_POSTGRES_SCHEMA"],),
             )
             schema_owner = str(
                 _required_row(cursor.fetchone(), "PostgreSQL schema ownership probe")[0]
@@ -1069,7 +1068,7 @@ class LiveProviderActions:
             ) = self._postgres_audit_function(cursor)
             cursor.execute(
                 sql.SQL("SELECT environment_id FROM {}.{}").format(
-                    sql.Identifier(env["PILLARMESH_POSTGRES_SCHEMA"]),
+                    sql.Identifier(env["HEINZEL_POSTGRES_SCHEMA"]),
                     sql.Identifier(POSTGRES_MARKER_TABLE),
                 )
             )
@@ -1077,19 +1076,19 @@ class LiveProviderActions:
             runtime_grants = self._postgres_grants(cursor, str(runtime_current_user))
             cursor.execute(
                 "SELECT has_schema_privilege(current_user, %s, 'USAGE')",
-                (env["PILLARMESH_POSTGRES_DENIAL_SCHEMA"],),
+                (env["HEINZEL_POSTGRES_DENIAL_SCHEMA"],),
             )
             if bool(_required_row(cursor.fetchone(), "PostgreSQL denial probe")[0]):
                 raise HarnessError("PostgreSQL expected-denial probe unexpectedly succeeded")
             cursor.execute(
                 "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_namespace WHERE nspname=%s)",
-                (env["PILLARMESH_POSTGRES_DENIAL_SCHEMA"],),
+                (env["HEINZEL_POSTGRES_DENIAL_SCHEMA"],),
             )
             denial_schema_exists = bool(
                 _required_row(cursor.fetchone(), "PostgreSQL denial schema existence probe")[0]
             )
         with (
-            self._postgres_connect(env["PILLARMESH_POSTGRES_FIXTURE_DSN"]) as connection,
+            self._postgres_connect(env["HEINZEL_POSTGRES_FIXTURE_DSN"]) as connection,
             connection.cursor() as cursor,
         ):
             cursor.execute("SELECT session_user, current_user, current_database()")
@@ -1113,13 +1112,13 @@ class LiveProviderActions:
             ) = self._snowflake_attestation(cursor)
             cursor.execute("SELECT CURRENT_USER()")
             snowflake_user = str(_required_row(cursor.fetchone(), "Snowflake identity probe")[0])
-            target = self._qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"])
+            target = self._qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"])
             cursor.execute(
                 f"SELECT COUNT(*) FROM {target} WHERE order_id=%s",
                 (-1,),
             )
             cursor.fetchone()
-            denied = f"{env['PILLARMESH_SNOWFLAKE_DENIAL_DATABASE']}.INFORMATION_SCHEMA.TABLES"
+            denied = f"{env['HEINZEL_SNOWFLAKE_DENIAL_DATABASE']}.INFORMATION_SCHEMA.TABLES"
             try:
                 cursor.execute("SELECT COUNT(*) FROM IDENTIFIER(%s)", (denied,))
                 cursor.fetchone()
@@ -1171,7 +1170,7 @@ class LiveProviderActions:
         )
 
     def prove_destination_absent(self, acceptance_key: int) -> None:
-        target = self._qualified(self._environment["PILLARMESH_SNOWFLAKE_TARGET_TABLE"])
+        target = self._qualified(self._environment["HEINZEL_SNOWFLAKE_TARGET_TABLE"])
         with closing(self._snowflake_connection()) as connection, connection.cursor() as cursor:
             cursor.execute(
                 f"SELECT COUNT(*) FROM {target} WHERE order_id=%s",
@@ -1184,15 +1183,15 @@ class LiveProviderActions:
         if not isinstance(row, FixtureRow):
             raise HarnessError("fixture row is invalid")
         env = self._environment
-        with self._postgres_connect(env["PILLARMESH_POSTGRES_FIXTURE_DSN"]) as connection:
+        with self._postgres_connect(env["HEINZEL_POSTGRES_FIXTURE_DSN"]) as connection:
             connection.execute(
                 sql.SQL(
                     "INSERT INTO {}.{} "
                     "(order_id,customer_ref,amount,currency,status,updated_at) "
                     "VALUES (%s,%s,%s,%s,%s,%s)"
                 ).format(
-                    sql.Identifier(env["PILLARMESH_POSTGRES_SCHEMA"]),
-                    sql.Identifier(env["PILLARMESH_POSTGRES_TABLE"]),
+                    sql.Identifier(env["HEINZEL_POSTGRES_SCHEMA"]),
+                    sql.Identifier(env["HEINZEL_POSTGRES_TABLE"]),
                 ),
                 (
                     row.order_id,
@@ -1205,7 +1204,7 @@ class LiveProviderActions:
             )
 
     def _destination_rows(self, cursor: Any, acceptance_key: int) -> tuple[tuple[Any, ...], ...]:
-        target = self._qualified(self._environment["PILLARMESH_SNOWFLAKE_TARGET_TABLE"])
+        target = self._qualified(self._environment["HEINZEL_SNOWFLAKE_TARGET_TABLE"])
         cursor.execute(
             "SELECT order_id,customer_ref,amount,currency,order_status,updated_at "
             f"FROM {target} WHERE order_id=%s",
@@ -1240,7 +1239,7 @@ class LiveProviderActions:
         cursor.execute(
             "SELECT QUERY_TYPE, QUERY_TEXT FROM TABLE(INFORMATION_SCHEMA.QUERY_HISTORY_BY_USER("
             "USER_NAME=>CURRENT_USER(),RESULT_LIMIT=>10000)) "
-            "WHERE QUERY_TAG='pillarmesh-m0'"
+            "WHERE QUERY_TAG='heinzel-authoring'"
         )
         return tuple((str(row[0]).upper(), str(row[1])) for row in cursor.fetchall())
 
@@ -1249,9 +1248,9 @@ class LiveProviderActions:
         identifiers = tuple(
             value.casefold()
             for value in (
-                self._qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"]),
-                self._qualified(env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"]),
-                self._qualified(env["PILLARMESH_SNOWFLAKE_STAGE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"]),
+                self._qualified(env["HEINZEL_SNOWFLAKE_STAGE"]),
             )
         )
         mutation_types = {"MERGE", "UPDATE", "INSERT", "DELETE", "PUT", "REMOVE", "COPY"}
@@ -1263,8 +1262,8 @@ class LiveProviderActions:
 
     def replay_observation(self, acceptance_key: int, batch_id: str) -> ReplayObservation:
         env = self._environment
-        ledger_table = self._qualified(env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"])
-        stage = self._qualified(env["PILLARMESH_SNOWFLAKE_STAGE"])
+        ledger_table = self._qualified(env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"])
+        stage = self._qualified(env["HEINZEL_SNOWFLAKE_STAGE"])
         with closing(self._snowflake_connection()) as connection, connection.cursor() as cursor:
             target_rows = self._destination_rows(cursor, acceptance_key)
             cursor.execute(
@@ -1298,17 +1297,17 @@ class LiveProviderActions:
 
     def negative_observation(self) -> NegativeObservation:
         env = self._environment
-        negative_target = self._qualified(env["PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE"])
-        positive_target = self._qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"])
-        stage = self._qualified(env["PILLARMESH_SNOWFLAKE_STAGE"])
-        ledger_table = self._qualified(env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"])
+        negative_target = self._qualified(env["HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE"])
+        positive_target = self._qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"])
+        stage = self._qualified(env["HEINZEL_SNOWFLAKE_STAGE"])
+        ledger_table = self._qualified(env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"])
         with (
-            self._postgres_connect(env["PILLARMESH_POSTGRES_DSN"]) as connection,
+            self._postgres_connect(env["HEINZEL_POSTGRES_DSN"]) as connection,
             connection.cursor() as cursor,
         ):
             cursor.execute(
                 sql.SQL("SELECT {}.{}()").format(
-                    sql.Identifier(env["PILLARMESH_POSTGRES_SCHEMA"]),
+                    sql.Identifier(env["HEINZEL_POSTGRES_SCHEMA"]),
                     sql.Identifier(POSTGRES_AUDIT_FUNCTION),
                 )
             )
@@ -1357,23 +1356,23 @@ class LiveProviderActions:
         self, acceptance_key: int, batch_id: str | None
     ) -> ProviderResourceState:
         env = self._environment
-        target = self._qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"])
+        target = self._qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"])
         with (
-            self._postgres_connect(env["PILLARMESH_POSTGRES_DSN"]) as connection,
+            self._postgres_connect(env["HEINZEL_POSTGRES_DSN"]) as connection,
             connection.cursor() as cursor,
         ):
             cursor.execute(
                 sql.SQL("SELECT EXISTS (SELECT 1 FROM {}.{} WHERE order_id=%s)").format(
-                    sql.Identifier(env["PILLARMESH_POSTGRES_SCHEMA"]),
-                    sql.Identifier(env["PILLARMESH_POSTGRES_TABLE"]),
+                    sql.Identifier(env["HEINZEL_POSTGRES_SCHEMA"]),
+                    sql.Identifier(env["HEINZEL_POSTGRES_TABLE"]),
                 ),
                 (acceptance_key,),
             )
             source = bool(_required_row(cursor.fetchone(), "source reconciliation")[0])
         if batch_id is None:
             return ProviderResourceState(source, None, None, None)
-        ledger_table = self._qualified(env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"])
-        stage = self._qualified(env["PILLARMESH_SNOWFLAKE_STAGE"])
+        ledger_table = self._qualified(env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"])
+        stage = self._qualified(env["HEINZEL_SNOWFLAKE_STAGE"])
         with closing(self._snowflake_connection()) as connection, connection.cursor() as cursor:
             cursor.execute(
                 f"SELECT EXISTS (SELECT 1 FROM {target} WHERE order_id=%s)",

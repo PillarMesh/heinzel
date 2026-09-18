@@ -13,19 +13,19 @@ from pathlib import Path
 
 import pytest
 from cryptography.fernet import Fernet
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_clickhouse import (
+from heinzel_contract_model import digest
+from heinzel_provider_clickhouse import (
     ClickHouseBackupCommandBoundary,
     ClickHouseWarehouseProvider,
     ClickHouseWarehouseSettings,
 )
-from pillarmesh_provider_clickhouse.warehouse import (
+from heinzel_provider_clickhouse.warehouse import (
     ClickHouseHTTPClient,
     _restore_identity,
     _warehouse_identity,
 )
-from pillarmesh_provider_sdk import ComposeResourceKind, DockerComposeProcess
-from pillarmesh_warehouse_control import (
+from heinzel_provider_sdk import ComposeResourceKind, DockerComposeProcess
+from heinzel_warehouse_control import (
     EngineKind,
     InitialWarehouseValidationResult,
     LocalAcceptanceWarehouseReadinessPolicy,
@@ -54,9 +54,9 @@ from pillarmesh_warehouse_control import (
     WarehouseValidationEvidence,
     WarehouseValidationResult,
 )
-from pillarmesh_warehouse_control import secrets as warehouse_secrets
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
-from pillarmesh_warehouse_control.service import WarehouseControlService
+from heinzel_warehouse_control import secrets as warehouse_secrets
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.service import WarehouseControlService
 from pydantic import SecretStr
 
 from tests.conformance.warehouse_lifecycle import (
@@ -772,7 +772,7 @@ def _new_lifecycle_driver(
         "wop-"
         + digest(
             {
-                "domain": "pillarmesh-warehouse-operation-v1",
+                "domain": "heinzel-warehouse-operation-v1",
                 "tenant_id": tenant_id,
                 "sequence": 1,
             }
@@ -874,7 +874,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from pillarmesh_warehouse_control import WarehouseSecretRetiredError, WarehouseSecretStorageError
+from heinzel_warehouse_control import WarehouseSecretRetiredError, WarehouseSecretStorageError
 from tests.integration.test_clickhouse_warehouse_live import _new_lifecycle_driver
 
 with tempfile.TemporaryDirectory() as directory:

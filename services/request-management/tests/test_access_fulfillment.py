@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import (
     AccessGrantAdmissionBinding,
     AccessGrantDeliveryObservation,
     AccessGrantEffectTarget,
@@ -276,7 +276,7 @@ def test_active_access_grant_delivers_the_request_with_requester_safe_terms() ->
     delivery = fulfillment.execute_access(
         tenant_id="tenant-a",
         request_id=proposal.request_id,
-        actor_id="pillarmesh-access-control",
+        actor_id="heinzel-access-control",
         expected_revision=admission.resulting_request_revision,
     )
 
@@ -329,7 +329,7 @@ def test_access_delivery_rejects_activation_that_does_not_match_admission() -> N
         fulfillment.execute_access(
             tenant_id="tenant-a",
             request_id=proposal.request_id,
-            actor_id="pillarmesh-access-control",
+            actor_id="heinzel-access-control",
             expected_revision=admission.resulting_request_revision,
         )
 

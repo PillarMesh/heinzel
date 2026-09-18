@@ -5,10 +5,10 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 import pytest
-from pillarmesh_compiler import GovernedQueryPlan
-from pillarmesh_compiler.query_repository import SQLiteQueryPlanRepository
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
-from pillarmesh_request_management import (
+from heinzel_compiler import GovernedQueryPlan
+from heinzel_compiler.query_repository import SQLiteQueryPlanRepository
+from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
+from heinzel_request_management import (
     AnswerDeliveryAuthorization,
     AnswerExecutionEvidence,
     AnswerProductGenerationReference,
@@ -31,8 +31,8 @@ from pillarmesh_request_management import (
     adapt_runtime_execution_receipt,
     adapt_runtime_result_snapshot,
 )
-from pillarmesh_request_management.answer_admission import PolicyScanReservation
-from pillarmesh_runtime import (
+from heinzel_request_management.answer_admission import PolicyScanReservation
+from heinzel_runtime import (
     AnswerExecutionReceipt,
     AnswerQueryCeilings,
     AnswerQueryColumn,
@@ -45,7 +45,7 @@ from pillarmesh_runtime import (
     QueryResultNotFound,
     SQLiteAnswerResultStore,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AnswerProductGenerationReference as RuntimeGenerationReference,
 )
 

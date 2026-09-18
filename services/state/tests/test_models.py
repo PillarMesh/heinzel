@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_state import (
+from heinzel_state import (
     PreparedAcquisitionState,
     PreparedAcquisitionStateStatus,
     SourceCheckpointState,

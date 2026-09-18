@@ -6,8 +6,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
-from pillarmesh_contract_model import (
+from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -23,13 +23,13 @@ from pillarmesh_contract_model import (
     TriggerRequirement,
     digest,
 )
-from pillarmesh_contract_service import SourceFreshnessObservation
-from pillarmesh_provider_openmetadata import OpenMetadataProductCatalogProvider
-from pillarmesh_provider_sdk import (
+from heinzel_contract_service import SourceFreshnessObservation
+from heinzel_provider_openmetadata import OpenMetadataProductCatalogProvider
+from heinzel_provider_sdk import (
     CatalogWarehouseHierarchyAuthority,
     catalog_warehouse_service_external_key,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     ApprovedProductQueryBinding,
     ApprovedProductVersionMetadata,
     ProductCatalogColumnAuthority,
@@ -271,7 +271,7 @@ def _publication_intent(
                 tenant_id=binding.tenant_id,
                 warehouse_binding_id=contract.destination_product.warehouse_binding_id,
             ),
-            database_name="pillarmesh",
+            database_name="heinzel",
             schema_name="consumption",
             table_name="product_revenue",
         ),

@@ -29,20 +29,20 @@ from pathlib import Path
 
 import psycopg
 import pytest
-from pillarmesh_compiler.postgresql_sql import emit_generation_scoped_postgresql
-from pillarmesh_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
-from pillarmesh_console.governed_adapters import GovernedApprovedProductIntentSources
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import (
+from heinzel_compiler.postgresql_sql import emit_generation_scoped_postgresql
+from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
+from heinzel_console.governed_adapters import GovernedApprovedProductIntentSources
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import (
     AcquisitionActivationApproval,
     ActivatedAcquisitionContractRecord,
     ProductIntentBoundActivationService,
     SQLiteAcquisitionContractLifecycleRepository,
     ValidatedSourceBinding,
 )
-from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
-from pillarmesh_execution_graph import GenerationScopedProductSource, ProductJsonFieldBinding
-from pillarmesh_provider_postgresql import (
+from heinzel_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
+from heinzel_execution_graph import GenerationScopedProductSource, ProductJsonFieldBinding
+from heinzel_provider_postgresql import (
     PostgreSQLAcquisitionProvider,
     PostgreSQLAcquisitionSettings,
     PostgreSQLDestinationProvider,
@@ -50,7 +50,7 @@ from pillarmesh_provider_postgresql import (
     PostgreSQLLandStoreSettings,
     PostgreSQLSourceObjectDeclaration,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     AcquisitionField,
     AcquisitionIntent,
     AcquisitionObjectSchema,
@@ -58,7 +58,7 @@ from pillarmesh_provider_sdk import (
     ProviderError,
     SourceObservationRequest,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     ApprovedProductIntent,
     DeliveryIntent,
     DimensionIntent,
@@ -72,7 +72,7 @@ from pillarmesh_request_management import (
     RequestManagementService,
     SQLiteRequestRepository,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AcquisitionApplication,
     AcquisitionDeclaredActivation,
     AcquisitionDestinationRouting,
@@ -91,15 +91,15 @@ from pillarmesh_runtime import (
     opaque_reference_factory,
     source_binding_resolver,
 )
-from pillarmesh_state import (
+from heinzel_state import (
     AcquisitionStateNotFoundError,
     LocalAcquisitionArtifactStore,
     SQLiteAcquisitionStateRepository,
 )
-from pillarmesh_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
+from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
 from pydantic import SecretStr
 
-from tests.acceptance.run_plan4a import _CursorCipher, _MutableClock
+from tests.acceptance.run_source_acquisition import _CursorCipher, _MutableClock
 from tests.integration.test_postgresql_checked_sum_evidence import _pinned_postgresql
 from tests.integration.test_postgresql_compiled_product_journey_live import _product
 from tests.integration.test_postgresql_product_materialization_live import (
@@ -107,7 +107,7 @@ from tests.integration.test_postgresql_product_materialization_live import (
     _role_dsn,
 )
 
-_RUN_LIVE = os.environ.get("PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
+_RUN_LIVE = os.environ.get("HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
 _TENANT = "tenant-live-a"
 _BINDING_REF = "source-live-a"
 _DESTINATION_BINDING_REF = "destination-live-a"
@@ -468,7 +468,7 @@ def _land_receipt_count(bootstrap_dsn: str) -> int:
 
 @pytest.mark.live
 @pytest.mark.emulator
-@pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1")
+@pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1")
 def test_composed_acquisition_batch_lands_once_before_its_checkpoint_advances(
     tmp_path: Path,
 ) -> None:
@@ -587,7 +587,7 @@ def test_composed_acquisition_batch_lands_once_before_its_checkpoint_advances(
     # LAND stores each record's fields as top-level keys, which is what generation-scoped product
     # SQL decodes, and the record's identity under a reserved key no product binding can address.
     first_row = dict(rows_after_land[0][2])
-    assert first_row.pop("pillarmesh:record") == {
+    assert first_row.pop("heinzel:record") == {
         "record_key": digest({"logical_object_ref": "sales", "key": 1}),
         "source_created_at": None,
         "source_updated_at": "2026-09-12T00:00:00.000000Z",

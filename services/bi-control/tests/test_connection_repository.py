@@ -3,13 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardConnectionAuthorityError,
     DashboardConnectionConflict,
     DashboardDatasetConnectionBinding,
     SQLiteDashboardConnectionRepository,
 )
-from pillarmesh_contract_model import ArtifactReference
+from heinzel_contract_model import ArtifactReference
 
 
 def _binding(*, tenant_id: str = "tenant-a") -> DashboardDatasetConnectionBinding:

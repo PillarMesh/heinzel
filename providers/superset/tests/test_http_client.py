@@ -6,9 +6,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 import pytest
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_provider_sdk.bi import BiDashboardDefinition, dashboard_external_key
-from pillarmesh_provider_superset import (
+from heinzel_provider_sdk import ProviderError
+from heinzel_provider_sdk.bi import BiDashboardDefinition, dashboard_external_key
+from heinzel_provider_superset import (
     CredentialScopedSupersetProvider,
     HttpSupersetClient,
     SupersetCredentials,
@@ -381,7 +381,7 @@ def test_http_composition_ignores_unmanaged_dataset_descriptions() -> None:
             payload={
                 "schema": "unrelated",
                 "table_name": "human_owned",
-                "description": "Maintained outside PillarMesh",
+                "description": "Maintained outside Heinzel",
             },
         )
     )

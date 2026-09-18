@@ -4,7 +4,7 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_context_exposure import (
+from heinzel_context_exposure import (
     AgentCallLimits,
     AgentInvocationProvenance,
     AskQuestionCommand,
@@ -12,8 +12,8 @@ from pillarmesh_context_exposure import (
     ReplyToClarificationCommand,
     RequestManagementAgentAdapter,
 )
-from pillarmesh_contract_model import digest
-from pillarmesh_request_management import RequestManagementService, SQLiteRequestRepository
+from heinzel_contract_model import digest
+from heinzel_request_management import RequestManagementService, SQLiteRequestRepository
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
 

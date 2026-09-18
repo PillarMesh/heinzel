@@ -4,14 +4,14 @@ from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import (
     AcquisitionProviderError,
     ColumnObservation,
     SourceObservationRequest,
 )
-from pillarmesh_provider_stripe import StripeAcquisitionProvider, StripeClient, StripeSettings
-from pillarmesh_provider_stripe.settings import StripeObjectKind
+from heinzel_provider_stripe import StripeAcquisitionProvider, StripeClient, StripeSettings
+from heinzel_provider_stripe.settings import StripeObjectKind
 
 from providers.stripe.tests.test_settings import _settings_values
 

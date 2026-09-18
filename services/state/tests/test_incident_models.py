@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from typing import cast
 
 import pytest
-from pillarmesh_state import IncidentRecord, RecoveryCommand
-from pillarmesh_state.incident_models import (
+from heinzel_state import IncidentRecord, RecoveryCommand
+from heinzel_state.incident_models import (
     IncidentFailureClassification,
     IncidentKind,
     IncidentOperatorAction,

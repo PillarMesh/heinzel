@@ -7,22 +7,22 @@ import stat
 from pathlib import Path
 from typing import cast
 
-import pillarmesh_warehouse_control as warehouse_control
+import heinzel_warehouse_control as warehouse_control
 import pytest
 from cryptography.fernet import Fernet
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     WarehouseOperationSecretPurpose,
     WarehouseOperationSecrets,
     WarehouseSecretRetiredError,
     WarehouseSecretStorageError,
     WarehouseSecretStore,
 )
-from pillarmesh_warehouse_control import secrets as secrets_module
+from heinzel_warehouse_control import secrets as secrets_module
 from pydantic import SecretStr, ValidationError
 
 OPERATION_A = "wop-111111111111111111111111"
 OPERATION_B = "wop-222222222222222222222222"
-REFERENCE_A = "whs-5df8d8ea7bd4638c3e9a48efac372cf7"
+REFERENCE_A = "whs-dab66d10cfcfc0dd34da4cb319144b91"
 DESTINATION_A = f"{REFERENCE_A}.fernet"
 TEMPORARY_A = f".{DESTINATION_A}.tmp"
 TOMBSTONE_A = f".{DESTINATION_A}.delete"

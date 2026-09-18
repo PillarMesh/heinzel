@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from pillarmesh_provider_openmetadata import UPSTREAM_IMAGES
+from heinzel_provider_openmetadata import UPSTREAM_IMAGES
 
 from tests.emulators.openmetadata import wait_ready
 
@@ -19,9 +19,9 @@ LAUNCHER = EMULATOR_ROOT / "run.sh"
 
 def _compose_environment() -> dict[str, str]:
     return {
-        "PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD": secrets.token_urlsafe(24),
-        "PILLARMESH_OPENMETADATA_DATABASE_PASSWORD": secrets.token_urlsafe(24),
-        "PILLARMESH_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD": secrets.token_urlsafe(24),
+        "HEINZEL_OPENMETADATA_MYSQL_ROOT_PASSWORD": secrets.token_urlsafe(24),
+        "HEINZEL_OPENMETADATA_DATABASE_PASSWORD": secrets.token_urlsafe(24),
+        "HEINZEL_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD": secrets.token_urlsafe(24),
     }
 
 
@@ -180,9 +180,9 @@ def test_ingestion_is_opt_in_until_source_acquisition_is_composed(
 
 def test_database_credential_rotation_uses_shared_mysql_socket_and_gates_consumers() -> None:
     environment = {
-        "PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD": "test-only-root-password",
-        "PILLARMESH_OPENMETADATA_DATABASE_PASSWORD": "test-only-database-password",
-        "PILLARMESH_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD": "test-only-airflow-password",
+        "HEINZEL_OPENMETADATA_MYSQL_ROOT_PASSWORD": "test-only-root-password",
+        "HEINZEL_OPENMETADATA_DATABASE_PASSWORD": "test-only-database-password",
+        "HEINZEL_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD": "test-only-airflow-password",
     }
     compose_config = _render_compose_config(environment)
     services = compose_config["services"]
@@ -198,11 +198,9 @@ def test_database_credential_rotation_uses_shared_mysql_socket_and_gates_consume
 
     assert rotation["image"] == mysql["image"]
     assert rotation["environment"] == {
-        "MYSQL_PWD": environment["PILLARMESH_OPENMETADATA_MYSQL_ROOT_PASSWORD"],
-        "OPENMETADATA_DATABASE_PASSWORD": environment["PILLARMESH_OPENMETADATA_DATABASE_PASSWORD"],
-        "AIRFLOW_DATABASE_PASSWORD": environment[
-            "PILLARMESH_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD"
-        ],
+        "MYSQL_PWD": environment["HEINZEL_OPENMETADATA_MYSQL_ROOT_PASSWORD"],
+        "OPENMETADATA_DATABASE_PASSWORD": environment["HEINZEL_OPENMETADATA_DATABASE_PASSWORD"],
+        "AIRFLOW_DATABASE_PASSWORD": environment["HEINZEL_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD"],
     }
     assert rotation["depends_on"] == {"mysql": {"condition": "service_healthy", "required": True}}
     assert rotation.get("volumes") == mysql["volumes"]
@@ -234,8 +232,8 @@ def test_database_credential_rotation_uses_shared_mysql_socket_and_gates_consume
 @pytest.mark.parametrize(
     "missing_variable",
     (
-        "PILLARMESH_OPENMETADATA_DATABASE_PASSWORD",
-        "PILLARMESH_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD",
+        "HEINZEL_OPENMETADATA_DATABASE_PASSWORD",
+        "HEINZEL_OPENMETADATA_AIRFLOW_DATABASE_PASSWORD",
     ),
 )
 def test_compose_refuses_missing_private_internal_credentials(missing_variable: str) -> None:
@@ -257,7 +255,7 @@ def test_compose_refuses_missing_private_internal_credentials(missing_variable: 
 def test_launcher_refuses_missing_docker_config_before_docker_is_touched(tmp_path: Path) -> None:
     docker = tmp_path / "docker"
     touched = tmp_path / "docker-was-invoked"
-    docker.write_text('#!/bin/sh\ntouch "$PILLARMESH_DOCKER_TOUCHED"\nexit 1\n')
+    docker.write_text('#!/bin/sh\ntouch "$HEINZEL_DOCKER_TOUCHED"\nexit 1\n')
     docker.chmod(0o755)
 
     result = subprocess.run(
@@ -265,7 +263,7 @@ def test_launcher_refuses_missing_docker_config_before_docker_is_touched(tmp_pat
         cwd=ROOT,
         env={
             "PATH": str(tmp_path),
-            "PILLARMESH_DOCKER_TOUCHED": str(touched),
+            "HEINZEL_DOCKER_TOUCHED": str(touched),
         },
         capture_output=True,
         text=True,
@@ -282,7 +280,7 @@ def test_launcher_refuses_missing_secret_store_key_before_docker_is_touched(
 ) -> None:
     docker = tmp_path / "docker"
     touched = tmp_path / "docker-was-invoked"
-    docker.write_text('#!/bin/sh\ntouch "$PILLARMESH_DOCKER_TOUCHED"\nexit 1\n')
+    docker.write_text('#!/bin/sh\ntouch "$HEINZEL_DOCKER_TOUCHED"\nexit 1\n')
     docker.chmod(0o755)
 
     result = subprocess.run(
@@ -291,8 +289,8 @@ def test_launcher_refuses_missing_secret_store_key_before_docker_is_touched(
         env={
             "PATH": str(tmp_path),
             "DOCKER_CONFIG": str(tmp_path / "docker-config"),
-            "PILLARMESH_DOCKER_TOUCHED": str(touched),
-            "PILLARMESH_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD": "test-bootstrap-password",
+            "HEINZEL_DOCKER_TOUCHED": str(touched),
+            "HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD": "test-bootstrap-password",
         },
         capture_output=True,
         text=True,
@@ -300,7 +298,7 @@ def test_launcher_refuses_missing_secret_store_key_before_docker_is_touched(
     )
 
     assert result.returncode == 2
-    assert result.stderr == "ERROR: PILLARMESH_OPENMETADATA_SECRET_STORE_KEY is required\n"
+    assert result.stderr == "ERROR: HEINZEL_OPENMETADATA_SECRET_STORE_KEY is required\n"
     assert not touched.exists()
 
 

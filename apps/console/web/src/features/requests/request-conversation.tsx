@@ -18,7 +18,7 @@ interface RequestConversationProps {
   readonly session: SessionView
 }
 
-type MessageOrigin = "pillarmesh" | "requester" | "architect" | "data_owner" | "policy_approver" | "budget_approver" | "unknown"
+type MessageOrigin = "heinzel" | "requester" | "architect" | "data_owner" | "policy_approver" | "budget_approver" | "unknown"
 
 function messageOrigin(message: ConversationMessageView): MessageOrigin {
   if (message.author_role === null) {
@@ -29,7 +29,7 @@ function messageOrigin(message: ConversationMessageView): MessageOrigin {
 
 // The label carries the distinction on its own, so colour is never the only signal.
 const originLabels: Record<MessageOrigin, string> = {
-  pillarmesh: "PillarMesh question",
+  heinzel: "Heinzel question",
   requester: "Your reply",
   architect: "Architect intervention",
   data_owner: "Data owner note",
@@ -131,7 +131,7 @@ export function RequestConversation({
     <section aria-labelledby="conversation-title" className="request-conversation">
       <h2 id="conversation-title">Clarify</h2>
       {conversation.awaiting_role === "requester" ? (
-        <p className="request-conversation__waiting">PillarMesh is waiting for your reply.</p>
+        <p className="request-conversation__waiting">Heinzel is waiting for your reply.</p>
       ) : null}
       <ul aria-label="Clarification conversation" className="conversation-thread">
         {(conversation.messages ?? []).map((message) => {

@@ -14,16 +14,16 @@ from pathlib import Path
 from threading import Event, Thread
 from typing import Any, Literal
 
+import heinzel_provider_clickhouse.warehouse as warehouse_module
 import httpx
-import pillarmesh_provider_clickhouse.warehouse as warehouse_module
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_clickhouse import (
+from heinzel_contract_model import digest
+from heinzel_provider_clickhouse import (
     CLICKHOUSE_WAREHOUSE_IMAGE,
     ClickHouseWarehouseProvider,
     ClickHouseWarehouseSettings,
 )
-from pillarmesh_provider_clickhouse.warehouse import (
+from heinzel_provider_clickhouse.warehouse import (
     ClickHouseBackupCommandBoundary,
     ClickHouseBackupLifecycleResult,
     ClickHouseConnectionTarget,
@@ -35,13 +35,13 @@ from pillarmesh_provider_clickhouse.warehouse import (
     assert_supported_semantics,
     derive_clickhouse_grant_plan,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     BackupStreamIntegrityError,
     ComposeCommandError,
     DockerComposeProcess,
     decrypt_backup_stream,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EngineKind,
     InitialWarehouseValidationResult,
     PrivateWarehouseOperation,
@@ -251,7 +251,7 @@ class _RecordingCompose:
         if command_arguments[:3] == ("--profile", "restore", "up") and self.restore_up_failures:
             self.restore_up_failures -= 1
             raise RuntimeError("injected restore start failure")
-        if "/var/lib/clickhouse/backups/pillarmesh-native.zip" in command_arguments:
+        if "/var/lib/clickhouse/backups/heinzel-native.zip" in command_arguments:
             self.native_cleanup_attempts += 1
             self.native_backup_present = False
             if self.native_cleanup_ignored_attempts:
@@ -464,7 +464,7 @@ class _RecordingClient:
                 "FilesystemMainPathUsedBytes\t20",
             )
         if statement.startswith("SELECT marker"):
-            return ("pillarmesh-storage-marker",)
+            return ("heinzel-storage-marker",)
         if statement.startswith("SELECT name FROM system.databases"):
             return tuple(
                 recorded.split("`")[1]
@@ -477,7 +477,7 @@ class _RecordingClient:
                 for recorded in self.statements
                 if recorded.startswith("CREATE TABLE IF NOT EXISTS `")
             )
-            return (f"{control_database}\tpillarmesh_validation_ledger\tMergeTree",)
+            return (f"{control_database}\theinzel_validation_ledger\tMergeTree",)
         if statement.startswith("SELECT count() FROM"):
             return ("1",)
         return ()
@@ -2051,7 +2051,7 @@ def test_clickhouse_restore_isolation_digest_binds_observed_topology_and_denial(
 
     assert observed == digest(
         {
-            "domain": "pillarmesh-clickhouse-restore-network-isolation-v4",
+            "domain": "heinzel-clickhouse-restore-network-isolation-v4",
             "primary_networks": primary_networks,
             "restore_networks": restore_networks,
             "restore_network_internal": (

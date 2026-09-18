@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pillarmesh_connection_broker import (
+from heinzel_connection_broker import (
     PrivateSourceCapability,
     SourceBindingConflictError,
     SourceBindingIntegrityError,
@@ -17,7 +17,7 @@ from pillarmesh_connection_broker import (
     SQLiteSourceBindingRepository,
     StaleSourceBindingRevisionError,
 )
-from pillarmesh_contract_model import canonical_bytes
+from heinzel_contract_model import canonical_bytes
 
 NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 

@@ -13,8 +13,8 @@ from pathlib import Path
 import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import digest
-from pillarmesh_dbt_adapter import (
+from heinzel_contract_model import digest
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtColumnTest,
     DbtInvocationAuthority,
@@ -36,8 +36,8 @@ _TARGET_DATABASE = "contract_" + _CONTRACT_DIGEST[:54]
 pytestmark = [
     pytest.mark.emulator,
     pytest.mark.skipif(
-        os.environ.get("PILLARMESH_RUN_DESTINATION_EMULATORS") != "1",
-        reason="set PILLARMESH_RUN_DESTINATION_EMULATORS=1",
+        os.environ.get("HEINZEL_RUN_DESTINATION_EMULATORS") != "1",
+        reason="set HEINZEL_RUN_DESTINATION_EMULATORS=1",
     ),
 ]
 
@@ -50,7 +50,7 @@ def _available_loopback_port() -> int:
 
 @pytest.fixture
 def clickhouse_endpoint() -> Iterator[tuple[str, str]]:
-    container_name = f"pillarmesh-dbt-ch-{uuid.uuid4().hex[:12]}"
+    container_name = f"heinzel-dbt-ch-{uuid.uuid4().hex[:12]}"
     password = f"dbt-{uuid.uuid4().hex}"
     port = _available_loopback_port()
     subprocess.run(
@@ -99,7 +99,7 @@ def clickhouse_endpoint() -> Iterator[tuple[str, str]]:
 def _write_profile(directory: Path, *, port: int) -> None:
     directory.mkdir(mode=0o700)
     (directory / "profiles.yml").write_text(
-        "pillarmesh_materialization:\n"
+        "heinzel_materialization:\n"
         "  target: clickhouse\n"
         "  outputs:\n"
         "    clickhouse:\n"
@@ -107,7 +107,7 @@ def _write_profile(directory: Path, *, port: int) -> None:
         "      host: 127.0.0.1\n"
         f"      port: {port}\n"
         "      user: dbt_runtime\n"
-        "      password: \"{{ env_var('PILLARMESH_DBT_CLICKHOUSE_TEST_PASSWORD') }}\"\n"
+        "      password: \"{{ env_var('HEINZEL_DBT_CLICKHOUSE_TEST_PASSWORD') }}\"\n"
         f"      schema: {_TARGET_DATABASE}\n"
         "      secure: false\n"
         "      threads: 1\n",
@@ -154,7 +154,7 @@ def test_pinned_dbt_clickhouse_executes_a_signed_table_model(
     port = int(endpoint.rsplit(":", maxsplit=1)[1])
     profiles = tmp_path / "profiles"
     _write_profile(profiles, port=port)
-    monkeypatch.setenv("PILLARMESH_DBT_CLICKHOUSE_TEST_PASSWORD", password)
+    monkeypatch.setenv("HEINZEL_DBT_CLICKHOUSE_TEST_PASSWORD", password)
     private_key = Ed25519PrivateKey.generate()
     signed_model = _signed_model(private_key)
     invoker = DbtInvoker(
@@ -165,7 +165,7 @@ def test_pinned_dbt_clickhouse_executes_a_signed_table_model(
                 profiles_directory=profiles,
                 workspace_directory=tmp_path,
                 timeout_seconds=120,
-                credential_environment_names=("PILLARMESH_DBT_CLICKHOUSE_TEST_PASSWORD",),
+                credential_environment_names=("HEINZEL_DBT_CLICKHOUSE_TEST_PASSWORD",),
             )
         ),
     )

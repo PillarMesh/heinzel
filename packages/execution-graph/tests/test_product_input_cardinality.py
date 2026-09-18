@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_execution_graph import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_execution_graph import (
     InvalidProductInputCardinalityEvidence,
     ProductInputCardinalityEvidence,
     ProductInputCardinalityEvidenceSigner,
@@ -62,7 +62,7 @@ def test_cardinality_evidence_signature_has_stable_domain_and_key_binding() -> N
         base64.b64decode(signed.signature, validate=True),
         canonical_bytes(
             {
-                "domain": "pillarmesh-product-input-cardinality-evidence-v1",
+                "domain": "heinzel-product-input-cardinality-evidence-v1",
                 "evidence_digest": digest(_evidence()),
                 "key_id": "cardinality-authority-1",
             }

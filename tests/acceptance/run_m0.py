@@ -116,12 +116,12 @@ def _run_existing_verification(config: AcceptanceConfig) -> Mapping[str, Any]:
         raise HarnessError("private cleanup ledger has no completed package")
     scan_input = {
         "credential_canaries": config.credential_canaries,
-        "row_value_canaries": (config.environment["PILLARMESH_ROW_VALUE_CANARY"],),
+        "row_value_canaries": (config.environment["HEINZEL_ROW_VALUE_CANARY"],),
         "acceptance_keys": (acceptance_key,),
         "local_path_prefixes": (str(config.state_path.parent), str(config.output_dir)),
     }
     environment = config.child_environment()
-    environment["PILLARMESH_SCAN_INPUT_JSON"] = json.dumps(
+    environment["HEINZEL_SCAN_INPUT_JSON"] = json.dumps(
         scan_input, sort_keys=True, separators=(",", ":")
     )
     return _mapping(
@@ -153,9 +153,9 @@ def main(argv: list[str] | None = None) -> int:
     command = _parser().parse_args(argv).command
     try:
         if command == "cleanup-status":
-            ledger_value = os.environ.get("PILLARMESH_CLEANUP_LEDGER_PATH")
+            ledger_value = os.environ.get("HEINZEL_CLEANUP_LEDGER_PATH")
             if not ledger_value:
-                raise HarnessError("missing required variables: PILLARMESH_CLEANUP_LEDGER_PATH")
+                raise HarnessError("missing required variables: HEINZEL_CLEANUP_LEDGER_PATH")
             result: object = cleanup_status(
                 Path(ledger_value).expanduser(), repository_root=REPOSITORY_ROOT
             )

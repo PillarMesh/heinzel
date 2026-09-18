@@ -28,22 +28,22 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
-from pillarmesh_console.governed_adapters import GovernedApprovedProductIntentSources
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import (
+from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
+from heinzel_console.governed_adapters import GovernedApprovedProductIntentSources
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import (
     AcquisitionActivationApproval,
     ProductIntentBoundActivationService,
     SQLiteAcquisitionContractLifecycleRepository,
     ValidatedSourceBinding,
 )
-from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
-from pillarmesh_provider_postgresql import (
+from heinzel_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
+from heinzel_provider_postgresql import (
     PostgreSQLAcquisitionProvider,
     PostgreSQLAcquisitionSettings,
     PostgreSQLSourceObjectDeclaration,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     AcquisitionField,
     AcquisitionIntent,
     AcquisitionObjectSchema,
@@ -52,7 +52,7 @@ from pillarmesh_provider_sdk import (
     SourceObservationRequest,
     acquisition_intent_key,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     ApprovedProductIntent,
     DeliveryIntent,
     DimensionIntent,
@@ -66,7 +66,7 @@ from pillarmesh_request_management import (
     RequestManagementService,
     SQLiteRequestRepository,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AcquisitionDeclaredActivation,
     AcquisitionRunner,
     AcquisitionRuntimeError,
@@ -77,14 +77,14 @@ from pillarmesh_runtime import (
     opaque_reference_factory,
     source_binding_resolver,
 )
-from pillarmesh_state import (
+from heinzel_state import (
     AcquisitionStateNotFoundError,
     LocalAcquisitionArtifactStore,
     SQLiteAcquisitionStateRepository,
 )
 from pydantic import SecretStr
 
-from tests.acceptance.run_plan4a import (
+from tests.acceptance.run_source_acquisition import (
     _CONSUMER_REF,
     _CursorCipher,
     _MutableClock,
@@ -96,7 +96,7 @@ from tests.integration.test_postgresql_product_materialization_live import (
     _role_dsn,
 )
 
-_RUN_LIVE = os.environ.get("PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
+_RUN_LIVE = os.environ.get("HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
 _TENANT = "tenant-live-a"
 _BINDING_REF = "source-live-a"
 _CONTRACT_REF = "acquisition-contract-sales"
@@ -200,7 +200,7 @@ def _closing_all(*resources: object) -> Iterator[None]:
 
 @pytest.mark.live
 @pytest.mark.emulator
-@pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1")
+@pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1")
 def test_fresh_postgresql_rows_cross_the_composed_acquisition_path(tmp_path: Path) -> None:
     clock = _MutableClock(_NOW)
     with _pinned_postgresql() as bootstrap_dsn:
@@ -472,7 +472,7 @@ def test_fresh_postgresql_rows_cross_the_composed_acquisition_path(tmp_path: Pat
 
 @pytest.mark.live
 @pytest.mark.emulator
-@pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1")
+@pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1")
 def test_rejected_source_credentials_are_classified_as_authorization_denied() -> None:
     clock = _MutableClock(_NOW)
     with _pinned_postgresql() as bootstrap_dsn:

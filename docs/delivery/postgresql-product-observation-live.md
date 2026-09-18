@@ -9,7 +9,7 @@ concrete provider.
 
 - Python and `uv` versions pinned by this repository.
 - PostgreSQL `initdb` and `pg_ctl` from one installation on `PATH`, or their directory supplied in
-  `PILLARMESH_TEST_POSTGRES_BIN_DIR`.
+  `HEINZEL_TEST_POSTGRES_BIN_DIR`.
 - A non-root operating-system account. PostgreSQL refuses to initialize a cluster as root.
 
 The test generates a new database password for every run. It uses an owner-only temporary password
@@ -21,7 +21,7 @@ or observation models.
 From the repository root:
 
 ```sh
-PILLARMESH_TEST_POSTGRES_BIN_DIR=/opt/homebrew/bin \
+HEINZEL_TEST_POSTGRES_BIN_DIR=/opt/homebrew/bin \
   uv run pytest -m live tests/integration/test_postgresql_product_observation_live.py -q
 ```
 

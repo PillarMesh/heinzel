@@ -7,7 +7,7 @@ from pathlib import Path
 import httpx
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     ConnectedPolicyAuthorityIntegrityError,
     ConnectedPolicyAuthorityUnavailable,
     EntitlementLookupRequest,
@@ -16,11 +16,11 @@ from pillarmesh_access_control import (
     SignedHttpConnectedPolicyAuthority,
     SignedHttpPolicyAuthoritySettings,
 )
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
+from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
 from pydantic import ValidationError
 
 NOW = datetime(2026, 9, 12, 19, 0, tzinfo=UTC)
-DOMAIN = "pillarmesh-enterprise-entitlement-v1"
+DOMAIN = "heinzel-enterprise-entitlement-v1"
 
 
 def _reference(identifier: str, character: str) -> dict[str, object]:
@@ -75,7 +75,7 @@ def _settings(private_key: Ed25519PrivateKey) -> SignedHttpPolicyAuthoritySettin
     return SignedHttpPolicyAuthoritySettings.model_validate(
         {
             "endpoint": "https://policy.example.test/entitlements/current",
-            "tls_ca_bundle_path": Path("/etc/pillarmesh/policy-ca.pem"),
+            "tls_ca_bundle_path": Path("/etc/heinzel/policy-ca.pem"),
             "bearer_credential": "read-only-canary",
             "signing_key_ref": "key:policy-a:1",
             "signing_public_key_pem": public_key_pem,

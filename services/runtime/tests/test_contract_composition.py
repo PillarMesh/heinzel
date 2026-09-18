@@ -3,19 +3,19 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_provider_sdk import (
+from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_provider_sdk import (
     AcquisitionField,
     AcquisitionObjectSchema,
     ColumnObservation,
     ProviderObservation,
 )
-from pillarmesh_provider_sdk.acquisition_protocols import (
+from heinzel_provider_sdk.acquisition_protocols import (
     AcquisitionObjectObservation,
     AcquisitionSourceObservation,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AcquisitionContractError,
     AcquisitionDeclaredActivation,
     compose_activated_acquisition_contract,

@@ -3,8 +3,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_sdk import (
     OrderRow,
     ProviderObservation,
     SegmentManifest,

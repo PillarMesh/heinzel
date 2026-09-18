@@ -9,7 +9,7 @@ from collections.abc import Iterator, Mapping
 
 import httpx
 import pytest
-from pillarmesh_provider_clickhouse import (
+from heinzel_provider_clickhouse import (
     CLICKHOUSE_SERVER_VERSION,
     ClickHousePublicationConformanceProbe,
     ClickHousePublicationConformanceRequest,
@@ -28,8 +28,8 @@ _IMAGE = (
 pytestmark = [
     pytest.mark.emulator,
     pytest.mark.skipif(
-        os.environ.get("PILLARMESH_RUN_DESTINATION_EMULATORS") != "1",
-        reason="set PILLARMESH_RUN_DESTINATION_EMULATORS=1",
+        os.environ.get("HEINZEL_RUN_DESTINATION_EMULATORS") != "1",
+        reason="set HEINZEL_RUN_DESTINATION_EMULATORS=1",
     ),
 ]
 
@@ -46,7 +46,7 @@ def _sql_string(value: str) -> str:
 
 @pytest.fixture
 def publication_settings() -> Iterator[ClickHousePublicationConformanceSettings]:
-    container_name = f"pillarmesh-publication-ch-{uuid.uuid4().hex[:12]}"
+    container_name = f"heinzel-publication-ch-{uuid.uuid4().hex[:12]}"
     administration_password = f"admin-{uuid.uuid4().hex}"
     transformation_password = f"transform-{uuid.uuid4().hex}"
     port = _available_loopback_port()

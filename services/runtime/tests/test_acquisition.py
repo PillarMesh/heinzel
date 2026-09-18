@@ -8,14 +8,14 @@ from decimal import Decimal
 from typing import BinaryIO, Literal
 
 import pytest
-from pillarmesh_connection_broker import (
+from heinzel_connection_broker import (
     SourceConnectionBinding,
     SourceConnectionBindingState,
 )
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
-from pillarmesh_contract_service import ActivatedAcquisitionContractRecord
-from pillarmesh_evidence import AcquisitionEvidenceReceipt
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
+from heinzel_contract_service import ActivatedAcquisitionContractRecord
+from heinzel_evidence import AcquisitionEvidenceReceipt
+from heinzel_provider_sdk import (
     AcquisitionAcknowledgement,
     AcquisitionBoundary,
     AcquisitionCheckpointReceipt,
@@ -35,13 +35,13 @@ from pillarmesh_provider_sdk import (
     ResynchronizationRequired,
     acquisition_intent_key,
 )
-from pillarmesh_provider_sdk.acquisition_models import (
+from heinzel_provider_sdk.acquisition_models import (
     AcquisitionMode,
     AcquisitionScalar,
     AcquisitionValueType,
 )
-from pillarmesh_provider_sdk.errors import AcquisitionProviderKind
-from pillarmesh_runtime import (
+from heinzel_provider_sdk.errors import AcquisitionProviderKind
+from heinzel_runtime import (
     AcquisitionAuthorizationError,
     AcquisitionCeilingExceeded,
     AcquisitionContractError,
@@ -59,7 +59,7 @@ from pillarmesh_runtime import (
     ProviderResolver,
     compose_acquisition_application,
 )
-from pillarmesh_state import (
+from heinzel_state import (
     AcquisitionArtifactStoreError,
     AcquisitionStateConflictError,
     AcquisitionStateNotFoundError,

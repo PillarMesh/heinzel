@@ -18,7 +18,7 @@ import type {
   ConsoleEnvelopeImpactView,
   ConsoleEnvelopeIncidentView,
   ConsoleEnvelopeIncidentsView,
-  ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView,
+  ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView,
   ConsoleEnvelopeOperationView,
   ConsoleEnvelopeProductIntentApprovalView,
   ConsoleEnvelopeRequesterRequestView,
@@ -160,7 +160,7 @@ const publicIdPattern = /^[a-z][a-z0-9_-]{2,127}$/
 
 function validatedResponseMetadata(response: Response): ValidatedResponseMetadata | null {
   const correlationId = response.headers.get("X-Correlation-ID")
-  const dataProvenance = response.headers.get("X-PillarMesh-Data-Provenance")
+  const dataProvenance = response.headers.get("X-Heinzel-Data-Provenance")
   if (
     correlationId === null ||
     !publicIdPattern.test(correlationId) ||
@@ -399,7 +399,7 @@ export class ConsoleApiClient {
     return envelope.data
   }
 
-  getRequesterRequests(): Promise<ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView> {
+  getRequesterRequests(): Promise<ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView> {
     return this.#request("/api/v1/requests/mine", "requester_requests_response")
   }
 

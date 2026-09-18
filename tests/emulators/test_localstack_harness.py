@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from typing import cast
 
 import pytest
-from pillarmesh_provider_sdk import ColumnObservation, ProviderObservation
+from heinzel_provider_sdk import ColumnObservation, ProviderObservation
 
 from tests.emulators import localstack_support
 
@@ -174,17 +174,17 @@ def test_expected_localstack_observation_records_unavailable_key_metadata() -> N
     ("ddl", "expected"),
     [
         (
-            "CREATE TABLE PILLARMESH_M0.TRANSFER.ORDERS "
+            "CREATE TABLE HEINZEL_M0.TRANSFER.ORDERS "
             '(ORDER_ID NUMBER NOT NULL, CONSTRAINT PK_ORDERS PRIMARY KEY ("ORDER_ID"))',
             ("order_id", "primary_key"),
         ),
         (
-            "CREATE TABLE PILLARMESH_M0.TRANSFER.ORDERS "
+            "CREATE TABLE HEINZEL_M0.TRANSFER.ORDERS "
             "(ORDER_ID NUMBER, CUSTOMER_REF TEXT, PRIMARY KEY (ORDER_ID, CUSTOMER_REF))",
             (None, "none"),
         ),
         (
-            "CREATE TABLE PILLARMESH_M0.TRANSFER.ORDERS (ORDER_ID NUMBER NOT NULL)",
+            "CREATE TABLE HEINZEL_M0.TRANSFER.ORDERS (ORDER_ID NUMBER NOT NULL)",
             (None, "none"),
         ),
     ],
@@ -209,7 +209,7 @@ def test_localstack_key_observation_uses_ddl_and_fails_closed(
     assert provider._key_constraint(cursor, "ORDERS") == expected
     assert cursor.call == (
         "SELECT GET_DDL('TABLE', %s)",
-        ("PILLARMESH_M0.TRANSFER.ORDERS",),
+        ("HEINZEL_M0.TRANSFER.ORDERS",),
     )
 
 
@@ -253,7 +253,7 @@ def test_launcher_owns_only_its_project_and_strips_child_only_environment(
     assert result.returncode == 7
     docker_calls = docker_log.read_text().splitlines()
     assert len(docker_calls) == 3
-    project_pattern = r"--project-name (pillarmesh-m0-localstack-[0-9]+)"
+    project_pattern = r"--project-name (heinzel-localstack-[0-9]+)"
     up_project = re.search(project_pattern, docker_calls[0])
     logs_project = re.search(project_pattern, docker_calls[1])
     down_project = re.search(project_pattern, docker_calls[2])

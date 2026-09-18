@@ -5,8 +5,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes
-from pillarmesh_knowledge_graph import (
+from heinzel_contract_model import ArtifactReference, canonical_bytes
+from heinzel_knowledge_graph import (
     ContextEdge,
     ContextGraphProjector,
     ContextGraphRepository,

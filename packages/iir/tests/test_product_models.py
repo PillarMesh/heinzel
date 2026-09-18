@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_iir import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ApprovedFunctionCall,

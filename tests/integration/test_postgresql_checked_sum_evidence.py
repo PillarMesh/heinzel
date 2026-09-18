@@ -5,7 +5,7 @@ returns for the emitted product statement at each numeric boundary the proof not
 
 The live test runs every case against the exact pinned image, through the statement the
 compiler emits, and compares the result with the committed evidence bundle. Setting
-``PILLARMESH_WRITE_CHECKED_SUM_EVIDENCE=1`` rewrites the bundle from the run instead. The engine
+``HEINZEL_WRITE_CHECKED_SUM_EVIDENCE=1`` rewrites the bundle from the run instead. The engine
 context and SUM semantics are read with the PostgreSQL provider's own observers, so the bundle
 records what the compiler's provenance path would observe.
 
@@ -32,11 +32,11 @@ from typing import cast
 
 import psycopg
 import pytest
-from pillarmesh_compiler import product_compiler
-from pillarmesh_compiler.postgresql_sql import emit_generation_scoped_postgresql
-from pillarmesh_contract_model import digest
-from pillarmesh_execution_graph import GenerationScopedProductSource, ProductJsonFieldBinding
-from pillarmesh_iir import (
+from heinzel_compiler import product_compiler
+from heinzel_compiler.postgresql_sql import emit_generation_scoped_postgresql
+from heinzel_contract_model import digest
+from heinzel_execution_graph import GenerationScopedProductSource, ProductJsonFieldBinding
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ColumnDeclaration,
@@ -46,24 +46,24 @@ from pillarmesh_iir import (
     ProjectOperation,
     SourceRelation,
 )
-from pillarmesh_provider_postgresql.product_materialization import (
+from heinzel_provider_postgresql.product_materialization import (
     _DECIMAL_57_9_EXCLUSIVE_BOUND,
 )
-from pillarmesh_provider_postgresql.product_sql_observation import (
+from heinzel_provider_postgresql.product_sql_observation import (
     _observe_sum_semantics,
     _pinned_image_digest,
     _read_context,
 )
-from pillarmesh_provider_postgresql.warehouse_settings import POSTGRESQL_WAREHOUSE_IMAGE
-from pillarmesh_provider_sdk import ProductSqlColumnObservation
+from heinzel_provider_postgresql.warehouse_settings import POSTGRESQL_WAREHOUSE_IMAGE
+from heinzel_provider_sdk import ProductSqlColumnObservation
 
 _LEGALITY = Path(__file__).parents[2] / "services" / "compiler" / "legality" / "product-sql"
 _BUNDLE_PATH = _LEGALITY / "fixtures" / "postgresql-live-checked-sum-evidence.json"
 _REPORT_PATH = (
     _LEGALITY / "proof-notes" / "PRODUCT-SQL-V2-PROJECT-SUM-001-POSTGRESQL-LIVE-EVIDENCE.md"
 )
-_RUN_LIVE = os.environ.get("PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
-_WRITE_EVIDENCE = os.environ.get("PILLARMESH_WRITE_CHECKED_SUM_EVIDENCE") == "1"
+_RUN_LIVE = os.environ.get("HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
+_WRITE_EVIDENCE = os.environ.get("HEINZEL_WRITE_CHECKED_SUM_EVIDENCE") == "1"
 _RULE_ID = "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE"
 _SELECTED_GENERATION = "a" * 64
 _OTHER_GENERATION = "d" * 64
@@ -357,7 +357,7 @@ def _available_port() -> int:
 
 @contextmanager
 def _pinned_postgresql() -> Iterator[str]:
-    name = f"pillarmesh-checked-sum-pg-{uuid.uuid4().hex[:12]}"
+    name = f"heinzel-checked-sum-pg-{uuid.uuid4().hex[:12]}"
     password = f"postgres-{uuid.uuid4().hex}"
     port = _available_port()
     subprocess.run(
@@ -587,7 +587,7 @@ def _capture() -> dict[str, object]:
 
 @pytest.mark.live
 @pytest.mark.emulator
-@pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1")
+@pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1")
 def test_pinned_postgresql_checked_sum_matches_the_recorded_evidence() -> None:
     captured = _capture()
     if _WRITE_EVIDENCE:
@@ -650,7 +650,7 @@ def test_evidence_carries_no_connection_detail_or_credential() -> None:
     assert "postgresql://" not in text
     assert "password" not in text.lower()
     assert "127.0.0.1" not in text
-    assert "pillarmesh-checked-sum-pg-" not in text
+    assert "heinzel-checked-sum-pg-" not in text
 
 
 def test_report_states_exactly_what_the_bundle_recorded() -> None:

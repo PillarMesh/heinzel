@@ -4,35 +4,35 @@ requires-python = "==3.13.*"
 
 [manifest]
 members = [
-    "pillarmesh-access-control",
-    "pillarmesh-authoring-mcp",
-    "pillarmesh-bi-control",
-    "pillarmesh-catalog-control",
-    "pillarmesh-compiler",
-    "pillarmesh-connection-broker",
-    "pillarmesh-console",
-    "pillarmesh-context-exposure",
-    "pillarmesh-contract-model",
-    "pillarmesh-contract-service",
-    "pillarmesh-dbt-adapter",
-    "pillarmesh-evidence",
-    "pillarmesh-execution-graph",
-    "pillarmesh-iir",
-    "pillarmesh-knowledge-graph",
-    "pillarmesh-m0-workspace",
-    "pillarmesh-provider-clickhouse",
-    "pillarmesh-provider-openmetadata",
-    "pillarmesh-provider-postgresql",
-    "pillarmesh-provider-sdk",
-    "pillarmesh-provider-snowflake",
-    "pillarmesh-provider-stripe",
-    "pillarmesh-provider-superset",
-    "pillarmesh-request-management",
-    "pillarmesh-runtime",
-    "pillarmesh-semantic-registry",
-    "pillarmesh-state",
-    "pillarmesh-trigger",
-    "pillarmesh-warehouse-control",
+    "heinzel-access-control",
+    "heinzel-authoring-mcp",
+    "heinzel-bi-control",
+    "heinzel-catalog-control",
+    "heinzel-compiler",
+    "heinzel-connection-broker",
+    "heinzel-console",
+    "heinzel-context-exposure",
+    "heinzel-contract-model",
+    "heinzel-contract-service",
+    "heinzel-dbt-adapter",
+    "heinzel-evidence",
+    "heinzel-execution-graph",
+    "heinzel-iir",
+    "heinzel-knowledge-graph",
+    "heinzel-provider-clickhouse",
+    "heinzel-provider-openmetadata",
+    "heinzel-provider-postgresql",
+    "heinzel-provider-sdk",
+    "heinzel-provider-snowflake",
+    "heinzel-provider-stripe",
+    "heinzel-provider-superset",
+    "heinzel-request-management",
+    "heinzel-runtime",
+    "heinzel-semantic-registry",
+    "heinzel-state",
+    "heinzel-trigger",
+    "heinzel-warehouse-control",
+    "heinzel-workspace",
 ]
 
 [[package]]
@@ -573,6 +573,633 @@ wheels = [
 ]
 
 [[package]]
+name = "heinzel-access-control"
+version = "0.1.0"
+source = { editable = "services/access-control" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-provider-sdk" },
+    { name = "heinzel-request-management" },
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=46.0,<47" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "heinzel-request-management", editable = "services/request-management" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-authoring-mcp"
+version = "0.1.0"
+source = { editable = "services/authoring-mcp" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-contract-service" },
+    { name = "heinzel-evidence" },
+    { name = "heinzel-execution-graph" },
+    { name = "heinzel-provider-postgresql" },
+    { name = "heinzel-provider-snowflake" },
+    { name = "heinzel-runtime" },
+    { name = "mcp" },
+    { name = "pydantic-settings" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-contract-service", editable = "services/contract" },
+    { name = "heinzel-evidence", editable = "services/evidence" },
+    { name = "heinzel-execution-graph", editable = "packages/execution-graph" },
+    { name = "heinzel-provider-postgresql", editable = "providers/postgresql" },
+    { name = "heinzel-provider-snowflake", editable = "providers/snowflake" },
+    { name = "heinzel-runtime", editable = "services/runtime" },
+    { name = "mcp", specifier = ">=2,<3" },
+    { name = "pydantic-settings", specifier = ">=2.10,<3" },
+]
+
+[[package]]
+name = "heinzel-bi-control"
+version = "0.1.0"
+source = { editable = "services/bi-control" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-provider-sdk" },
+    { name = "heinzel-request-management" },
+    { name = "heinzel-runtime" },
+    { name = "heinzel-semantic-registry" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=45,<47" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "heinzel-request-management", editable = "services/request-management" },
+    { name = "heinzel-runtime", editable = "services/runtime" },
+    { name = "heinzel-semantic-registry", editable = "services/semantic-registry" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-catalog-control"
+version = "0.1.0"
+source = { editable = "services/catalog-control" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-compiler"
+version = "0.1.0"
+source = { editable = "services/compiler" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-execution-graph" },
+    { name = "heinzel-iir" },
+    { name = "heinzel-provider-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=45,<47" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-execution-graph", editable = "packages/execution-graph" },
+    { name = "heinzel-iir", editable = "packages/iir" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-connection-broker"
+version = "0.1.0"
+source = { editable = "services/connection-broker" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-provider-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-console"
+version = "0.1.0"
+source = { editable = "apps/console/server" }
+dependencies = [
+    { name = "heinzel-access-control" },
+    { name = "heinzel-bi-control" },
+    { name = "heinzel-catalog-control" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-contract-service" },
+    { name = "heinzel-evidence" },
+    { name = "heinzel-knowledge-graph" },
+    { name = "heinzel-provider-sdk" },
+    { name = "heinzel-request-management" },
+    { name = "heinzel-runtime" },
+    { name = "heinzel-semantic-registry" },
+    { name = "heinzel-state" },
+    { name = "heinzel-warehouse-control" },
+    { name = "pydantic" },
+    { name = "starlette" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-access-control", editable = "services/access-control" },
+    { name = "heinzel-bi-control", editable = "services/bi-control" },
+    { name = "heinzel-catalog-control", editable = "services/catalog-control" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-contract-service", editable = "services/contract" },
+    { name = "heinzel-evidence", editable = "services/evidence" },
+    { name = "heinzel-knowledge-graph", editable = "services/knowledge-graph" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "heinzel-request-management", editable = "services/request-management" },
+    { name = "heinzel-runtime", editable = "services/runtime" },
+    { name = "heinzel-semantic-registry", editable = "services/semantic-registry" },
+    { name = "heinzel-state", editable = "services/state" },
+    { name = "heinzel-warehouse-control", editable = "services/warehouse-control" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+    { name = "starlette", specifier = ">=1.6,<2" },
+    { name = "uvicorn", specifier = ">=0.52,<1" },
+]
+
+[[package]]
+name = "heinzel-context-exposure"
+version = "0.1.0"
+source = { editable = "services/context-exposure" }
+dependencies = [
+    { name = "heinzel-access-control" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-request-management" },
+    { name = "mcp" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-access-control", editable = "services/access-control" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-request-management", editable = "services/request-management" },
+    { name = "mcp", specifier = ">=2,<3" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+    { name = "pydantic-settings", specifier = ">=2.10,<3" },
+]
+
+[[package]]
+name = "heinzel-contract-model"
+version = "0.1.0"
+source = { editable = "packages/contract-model" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pydantic", specifier = ">=2.11,<3" }]
+
+[[package]]
+name = "heinzel-contract-service"
+version = "0.1.0"
+source = { editable = "services/contract" }
+dependencies = [
+    { name = "heinzel-compiler" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-evidence" },
+    { name = "heinzel-execution-graph" },
+    { name = "heinzel-provider-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-compiler", editable = "services/compiler" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-evidence", editable = "services/evidence" },
+    { name = "heinzel-execution-graph", editable = "packages/execution-graph" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-dbt-adapter"
+version = "0.1.0"
+source = { editable = "services/dbt-adapter" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "dbt-clickhouse" },
+    { name = "dbt-core" },
+    { name = "dbt-postgres" },
+    { name = "heinzel-contract-model" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=45,<47" },
+    { name = "dbt-clickhouse", specifier = "==1.10.2" },
+    { name = "dbt-core", specifier = "==1.10.13" },
+    { name = "dbt-postgres", specifier = "==1.10.2" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-evidence"
+version = "0.1.0"
+source = { editable = "services/evidence" }
+dependencies = [
+    { name = "heinzel-compiler" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-execution-graph" },
+    { name = "heinzel-iir" },
+    { name = "heinzel-provider-sdk" },
+    { name = "heinzel-request-management" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-compiler", editable = "services/compiler" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-execution-graph", editable = "packages/execution-graph" },
+    { name = "heinzel-iir", editable = "packages/iir" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "heinzel-request-management", editable = "services/request-management" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-execution-graph"
+version = "0.1.0"
+source = { editable = "packages/execution-graph" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "heinzel-contract-model" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=45,<47" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+]
+
+[[package]]
+name = "heinzel-iir"
+version = "0.1.0"
+source = { editable = "packages/iir" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "heinzel-contract-model", editable = "packages/contract-model" }]
+
+[[package]]
+name = "heinzel-knowledge-graph"
+version = "0.1.0"
+source = { editable = "services/knowledge-graph" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-provider-clickhouse"
+version = "0.1.0"
+source = { editable = "providers/clickhouse" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-dbt-adapter" },
+    { name = "heinzel-provider-sdk" },
+    { name = "heinzel-runtime" },
+    { name = "heinzel-warehouse-control" },
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-dbt-adapter", editable = "services/dbt-adapter" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "heinzel-runtime", editable = "services/runtime" },
+    { name = "heinzel-warehouse-control", editable = "services/warehouse-control" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-provider-openmetadata"
+version = "0.1.0"
+source = { editable = "providers/openmetadata" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "heinzel-catalog-control" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-provider-sdk" },
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=45,<47" },
+    { name = "heinzel-catalog-control", editable = "services/catalog-control" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-provider-postgresql"
+version = "0.1.0"
+source = { editable = "providers/postgresql" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-dbt-adapter" },
+    { name = "heinzel-provider-sdk" },
+    { name = "heinzel-runtime" },
+    { name = "heinzel-semantic-registry" },
+    { name = "heinzel-warehouse-control" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-dbt-adapter", editable = "services/dbt-adapter" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "heinzel-runtime", editable = "services/runtime" },
+    { name = "heinzel-semantic-registry", editable = "services/semantic-registry" },
+    { name = "heinzel-warehouse-control", editable = "services/warehouse-control" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-provider-sdk"
+version = "0.1.0"
+source = { editable = "packages/provider-sdk" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "heinzel-contract-model" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=45,<47" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-provider-snowflake"
+version = "0.1.0"
+source = { editable = "providers/snowflake" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-provider-sdk" },
+    { name = "pydantic" },
+    { name = "snowflake-connector-python" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+    { name = "snowflake-connector-python", specifier = ">=3.17,<5" },
+]
+
+[[package]]
+name = "heinzel-provider-stripe"
+version = "0.1.0"
+source = { editable = "providers/stripe" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-provider-sdk" },
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-provider-superset"
+version = "0.1.0"
+source = { editable = "providers/superset" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-provider-sdk" },
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-request-management"
+version = "0.1.0"
+source = { editable = "services/request-management" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-knowledge-graph" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-knowledge-graph", editable = "services/knowledge-graph" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-runtime"
+version = "0.1.0"
+source = { editable = "services/runtime" }
+dependencies = [
+    { name = "heinzel-catalog-control" },
+    { name = "heinzel-connection-broker" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-contract-service" },
+    { name = "heinzel-evidence" },
+    { name = "heinzel-execution-graph" },
+    { name = "heinzel-provider-sdk" },
+    { name = "heinzel-semantic-registry" },
+    { name = "heinzel-state" },
+    { name = "heinzel-trigger" },
+    { name = "heinzel-warehouse-control" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-catalog-control", editable = "services/catalog-control" },
+    { name = "heinzel-connection-broker", editable = "services/connection-broker" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-contract-service", editable = "services/contract" },
+    { name = "heinzel-evidence", editable = "services/evidence" },
+    { name = "heinzel-execution-graph", editable = "packages/execution-graph" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "heinzel-semantic-registry", editable = "services/semantic-registry" },
+    { name = "heinzel-state", editable = "services/state" },
+    { name = "heinzel-trigger", editable = "services/trigger" },
+    { name = "heinzel-warehouse-control", editable = "services/warehouse-control" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-semantic-registry"
+version = "0.1.0"
+source = { editable = "services/semantic-registry" }
+dependencies = [
+    { name = "heinzel-catalog-control" },
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-contract-service" },
+    { name = "heinzel-provider-openmetadata" },
+    { name = "heinzel-provider-sdk" },
+    { name = "heinzel-request-management" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-catalog-control", editable = "services/catalog-control" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-contract-service", editable = "services/contract" },
+    { name = "heinzel-provider-openmetadata", editable = "providers/openmetadata" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "heinzel-request-management", editable = "services/request-management" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-state"
+version = "0.1.0"
+source = { editable = "services/state" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-provider-sdk" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-trigger"
+version = "0.1.0"
+source = { editable = "services/trigger" }
+dependencies = [
+    { name = "heinzel-contract-model" },
+    { name = "heinzel-state" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "heinzel-state", editable = "services/state" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-warehouse-control"
+version = "0.1.0"
+source = { editable = "services/warehouse-control" }
+dependencies = [
+    { name = "cryptography" },
+    { name = "heinzel-contract-model" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "cryptography", specifier = ">=45,<47" },
+    { name = "heinzel-contract-model", editable = "packages/contract-model" },
+    { name = "pydantic", specifier = ">=2.11,<3" },
+]
+
+[[package]]
+name = "heinzel-workspace"
+version = "0.1.0"
+source = { virtual = "." }
+
+[package.dev-dependencies]
+dev = [
+    { name = "hypothesis" },
+    { name = "mutmut" },
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "pyyaml" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "hypothesis", specifier = ">=6.138,<7" },
+    { name = "mutmut", specifier = ">=3.3,<4" },
+    { name = "mypy", specifier = ">=1.17,<2" },
+    { name = "pytest", specifier = ">=8.4,<9" },
+    { name = "pytest-cov", specifier = ">=6.2,<7" },
+    { name = "pyyaml", specifier = ">=6.0,<7" },
+    { name = "ruff", specifier = ">=0.12,<1" },
+]
+
+[[package]]
 name = "httpcore"
 version = "1.0.9"
 source = { registry = "https://pypi.org/simple" }
@@ -1096,633 +1723,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/ca/bc/f35b8446f4531a7cb215605d100cd88b7ac6f44ab3fc94870c120ab3adbf/pathspec-0.12.1.tar.gz", hash = "sha256:a482d51503a1ab33b1c67a6c3813a26953dbdc71c31dacaef9a838c4e29f5712", size = 51043, upload-time = "2023-12-10T22:30:45Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/cc/20/ff623b09d963f88bfde16306a54e12ee5ea43e9b597108672ff3a408aad6/pathspec-0.12.1-py3-none-any.whl", hash = "sha256:a0d503e138a4c123b27490a4f7beda6a01c6f288df0e4a8b79c7eb0dc7b4cc08", size = 31191, upload-time = "2023-12-10T22:30:43.14Z" },
-]
-
-[[package]]
-name = "pillarmesh-access-control"
-version = "0.1.0"
-source = { editable = "services/access-control" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "httpx" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pillarmesh-request-management" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=46.0,<47" },
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pillarmesh-request-management", editable = "services/request-management" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-authoring-mcp"
-version = "0.1.0"
-source = { editable = "services/authoring-mcp" }
-dependencies = [
-    { name = "mcp" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-contract-service" },
-    { name = "pillarmesh-evidence" },
-    { name = "pillarmesh-execution-graph" },
-    { name = "pillarmesh-provider-postgresql" },
-    { name = "pillarmesh-provider-snowflake" },
-    { name = "pillarmesh-runtime" },
-    { name = "pydantic-settings" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "mcp", specifier = ">=2,<3" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-contract-service", editable = "services/contract" },
-    { name = "pillarmesh-evidence", editable = "services/evidence" },
-    { name = "pillarmesh-execution-graph", editable = "packages/execution-graph" },
-    { name = "pillarmesh-provider-postgresql", editable = "providers/postgresql" },
-    { name = "pillarmesh-provider-snowflake", editable = "providers/snowflake" },
-    { name = "pillarmesh-runtime", editable = "services/runtime" },
-    { name = "pydantic-settings", specifier = ">=2.10,<3" },
-]
-
-[[package]]
-name = "pillarmesh-bi-control"
-version = "0.1.0"
-source = { editable = "services/bi-control" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pillarmesh-request-management" },
-    { name = "pillarmesh-runtime" },
-    { name = "pillarmesh-semantic-registry" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=45,<47" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pillarmesh-request-management", editable = "services/request-management" },
-    { name = "pillarmesh-runtime", editable = "services/runtime" },
-    { name = "pillarmesh-semantic-registry", editable = "services/semantic-registry" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-catalog-control"
-version = "0.1.0"
-source = { editable = "services/catalog-control" }
-dependencies = [
-    { name = "pillarmesh-contract-model" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-compiler"
-version = "0.1.0"
-source = { editable = "services/compiler" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-execution-graph" },
-    { name = "pillarmesh-iir" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=45,<47" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-execution-graph", editable = "packages/execution-graph" },
-    { name = "pillarmesh-iir", editable = "packages/iir" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-connection-broker"
-version = "0.1.0"
-source = { editable = "services/connection-broker" }
-dependencies = [
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-console"
-version = "0.1.0"
-source = { editable = "apps/console/server" }
-dependencies = [
-    { name = "pillarmesh-access-control" },
-    { name = "pillarmesh-bi-control" },
-    { name = "pillarmesh-catalog-control" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-contract-service" },
-    { name = "pillarmesh-evidence" },
-    { name = "pillarmesh-knowledge-graph" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pillarmesh-request-management" },
-    { name = "pillarmesh-runtime" },
-    { name = "pillarmesh-semantic-registry" },
-    { name = "pillarmesh-state" },
-    { name = "pillarmesh-warehouse-control" },
-    { name = "pydantic" },
-    { name = "starlette" },
-    { name = "uvicorn" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-access-control", editable = "services/access-control" },
-    { name = "pillarmesh-bi-control", editable = "services/bi-control" },
-    { name = "pillarmesh-catalog-control", editable = "services/catalog-control" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-contract-service", editable = "services/contract" },
-    { name = "pillarmesh-evidence", editable = "services/evidence" },
-    { name = "pillarmesh-knowledge-graph", editable = "services/knowledge-graph" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pillarmesh-request-management", editable = "services/request-management" },
-    { name = "pillarmesh-runtime", editable = "services/runtime" },
-    { name = "pillarmesh-semantic-registry", editable = "services/semantic-registry" },
-    { name = "pillarmesh-state", editable = "services/state" },
-    { name = "pillarmesh-warehouse-control", editable = "services/warehouse-control" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-    { name = "starlette", specifier = ">=1.6,<2" },
-    { name = "uvicorn", specifier = ">=0.52,<1" },
-]
-
-[[package]]
-name = "pillarmesh-context-exposure"
-version = "0.1.0"
-source = { editable = "services/context-exposure" }
-dependencies = [
-    { name = "mcp" },
-    { name = "pillarmesh-access-control" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-request-management" },
-    { name = "pydantic" },
-    { name = "pydantic-settings" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "mcp", specifier = ">=2,<3" },
-    { name = "pillarmesh-access-control", editable = "services/access-control" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-request-management", editable = "services/request-management" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-    { name = "pydantic-settings", specifier = ">=2.10,<3" },
-]
-
-[[package]]
-name = "pillarmesh-contract-model"
-version = "0.1.0"
-source = { editable = "packages/contract-model" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.11,<3" }]
-
-[[package]]
-name = "pillarmesh-contract-service"
-version = "0.1.0"
-source = { editable = "services/contract" }
-dependencies = [
-    { name = "pillarmesh-compiler" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-evidence" },
-    { name = "pillarmesh-execution-graph" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-compiler", editable = "services/compiler" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-evidence", editable = "services/evidence" },
-    { name = "pillarmesh-execution-graph", editable = "packages/execution-graph" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-dbt-adapter"
-version = "0.1.0"
-source = { editable = "services/dbt-adapter" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "dbt-clickhouse" },
-    { name = "dbt-core" },
-    { name = "dbt-postgres" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=45,<47" },
-    { name = "dbt-clickhouse", specifier = "==1.10.2" },
-    { name = "dbt-core", specifier = "==1.10.13" },
-    { name = "dbt-postgres", specifier = "==1.10.2" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-evidence"
-version = "0.1.0"
-source = { editable = "services/evidence" }
-dependencies = [
-    { name = "pillarmesh-compiler" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-execution-graph" },
-    { name = "pillarmesh-iir" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pillarmesh-request-management" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-compiler", editable = "services/compiler" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-execution-graph", editable = "packages/execution-graph" },
-    { name = "pillarmesh-iir", editable = "packages/iir" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pillarmesh-request-management", editable = "services/request-management" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-execution-graph"
-version = "0.1.0"
-source = { editable = "packages/execution-graph" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "pillarmesh-contract-model" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=45,<47" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-]
-
-[[package]]
-name = "pillarmesh-iir"
-version = "0.1.0"
-source = { editable = "packages/iir" }
-dependencies = [
-    { name = "pillarmesh-contract-model" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pillarmesh-contract-model", editable = "packages/contract-model" }]
-
-[[package]]
-name = "pillarmesh-knowledge-graph"
-version = "0.1.0"
-source = { editable = "services/knowledge-graph" }
-dependencies = [
-    { name = "pillarmesh-contract-model" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-m0-workspace"
-version = "0.1.0"
-source = { virtual = "." }
-
-[package.dev-dependencies]
-dev = [
-    { name = "hypothesis" },
-    { name = "mutmut" },
-    { name = "mypy" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "pyyaml" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "hypothesis", specifier = ">=6.138,<7" },
-    { name = "mutmut", specifier = ">=3.3,<4" },
-    { name = "mypy", specifier = ">=1.17,<2" },
-    { name = "pytest", specifier = ">=8.4,<9" },
-    { name = "pytest-cov", specifier = ">=6.2,<7" },
-    { name = "pyyaml", specifier = ">=6.0,<7" },
-    { name = "ruff", specifier = ">=0.12,<1" },
-]
-
-[[package]]
-name = "pillarmesh-provider-clickhouse"
-version = "0.1.0"
-source = { editable = "providers/clickhouse" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-dbt-adapter" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pillarmesh-runtime" },
-    { name = "pillarmesh-warehouse-control" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-dbt-adapter", editable = "services/dbt-adapter" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pillarmesh-runtime", editable = "services/runtime" },
-    { name = "pillarmesh-warehouse-control", editable = "services/warehouse-control" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-provider-openmetadata"
-version = "0.1.0"
-source = { editable = "providers/openmetadata" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "httpx" },
-    { name = "pillarmesh-catalog-control" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=45,<47" },
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "pillarmesh-catalog-control", editable = "services/catalog-control" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-provider-postgresql"
-version = "0.1.0"
-source = { editable = "providers/postgresql" }
-dependencies = [
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-dbt-adapter" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pillarmesh-runtime" },
-    { name = "pillarmesh-semantic-registry" },
-    { name = "pillarmesh-warehouse-control" },
-    { name = "psycopg", extra = ["binary"] },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-dbt-adapter", editable = "services/dbt-adapter" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pillarmesh-runtime", editable = "services/runtime" },
-    { name = "pillarmesh-semantic-registry", editable = "services/semantic-registry" },
-    { name = "pillarmesh-warehouse-control", editable = "services/warehouse-control" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-provider-sdk"
-version = "0.1.0"
-source = { editable = "packages/provider-sdk" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=45,<47" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-provider-snowflake"
-version = "0.1.0"
-source = { editable = "providers/snowflake" }
-dependencies = [
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pydantic" },
-    { name = "snowflake-connector-python" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-    { name = "snowflake-connector-python", specifier = ">=3.17,<5" },
-]
-
-[[package]]
-name = "pillarmesh-provider-stripe"
-version = "0.1.0"
-source = { editable = "providers/stripe" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-provider-superset"
-version = "0.1.0"
-source = { editable = "providers/superset" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.28,<1" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-request-management"
-version = "0.1.0"
-source = { editable = "services/request-management" }
-dependencies = [
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-knowledge-graph" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-knowledge-graph", editable = "services/knowledge-graph" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-runtime"
-version = "0.1.0"
-source = { editable = "services/runtime" }
-dependencies = [
-    { name = "pillarmesh-catalog-control" },
-    { name = "pillarmesh-connection-broker" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-contract-service" },
-    { name = "pillarmesh-evidence" },
-    { name = "pillarmesh-execution-graph" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pillarmesh-semantic-registry" },
-    { name = "pillarmesh-state" },
-    { name = "pillarmesh-trigger" },
-    { name = "pillarmesh-warehouse-control" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-catalog-control", editable = "services/catalog-control" },
-    { name = "pillarmesh-connection-broker", editable = "services/connection-broker" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-contract-service", editable = "services/contract" },
-    { name = "pillarmesh-evidence", editable = "services/evidence" },
-    { name = "pillarmesh-execution-graph", editable = "packages/execution-graph" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pillarmesh-semantic-registry", editable = "services/semantic-registry" },
-    { name = "pillarmesh-state", editable = "services/state" },
-    { name = "pillarmesh-trigger", editable = "services/trigger" },
-    { name = "pillarmesh-warehouse-control", editable = "services/warehouse-control" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-semantic-registry"
-version = "0.1.0"
-source = { editable = "services/semantic-registry" }
-dependencies = [
-    { name = "pillarmesh-catalog-control" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-contract-service" },
-    { name = "pillarmesh-provider-openmetadata" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pillarmesh-request-management" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-catalog-control", editable = "services/catalog-control" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-contract-service", editable = "services/contract" },
-    { name = "pillarmesh-provider-openmetadata", editable = "providers/openmetadata" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pillarmesh-request-management", editable = "services/request-management" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-state"
-version = "0.1.0"
-source = { editable = "services/state" }
-dependencies = [
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-provider-sdk" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-provider-sdk", editable = "packages/provider-sdk" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-trigger"
-version = "0.1.0"
-source = { editable = "services/trigger" }
-dependencies = [
-    { name = "pillarmesh-contract-model" },
-    { name = "pillarmesh-state" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pillarmesh-state", editable = "services/state" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
-]
-
-[[package]]
-name = "pillarmesh-warehouse-control"
-version = "0.1.0"
-source = { editable = "services/warehouse-control" }
-dependencies = [
-    { name = "cryptography" },
-    { name = "pillarmesh-contract-model" },
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cryptography", specifier = ">=45,<47" },
-    { name = "pillarmesh-contract-model", editable = "packages/contract-model" },
-    { name = "pydantic", specifier = ">=2.11,<3" },
 ]
 
 [[package]]

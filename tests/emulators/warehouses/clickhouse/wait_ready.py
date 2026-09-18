@@ -53,9 +53,9 @@ def main() -> int:
     parser.add_argument("--client-private-key", required=True, type=Path)
     parser.add_argument("--timeout-seconds", default=120.0, type=float)
     arguments = parser.parse_args()
-    password = os.environ.get("PILLARMESH_CLICKHOUSE_PASSWORD")
+    password = os.environ.get("HEINZEL_CLICKHOUSE_PASSWORD")
     if not password:
-        raise ValueError("PILLARMESH_CLICKHOUSE_PASSWORD is required")
+        raise ValueError("HEINZEL_CLICKHOUSE_PASSWORD is required")
     wait_ready(
         endpoint=arguments.endpoint,
         username=arguments.username,

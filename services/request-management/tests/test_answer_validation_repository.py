@@ -4,15 +4,15 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
+from heinzel_request_management import (
     AnswerIntentValidation,
     AnswerQuestionIntent,
     AnswerQuestionValidationResult,
     BoundFilter,
 )
-from pillarmesh_request_management.answer_models import AnswerProductGenerationReference
-from pillarmesh_request_management.answer_validation_repository import (
+from heinzel_request_management.answer_models import AnswerProductGenerationReference
+from heinzel_request_management.answer_validation_repository import (
     AnswerValidationConflict,
     SQLiteAnswerValidationRepository,
 )

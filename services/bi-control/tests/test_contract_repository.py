@@ -4,13 +4,13 @@ from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardContract,
     DashboardContractSigner,
     SignedDashboardContract,
     SQLiteDashboardContractRepository,
 )
-from pillarmesh_contract_model import ArtifactReference, FreshnessRequirement, canonical_bytes
+from heinzel_contract_model import ArtifactReference, FreshnessRequirement, canonical_bytes
 
 
 def _reference(artifact_id: str) -> ArtifactReference:

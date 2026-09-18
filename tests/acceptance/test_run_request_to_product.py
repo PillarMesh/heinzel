@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pillarmesh_request_management import ApprovedProductIntent, MeasureIntent
+from heinzel_request_management import ApprovedProductIntent, MeasureIntent
 
 from tests.acceptance.run_request_to_product import (
     build_product_iir,

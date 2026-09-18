@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
-from pillarmesh_evidence import (
+from heinzel_evidence import (
     AcquisitionEvidenceReceipt,
     ActiveRunError,
     InvalidStateTransition,

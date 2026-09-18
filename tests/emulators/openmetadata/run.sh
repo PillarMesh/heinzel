@@ -12,13 +12,13 @@ if ! command -v docker >/dev/null 2>&1; then
     exit 2
 fi
 
-if [ -z "${PILLARMESH_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD:-}" ]; then
-    printf '%s\n' 'ERROR: PILLARMESH_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD is required' >&2
+if [ -z "${HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD:-}" ]; then
+    printf '%s\n' 'ERROR: HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD is required' >&2
     exit 2
 fi
 
-if [ -z "${PILLARMESH_OPENMETADATA_SECRET_STORE_KEY:-}" ]; then
-    printf '%s\n' 'ERROR: PILLARMESH_OPENMETADATA_SECRET_STORE_KEY is required' >&2
+if [ -z "${HEINZEL_OPENMETADATA_SECRET_STORE_KEY:-}" ]; then
+    printf '%s\n' 'ERROR: HEINZEL_OPENMETADATA_SECRET_STORE_KEY is required' >&2
     exit 2
 fi
 

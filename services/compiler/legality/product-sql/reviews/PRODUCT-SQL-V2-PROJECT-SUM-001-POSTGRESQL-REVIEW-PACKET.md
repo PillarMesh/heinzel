@@ -173,7 +173,7 @@ result and overflow observations. Section 5 lists each.
 ```sh
 uv sync --locked --all-packages
 uv run pytest -m "not live"
-PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest tests/integration/test_postgresql_checked_sum_evidence.py tests/integration/test_generation_scoped_product_sql_conformance.py -m live
+HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest tests/integration/test_postgresql_checked_sum_evidence.py tests/integration/test_generation_scoped_product_sql_conformance.py -m live
 ```
 
 The live runs need Docker and pull the digest-pinned images. They fail if any engine result

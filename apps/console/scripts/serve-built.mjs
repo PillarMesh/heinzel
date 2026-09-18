@@ -7,7 +7,7 @@ import process from "node:process"
 import { fileURLToPath } from "node:url"
 
 const check = process.argv.includes("--check")
-const port = process.env.PILLARMESH_CONSOLE_API_PORT ?? "8000"
+const port = process.env.HEINZEL_CONSOLE_API_PORT ?? "8000"
 const origin = `http://127.0.0.1:${port}`
 // The server runs from the repository root so `uv` resolves the workspace, so the
 // compiled bundle must be named absolutely rather than relative to that root.
@@ -20,7 +20,7 @@ const server = spawn(
   [
     "run",
     "uvicorn",
-    "pillarmesh_console:create_app",
+    "heinzel_console:create_app",
     "--factory",
     "--host",
     "127.0.0.1",
@@ -30,7 +30,7 @@ const server = spawn(
   {
     stdio: check ? "ignore" : "inherit",
     cwd: repositoryRoot,
-    env: { ...process.env, PILLARMESH_CONSOLE_DIST: distDirectory },
+    env: { ...process.env, HEINZEL_CONSOLE_DIST: distDirectory },
   },
 )
 
@@ -45,7 +45,7 @@ process.on("SIGINT", () => stop(0))
 process.on("SIGTERM", () => stop(0))
 
 if (!check) {
-  process.stdout.write(`\nPillarMesh console served from ${origin}\n\n`)
+  process.stdout.write(`\nHeinzel console served from ${origin}\n\n`)
 } else {
   const deadline = Date.now() + 30_000
   let ready = false

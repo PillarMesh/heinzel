@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from pillarmesh_state import CursorCipherError, decrypt_cursor, encrypt_cursor
+from heinzel_state import CursorCipherError, decrypt_cursor, encrypt_cursor
 
 
 class Cipher:

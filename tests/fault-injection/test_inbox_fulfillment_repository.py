@@ -2,7 +2,7 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     FulfillmentEvidenceReceipt,
     RequestManagementService,
     RequestNoValidPlan,

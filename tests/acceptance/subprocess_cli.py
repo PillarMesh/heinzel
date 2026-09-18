@@ -14,7 +14,7 @@ from .config import (
 )
 
 SUBPROCESS_ENVIRONMENT_VARIABLES = frozenset(
-    (*PASSTHROUGH_VARIABLES, *PRODUCT_VARIABLES, "PILLARMESH_SCAN_INPUT_JSON")
+    (*PASSTHROUGH_VARIABLES, *PRODUCT_VARIABLES, "HEINZEL_SCAN_INPUT_JSON")
 )
 
 
@@ -27,7 +27,7 @@ class SubprocessCli:
         self,
         repository_root: Path = REPOSITORY_ROOT,
         *,
-        command_prefix: tuple[str, ...] = ("uv", "run", "pillarmesh-m0"),
+        command_prefix: tuple[str, ...] = ("uv", "run", "heinzel-authoring"),
         timeout_seconds: float = 300,
     ) -> None:
         if timeout_seconds <= 0:

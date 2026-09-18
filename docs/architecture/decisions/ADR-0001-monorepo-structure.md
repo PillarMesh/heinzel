@@ -6,7 +6,7 @@
 
 ## Context
 
-PillarMesh is beginning implementation of the Enterprise Data Compiler. Its early work crosses the Integration Contract, compiler artifacts, capability providers, deterministic runtime, state ownership, evidence, governed context, and product experience. Splitting these boundaries across repositories before teams, release cadences, and access requirements are known would add coordination cost and make architectural drift harder to detect.
+Heinzel is beginning implementation of the Enterprise Data Compiler. Its early work crosses the Integration Contract, compiler artifacts, capability providers, deterministic runtime, state ownership, evidence, governed context, and product experience. Splitting these boundaries across repositories before teams, release cadences, and access requirements are known would add coordination cost and make architectural drift harder to detect.
 
 A generic applications/services/connectors layout was also considered. It conflicts with the EDC model: there is no general orchestrator, a capability provider is not exclusively a source or destination, and the permanent Integration Contract is not a generic API-contract package.
 

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     ArtifactReference,
     ImpactAdmissionBinding,
     ImpactApprovalRequirement,
@@ -144,7 +144,7 @@ def test_authority_digest_is_deterministic_and_domain_separated() -> None:
 
     assert first.authority_digest == second.authority_digest
     assert (
-        first.authority_digest == "fce8daf48edb4a03d7e1289c9ce29442b8e936bf4736677c3bb3b2bfd672163f"
+        first.authority_digest == "0796ac28519aae2e2eebc2e7811b09eceb876e8e0fb5165a684d18d850e4ab36"
     )
     assert first.authority_digest != digest(first)
     binding = ImpactAdmissionBinding.create(

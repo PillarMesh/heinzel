@@ -6,8 +6,8 @@ from decimal import Decimal
 from typing import cast
 
 import pytest
-from pillarmesh_contract_model import InformationKind, SemanticRuleKind, canonical_bytes, digest
-from pillarmesh_semantic_registry import (
+from heinzel_contract_model import InformationKind, SemanticRuleKind, canonical_bytes, digest
+from heinzel_semantic_registry import (
     AuthorityObservation,
     AuthorityResolution,
     AuthorityResolutionStatus,
@@ -20,8 +20,8 @@ from pillarmesh_semantic_registry import (
     SemanticPersistenceError,
     SQLiteSemanticRepository,
 )
-from pillarmesh_semantic_registry.authority import _PRECEDENCE, _utc
-from pillarmesh_semantic_registry.repository import _CandidateDraft
+from heinzel_semantic_registry.authority import _PRECEDENCE, _utc
+from heinzel_semantic_registry.repository import _CandidateDraft
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 19, 12, tzinfo=UTC)
@@ -158,7 +158,7 @@ def persist_refund_candidate(
         package_version=1,
         original_digest=digest({"tenant_id": tenant_id, "artifact": "original"}),
         manifest_digest=digest({"tenant_id": tenant_id, "artifact": "manifest"}),
-        extractor_id="pillarmesh-bounded-markdown",
+        extractor_id="heinzel-bounded-markdown",
         extractor_version="1.0.0",
         candidates=(
             _CandidateDraft(
@@ -704,7 +704,7 @@ def test_resolution_identity_is_deterministic_across_input_order() -> None:
 
     assert reverse == forward
     expected_identity_material = {
-        "domain": "pillarmesh-authority-resolution-v1",
+        "domain": "heinzel-authority-resolution-v1",
         "tenant_id": "tenant-a",
         "candidate_id": candidate.candidate_id,
         "status": AuthorityResolutionStatus.RESOLVED,
@@ -903,7 +903,7 @@ def test_classification_still_contradicts_business_meaning() -> None:
 
 
 def test_contradiction_groups_partition_every_information_kind_exactly_once() -> None:
-    from pillarmesh_semantic_registry.authority import _CONTRADICTION_GROUPS
+    from heinzel_semantic_registry.authority import _CONTRADICTION_GROUPS
 
     covered = [kind for group in _CONTRADICTION_GROUPS for kind in group]
 
@@ -914,7 +914,7 @@ def test_contradiction_groups_partition_every_information_kind_exactly_once() ->
 
 
 def test_every_candidate_kind_declares_a_governing_information_kind() -> None:
-    from pillarmesh_semantic_registry.authority import _CANDIDATE_GOVERNING_KIND
+    from heinzel_semantic_registry.authority import _CANDIDATE_GOVERNING_KIND
 
     assert set(_CANDIDATE_GOVERNING_KIND) == set(CandidateKind)
 

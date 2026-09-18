@@ -7,9 +7,9 @@ import stat
 from pathlib import Path
 from typing import BinaryIO
 
-import pillarmesh_state.artifacts as artifacts_module
+import heinzel_state.artifacts as artifacts_module
 import pytest
-from pillarmesh_state.artifacts import (
+from heinzel_state.artifacts import (
     AcquisitionArtifactDigestMismatchError,
     AcquisitionArtifactIntegrityError,
     AcquisitionArtifactNotFoundError,

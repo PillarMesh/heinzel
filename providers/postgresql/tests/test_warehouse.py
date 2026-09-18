@@ -13,17 +13,17 @@ from pathlib import Path
 from threading import Event, Thread
 from typing import Any, Literal
 
-import pillarmesh_provider_postgresql.warehouse as warehouse_module
-import pillarmesh_provider_postgresql.warehouse_database as warehouse_database
-import pillarmesh_provider_postgresql.warehouse_protocol as warehouse_protocol
+import heinzel_provider_postgresql.warehouse as warehouse_module
+import heinzel_provider_postgresql.warehouse_database as warehouse_database
+import heinzel_provider_postgresql.warehouse_protocol as warehouse_protocol
 import psycopg
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_postgresql import (
+from heinzel_contract_model import digest
+from heinzel_provider_postgresql import (
     PostgreSQLBackupCommandBoundary,
     PostgreSQLWarehouseProvider,
 )
-from pillarmesh_provider_postgresql.warehouse import (
+from heinzel_provider_postgresql.warehouse import (
     PostgreSQLBackupIntegrityError,
     _assert_restore_matches_source,
     _assert_retirement_journal,
@@ -40,7 +40,7 @@ from pillarmesh_provider_postgresql.warehouse import (
     _warehouse_identity,
     evaluate_mvp_fixed_capacity,
 )
-from pillarmesh_provider_postgresql.warehouse_database import (
+from heinzel_provider_postgresql.warehouse_database import (
     PostgreSQLConnectionTarget,
     PostgreSQLDatabaseObservation,
     PostgreSQLGrantPlan,
@@ -60,12 +60,12 @@ from pillarmesh_provider_postgresql.warehouse_database import (
     prepare_restored_database,
     probe_login_scope,
 )
-from pillarmesh_provider_postgresql.warehouse_settings import (
+from heinzel_provider_postgresql.warehouse_settings import (
     POSTGRESQL_WAREHOUSE_IMAGE,
     PostgreSQLWarehouseSettings,
 )
-from pillarmesh_provider_sdk import ComposeCommandError
-from pillarmesh_warehouse_control import (
+from heinzel_provider_sdk import ComposeCommandError
+from heinzel_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
     PrivateWarehouseResource,
@@ -84,8 +84,8 @@ from pillarmesh_warehouse_control import (
     WarehouseResourceCreationState,
     WarehouseResourceKind,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
-from pillarmesh_warehouse_control.service import WarehouseControlService
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.service import WarehouseControlService
 from pydantic import SecretStr, ValidationError
 
 _BACKUP_HEADER = struct.Struct(">8sI4s")
@@ -662,7 +662,7 @@ class _ExistingCompose:
     def exec(self, **kwargs: object) -> bytes:
         environment = kwargs["environment"]
         assert isinstance(environment, dict)
-        return f"127.0.0.1:{environment['PILLARMESH_POSTGRES_HOST_PORT']}\n".encode()
+        return f"127.0.0.1:{environment['HEINZEL_POSTGRES_HOST_PORT']}\n".encode()
 
     def up(self, **_kwargs: object) -> None:
         self.up_calls += 1
@@ -2983,7 +2983,7 @@ def test_restore_isolation_is_observed_while_the_primary_remains_running(tmp_pat
 
     assert observed == digest(
         {
-            "domain": "pillarmesh-postgresql-running-primary-restore-isolation-v4",
+            "domain": "heinzel-postgresql-running-primary-restore-isolation-v4",
             "primary_running": True,
             "primary_networks": tuple(
                 sorted((primary.network_name, primary.loopback_network_name))
@@ -3422,7 +3422,7 @@ def test_restore_tunnel_keeps_a_validated_response_after_rejected_bridge_teardow
         tunnel.start(environment={"scope": "restore"})
         with pytest.raises(psycopg.errors.InvalidAuthorizationSpecification) as captured:
             warehouse_protocol.connect_denial_probe(
-                dbname="pillarmesh_warehouse",
+                dbname="heinzel_warehouse",
                 user="probe",
                 password="credential",
                 host="127.0.0.1",
@@ -3467,7 +3467,7 @@ def test_restore_tunnel_pre_response_failures_remain_fatal_and_sanitized(
         tunnel.start(environment={"scope": "restore"})
         with pytest.raises(psycopg.OperationalError) as captured:
             warehouse_protocol.connect_denial_probe(
-                dbname="pillarmesh_warehouse",
+                dbname="heinzel_warehouse",
                 user="probe",
                 password=private_canary,
                 host="127.0.0.1",
@@ -3509,7 +3509,7 @@ def test_restore_tunnel_pre_response_rejection_is_fatal_without_poisoning_retry(
         tunnel.start(environment={"scope": "restore"})
         with pytest.raises(psycopg.OperationalError):
             warehouse_protocol.connect_denial_probe(
-                dbname="pillarmesh_warehouse",
+                dbname="heinzel_warehouse",
                 user="probe",
                 password="credential",
                 host="127.0.0.1",
@@ -3519,7 +3519,7 @@ def test_restore_tunnel_pre_response_rejection_is_fatal_without_poisoning_retry(
             )
         with pytest.raises(psycopg.errors.InvalidAuthorizationSpecification):
             warehouse_protocol.connect_denial_probe(
-                dbname="pillarmesh_warehouse",
+                dbname="heinzel_warehouse",
                 user="probe",
                 password="credential",
                 host="127.0.0.1",
@@ -3565,7 +3565,7 @@ def test_restore_tunnel_control_failure_remains_sticky_after_a_later_response(
         tunnel.start(environment={"scope": "restore"})
         with pytest.raises(psycopg.OperationalError):
             warehouse_protocol.connect_denial_probe(
-                dbname="pillarmesh_warehouse",
+                dbname="heinzel_warehouse",
                 user="probe",
                 password="credential",
                 host="127.0.0.1",
@@ -3575,7 +3575,7 @@ def test_restore_tunnel_control_failure_remains_sticky_after_a_later_response(
             )
         with pytest.raises(psycopg.errors.InvalidAuthorizationSpecification):
             warehouse_protocol.connect_denial_probe(
-                dbname="pillarmesh_warehouse",
+                dbname="heinzel_warehouse",
                 user="probe",
                 password="credential",
                 host="127.0.0.1",
@@ -3618,7 +3618,7 @@ def test_restore_tunnel_malformed_or_incomplete_response_remains_fatal_and_sanit
         tunnel.start(environment={"scope": "restore"})
         with pytest.raises(psycopg.OperationalError) as captured:
             warehouse_protocol.connect_denial_probe(
-                dbname="pillarmesh_warehouse",
+                dbname="heinzel_warehouse",
                 user="probe",
                 password="private-probe-credential",
                 host="127.0.0.1",
@@ -4332,7 +4332,7 @@ def test_catalog_metadata_probe_fetches_and_asserts_governed_objects() -> None:
     summary = _catalog_metadata_summary(connection, plan)
 
     assert summary == {
-        "domain": "pillarmesh-postgresql-catalog-metadata-v1",
+        "domain": "heinzel-postgresql-catalog-metadata-v1",
         "objects": expected_objects,
     }
     assert connection.cursor_value.statements
@@ -4431,7 +4431,7 @@ def test_startup_denial_probe_uses_structured_authorization_sqlstate(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from pillarmesh_provider_postgresql import warehouse_protocol
+    from heinzel_provider_postgresql import warehouse_protocol
 
     client, server = socket.socketpair()
     payload = b"SFATAL\0VFATAL\0C28000\0Mexplicit authorization denial\0\0"
@@ -4445,7 +4445,7 @@ def test_startup_denial_probe_uses_structured_authorization_sqlstate(
     try:
         with pytest.raises(psycopg.errors.InvalidAuthorizationSpecification):
             warehouse_protocol.connect_denial_probe(
-                dbname="pillarmesh_warehouse",
+                dbname="heinzel_warehouse",
                 user="probe",
                 password="credential",
                 host="127.0.0.1",
@@ -4464,7 +4464,7 @@ def test_startup_denial_probe_keeps_transport_failure_generic(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    from pillarmesh_provider_postgresql import warehouse_protocol
+    from heinzel_provider_postgresql import warehouse_protocol
 
     transport_failure = OSError("route unavailable")
 
@@ -4475,7 +4475,7 @@ def test_startup_denial_probe_keeps_transport_failure_generic(
 
     with pytest.raises(psycopg.OperationalError) as captured:
         warehouse_protocol.connect_denial_probe(
-            dbname="pillarmesh_warehouse",
+            dbname="heinzel_warehouse",
             user="probe",
             password="credential",
             host="127.0.0.1",

@@ -3,8 +3,8 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_postgresql import PostgresProvider, PostgresSettings, normalize_columns
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_postgresql import PostgresProvider, PostgresSettings, normalize_columns
 
 _COLUMNS = [
     ("order_id", "bigint", "int8", "NO", None, None, None),

@@ -6,8 +6,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, ImpactSubject, digest
-from pillarmesh_knowledge_graph import (
+from heinzel_contract_model import ArtifactReference, ImpactSubject, digest
+from heinzel_knowledge_graph import (
     ContextEdge,
     ContextGraphProjector,
     ContextGraphRepository,
@@ -15,7 +15,7 @@ from pillarmesh_knowledge_graph import (
     ImpactAnalyzer,
     SourceRecordObservation,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     FulfillmentImpactBindingReader,
     FulfillmentProposal,
     GraphImpactAdmissionResolver,

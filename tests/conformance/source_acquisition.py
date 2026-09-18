@@ -7,9 +7,9 @@ from decimal import Decimal
 from io import BytesIO
 from typing import Literal
 
-from pillarmesh_contract_model import digest
-from pillarmesh_evidence import AcquisitionEvidenceReceipt
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import digest
+from heinzel_evidence import AcquisitionEvidenceReceipt
+from heinzel_provider_sdk import (
     AcquisitionAcknowledgement,
     AcquisitionBatchManifest,
     AcquisitionBoundary,
@@ -36,8 +36,8 @@ from pillarmesh_provider_sdk import (
     verify_private_cursor_containment,
     verify_source_replay,
 )
-from pillarmesh_provider_sdk.acquisition_models import AcquisitionScalar
-from pillarmesh_provider_sdk.errors import AcquisitionProviderKind
+from heinzel_provider_sdk.acquisition_models import AcquisitionScalar
+from heinzel_provider_sdk.errors import AcquisitionProviderKind
 
 _NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 _CAPABILITIES = ("incremental", "reconciliation", "snapshot")
@@ -313,7 +313,7 @@ def _completion(fixture: SourceAcquisitionFixture) -> CompletedAcquisition:
     )
 
 
-def build_plan4a_application_source_fixture(
+def build_source_acquisition_application_source_fixture(
     *,
     provider_kind: AcquisitionProviderKind,
 ) -> SourceAcquisitionFixture:

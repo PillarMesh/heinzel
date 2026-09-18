@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol
 
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     InitialWarehouseValidationResult,
     PrivateWarehouseOperation,
     PrivateWarehouseResource,

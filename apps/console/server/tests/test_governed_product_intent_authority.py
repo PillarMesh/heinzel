@@ -12,20 +12,20 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_console.governed_adapters import (
+from heinzel_console.governed_adapters import (
     _CADENCE_SECONDS,
     _SUPPORTED_CADENCES,
     GovernedProductIntentAuthority,
 )
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     ApprovedSemanticVersion,
     ArtifactReference,
     SemanticObject,
     digest,
 )
-from pillarmesh_contract_service import SourceObservation, SQLiteSourceObservationRepository
-from pillarmesh_request_management import ProductIntentAuthorityRefs, ProductIntentConstraints
-from pillarmesh_semantic_registry import SQLiteSemanticVersionRepository
+from heinzel_contract_service import SourceObservation, SQLiteSourceObservationRepository
+from heinzel_request_management import ProductIntentAuthorityRefs, ProductIntentConstraints
+from heinzel_semantic_registry import SQLiteSemanticVersionRepository
 
 _TENANT = "tenant-a"
 _NOW = datetime(2026, 9, 16, 12, tzinfo=UTC)
@@ -245,8 +245,8 @@ def test_activation_is_bound_to_a_recorded_approved_intent_and_its_sources() -> 
     """An approved intent from request management gates contract-service activation."""
     import sqlite3
 
-    from pillarmesh_console.governed_adapters import GovernedApprovedProductIntentSources
-    from pillarmesh_contract_service import (
+    from heinzel_console.governed_adapters import GovernedApprovedProductIntentSources
+    from heinzel_contract_service import (
         AcquisitionActivationApproval,
         AcquisitionContractActivationDeniedError,
         ActivatedAcquisitionContract,
@@ -254,8 +254,8 @@ def test_activation_is_bound_to_a_recorded_approved_intent_and_its_sources() -> 
         SQLiteAcquisitionContractLifecycleRepository,
         ValidatedSourceBinding,
     )
-    from pillarmesh_provider_sdk import AcquisitionField, AcquisitionObjectSchema
-    from pillarmesh_request_management import (
+    from heinzel_provider_sdk import AcquisitionField, AcquisitionObjectSchema
+    from heinzel_request_management import (
         ApprovedProductIntent,
         DeliveryIntent,
         DimensionIntent,

@@ -1,7 +1,7 @@
 x-superset-environment: &superset-environment
-  PILLARMESH_SUPERSET_ADMIN_PASSWORD: ${PILLARMESH_SUPERSET_ADMIN_PASSWORD:?required}
-  PILLARMESH_SUPERSET_SECRET_KEY: ${PILLARMESH_SUPERSET_SECRET_KEY:?required}
-  PILLARMESH_SUPERSET_WAREHOUSE_PASSWORD: ${PILLARMESH_SUPERSET_WAREHOUSE_PASSWORD:?required}
+  HEINZEL_SUPERSET_ADMIN_PASSWORD: ${HEINZEL_SUPERSET_ADMIN_PASSWORD:?required}
+  HEINZEL_SUPERSET_SECRET_KEY: ${HEINZEL_SUPERSET_SECRET_KEY:?required}
+  HEINZEL_SUPERSET_WAREHOUSE_PASSWORD: ${HEINZEL_SUPERSET_WAREHOUSE_PASSWORD:?required}
   SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
 
 x-superset-service: &superset-service
@@ -12,7 +12,7 @@ x-superset-service: &superset-service
   volumes:
     - superset_home:/app/superset_home
     - ./superset_config.py:/app/pythonpath/superset_config.py:ro
-    - ${PILLARMESH_SUPERSET_PRIVATE_DIRECTORY:?required}:/pillarmesh-private:ro
+    - ${HEINZEL_SUPERSET_PRIVATE_DIRECTORY:?required}:/heinzel-private:ro
   networks:
     - governed_local
 
@@ -22,17 +22,17 @@ services:
     restart: unless-stopped
     mem_limit: 512m
     environment:
-      POSTGRES_DB: pillarmesh_warehouse
-      POSTGRES_PASSWORD: ${PILLARMESH_SUPERSET_WAREHOUSE_PASSWORD:?required}
+      POSTGRES_DB: heinzel_warehouse
+      POSTGRES_PASSWORD: ${HEINZEL_SUPERSET_WAREHOUSE_PASSWORD:?required}
       POSTGRES_USER: postgres
-      PILLARMESH_SUPERSET_WAREHOUSE_PASSWORD: ${PILLARMESH_SUPERSET_WAREHOUSE_PASSWORD:?required}
+      HEINZEL_SUPERSET_WAREHOUSE_PASSWORD: ${HEINZEL_SUPERSET_WAREHOUSE_PASSWORD:?required}
     volumes:
       - warehouse_data:/var/lib/postgresql
       - ./init-warehouse.sh:/docker-entrypoint-initdb.d/10-governed-dashboard.sh:ro
     networks:
       - governed_local
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready --dbname pillarmesh_warehouse --username postgres"]
+      test: ["CMD-SHELL", "pg_isready --dbname heinzel_warehouse --username postgres"]
       interval: 2s
       timeout: 3s
       retries: 60
@@ -46,10 +46,10 @@ services:
         superset db upgrade &&
         superset fab create-admin
         --username admin
-        --firstname PillarMesh
+        --firstname Heinzel
         --lastname Administrator
         --email admin@localhost.invalid
-        --password "$$PILLARMESH_SUPERSET_ADMIN_PASSWORD" &&
+        --password "$$HEINZEL_SUPERSET_ADMIN_PASSWORD" &&
         superset init
     depends_on:
       warehouse:
@@ -65,13 +65,13 @@ services:
       - >-
         exec gunicorn
         --bind 0.0.0.0:8088
-        --certfile /pillarmesh-private/server.crt
-        --keyfile /pillarmesh-private/server.key
+        --certfile /heinzel-private/server.crt
+        --keyfile /heinzel-private/server.key
         --workers 2
         --timeout 120
         "superset.app:create_app()"
     ports:
-      - 127.0.0.1:${PILLARMESH_SUPERSET_HOST_PORT:?required}:8088
+      - 127.0.0.1:${HEINZEL_SUPERSET_HOST_PORT:?required}:8088
     networks:
       - governed_local
       - host_loopback
@@ -87,7 +87,7 @@ services:
           "curl",
           "--fail",
           "--cacert",
-          "/pillarmesh-private/ca.crt",
+          "/heinzel-private/ca.crt",
           "https://127.0.0.1:8088/health",
         ]
       interval: 5s
@@ -96,13 +96,13 @@ services:
 
 volumes:
   superset_home:
-    name: ${PILLARMESH_SUPERSET_PROJECT_NAME:?required}-home
+    name: ${HEINZEL_SUPERSET_PROJECT_NAME:?required}-home
   warehouse_data:
-    name: ${PILLARMESH_SUPERSET_PROJECT_NAME:?required}-warehouse
+    name: ${HEINZEL_SUPERSET_PROJECT_NAME:?required}-warehouse
 
 networks:
   governed_local:
-    name: ${PILLARMESH_SUPERSET_PROJECT_NAME:?required}-network
+    name: ${HEINZEL_SUPERSET_PROJECT_NAME:?required}-network
     internal: true
   host_loopback:
-    name: ${PILLARMESH_SUPERSET_PROJECT_NAME:?required}-loopback
+    name: ${HEINZEL_SUPERSET_PROJECT_NAME:?required}-loopback

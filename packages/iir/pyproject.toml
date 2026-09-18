@@ -1,11 +1,11 @@
 [project]
-name = "pillarmesh-iir"
+name = "heinzel-iir"
 version = "0.1.0"
 requires-python = "==3.13.*"
-dependencies = ["pillarmesh-contract-model"]
+dependencies = ["heinzel-contract-model"]
 
 [tool.uv.sources]
-pillarmesh-contract-model = { workspace = true }
+heinzel-contract-model = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

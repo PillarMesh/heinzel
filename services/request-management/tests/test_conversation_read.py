@@ -1,6 +1,6 @@
 """The conversation thread must be readable, not only appendable.
 
-Addendum section 13.5 has PillarMesh ask business-meaning questions directly to
+Addendum section 13.5 has Heinzel ask business-meaning questions directly to
 the requester while the data engineer observes, intervenes, or takes over. None
 of that is possible while `conversation_entries` is a write-only table, and the
 console's decision workspace cannot render a thread it cannot read.
@@ -12,8 +12,8 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_request_management import RequestManagementService, RequestState
-from pillarmesh_request_management.repository import SQLiteRequestRepository
+from heinzel_request_management import RequestManagementService, RequestState
+from heinzel_request_management.repository import SQLiteRequestRepository
 
 NOW = datetime(2026, 9, 2, 12, tzinfo=UTC)
 

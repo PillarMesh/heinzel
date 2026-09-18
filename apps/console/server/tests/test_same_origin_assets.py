@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pillarmesh_console import create_app
+from heinzel_console import create_app
 from starlette.testclient import TestClient
 
 

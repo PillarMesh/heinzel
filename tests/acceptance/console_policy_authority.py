@@ -8,15 +8,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     EntitlementLookupRequest,
     SignedEntitlementBody,
     SignedEntitlementEnvelope,
 )
-from pillarmesh_contract_model import canonical_bytes
+from heinzel_contract_model import canonical_bytes
 from pydantic import SecretStr, ValidationError
 
-_SIGNATURE_DOMAIN = "pillarmesh-enterprise-entitlement-v1"
+_SIGNATURE_DOMAIN = "heinzel-enterprise-entitlement-v1"
 _MAXIMUM_REQUEST_BYTES = 64 * 1024
 
 

@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -20,7 +20,7 @@ from pillarmesh_contract_model import (
     TriggerRequirement,
     digest,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     ApprovedProductQueryBinding,
     ApprovedProductVersionMetadata,
     ProductQueryBindingApproval,
@@ -232,7 +232,7 @@ def test_query_binding_is_derived_from_exact_approved_product_authority(tmp_path
         version=7,
         digest=digest(
             {
-                "domain": "pillarmesh-product-query-consumption-v1",
+                "domain": "heinzel-product-query-consumption-v1",
                 "tenant_id": "tenant-a",
                 "product_ref": metadata.product_ref,
                 "generation": 7,

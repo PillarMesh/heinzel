@@ -16,7 +16,7 @@ const repositoryRoot = resolve(consoleRoot, "../..")
 const committedSchema = join(consoleRoot, "schema/console-api-v1.json")
 const committedTypes = join(consoleRoot, "web/src/api/generated.ts")
 const checkOnly = process.argv.includes("--check")
-const temporaryDirectory = mkdtempSync(join(tmpdir(), "pillarmesh-console-contracts-"))
+const temporaryDirectory = mkdtempSync(join(tmpdir(), "heinzel-console-contracts-"))
 const generatedSchema = checkOnly
   ? join(temporaryDirectory, "console-api-v1.json")
   : committedSchema
@@ -77,7 +77,7 @@ function generateValidators(schemaPath, output) {
 function generateSchema(output) {
   execFileSync(
     "uv",
-    ["run", "python", "-m", "pillarmesh_console.schema", "--output", output],
+    ["run", "python", "-m", "heinzel_console.schema", "--output", output],
     {cwd: repositoryRoot, stdio: "inherit"},
   )
 }

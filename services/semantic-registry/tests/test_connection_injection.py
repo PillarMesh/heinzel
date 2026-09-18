@@ -5,7 +5,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from pillarmesh_semantic_registry.repository import SQLiteSemanticRepository
+from heinzel_semantic_registry.repository import SQLiteSemanticRepository
 
 
 def test_a_borrowed_connection_serves_a_worker_thread(tmp_path: Path) -> None:

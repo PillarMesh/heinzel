@@ -13,30 +13,30 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from pillarmesh_contract_model import digest
-from pillarmesh_dbt_adapter import (
+from heinzel_contract_model import digest
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtDecimalMagnitudeCheck,
     DbtInvoker,
     SignedCompiledDbtModel,
     compiled_dbt_model_signing_bytes,
 )
-from pillarmesh_execution_graph import (
+from heinzel_execution_graph import (
     Decimal57OutputCheck,
     GenerationScopedProductSource,
     ProductJsonFieldBinding,
     ProductPhysicalPlan,
     ProductTarget,
 )
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLMaterializationSettings,
     PostgreSQLMaterializationWarehouse,
     PostgreSQLMaterializedColumn,
     PostgreSQLProductSemanticObserver,
     postgresql_materialized_schema_digest,
 )
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import (
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import (
     MaterializationObservation,
     MaterializationRequest,
     ProductMaterializationReceipt,
@@ -141,7 +141,7 @@ def _cardinality_evidence_digest(
 ) -> str:
     return digest(
         {
-            "domain": "pillarmesh-observation-only-cardinality-fixture-v1",
+            "domain": "heinzel-observation-only-cardinality-fixture-v1",
             "plan_digest": plan_digest,
             "input_generation_digests": input_generation_digests,
         }
@@ -185,7 +185,7 @@ def _commit_reference(
 ) -> str:
     return digest(
         {
-            "domain": "pillarmesh-postgresql-product-generation-v1",
+            "domain": "heinzel-postgresql-product-generation-v1",
             "tenant_id": _TENANT_ID,
             "product_id": _PRODUCT_ID,
             "product_revision": _PRODUCT_REVISION,
@@ -416,7 +416,7 @@ def test_fresh_postgresql_observation_reads_actual_context_and_owned_generation(
         assert observation.server_version_num.isdecimal()
         assert observation.engine_build_digest == digest(
             {
-                "domain": "pillarmesh-postgresql-engine-build-v1",
+                "domain": "heinzel-postgresql-engine-build-v1",
                 "version": {
                     "server_version_num": observation.server_version_num,
                     "server_version": observation.engine_version,

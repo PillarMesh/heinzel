@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from pillarmesh_console.operation_handles import (
+from heinzel_console.operation_handles import (
     CONSOLE_HANDLE_PATTERN,
     InMemoryOperationHandleRepository,
     OperationHandleRecord,

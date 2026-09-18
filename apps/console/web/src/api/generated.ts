@@ -70,7 +70,7 @@ export type Accepted = boolean
 export type Revision1 = number
 export type ExpectedRevision3 = number
 export type ConsoleEnvelopeConversationView = ConsoleEnvelope_ConversationView_
-export type AuthorRole = ActorRole | "pillarmesh" | null
+export type AuthorRole = ActorRole | "heinzel" | null
 export type JsonTuple_ConversationMessageView_ = ConversationMessageView[]
 export type Revision2 = number
 export type ActiveRole3 = "requester"
@@ -284,7 +284,7 @@ export type JsonTuple_ArtifactReferenceView_8 = ArtifactReferenceView[]
 export type JsonTuple_OwnDecisionView_ = OwnDecisionView[]
 export type ResultPageAvailable = boolean
 export type Revision6 = number
-export type ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView =
+export type ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView =
   ConsoleEnvelope_JsonTuple_RequesterRequestView__
 export type JsonTuple_RequesterRequestView_ = RequesterRequestView[]
 export type ActiveRole8 = "data_architect"
@@ -397,7 +397,7 @@ export interface ConsoleApiSchema {
   request_detail_response: ConsoleEnvelopeRequestDetailView
   request_withdrawal_command: RequestWithdrawalCommand
   requester_request_response: ConsoleEnvelopeRequesterRequestView
-  requester_requests_response: ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView
+  requester_requests_response: ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView
   reset_command: ResetCommand
   retry_operation_command: RetryOperationCommand
   review_response: ConsoleEnvelopeReviewView

@@ -5,16 +5,16 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardAnswerAuthority,
     DashboardControlService,
     DashboardDesiredState,
     DashboardProductGenerationReference,
     SQLiteDashboardRepository,
 )
-from pillarmesh_contract_model import ArtifactReference
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
+from heinzel_contract_model import ArtifactReference
+from heinzel_provider_sdk import ProviderError
+from heinzel_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
 
 NOW = datetime(2026, 9, 11, 12, tzinfo=UTC)
 

@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import Literal, cast
 from urllib.parse import urlsplit
 
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     AccessGrantApplicationService,
     CurrentEntitlementSnapshot,
     EntitlementPermission,
@@ -43,11 +43,11 @@ from pillarmesh_access_control import (
     RequestManagementAdmittedAccessProposalReader,
     SQLiteAccessGrantRepository,
 )
-from pillarmesh_catalog_control import CatalogControlService, SQLiteCatalogRepository
-from pillarmesh_console.app import create_app
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.contracts import ActorRole
-from pillarmesh_console.governed_adapters import (
+from heinzel_catalog_control import CatalogControlService, SQLiteCatalogRepository
+from heinzel_console.app import create_app
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.contracts import ActorRole
+from heinzel_console.governed_adapters import (
     CatalogBindingReader,
     CatalogControlBindingReader,
     CatalogSearchHealthReader,
@@ -66,13 +66,13 @@ from pillarmesh_console.governed_adapters import (
     WarehouseControlLifecycleCommands,
     WarehouseRepositoryOperationReader,
 )
-from pillarmesh_console.governed_backend import GovernedConsoleBackend
-from pillarmesh_console.impact_projection import (
+from heinzel_console.governed_backend import GovernedConsoleBackend
+from heinzel_console.impact_projection import (
     ImpactViewProjector,
     RequestImpactProjectionReader,
 )
-from pillarmesh_console.operation_handles import InMemoryOperationHandleRepository
-from pillarmesh_contract_model import (
+from heinzel_console.operation_handles import InMemoryOperationHandleRepository
+from heinzel_contract_model import (
     ApprovedSemanticVersion,
     ArtifactReference,
     ImpactSubject,
@@ -80,7 +80,7 @@ from pillarmesh_contract_model import (
     SemanticObject,
     digest,
 )
-from pillarmesh_contract_service import (
+from heinzel_contract_service import (
     AcquisitionActivationApproval,
     ActivatedAcquisitionContractRecord,
     ProcessPackageService,
@@ -91,8 +91,8 @@ from pillarmesh_contract_service import (
     SQLiteSourceObservationRepository,
     ValidatedSourceBinding,
 )
-from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
-from pillarmesh_knowledge_graph import (
+from heinzel_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
+from heinzel_knowledge_graph import (
     ContextEdge,
     ContextGraphProjector,
     ContextGraphRepository,
@@ -100,13 +100,13 @@ from pillarmesh_knowledge_graph import (
     ImpactAnalyzer,
     SourceRecordObservation,
 )
-from pillarmesh_provider_openmetadata import CatalogObjectRef, CatalogObjectSnapshot
-from pillarmesh_provider_sdk import (
+from heinzel_provider_openmetadata import CatalogObjectRef, CatalogObjectSnapshot
+from heinzel_provider_sdk import (
     AccessEffectCommand,
     AccessEffectProviderError,
     AccessEffectResult,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     AccessGrantAdmissionBinding,
     AccessGrantEffectTarget,
     AccessScopePreview,
@@ -141,31 +141,31 @@ from pillarmesh_request_management import (
     StakeholderAnswerDraft,
     StakeholderQuestion,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AnswerResultAccessEffectProvider,
     AnswerResultAccessTarget,
     compose_acquisition_application,
     opaque_reference_factory,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     FulfillmentAuthorityObservation,
     SemanticFulfillmentSnapshotAdapter,
     SQLiteCatalogPublicationRepository,
     SQLiteSemanticVersionRepository,
 )
-from pillarmesh_semantic_registry.publication import (
+from heinzel_semantic_registry.publication import (
     CatalogPublicationIntent,
     CatalogPublicationReceipt,
     CatalogPublicationRepository,
 )
-from pillarmesh_semantic_registry.repository import SQLiteSemanticRepository
-from pillarmesh_semantic_registry.review import SemanticReviewService
-from pillarmesh_state import (
+from heinzel_semantic_registry.repository import SQLiteSemanticRepository
+from heinzel_semantic_registry.review import SemanticReviewService
+from heinzel_state import (
     RunLifecycleSnapshot,
     RunService,
     SQLiteRunRepository,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     InitialWarehouseValidationResult,
@@ -182,7 +182,7 @@ from pillarmesh_warehouse_control import (
     WarehouseValidationEvidence,
     WarehouseValidationProfile,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 from starlette.applications import Starlette
 from starlette.requests import Request
 
@@ -190,11 +190,11 @@ from tests.acceptance.console_answer_runtime import (
     GovernedAnswerRuntime,
     GovernedAnswerRuntimeConfiguration,
 )
-from tests.acceptance.run_plan3b import (
+from tests.acceptance.run_request_fulfillment import (
     ScenarioFreshness,
     published_repository,
 )
-from tests.acceptance.run_plan4a import OfflinePlan4AHarness
+from tests.acceptance.run_source_acquisition import OfflineSourceAcquisitionHarness
 
 TENANT = "tenant-a"
 # The source binding the managed demo contract acquires; an approval naming it activates that
@@ -208,7 +208,7 @@ IMPACT_OWNER = "role:finance_data_owner"
 REQUESTER_PRINCIPAL = f"principal:{REQUESTER}"
 ARCHITECT_PRINCIPAL = "role:data_engineering_architect"
 POLICY_AUTHORITY = "role:policy_authority"
-ACTOR_HEADER = "x-pillarmesh-actor"
+ACTOR_HEADER = "x-heinzel-actor"
 
 _DEFAULT_PORT = 8000
 # Not `localhost`: the allowed origin is built from whichever spelling is bound, and a
@@ -230,7 +230,7 @@ def default_state_directory() -> Path:
     where the secret store's owner check fails and the orchestrator reports it as
     `invalid_provider_response`, a permanent failure that names no cause.
     """
-    return Path(tempfile.gettempdir()) / f"pillarmesh-governed-local-{os.getuid()}"
+    return Path(tempfile.gettempdir()) / f"heinzel-governed-local-{os.getuid()}"
 
 
 def _clock() -> datetime:
@@ -995,7 +995,7 @@ def _access_command_matches_grant(
         None,
     )
     scope = {
-        "domain": "pillarmesh-access-effect-scope-v1",
+        "domain": "heinzel-access-effect-scope-v1",
         "tenant_id": grant.tenant_id,
         "grant_id": grant.grant_id,
         "principal_ref": grant.principal_ref,
@@ -1057,7 +1057,7 @@ class _GovernedLocalWarehouseAccessProvider:
             idempotency_key=command.idempotency_key,
             provider_receipt_digest=digest(
                 {
-                    "domain": "pillarmesh.governed-local-warehouse-access.v1",
+                    "domain": "heinzel.governed-local-warehouse-access.v1",
                     "command": command,
                 }
             ),
@@ -1084,7 +1084,7 @@ class _GovernedLocalDashboardAccessProvider:
             idempotency_key=command.idempotency_key,
             provider_receipt_digest=digest(
                 {
-                    "domain": "pillarmesh.governed-local-dashboard-access.v1",
+                    "domain": "heinzel.governed-local-dashboard-access.v1",
                     "command": command,
                 }
             ),
@@ -1576,7 +1576,7 @@ class GovernedConsoleDeployment:
         # deployment. Its PostgreSQL session is the deterministic Plan 4A source so
         # browser testing remains offline, while lifecycle, state, artifacts, and
         # evidence use their durable implementations.
-        self.source_acquisition = OfflinePlan4AHarness(
+        self.source_acquisition = OfflineSourceAcquisitionHarness(
             directory / "source-acquisition",
             check_same_thread=False,
         )

@@ -78,8 +78,8 @@ When the console is unavailable, inspect the incident repository read-only. Set 
 the operator shell; do not put credentials in them:
 
 ```sh
-export PILLARMESH_INCIDENT_DB=/approved/path/to/state.sqlite3
-export PILLARMESH_TENANT_ID=tenant-from-authenticated-session
+export HEINZEL_INCIDENT_DB=/approved/path/to/state.sqlite3
+export HEINZEL_TENANT_ID=tenant-from-authenticated-session
 ```
 
 Then print the current canonical incidents for that tenant:
@@ -91,8 +91,8 @@ import os
 import sqlite3
 from pathlib import Path
 
-database_uri = Path(os.environ["PILLARMESH_INCIDENT_DB"]).resolve().as_uri() + "?mode=ro"
-tenant_id = os.environ["PILLARMESH_TENANT_ID"]
+database_uri = Path(os.environ["HEINZEL_INCIDENT_DB"]).resolve().as_uri() + "?mode=ro"
+tenant_id = os.environ["HEINZEL_TENANT_ID"]
 connection = sqlite3.connect(database_uri, uri=True)
 rows = connection.execute(
     "SELECT revisions.payload "
@@ -118,7 +118,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-database_uri = Path(os.environ["PILLARMESH_INCIDENT_DB"]).resolve().as_uri() + "?mode=ro"
+database_uri = Path(os.environ["HEINZEL_INCIDENT_DB"]).resolve().as_uri() + "?mode=ro"
 connection = sqlite3.connect(database_uri, uri=True)
 print("quick_check", connection.execute("PRAGMA quick_check").fetchone()[0])
 print("foreign_key_violations", len(connection.execute("PRAGMA foreign_key_check").fetchall()))
@@ -139,8 +139,8 @@ claim epoch, lease expiration, completion outcome, durable boundary, cancellatio
 authority:
 
 ```sh
-export PILLARMESH_RUN_DB=/approved/path/to/runs.sqlite3
-export PILLARMESH_RUN_ID=run-id-from-the-incident
+export HEINZEL_RUN_DB=/approved/path/to/runs.sqlite3
+export HEINZEL_RUN_ID=run-id-from-the-incident
 
 uv run python - <<'PY'
 import json
@@ -148,8 +148,8 @@ import os
 import sqlite3
 from pathlib import Path
 
-database_uri = Path(os.environ["PILLARMESH_RUN_DB"]).resolve().as_uri() + "?mode=ro"
-run_id = os.environ["PILLARMESH_RUN_ID"]
+database_uri = Path(os.environ["HEINZEL_RUN_DB"]).resolve().as_uri() + "?mode=ro"
+run_id = os.environ["HEINZEL_RUN_ID"]
 connection = sqlite3.connect(database_uri, uri=True)
 for table, order_by in (
     ("runs", "rowid"),
@@ -184,8 +184,8 @@ other outcomes must not have one. Do not print `answer_results.payload` during r
 because it can contain approved result values.
 
 ```sh
-export PILLARMESH_RESULT_DB=/approved/path/to/results.sqlite3
-export PILLARMESH_REQUEST_ID=request-id-from-owning-record
+export HEINZEL_RESULT_DB=/approved/path/to/results.sqlite3
+export HEINZEL_REQUEST_ID=request-id-from-owning-record
 
 uv run python - <<'PY'
 import json
@@ -193,12 +193,12 @@ import os
 import sqlite3
 from pathlib import Path
 
-database_uri = Path(os.environ["PILLARMESH_RESULT_DB"]).resolve().as_uri() + "?mode=ro"
+database_uri = Path(os.environ["HEINZEL_RESULT_DB"]).resolve().as_uri() + "?mode=ro"
 connection = sqlite3.connect(database_uri, uri=True)
 rows = connection.execute(
     "SELECT receipt FROM answer_execution_attempts "
     "WHERE tenant_id = ? AND request_id = ? ORDER BY attempt",
-    (os.environ["PILLARMESH_TENANT_ID"], os.environ["PILLARMESH_REQUEST_ID"]),
+    (os.environ["HEINZEL_TENANT_ID"], os.environ["HEINZEL_REQUEST_ID"]),
 ).fetchall()
 for (payload,) in rows:
     receipt = json.loads(bytes(payload))
@@ -360,7 +360,7 @@ cleanup status or multiple resources claiming the same managed identity requires
 
 ## Rollback limits
 
-PillarMesh does not roll back by deleting authoritative history.
+Heinzel does not roll back by deleting authoritative history.
 
 - A request decision, compiler `No Valid Plan`, run claim, completion, retry request, cancellation,
   acquisition checkpoint, materialization receipt, answer receipt, incident revision, and recovery

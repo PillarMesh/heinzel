@@ -166,7 +166,7 @@ export function RequestIntake({
   return (
     <section aria-labelledby="intake-title" className="request-intake">
       <p className="eyebrow">Submit</p>
-      <h2 id="intake-title">Ask PillarMesh for something</h2>
+      <h2 id="intake-title">Ask Heinzel for something</h2>
       <fieldset className="request-intake__kind">
         <legend>Request type</legend>
         <label>
@@ -199,7 +199,7 @@ export function RequestIntake({
 
       {kind === null ? (
         <p className="request-intake__guidance">
-          Choose a request type. PillarMesh asks only for the fields that type requires.
+          Choose a request type. Heinzel asks only for the fields that type requires.
         </p>
       ) : (
         <div className="request-intake__fields">

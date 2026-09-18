@@ -9,7 +9,7 @@ From the repository root:
 
 ```sh
 uv run pytest tests/acceptance/test_run_request_to_product.py -q \
-  --basetemp "$PILLARMESH_REQUEST_PRODUCT_PRIVATE_ROOT/pytest"
+  --basetemp "$HEINZEL_REQUEST_PRODUCT_PRIVATE_ROOT/pytest"
 ```
 
 The test invokes `execute_postgresql_request_to_product` with disposable storage. A passing run

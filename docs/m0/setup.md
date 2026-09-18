@@ -19,42 +19,42 @@ below from an external secret manager or ephemeral shell; no committed environme
 values. Marker, file-format, owner-role, and reservation names are fixed or derived and are not
 additional variables.
 
-- Private local state/output: `PILLARMESH_STATE_PATH`, `PILLARMESH_OUTPUT_DIR`,
-  `PILLARMESH_CLEANUP_LEDGER_PATH`.
-- Signing: `PILLARMESH_SIGNING_KEY_ID`, `PILLARMESH_SIGNING_PRIVATE_KEY_B64`.
-- Runtime PostgreSQL: `PILLARMESH_POSTGRES_DSN`, `PILLARMESH_POSTGRES_DATABASE`,
-  `PILLARMESH_POSTGRES_RUNTIME_PRINCIPAL`, `PILLARMESH_POSTGRES_OWNER_PRINCIPAL`,
-  `PILLARMESH_POSTGRES_CONNECTION_HANDLE`, `PILLARMESH_POSTGRES_SCHEMA`,
-  `PILLARMESH_POSTGRES_TABLE`, `PILLARMESH_POSTGRES_DENIAL_SCHEMA`.
-- Fixture-only PostgreSQL: `PILLARMESH_POSTGRES_FIXTURE_DSN`,
-  `PILLARMESH_POSTGRES_FIXTURE_PRINCIPAL`.
-- Runtime Snowflake: `PILLARMESH_SNOWFLAKE_ACCOUNT`, `PILLARMESH_SNOWFLAKE_USER`,
-  `PILLARMESH_SNOWFLAKE_PASSWORD`, `PILLARMESH_SNOWFLAKE_OWNER_USER`,
-  `PILLARMESH_SNOWFLAKE_ROLE`, `PILLARMESH_SNOWFLAKE_WAREHOUSE`,
-  `PILLARMESH_SNOWFLAKE_DATABASE`, `PILLARMESH_SNOWFLAKE_SCHEMA`,
-  `PILLARMESH_SNOWFLAKE_STAGE`, `PILLARMESH_SNOWFLAKE_TARGET_TABLE`,
-  `PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE`, `PILLARMESH_SNOWFLAKE_LEDGER_TABLE`,
-  `PILLARMESH_SNOWFLAKE_CONNECTION_HANDLE`, `PILLARMESH_SNOWFLAKE_DENIAL_DATABASE`.
-- Evidence scan canaries: `PILLARMESH_CREDENTIAL_CANARIES_JSON`,
-  `PILLARMESH_ROW_VALUE_CANARY`.
-- Operator metadata: `PILLARMESH_OPERATOR_PSEUDONYM`, `PILLARMESH_HOST_PSEUDONYM`,
-  `PILLARMESH_MCP_PROTOCOL_VERSION`, `PILLARMESH_OWNER_AUTHORIZATION_REFERENCE`.
+- Private local state/output: `HEINZEL_STATE_PATH`, `HEINZEL_OUTPUT_DIR`,
+  `HEINZEL_CLEANUP_LEDGER_PATH`.
+- Signing: `HEINZEL_SIGNING_KEY_ID`, `HEINZEL_SIGNING_PRIVATE_KEY_B64`.
+- Runtime PostgreSQL: `HEINZEL_POSTGRES_DSN`, `HEINZEL_POSTGRES_DATABASE`,
+  `HEINZEL_POSTGRES_RUNTIME_PRINCIPAL`, `HEINZEL_POSTGRES_OWNER_PRINCIPAL`,
+  `HEINZEL_POSTGRES_CONNECTION_HANDLE`, `HEINZEL_POSTGRES_SCHEMA`,
+  `HEINZEL_POSTGRES_TABLE`, `HEINZEL_POSTGRES_DENIAL_SCHEMA`.
+- Fixture-only PostgreSQL: `HEINZEL_POSTGRES_FIXTURE_DSN`,
+  `HEINZEL_POSTGRES_FIXTURE_PRINCIPAL`.
+- Runtime Snowflake: `HEINZEL_SNOWFLAKE_ACCOUNT`, `HEINZEL_SNOWFLAKE_USER`,
+  `HEINZEL_SNOWFLAKE_PASSWORD`, `HEINZEL_SNOWFLAKE_OWNER_USER`,
+  `HEINZEL_SNOWFLAKE_ROLE`, `HEINZEL_SNOWFLAKE_WAREHOUSE`,
+  `HEINZEL_SNOWFLAKE_DATABASE`, `HEINZEL_SNOWFLAKE_SCHEMA`,
+  `HEINZEL_SNOWFLAKE_STAGE`, `HEINZEL_SNOWFLAKE_TARGET_TABLE`,
+  `HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE`, `HEINZEL_SNOWFLAKE_LEDGER_TABLE`,
+  `HEINZEL_SNOWFLAKE_CONNECTION_HANDLE`, `HEINZEL_SNOWFLAKE_DENIAL_DATABASE`.
+- Evidence scan canaries: `HEINZEL_CREDENTIAL_CANARIES_JSON`,
+  `HEINZEL_ROW_VALUE_CANARY`.
+- Operator metadata: `HEINZEL_OPERATOR_PSEUDONYM`, `HEINZEL_HOST_PSEUDONYM`,
+  `HEINZEL_MCP_PROTOCOL_VERSION`, `HEINZEL_OWNER_AUTHORIZATION_REFERENCE`.
 
-`PILLARMESH_OWNER_AUTHORIZATION_REFERENCE` is a non-secret reference to approved cleanup scope.
+`HEINZEL_OWNER_AUTHORIZATION_REFERENCE` is a non-secret reference to approved cleanup scope.
 It is not an owner credential and does not authorize the harness to revoke grants, delete rows, or
 remove staged files. Those actions still require an owner to approve the exact ledger entries.
 
 The harness derives one environment identity from the case-normalized canonical JSON of the declared PostgreSQL
 database/schema/source and Snowflake account/database/schema/stage/target/negative-target/ledger,
-namespaced by `pillarmesh-m0-environment-v1` and SHA-256. It derives the local reservation pathname
+namespaced by `heinzel-environment-v1` and SHA-256. It derives the local reservation pathname
 from that digest and also holds a PostgreSQL advisory lock for the same digest. Thus operators on
 different paths or hosts still contend at the provider boundary. The lock uses a dedicated retained
 connection. The harness records that connection's backend PID and fails closed unless the same
 database and backend still own exactly one granted advisory lock before each mutation-capable
 boundary; it never tests by reacquiring the lock. The fixed derived objects are
-`pillarmesh_m0.environment_marker`, `pillarmesh_m0.runtime_source_read_count()`,
-`PILLARMESH_M0.TRANSFER.M0_CSV`, `PILLARMESH_M0.TRANSFER.ENVIRONMENT_MARKER`, and owner role
-`PILLARMESH_M0_OWNER`.
+`heinzel_m0.environment_marker`, `heinzel_m0.runtime_source_read_count()`,
+`HEINZEL_M0.TRANSFER.M0_CSV`, `HEINZEL_M0.TRANSFER.ENVIRONMENT_MARKER`, and owner role
+`HEINZEL_M0_OWNER`.
 
 After the provider object names and account identifier are injected, derive the marker value
 offline without opening a provider connection. The command prints only the non-secret digest:
@@ -77,7 +77,7 @@ owner-supplied identifier. Do not infer the target from a prior or default sessi
 ```sql
 \connect M0_ACCEPTANCE_DATABASE
 SELECT current_database() = 'M0_ACCEPTANCE_DATABASE'
-   AND current_user = 'pillarmesh_m0_owner'
+   AND current_user = 'heinzel_m0_owner'
    AND (
      SELECT pg_catalog.pg_get_userbyid(d.datdba) = current_user
      FROM pg_catalog.pg_database AS d
@@ -85,9 +85,9 @@ SELECT current_database() = 'M0_ACCEPTANCE_DATABASE'
    ) AS dedicated_owner_connected;
 -- Stop unless dedicated_owner_connected is true.
 
-CREATE SCHEMA pillarmesh_m0;
+CREATE SCHEMA heinzel_m0;
 CREATE SCHEMA unrelated_private;
-CREATE TABLE pillarmesh_m0.orders (
+CREATE TABLE heinzel_m0.orders (
     order_id BIGINT PRIMARY KEY,
     customer_ref VARCHAR(65535) NOT NULL,
     amount NUMERIC(18,2) NOT NULL,
@@ -95,44 +95,44 @@ CREATE TABLE pillarmesh_m0.orders (
     status VARCHAR(65535) NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
 );
-CREATE TABLE pillarmesh_m0.environment_marker (
+CREATE TABLE heinzel_m0.environment_marker (
     environment_id VARCHAR(64) PRIMARY KEY,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-INSERT INTO pillarmesh_m0.environment_marker (environment_id)
+INSERT INTO heinzel_m0.environment_marker (environment_id)
 VALUES ('<derived-64-hex-environment-identity>');
 REVOKE ALL ON DATABASE M0_ACCEPTANCE_DATABASE FROM PUBLIC;
-REVOKE ALL ON SCHEMA pillarmesh_m0, unrelated_private FROM PUBLIC;
-REVOKE ALL ON TABLE pillarmesh_m0.orders, pillarmesh_m0.environment_marker FROM PUBLIC;
+REVOKE ALL ON SCHEMA heinzel_m0, unrelated_private FROM PUBLIC;
+REVOKE ALL ON TABLE heinzel_m0.orders, heinzel_m0.environment_marker FROM PUBLIC;
 
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
-GRANT pg_read_all_stats TO pillarmesh_m0_owner;
-CREATE FUNCTION pillarmesh_m0.runtime_source_read_count()
+GRANT pg_read_all_stats TO heinzel_m0_owner;
+CREATE FUNCTION heinzel_m0.runtime_source_read_count()
 RETURNS BIGINT LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = pg_catalog, public AS $$
   SELECT coalesce(sum(s.calls), 0)::bigint
   FROM public.pg_stat_statements AS s
   JOIN pg_catalog.pg_roles AS r ON r.oid = s.userid
   WHERE pg_catalog.pg_has_role(session_user, r.oid, 'MEMBER')
-    AND s.query ILIKE '%pillarmesh_m0%orders%'
+    AND s.query ILIKE '%heinzel_m0%orders%'
     AND s.query ~* '^[[:space:]]*(select|declare)'
 $$;
-REVOKE ALL ON FUNCTION pillarmesh_m0.runtime_source_read_count() FROM PUBLIC;
+REVOKE ALL ON FUNCTION heinzel_m0.runtime_source_read_count() FROM PUBLIC;
 
-CREATE ROLE pillarmesh_m0_runtime_1 LOGIN;
-CREATE ROLE pillarmesh_m0_runtime_2 LOGIN;
-CREATE ROLE pillarmesh_m0_fixture LOGIN;
+CREATE ROLE heinzel_m0_runtime_1 LOGIN;
+CREATE ROLE heinzel_m0_runtime_2 LOGIN;
+CREATE ROLE heinzel_m0_fixture LOGIN;
 GRANT CONNECT ON DATABASE M0_ACCEPTANCE_DATABASE TO
-    pillarmesh_m0_runtime_1, pillarmesh_m0_runtime_2, pillarmesh_m0_fixture;
-GRANT USAGE ON SCHEMA pillarmesh_m0 TO
-    pillarmesh_m0_runtime_1, pillarmesh_m0_runtime_2, pillarmesh_m0_fixture;
-GRANT SELECT ON pillarmesh_m0.orders TO pillarmesh_m0_runtime_1, pillarmesh_m0_runtime_2;
-GRANT SELECT ON pillarmesh_m0.environment_marker TO
-    pillarmesh_m0_runtime_1, pillarmesh_m0_runtime_2;
-GRANT EXECUTE ON FUNCTION pillarmesh_m0.runtime_source_read_count() TO
-    pillarmesh_m0_runtime_1, pillarmesh_m0_runtime_2;
-GRANT INSERT, DELETE ON pillarmesh_m0.orders TO pillarmesh_m0_fixture;
-GRANT SELECT (order_id) ON pillarmesh_m0.orders TO pillarmesh_m0_fixture;
+    heinzel_m0_runtime_1, heinzel_m0_runtime_2, heinzel_m0_fixture;
+GRANT USAGE ON SCHEMA heinzel_m0 TO
+    heinzel_m0_runtime_1, heinzel_m0_runtime_2, heinzel_m0_fixture;
+GRANT SELECT ON heinzel_m0.orders TO heinzel_m0_runtime_1, heinzel_m0_runtime_2;
+GRANT SELECT ON heinzel_m0.environment_marker TO
+    heinzel_m0_runtime_1, heinzel_m0_runtime_2;
+GRANT EXECUTE ON FUNCTION heinzel_m0.runtime_source_read_count() TO
+    heinzel_m0_runtime_1, heinzel_m0_runtime_2;
+GRANT INSERT, DELETE ON heinzel_m0.orders TO heinzel_m0_fixture;
+GRANT SELECT (order_id) ON heinzel_m0.orders TO heinzel_m0_fixture;
 ```
 
 The environment owner must configure `pg_stat_statements` in `shared_preload_libraries`, restart
@@ -145,7 +145,7 @@ referencing the dedicated source; it
 exposes no query text or row values. Catalog/marker/grant observations are allowed metadata. The
 negative gate fails if this persistent source-data-read count changes.
 
-Preflight requires `current_database()` to match `PILLARMESH_POSTGRES_DATABASE`, both that database
+Preflight requires `current_database()` to match `HEINZEL_POSTGRES_DATABASE`, both that database
 and the dedicated schema to be owned by the declared owner, and the marker row to match the derived
 environment identity. Both dedicated tables must be owner-owned base tables. The counter must be an
 owner-owned, zero-argument, SQL, `STABLE`, `BIGINT`, SECURITY DEFINER function with the exact fixed
@@ -173,10 +173,10 @@ per-run cleanup.
 The harness executes a parameterized positive probe and a parameterized privilege-denial probe:
 
 ```python
-cursor.execute("SELECT count(*) FROM pillarmesh_m0.orders WHERE order_id = %s", (-1,))
+cursor.execute("SELECT count(*) FROM heinzel_m0.orders WHERE order_id = %s", (-1,))
 cursor.execute(
     "SELECT has_schema_privilege(current_user, %s, 'USAGE')",
-    (os.environ["PILLARMESH_POSTGRES_DENIAL_SCHEMA"],),
+    (os.environ["HEINZEL_POSTGRES_DENIAL_SCHEMA"],),
 )
 assert cursor.fetchone()[0] is False
 ```
@@ -189,24 +189,24 @@ legality precondition 6 unsupported. Runtime code performs no DDL.
 
 ```sql
 USE ROLE SECURITYADMIN;
-CREATE ROLE PILLARMESH_M0_OWNER;
-CREATE ROLE PILLARMESH_M0_RUNTIME;
-GRANT ROLE PILLARMESH_M0_OWNER TO USER <PILLARMESH_M0_OWNER_USER>;
-GRANT ROLE PILLARMESH_M0_RUNTIME TO USER <OPERATOR_ONE_USER>;
-GRANT ROLE PILLARMESH_M0_RUNTIME TO USER <OPERATOR_TWO_USER>;
+CREATE ROLE HEINZEL_M0_OWNER;
+CREATE ROLE HEINZEL_M0_RUNTIME;
+GRANT ROLE HEINZEL_M0_OWNER TO USER <HEINZEL_M0_OWNER_USER>;
+GRANT ROLE HEINZEL_M0_RUNTIME TO USER <OPERATOR_ONE_USER>;
+GRANT ROLE HEINZEL_M0_RUNTIME TO USER <OPERATOR_TWO_USER>;
 USE ROLE ACCOUNTADMIN;
-GRANT CREATE DATABASE ON ACCOUNT TO ROLE PILLARMESH_M0_OWNER;
-GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE PILLARMESH_M0_OWNER;
-USE ROLE PILLARMESH_M0_OWNER;
-CREATE DATABASE PILLARMESH_M0;
-CREATE SCHEMA PILLARMESH_M0.TRANSFER;
-CREATE WAREHOUSE PILLARMESH_M0_WH WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60;
-CREATE FILE FORMAT PILLARMESH_M0.TRANSFER.M0_CSV
+GRANT CREATE DATABASE ON ACCOUNT TO ROLE HEINZEL_M0_OWNER;
+GRANT CREATE WAREHOUSE ON ACCOUNT TO ROLE HEINZEL_M0_OWNER;
+USE ROLE HEINZEL_M0_OWNER;
+CREATE DATABASE HEINZEL_M0;
+CREATE SCHEMA HEINZEL_M0.TRANSFER;
+CREATE WAREHOUSE HEINZEL_M0_WH WAREHOUSE_SIZE = XSMALL AUTO_SUSPEND = 60;
+CREATE FILE FORMAT HEINZEL_M0.TRANSFER.M0_CSV
   TYPE = CSV SKIP_HEADER = 1 FIELD_OPTIONALLY_ENCLOSED_BY = '"'
   EMPTY_FIELD_AS_NULL = FALSE;
-CREATE STAGE PILLARMESH_M0.TRANSFER.M0_STAGE
-  FILE_FORMAT = PILLARMESH_M0.TRANSFER.M0_CSV;
-CREATE TABLE PILLARMESH_M0.TRANSFER.ORDERS (
+CREATE STAGE HEINZEL_M0.TRANSFER.M0_STAGE
+  FILE_FORMAT = HEINZEL_M0.TRANSFER.M0_CSV;
+CREATE TABLE HEINZEL_M0.TRANSFER.ORDERS (
   order_id NUMBER(19,0) NOT NULL,
   customer_ref VARCHAR(65535) NOT NULL,
   amount NUMBER(18,2) NOT NULL,
@@ -215,7 +215,7 @@ CREATE TABLE PILLARMESH_M0.TRANSFER.ORDERS (
   updated_at TIMESTAMP_TZ(6) NOT NULL,
   PRIMARY KEY (order_id)
 );
-CREATE TABLE PILLARMESH_M0.TRANSFER.ORDERS_UNSUPPORTED_KEY (
+CREATE TABLE HEINZEL_M0.TRANSFER.ORDERS_UNSUPPORTED_KEY (
   order_id NUMBER(19,0) NOT NULL,
   customer_ref VARCHAR(65535) NOT NULL,
   amount NUMBER(18,2) NOT NULL,
@@ -224,13 +224,13 @@ CREATE TABLE PILLARMESH_M0.TRANSFER.ORDERS_UNSUPPORTED_KEY (
   updated_at TIMESTAMP_TZ(6) NOT NULL,
   UNIQUE (order_id)
 );
-CREATE TABLE PILLARMESH_M0.TRANSFER.COMMIT_LEDGER (
+CREATE TABLE HEINZEL_M0.TRANSFER.COMMIT_LEDGER (
   batch_id VARCHAR NOT NULL,
   manifest_digest VARCHAR(64) NOT NULL,
   committed_at TIMESTAMP_TZ NOT NULL,
   PRIMARY KEY (batch_id)
 );
-CREATE TABLE PILLARMESH_M0.TRANSFER.ENVIRONMENT_MARKER (
+CREATE TABLE HEINZEL_M0.TRANSFER.ENVIRONMENT_MARKER (
   environment_identity VARCHAR(64) NOT NULL,
   owner_user VARCHAR NOT NULL,
   owner_role VARCHAR NOT NULL,
@@ -241,42 +241,42 @@ CREATE TABLE PILLARMESH_M0.TRANSFER.ENVIRONMENT_MARKER (
 -- A separate owner-created denial database must exist. Absence is not a denial proof.
 CREATE DATABASE UNRELATED_PRIVATE;
 SHOW GRANTS ON DATABASE UNRELATED_PRIVATE;
--- Stop unless the result contains exactly one OWNERSHIP grant to PILLARMESH_M0_OWNER.
-INSERT INTO PILLARMESH_M0.TRANSFER.ENVIRONMENT_MARKER
+-- Stop unless the result contains exactly one OWNERSHIP grant to HEINZEL_M0_OWNER.
+INSERT INTO HEINZEL_M0.TRANSFER.ENVIRONMENT_MARKER
   (environment_identity, owner_user, owner_role, denial_database, denial_database_owner_role)
 VALUES
-  ('<derived-64-hex-environment-identity>', '<PILLARMESH_M0_OWNER_USER>',
-   'PILLARMESH_M0_OWNER', 'UNRELATED_PRIVATE', 'PILLARMESH_M0_OWNER');
+  ('<derived-64-hex-environment-identity>', '<HEINZEL_M0_OWNER_USER>',
+   'HEINZEL_M0_OWNER', 'UNRELATED_PRIVATE', 'HEINZEL_M0_OWNER');
 
-GRANT USAGE ON DATABASE PILLARMESH_M0 TO ROLE PILLARMESH_M0_RUNTIME;
-GRANT USAGE ON SCHEMA PILLARMESH_M0.TRANSFER TO ROLE PILLARMESH_M0_RUNTIME;
-GRANT USAGE ON WAREHOUSE PILLARMESH_M0_WH TO ROLE PILLARMESH_M0_RUNTIME;
-GRANT READ, WRITE ON STAGE PILLARMESH_M0.TRANSFER.M0_STAGE TO ROLE PILLARMESH_M0_RUNTIME;
-GRANT SELECT, INSERT, UPDATE ON TABLE PILLARMESH_M0.TRANSFER.ORDERS
-  TO ROLE PILLARMESH_M0_RUNTIME;
-GRANT SELECT ON TABLE PILLARMESH_M0.TRANSFER.ORDERS_UNSUPPORTED_KEY
-  TO ROLE PILLARMESH_M0_RUNTIME;
-GRANT SELECT, INSERT ON TABLE PILLARMESH_M0.TRANSFER.COMMIT_LEDGER
-  TO ROLE PILLARMESH_M0_RUNTIME;
-GRANT SELECT ON TABLE PILLARMESH_M0.TRANSFER.ENVIRONMENT_MARKER
-  TO ROLE PILLARMESH_M0_RUNTIME;
+GRANT USAGE ON DATABASE HEINZEL_M0 TO ROLE HEINZEL_M0_RUNTIME;
+GRANT USAGE ON SCHEMA HEINZEL_M0.TRANSFER TO ROLE HEINZEL_M0_RUNTIME;
+GRANT USAGE ON WAREHOUSE HEINZEL_M0_WH TO ROLE HEINZEL_M0_RUNTIME;
+GRANT READ, WRITE ON STAGE HEINZEL_M0.TRANSFER.M0_STAGE TO ROLE HEINZEL_M0_RUNTIME;
+GRANT SELECT, INSERT, UPDATE ON TABLE HEINZEL_M0.TRANSFER.ORDERS
+  TO ROLE HEINZEL_M0_RUNTIME;
+GRANT SELECT ON TABLE HEINZEL_M0.TRANSFER.ORDERS_UNSUPPORTED_KEY
+  TO ROLE HEINZEL_M0_RUNTIME;
+GRANT SELECT, INSERT ON TABLE HEINZEL_M0.TRANSFER.COMMIT_LEDGER
+  TO ROLE HEINZEL_M0_RUNTIME;
+GRANT SELECT ON TABLE HEINZEL_M0.TRANSFER.ENVIRONMENT_MARKER
+  TO ROLE HEINZEL_M0_RUNTIME;
 ```
 
-Run `SHOW GRANTS TO USER <PILLARMESH_M0_OWNER_USER>` as the owner/security administrator and stop
-unless it shows `PILLARMESH_M0_OWNER`. Transfer ownership of the dedicated database, schema,
+Run `SHOW GRANTS TO USER <HEINZEL_M0_OWNER_USER>` as the owner/security administrator and stop
+unless it shows `HEINZEL_M0_OWNER`. Transfer ownership of the dedicated database, schema,
 warehouse, file format, stage, target tables, commit ledger, environment marker, and denial database
-to `PILLARMESH_M0_OWNER` before granting runtime access. Insert the marker only after those owner
+to `HEINZEL_M0_OWNER` before granting runtime access. Insert the marker only after those owner
 checks. Because the marker table is owner-owned and runtime has SELECT only, its exact owner-user,
 owner-role, denial-database ownership assertion, and environment-identity row is the owner-created
 attestation consumed by preflight.
 
 Preflight checks `CURRENT_ACCOUNT_NAME()` and the stable account locator returned by
-`CURRENT_ACCOUNT()`, accepting `PILLARMESH_SNOWFLAKE_ACCOUNT` only when it matches one of them. It
+`CURRENT_ACCOUNT()`, accepting `HEINZEL_SNOWFLAKE_ACCOUNT` only when it matches one of them. It
 also checks `CURRENT_ROLE()`, the runtime user's sole explicit role, each fixed object kind, exact
 ownership/grants, and the owner-created marker. Runtime must retain query-history visibility for
-its own `pillarmesh-m0` tagged statements so replay and negative gates compare persistent tagged
+its own `heinzel-authoring` tagged statements so replay and negative gates compare persistent tagged
 stage/target/ledger mutation and data-query counters. Harness observations use the distinct
-`pillarmesh-m0-acceptance-observer` tag. Only the three exact compiler metadata query shapes for
+`heinzel-acceptance-observer` tag. Only the three exact compiler metadata query shapes for
 table type, columns, and key constraints are allowlisted; a broad `INFORMATION_SCHEMA` query is a
 forbidden product data query.
 
@@ -285,14 +285,14 @@ qualified object through `IDENTIFIER(%s)`:
 
 ```python
 cursor.execute(
-    "SELECT count(*) FROM PILLARMESH_M0.TRANSFER.ORDERS WHERE order_id = %s",
+    "SELECT count(*) FROM HEINZEL_M0.TRANSFER.ORDERS WHERE order_id = %s",
     (acceptance_key,),
 )
 cursor.execute("SELECT count(*) FROM IDENTIFIER(%s)", (denied_catalog_object,))
 ```
 
 The second statement must fail with SQLSTATE `42501` for the already owner-verified
-`PILLARMESH_SNOWFLAKE_DENIAL_DATABASE`. Any other error is inconclusive. Verify the role also cannot
+`HEINZEL_SNOWFLAKE_DENIAL_DATABASE`. Any other error is inconclusive. Verify the role also cannot
 create objects, alter grants, administer the account, or query any unrelated database.
 
 ## Signing and two operator shells
@@ -305,20 +305,20 @@ Use different local values in the two shells:
 
 ```sh
 # Operator 1
-export PILLARMESH_OPERATOR_PSEUDONYM=operator-one
-export PILLARMESH_STATE_PATH=/absolute/private/operator-one/state.db
-export PILLARMESH_OUTPUT_DIR=/absolute/private/operator-one/output
-export PILLARMESH_CLEANUP_LEDGER_PATH=/absolute/private/operator-one/cleanup-ledger.json
-export PILLARMESH_LIVE_DIAGNOSTIC_LEDGER_DIR=/absolute/private/operator-one/live-ledgers
-export PILLARMESH_SIGNING_KEY_ID=operator-one-key
+export HEINZEL_OPERATOR_PSEUDONYM=operator-one
+export HEINZEL_STATE_PATH=/absolute/private/operator-one/state.db
+export HEINZEL_OUTPUT_DIR=/absolute/private/operator-one/output
+export HEINZEL_CLEANUP_LEDGER_PATH=/absolute/private/operator-one/cleanup-ledger.json
+export HEINZEL_LIVE_DIAGNOSTIC_LEDGER_DIR=/absolute/private/operator-one/live-ledgers
+export HEINZEL_SIGNING_KEY_ID=operator-one-key
 
 # Operator 2, in a clean checkout and an independent secret-injection session
-export PILLARMESH_OPERATOR_PSEUDONYM=operator-two
-export PILLARMESH_STATE_PATH=/absolute/private/operator-two/state.db
-export PILLARMESH_OUTPUT_DIR=/absolute/private/operator-two/output
-export PILLARMESH_CLEANUP_LEDGER_PATH=/absolute/private/operator-two/cleanup-ledger.json
-export PILLARMESH_LIVE_DIAGNOSTIC_LEDGER_DIR=/absolute/private/operator-two/live-ledgers
-export PILLARMESH_SIGNING_KEY_ID=operator-two-key
+export HEINZEL_OPERATOR_PSEUDONYM=operator-two
+export HEINZEL_STATE_PATH=/absolute/private/operator-two/state.db
+export HEINZEL_OUTPUT_DIR=/absolute/private/operator-two/output
+export HEINZEL_CLEANUP_LEDGER_PATH=/absolute/private/operator-two/cleanup-ledger.json
+export HEINZEL_LIVE_DIAGNOSTIC_LEDGER_DIR=/absolute/private/operator-two/live-ledgers
+export HEINZEL_SIGNING_KEY_ID=operator-two-key
 ```
 
 The PostgreSQL runtime principal, Snowflake user, signing key, state path, output path, and cleanup

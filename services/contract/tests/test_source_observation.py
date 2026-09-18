@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import (
     SourceFreshnessObservation,
     SourceObservation,
     SQLiteSourceFreshnessObservationRepository,

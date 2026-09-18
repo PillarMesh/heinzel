@@ -6,7 +6,7 @@ Accepted on 2026-09-11.
 
 ## Context
 
-PillarMesh must compile certified dashboards from approved data-product and semantic versions while
+Heinzel must compile certified dashboards from approved data-product and semantic versions while
 Apache Superset owns rendering, layout, exploration, and export. Superset object identifiers are
 disposable, display titles are mutable, and remote responses can be lost after an effect commits.
 Treating the console, request service, or Superset as dashboard authority would make replay and

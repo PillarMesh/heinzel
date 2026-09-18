@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from pillarmesh_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
+from heinzel_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
 
 from services.runtime.tests.test_acquisition import _intent, _runner
 

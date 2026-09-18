@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import (
     AnswerIntentCandidate,
     AnswerIntentValidation,
     AnswerQuestionIntent,
@@ -17,7 +17,7 @@ from pillarmesh_request_management import (
     TimeWindowCandidate,
     validate_answer_intent,
 )
-from pillarmesh_request_management.answer_models import AnswerProductGenerationReference
+from heinzel_request_management.answer_models import AnswerProductGenerationReference
 
 NOW = datetime(2026, 9, 11, 18, 0, tzinfo=UTC)
 DIGEST = "a" * 64

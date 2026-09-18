@@ -8,12 +8,12 @@ from typing import Literal
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_compiler import GovernedQueryPlan
-from pillarmesh_compiler.query_repository import SQLiteQueryPlanRepository
-from pillarmesh_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_request_management import (
+from heinzel_compiler import GovernedQueryPlan
+from heinzel_compiler.query_repository import SQLiteQueryPlanRepository
+from heinzel_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
+from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
+from heinzel_provider_sdk import ProviderError
+from heinzel_request_management import (
     AnswerDeliveryAuthorization,
     ExecuteGovernedAnswerWorkflowCommand,
     GovernedAnswerDeliveryAuthorizationUnavailable,
@@ -40,8 +40,8 @@ from pillarmesh_request_management import (
     WorkflowIncidentProjectionDeferred,
     WorkflowIncidentProjector,
 )
-from pillarmesh_request_management.answer_admission import PolicyScanReservation
-from pillarmesh_runtime import (
+from heinzel_request_management.answer_admission import PolicyScanReservation
+from heinzel_runtime import (
     AnswerExecutionAuthorization,
     AnswerExecutionIncidentProjector,
     AnswerExecutionReceipt,
@@ -53,9 +53,9 @@ from pillarmesh_runtime import (
     ReadOnlyAnswerQuery,
     SQLiteAnswerResultStore,
 )
-from pillarmesh_runtime.answer_models import AnswerQueryValue
-from pillarmesh_runtime.query_execution import GovernedQueryExecutor
-from pillarmesh_state import SQLiteIncidentRepository
+from heinzel_runtime.answer_models import AnswerQueryValue
+from heinzel_runtime.query_execution import GovernedQueryExecutor
+from heinzel_state import SQLiteIncidentRepository
 
 NOW = datetime(2026, 9, 12, 8, tzinfo=UTC)
 TENANT = "tenant-a"

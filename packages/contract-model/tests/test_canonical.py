@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
+from heinzel_contract_model import canonical_bytes, digest
 
 
 def test_canonical_bytes_normalize_domain_scalars() -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_provider_sdk.access import (
+from heinzel_provider_sdk.access import (
     AccessEffectCommand,
     AccessEffectProviderError,
     AccessEffectResult,

@@ -5,8 +5,8 @@ from decimal import Decimal
 from typing import Any, Literal, cast
 
 import pytest
-from pillarmesh_access_control import CurrentEntitlementSnapshot, EntitlementFilterDomain
-from pillarmesh_context_exposure import (
+from heinzel_access_control import CurrentEntitlementSnapshot, EntitlementFilterDomain
+from heinzel_context_exposure import (
     AgentAccessDenied,
     AgentAnswer,
     AgentAnswerColumn,
@@ -35,8 +35,8 @@ from pillarmesh_context_exposure import (
     ReplyToClarificationCommand,
     SearchCatalogQuery,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import AnswerScopePolicy, FilterDomain
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import AnswerScopePolicy, FilterDomain
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
 TENANT = "tenant-a"

@@ -6,15 +6,15 @@ from datetime import UTC, datetime
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import (
     AcquisitionAcknowledgement,
     LandReceipt,
     RawGenerationTarget,
     raw_generation_key,
 )
-from pillarmesh_runtime.generation_ledger import GenerationLedger
-from pillarmesh_runtime.product_input_cardinality import (
+from heinzel_runtime.generation_ledger import GenerationLedger
+from heinzel_runtime.product_input_cardinality import (
     ProductInputCardinalityAuthorityError,
     ProductInputCardinalityEvidence,
     ProductInputCardinalityEvidenceCorruptError,

@@ -6,7 +6,7 @@
 > defines current product scope. See the
 > [managed data engineering platform addendum](../architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md).
 
-This opt-in test runs the real PillarMesh Snowflake provider against a local LocalStack Snowflake
+This opt-in test runs the real Heinzel Snowflake provider against a local LocalStack Snowflake
 emulator. It exercises schema observation, staged CSV upload, transactional merge and commit-ledger
 write, independent visibility verification, and idempotent replay. It does not change production
 provider configuration or the 35-variable M0 acceptance contract.
@@ -47,12 +47,12 @@ under `tests/emulators`.
 For diagnosis, run the same steps manually and inspect logs before teardown:
 
 ```sh
-project="pillarmesh-m0-localstack-manual-$$"
+project="heinzel-localstack-manual-$$"
 docker compose --project-name "$project" \
   -f tests/emulators/localstack-snowflake/compose.yaml up --detach --wait
 env -u LOCALSTACK_AUTH_TOKEN -u VIRTUAL_ENV \
   uv run python tests/emulators/localstack-snowflake/wait_ready.py
-env -u LOCALSTACK_AUTH_TOKEN -u VIRTUAL_ENV PILLARMESH_LOCALSTACK_SNOWFLAKE=1 \
+env -u LOCALSTACK_AUTH_TOKEN -u VIRTUAL_ENV HEINZEL_LOCALSTACK_SNOWFLAKE=1 \
   uv run pytest -m emulator tests/emulators/test_localstack_snowflake.py -q
 docker compose --project-name "$project" \
   -f tests/emulators/localstack-snowflake/compose.yaml logs snowflake

@@ -8,20 +8,20 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_dbt_adapter import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtDecimalMagnitudeCheck,
     SignedCompiledDbtModel,
     compiled_dbt_model_signing_bytes,
 )
-from pillarmesh_provider_postgresql.answer_generation import (
+from heinzel_provider_postgresql.answer_generation import (
     PostgreSQLAnswerGenerationAuthority,
 )
-from pillarmesh_provider_postgresql.answer_query import PostgreSQLAnswerGenerationBinding
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import AnswerQueryReference, ProductMaterializationReceipt
-from pillarmesh_semantic_registry import (
+from heinzel_provider_postgresql.answer_query import PostgreSQLAnswerGenerationBinding
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import AnswerQueryReference, ProductMaterializationReceipt
+from heinzel_semantic_registry import (
     ApprovedProductQueryBinding,
     ProductQueryBindingApproval,
     ProductQueryBindingDeclaration,
@@ -149,7 +149,7 @@ def _binding(
         version=receipt.product_generation,
         digest=digest(
             {
-                "domain": "pillarmesh-product-query-consumption-v1",
+                "domain": "heinzel-product-query-consumption-v1",
                 "tenant_id": receipt.tenant_id,
                 "product_ref": product_ref,
                 "generation": receipt.product_generation,

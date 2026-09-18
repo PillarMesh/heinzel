@@ -5,14 +5,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pillarmesh_connection_broker import (
+from heinzel_connection_broker import (
     PrivateSourceCapability,
     SourceConnectionBinding,
     SourceConnectionBindingState,
     SQLiteSourceBindingRepository,
 )
-from pillarmesh_contract_model import canonical_bytes
-from pillarmesh_runtime import (
+from heinzel_contract_model import canonical_bytes
+from heinzel_runtime import (
     AcquisitionAuthorizationError,
     AcquisitionIntegrityError,
     AcquisitionTransientError,

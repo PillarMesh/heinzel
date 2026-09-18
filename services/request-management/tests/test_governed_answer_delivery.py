@@ -4,8 +4,8 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
+from heinzel_request_management import (
     AnswerAdmissionEvidence,
     AnswerDeliveryAuthorization,
     AnswerExecutionEvidence,
@@ -32,7 +32,7 @@ from pillarmesh_request_management import (
     StakeholderAnswerDraft,
     StakeholderQuestion,
 )
-from pillarmesh_request_management.answer_admission import PolicyScanReservation
+from heinzel_request_management.answer_admission import PolicyScanReservation
 
 NOW = datetime(2026, 9, 11, 12, tzinfo=UTC)
 DIGEST = "0" * 64

@@ -5,13 +5,13 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from pillarmesh_provider_clickhouse import (
+from heinzel_provider_clickhouse import (
     ClickHouseAccessColumnBinding,
     ClickHouseAccessEffectProvider,
     ClickHouseAccessSettings,
     ClickHouseAccessTarget,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     AccessEffectCommand,
     AccessEffectProviderError,
     run_access_provider_conformance,

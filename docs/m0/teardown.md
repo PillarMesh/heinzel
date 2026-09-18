@@ -51,19 +51,19 @@ bind values; no raw key belongs in a command argument or transcript:
 
 ```python
 fixture_postgres_cursor.execute(
-    "DELETE FROM pillarmesh_m0.orders WHERE order_id = %s",
+    "DELETE FROM heinzel_m0.orders WHERE order_id = %s",
     (acceptance_key,),
 )
 runtime_postgres_cursor.execute(
-    "SELECT count(*) FROM pillarmesh_m0.orders WHERE order_id = %s",
+    "SELECT count(*) FROM heinzel_m0.orders WHERE order_id = %s",
     (acceptance_key,),
 )
 snowflake_cursor.execute(
-    "SELECT count(*) FROM PILLARMESH_M0.TRANSFER.ORDERS WHERE order_id = %s",
+    "SELECT count(*) FROM HEINZEL_M0.TRANSFER.ORDERS WHERE order_id = %s",
     (acceptance_key,),
 )
 snowflake_cursor.execute(
-    "SELECT count(*) FROM PILLARMESH_M0.TRANSFER.COMMIT_LEDGER WHERE batch_id = %s",
+    "SELECT count(*) FROM HEINZEL_M0.TRANSFER.COMMIT_LEDGER WHERE batch_id = %s",
     (batch_id,),
 )
 ```

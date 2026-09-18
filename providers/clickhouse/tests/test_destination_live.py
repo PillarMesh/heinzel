@@ -10,12 +10,12 @@ from collections.abc import Iterator
 
 import httpx
 import pytest
-from pillarmesh_provider_clickhouse.destination import (
+from heinzel_provider_clickhouse.destination import (
     ClickHouseDestinationProvider,
     ClickHouseLandStore,
     ClickHouseLandStoreSettings,
 )
-from pillarmesh_provider_sdk.destination_conformance import destination_segment, destination_target
+from heinzel_provider_sdk.destination_conformance import destination_segment, destination_target
 
 _IMAGE = (
     "clickhouse/clickhouse-server:25.8.32.4@"
@@ -32,15 +32,15 @@ def _available_loopback_port() -> int:
 pytestmark = [
     pytest.mark.emulator,
     pytest.mark.skipif(
-        os.environ.get("PILLARMESH_RUN_DESTINATION_EMULATORS") != "1",
-        reason="set PILLARMESH_RUN_DESTINATION_EMULATORS=1",
+        os.environ.get("HEINZEL_RUN_DESTINATION_EMULATORS") != "1",
+        reason="set HEINZEL_RUN_DESTINATION_EMULATORS=1",
     ),
 ]
 
 
 @pytest.fixture
 def clickhouse_settings() -> Iterator[ClickHouseLandStoreSettings]:
-    name = f"pillarmesh-land-ch-{uuid.uuid4().hex[:12]}"
+    name = f"heinzel-land-ch-{uuid.uuid4().hex[:12]}"
     password = f"destination-{uuid.uuid4().hex}"
     port = _available_loopback_port()
     subprocess.run(

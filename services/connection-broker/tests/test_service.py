@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pillarmesh_connection_broker import (
+from heinzel_connection_broker import (
     PrivateSourceCapability,
     SourceBindingBoundaryError,
     SourceBindingNotFoundError,
@@ -16,7 +16,7 @@ from pillarmesh_connection_broker import (
     SQLiteSourceBindingRepository,
     StaleSourceBindingRevisionError,
 )
-from pillarmesh_contract_model import canonical_bytes
+from heinzel_contract_model import canonical_bytes
 
 NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 
@@ -150,7 +150,7 @@ def create(control: SourceBindingService) -> SourceConnectionBinding:
 def test_create_assigns_the_canonical_opaque_binding_identity() -> None:
     draft = create(service())
 
-    assert draft.binding_id == "src-ab336d8316d875fcd8ba04ec"
+    assert draft.binding_id == "src-90308c8b9bb36cb043cd04db"
 
 
 def test_ready_requires_matching_positive_and_denied_probe_evidence() -> None:

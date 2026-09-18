@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     AccessPolicy,
     ArtifactReference,
     ContractFormationInput,
@@ -16,7 +16,7 @@ from pillarmesh_contract_model import (
     Unknown,
     digest,
 )
-from pillarmesh_contract_service import IntegrationContractFormationService
+from heinzel_contract_service import IntegrationContractFormationService
 
 from .test_formation_governance import _Loader, _semantic_version
 

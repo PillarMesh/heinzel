@@ -1,24 +1,24 @@
 [project]
-name = "pillarmesh-evidence"
+name = "heinzel-evidence"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
-  "pillarmesh-compiler",
-  "pillarmesh-contract-model",
-  "pillarmesh-execution-graph",
-  "pillarmesh-iir",
-  "pillarmesh-provider-sdk",
-  "pillarmesh-request-management",
+  "heinzel-compiler",
+  "heinzel-contract-model",
+  "heinzel-execution-graph",
+  "heinzel-iir",
+  "heinzel-provider-sdk",
+  "heinzel-request-management",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
-pillarmesh-compiler = { workspace = true }
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-execution-graph = { workspace = true }
-pillarmesh-iir = { workspace = true }
-pillarmesh-provider-sdk = { workspace = true }
-pillarmesh-request-management = { workspace = true }
+heinzel-compiler = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-execution-graph = { workspace = true }
+heinzel-iir = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-request-management = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

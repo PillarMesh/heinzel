@@ -3,13 +3,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pillarmesh_console.contracts import ConsoleApiSchema
-from pillarmesh_console.schema import canonical_schema_json, console_api_schema
+from heinzel_console.contracts import ConsoleApiSchema
+from heinzel_console.schema import canonical_schema_json, console_api_schema
 
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 _SCHEMA_PATH = _REPOSITORY_ROOT / "apps/console/schema/console-api-v1.json"
-_ENVELOPE_MARKER = "x-pillarmesh-console-envelope"
-_EVIDENCE_POLICY_MARKER = "x-pillarmesh-fixture-evidence-policy"
+_ENVELOPE_MARKER = "x-heinzel-console-envelope"
+_EVIDENCE_POLICY_MARKER = "x-heinzel-fixture-evidence-policy"
 
 
 def _raw_console_api_schema() -> dict[str, object]:

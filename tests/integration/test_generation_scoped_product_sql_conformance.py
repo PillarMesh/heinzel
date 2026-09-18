@@ -15,10 +15,10 @@ from typing import Literal, cast
 import httpx
 import psycopg
 import pytest
-from pillarmesh_compiler.clickhouse_sql import emit_generation_scoped_clickhouse
-from pillarmesh_compiler.postgresql_sql import emit_generation_scoped_postgresql
-from pillarmesh_execution_graph import GenerationScopedProductSource, ProductJsonFieldBinding
-from pillarmesh_iir import (
+from heinzel_compiler.clickhouse_sql import emit_generation_scoped_clickhouse
+from heinzel_compiler.postgresql_sql import emit_generation_scoped_postgresql
+from heinzel_execution_graph import GenerationScopedProductSource, ProductJsonFieldBinding
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ColumnDeclaration,
@@ -45,7 +45,7 @@ _CLICKHOUSE_IMAGE = (
     "clickhouse/clickhouse-server:25.8.32.4@"
     "sha256:7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0"
 )
-_RUN_LIVE = os.environ.get("PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
+_RUN_LIVE = os.environ.get("HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
 
 
 def _fixture() -> dict[str, object]:
@@ -188,7 +188,7 @@ def _available_port() -> int:
 
 @contextmanager
 def _postgresql() -> Iterator[str]:
-    name = f"pillarmesh-product-sql-pg-{uuid.uuid4().hex[:12]}"
+    name = f"heinzel-product-sql-pg-{uuid.uuid4().hex[:12]}"
     password = f"postgres-{uuid.uuid4().hex}"
     port = _available_port()
     subprocess.run(
@@ -229,7 +229,7 @@ def _postgresql() -> Iterator[str]:
 
 @contextmanager
 def _clickhouse() -> Iterator[tuple[str, tuple[str, str]]]:
-    name = f"pillarmesh-product-sql-ch-{uuid.uuid4().hex[:12]}"
+    name = f"heinzel-product-sql-ch-{uuid.uuid4().hex[:12]}"
     password = f"clickhouse-{uuid.uuid4().hex}"
     port = _available_port()
     subprocess.run(
@@ -286,7 +286,7 @@ def _decimal_text(value: object) -> str:
 
 @pytest.mark.live
 @pytest.mark.emulator
-@pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1")
+@pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1")
 def test_pinned_postgresql_generation_json_conformance() -> None:
     with _postgresql() as dsn, psycopg.connect(dsn) as connection:
         connection.execute("CREATE SCHEMA raw")
@@ -329,7 +329,7 @@ def test_pinned_postgresql_generation_json_conformance() -> None:
 
 @pytest.mark.live
 @pytest.mark.emulator
-@pytest.mark.skipif(not _RUN_LIVE, reason="set PILLARMESH_RUN_PRODUCT_SQL_CONFORMANCE=1")
+@pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1")
 def test_pinned_clickhouse_generation_json_conformance() -> None:
     with _clickhouse() as (endpoint, auth):
         for statement in (

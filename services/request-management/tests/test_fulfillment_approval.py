@@ -5,8 +5,8 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import digest
+from heinzel_request_management import (
     DecisionKind,
     FulfillmentService,
     RequestState,

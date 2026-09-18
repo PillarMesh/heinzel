@@ -4,15 +4,15 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import (
     CommitObservation,
     LandReceipt,
     ProviderError,
     raw_generation_key,
 )
-from pillarmesh_provider_sdk.destination_conformance import destination_segment, destination_target
-from pillarmesh_runtime import GenerationLedger, LandingRunner
+from heinzel_provider_sdk.destination_conformance import destination_segment, destination_target
+from heinzel_runtime import GenerationLedger, LandingRunner
 
 _NOW = datetime(2026, 9, 11, 12, tzinfo=UTC)
 

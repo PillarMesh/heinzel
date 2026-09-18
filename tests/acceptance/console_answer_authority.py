@@ -4,14 +4,14 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
 
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     CurrentEntitlementResolver,
     CurrentEntitlementSnapshot,
     EntitlementResolutionDenied,
 )
-from pillarmesh_compiler import GovernedQueryPlan, ProductGenerationReference
-from pillarmesh_contract_model import ArtifactModel, ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_compiler import GovernedQueryPlan, ProductGenerationReference
+from heinzel_contract_model import ArtifactModel, ArtifactReference, digest
+from heinzel_request_management import (
     AnswerDeliveryAuthorization,
     AnswerIntentValidation,
     AnswerProductGenerationReference,
@@ -27,7 +27,7 @@ from pillarmesh_request_management import (
     RequestState,
     StakeholderQuestion,
 )
-from pillarmesh_runtime import AnswerExecutionAuthorization
+from heinzel_runtime import AnswerExecutionAuthorization
 from pydantic import ConfigDict, Field, field_validator
 
 

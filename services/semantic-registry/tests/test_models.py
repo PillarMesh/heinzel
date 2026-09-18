@@ -6,10 +6,10 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import get_args, get_type_hints
 
-import pillarmesh_semantic_registry as semantic_registry
+import heinzel_semantic_registry as semantic_registry
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_semantic_registry import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_semantic_registry import (
     CandidateKind,
     CandidateProvenance,
     SemanticCandidate,
@@ -30,7 +30,7 @@ def candidate_set_payload() -> dict[str, object]:
         "package_version": 1,
         "original_digest": "a" * 64,
         "manifest_digest": "b" * 64,
-        "extractor_id": "pillarmesh-bounded-markdown",
+        "extractor_id": "heinzel-bounded-markdown",
         "extractor_version": "1.0.0",
         "candidates": (
             SemanticCandidate(
@@ -124,7 +124,7 @@ def semantic_annotation_private_types(annotation: object) -> tuple[type[object],
     private_types: list[type[object]] = []
     if (
         isinstance(annotation, type)
-        and annotation.__module__.startswith("pillarmesh_semantic_registry")
+        and annotation.__module__.startswith("heinzel_semantic_registry")
         and annotation.__name__.startswith("_")
     ):
         private_types.append(annotation)

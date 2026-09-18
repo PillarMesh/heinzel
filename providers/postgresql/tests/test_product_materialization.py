@@ -6,28 +6,28 @@ from typing import cast
 
 import psycopg
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_dbt_adapter import (
+from heinzel_contract_model import digest
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtDecimalMagnitudeCheck,
     DbtInvocationReceipt,
     DbtInvoker,
     SignedCompiledDbtModel,
 )
-from pillarmesh_execution_graph import (
+from heinzel_execution_graph import (
     Decimal57OutputCheck,
     GenerationScopedProductSource,
     ProductJsonFieldBinding,
     ProductPhysicalPlan,
     ProductTarget,
 )
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLMaterializationSettings,
     PostgreSQLMaterializationWarehouse,
     PostgreSQLProductGenerationAuthority,
 )
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import (
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import (
     AnswerProductGenerationReference,
     AnswerQueryReference,
     MaterializationRequest,
@@ -644,7 +644,7 @@ def test_signed_decimal_magnitude_check_accepts_exact_boundary_inside_values() -
     assert magnitude_parameters == (Decimal("-1e48"), Decimal("1e48"))
     assert observation.provider_commit_reference == digest(
         {
-            "domain": "pillarmesh-postgresql-product-generation-v1",
+            "domain": "heinzel-postgresql-product-generation-v1",
             "tenant_id": "tenant-a",
             "product_id": "orders",
             "product_revision": 1,

@@ -6,25 +6,25 @@
 
 ## Context
 
-Addendum v0.1 §12.1 makes PillarMesh the authority that generates, tests, versions, and deploys transformation models, and says the MVP exports a dbt-compatible project representation. It does not state what language the compiler emits or what semantic target the compiler reasons against. That gap allows three incompatible readings — a PillarMesh transformation DSL, general SQL, or a distributed engine plan — and each implies a different multi-year commitment.
+Addendum v0.1 §12.1 makes Heinzel the authority that generates, tests, versions, and deploys transformation models, and says the MVP exports a dbt-compatible project representation. It does not state what language the compiler emits or what semantic target the compiler reasons against. That gap allows three incompatible readings — a Heinzel transformation DSL, general SQL, or a distributed engine plan — and each implies a different multi-year commitment.
 
 Three concerns are routinely conflated. The authoring surface and the internal representation are already settled by EDC v0.3: the human declares an Integration Contract and the compiler owns the semantic IIR. Only the emitted artifact is open.
 
 Two constraints bear on the choice. EDC v0.3's thesis requires proving that a physical plan produces only histories the contract allows, which is undecidable for arbitrary SQL — three-valued logic, implicit casts, collation-dependent comparison, non-deterministic functions, and window-frame semantics all defeat it. Separately, Addendum §6.1 offers both PostgreSQL and ClickHouse, whose dialects diverge silently on null handling, precision, collation, locale, and timezone.
 
-Because PillarMesh generates transformations, no human writes transformation code in the normal path. The ergonomic case for a DSL therefore has almost no user, while Addendum §12.1's requirement that a human approve generated output where meaning changes argues directly for an artifact the data engineer already reads.
+Because Heinzel generates transformations, no human writes transformation code in the normal path. The ergonomic case for a DSL therefore has almost no user, while Addendum §12.1's requirement that a human approve generated output where meaning changes argues directly for an artifact the data engineer already reads.
 
 ## Decision
 
 The compiler lowers the semantic IIR to a **restricted SQL subset**, emitted per engine, executed by the warehouse, and run and observed through the dbt adapter.
 
-PillarMesh does not build a user-facing transformation language.
+Heinzel does not build a user-facing transformation language.
 
 The emittable constructs form a declared, versioned allowlist. Each construct has semantics pinned separately for PostgreSQL and ClickHouse across the D1-D8 equivalence dimensions. The allowlist is governed exactly as the legality rule table is: curated, sound but deliberately incomplete, and expanded only with a reviewed proof note, positive and negative per-engine conformance fixtures, and an independent reviewer. A construct outside the allowlist produces `No Valid Plan` with a counterfactual naming the missing construct.
 
 The compiler never parses SQL it did not generate. Analyzability comes from constraining emission, not from analyzing an arbitrary input language.
 
-PillarMesh does not compile to Spark. The decisive reason is that warehouse SQL semantics are unavoidable regardless — Superset queries the warehouse (§16.1), the integrity layers live there (§12.2), and continuous constraints are evaluated there (§12.3) — so a Spark target would add a third semantic target rather than retire one. Compiling to Spark also moves resident data out over JDBC and back, does not improve the legality proof because Catalyst's rewrites determine what runs, and produces artifacts that are harder to review than SQL.
+Heinzel does not compile to Spark. The decisive reason is that warehouse SQL semantics are unavoidable regardless — Superset queries the warehouse (§16.1), the integrity layers live there (§12.2), and continuous constraints are evaluated there (§12.3) — so a Spark target would add a third semantic target rather than retire one. Compiling to Spark also moves resident data out over JDBC and back, does not improve the legality proof because Catalyst's rewrites determine what runs, and produces artifacts that are harder to review than SQL.
 
 ## Consequences
 

@@ -4,9 +4,9 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-from pillarmesh_authoring_mcp.cli import run_cli
-from pillarmesh_authoring_mcp.mcp_server import build_server
-from pillarmesh_authoring_mcp.settings import AppSettings
+from heinzel_authoring_mcp.cli import run_cli
+from heinzel_authoring_mcp.mcp_server import build_server
+from heinzel_authoring_mcp.settings import AppSettings
 
 
 class FakeApplication:

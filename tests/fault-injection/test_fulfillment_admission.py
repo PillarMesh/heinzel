@@ -4,7 +4,7 @@ import runpy
 from pathlib import Path
 
 import pytest
-from pillarmesh_request_management import FulfillmentIntegrityError, RequestState
+from heinzel_request_management import FulfillmentIntegrityError, RequestState
 
 _SUPPORT = runpy.run_path(
     str(

@@ -5,13 +5,13 @@ from decimal import Decimal
 
 import psycopg
 import pytest
-from pillarmesh_compiler import ProductGenerationReference, QueryEstimateRequest, QueryReference
-from pillarmesh_compiler.sql_models import SqlParameter
-from pillarmesh_provider_postgresql.query_estimator import (
+from heinzel_compiler import ProductGenerationReference, QueryEstimateRequest, QueryReference
+from heinzel_compiler.sql_models import SqlParameter
+from heinzel_provider_postgresql.query_estimator import (
     PostgreSQLQueryEstimator,
     PostgreSQLQueryEstimatorSettings,
 )
-from pillarmesh_provider_sdk import ProviderError
+from heinzel_provider_sdk import ProviderError
 from pydantic import SecretStr, ValidationError
 
 STATEMENT = (

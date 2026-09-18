@@ -1,44 +1,44 @@
 [project]
-name = "pillarmesh-runtime"
+name = "heinzel-runtime"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
-  "pillarmesh-connection-broker",
-  "pillarmesh-catalog-control",
-  "pillarmesh-contract-model",
-  "pillarmesh-contract-service",
-  "pillarmesh-evidence",
-  "pillarmesh-execution-graph",
-  "pillarmesh-provider-sdk",
-  "pillarmesh-semantic-registry",
-  "pillarmesh-state",
-  "pillarmesh-trigger",
-  "pillarmesh-warehouse-control",
+  "heinzel-connection-broker",
+  "heinzel-catalog-control",
+  "heinzel-contract-model",
+  "heinzel-contract-service",
+  "heinzel-evidence",
+  "heinzel-execution-graph",
+  "heinzel-provider-sdk",
+  "heinzel-semantic-registry",
+  "heinzel-state",
+  "heinzel-trigger",
+  "heinzel-warehouse-control",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
-pillarmesh-catalog-control = { workspace = true }
-pillarmesh-connection-broker = { workspace = true }
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-contract-service = { workspace = true }
-pillarmesh-evidence = { workspace = true }
-pillarmesh-execution-graph = { workspace = true }
-pillarmesh-provider-sdk = { workspace = true }
-pillarmesh-semantic-registry = { workspace = true }
-pillarmesh-state = { workspace = true }
-pillarmesh-trigger = { workspace = true }
-pillarmesh-warehouse-control = { workspace = true }
+heinzel-catalog-control = { workspace = true }
+heinzel-connection-broker = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-contract-service = { workspace = true }
+heinzel-evidence = { workspace = true }
+heinzel-execution-graph = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-semantic-registry = { workspace = true }
+heinzel-state = { workspace = true }
+heinzel-trigger = { workspace = true }
+heinzel-warehouse-control = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.mutmut]
-source_paths = ["src/pillarmesh_runtime"]
+source_paths = ["src/heinzel_runtime"]
 only_mutate = [
-  "src/pillarmesh_runtime/acquisition.py",
-  "src/pillarmesh_runtime/acquisition_errors.py",
+  "src/heinzel_runtime/acquisition.py",
+  "src/heinzel_runtime/acquisition_errors.py",
 ]
 also_copy = ["tests"]
 pytest_add_cli_args = ["--import-mode=prepend"]

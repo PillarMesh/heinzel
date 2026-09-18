@@ -4,7 +4,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-from pillarmesh_catalog_control import (
+from heinzel_catalog_control import (
     CatalogBinding,
     CatalogBindingState,
     CatalogControlService,
@@ -12,7 +12,7 @@ from pillarmesh_catalog_control import (
     CatalogValidationEvidence,
     SQLiteCatalogRepository,
 )
-from pillarmesh_catalog_control import repository as repository_module
+from heinzel_catalog_control import repository as repository_module
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 19, 12, tzinfo=UTC)

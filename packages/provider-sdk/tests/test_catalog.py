@@ -3,8 +3,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_provider_sdk import (
     CatalogColumn,
     CatalogLineageSource,
     CatalogNativeTableDefinition,
@@ -140,7 +140,7 @@ def _warehouse(**changes: object) -> CatalogWarehouseHierarchyAuthority:
         "database_service_name": catalog_warehouse_service_external_key(
             tenant_id=tenant_id, warehouse_binding_id=binding_id
         ),
-        "database_name": "pillarmesh",
+        "database_name": "heinzel",
         "schema_name": "analytics",
         "table_name": "revenue_by_region",
     }
@@ -154,7 +154,7 @@ def test_native_catalog_table_binds_product_to_exact_warehouse_hierarchy() -> No
         definition=table,
         definition_digest=digest(table),
         table_fully_qualified_name=(
-            f"{table.warehouse.database_service_name}.pillarmesh.analytics.revenue_by_region"
+            f"{table.warehouse.database_service_name}.heinzel.analytics.revenue_by_region"
         ),
         provider_version="1.13.3",
     )

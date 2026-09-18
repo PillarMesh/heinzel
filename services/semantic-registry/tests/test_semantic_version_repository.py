@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import ApprovedSemanticVersion
-from pillarmesh_semantic_registry import ApprovedSemanticCompiler, SQLiteSemanticVersionRepository
+from heinzel_contract_model import ApprovedSemanticVersion
+from heinzel_semantic_registry import ApprovedSemanticCompiler, SQLiteSemanticVersionRepository
 
 from .test_approval import NOW, valid_input
 

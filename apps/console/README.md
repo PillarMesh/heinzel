@@ -1,6 +1,6 @@
-# PillarMesh Console
+# Heinzel Console
 
-The console is the operator-facing PillarMesh product application. Its browser application is a
+The console is the operator-facing Heinzel product application. Its browser application is a
 React and TypeScript single-page application, and its Python server is a thin Starlette adapter.
 Services remain authoritative for semantic validity, lifecycle state, execution, and evidence.
 
@@ -15,7 +15,7 @@ npx --yes node@24.20.0 "$(command -v npm)" run test -- --run
 Run the Python shell from the repository root:
 
 ```sh
-uv run uvicorn pillarmesh_console:create_app --factory --host 127.0.0.1 --port 8000
+uv run uvicorn heinzel_console:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
 ## Local demonstration
@@ -49,11 +49,11 @@ npm run serve:built -- --check # starts, asserts both, and exits
 The check proves that a single Starlette origin returns the compiled application and
 `GET /api/v1/session`. `create_app` admits a command only from the origin it was configured with,
 which defaults to `http://127.0.0.1:8000`. To serve another port, set
-`PILLARMESH_CONSOLE_ALLOWED_ORIGIN` to the origin the browser will actually use — the uvicorn
+`HEINZEL_CONSOLE_ALLOWED_ORIGIN` to the origin the browser will actually use — the uvicorn
 factory takes no arguments, so the environment is how the port reaches it, and a mismatch turns
 every command into `same_origin_required`.
 
-Managed-service links are disabled unless `PILLARMESH_CONSOLE_MANAGED_LINK_ORIGIN` names one exact
+Managed-service links are disabled unless `HEINZEL_CONSOLE_MANAGED_LINK_ORIGIN` names one exact
 HTTPS origin. Configure its canonical ASCII hostname, including an explicit non-default port when
 needed. Internationalized hostnames must use their ASCII `xn--` form. The server reauthorizes an
 opaque link reference before redirecting and rejects every absolute target outside that origin;

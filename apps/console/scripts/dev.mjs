@@ -5,8 +5,8 @@
 import { spawn } from "node:child_process"
 import process from "node:process"
 
-const mode = process.env.PILLARMESH_CONSOLE_MODE ?? "demo_fixture"
-const apiPort = process.env.PILLARMESH_CONSOLE_API_PORT ?? "8000"
+const mode = process.env.HEINZEL_CONSOLE_MODE ?? "demo_fixture"
+const apiPort = process.env.HEINZEL_CONSOLE_API_PORT ?? "8000"
 const children = []
 
 function run(command, args, options) {
@@ -35,7 +35,7 @@ process.on("SIGTERM", () => shutdown(0))
 run("uv", [
   "run",
   "uvicorn",
-  "pillarmesh_console:create_app",
+  "heinzel_console:create_app",
   "--factory",
   "--host",
   "127.0.0.1",
@@ -45,6 +45,6 @@ run("uv", [
 run("npm", ["run", "dev"])
 
 process.stdout.write(
-  `\nPillarMesh console\n  mode: ${mode}\n  api:  http://127.0.0.1:${apiPort}\n` +
+  `\nHeinzel console\n  mode: ${mode}\n  api:  http://127.0.0.1:${apiPort}\n` +
     "  app:  http://127.0.0.1:5173\n\n",
 )

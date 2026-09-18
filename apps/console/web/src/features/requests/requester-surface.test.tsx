@@ -7,7 +7,7 @@ import type {
   ClarifiedOutcomeView,
   ConsoleEnvelopeClarifiedOutcomeView,
   ConsoleEnvelopeConversationView,
-  ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView,
+  ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView,
   ConsoleEnvelopeRequesterRequestView,
   ConversationView,
   RequesterRequestView,
@@ -114,7 +114,7 @@ const deliveredAccessRequest: RequesterRequestView = {
   },
 }
 
-const requestsEnvelope: ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView = {
+const requestsEnvelope: ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView = {
   meta: {correlation_id: "correlation-requests", data_provenance: "demo_fixture"},
   data: [ownRequest],
 }
@@ -127,8 +127,8 @@ const conversation: ConversationView = {
   messages: [
     {
       message_id: "message-question",
-      author_label: "PillarMesh",
-      author_role: "pillarmesh",
+      author_label: "Heinzel",
+      author_role: "heinzel",
       body: "Does <b>weekly</b> mean the ISO week ending Sunday?",
       created_at: "2026-09-01T08:10:00Z",
     },
@@ -621,13 +621,13 @@ test("does not label a data access request as a question", async () => {
   expect(screen.queryByRole("button", {name: "Start revised request"})).not.toBeInTheDocument()
 })
 
-test("labels the PillarMesh question, the requester reply, and the architect intervention", async () => {
+test("labels the Heinzel question, the requester reply, and the architect intervention", async () => {
   renderSurface("request-blocked-acceptance")
 
   const thread = await screen.findByRole("list", {name: "Clarification conversation"})
   const messages = within(thread).getAllByRole("listitem")
-  expect(messages[0]).toHaveTextContent("PillarMesh question")
-  expect(messages[0]!.className).toContain("conversation-message--pillarmesh")
+  expect(messages[0]).toHaveTextContent("Heinzel question")
+  expect(messages[0]!.className).toContain("conversation-message--heinzel")
   expect(messages[1]).toHaveTextContent("Your reply")
   expect(messages[1]!.className).toContain("conversation-message--requester")
   expect(messages[2]).toHaveTextContent("Architect intervention")

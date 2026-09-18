@@ -2,8 +2,8 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import (
     ApprovalRequirement,
     ClarifiedOutcomeStatement,
     DataProductChangeRequest,
@@ -24,7 +24,7 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
     StakeholderAnswerDraft,
 )
-from pillarmesh_request_management.repository import StaleRevisionError
+from heinzel_request_management.repository import StaleRevisionError
 
 NOW = datetime(2026, 8, 31, 12, tzinfo=UTC)
 DIGEST = "0" * 64

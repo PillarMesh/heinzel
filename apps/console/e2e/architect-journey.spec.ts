@@ -329,7 +329,7 @@ test.describe("architect journey", () => {
     for (const route of MAJOR_ROUTES) {
       await page.goto(route)
       await expectFixtureBanner(page)
-      await expect(page.getByRole("main", {name: "PillarMesh console"})).toBeVisible()
+      await expect(page.getByRole("main", {name: "Heinzel console"})).toBeVisible()
     }
   })
 })

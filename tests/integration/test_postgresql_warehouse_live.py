@@ -14,23 +14,23 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO
 
-import pillarmesh_provider_postgresql.warehouse as postgresql_warehouse_module
-import pillarmesh_provider_sdk.compose as provider_compose_module
+import heinzel_provider_postgresql.warehouse as postgresql_warehouse_module
+import heinzel_provider_sdk.compose as provider_compose_module
 import pytest
 from cryptography.fernet import Fernet
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_postgresql import (
+from heinzel_contract_model import digest
+from heinzel_provider_postgresql import (
     PostgreSQLBackupCommandBoundary,
     PostgreSQLWarehouseProvider,
     PostgreSQLWarehouseSettings,
 )
-from pillarmesh_provider_postgresql.warehouse import _restore_identity, _warehouse_identity
-from pillarmesh_provider_sdk import (
+from heinzel_provider_postgresql.warehouse import _restore_identity, _warehouse_identity
+from heinzel_provider_sdk import (
     ComposeErrorClassification,
     ComposeResourceKind,
     DockerComposeProcess,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EngineKind,
     LocalAcceptanceWarehouseReadinessPolicy,
     PrivateWarehouseOperation,
@@ -54,9 +54,9 @@ from pillarmesh_warehouse_control import (
     WarehouseSecretStorageError,
     WarehouseValidationResult,
 )
-from pillarmesh_warehouse_control import secrets as warehouse_secrets
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
-from pillarmesh_warehouse_control.service import WarehouseControlService
+from heinzel_warehouse_control import secrets as warehouse_secrets
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.service import WarehouseControlService
 from pydantic import SecretStr
 
 import tests.conformance.warehouse_lifecycle as warehouse_lifecycle_module
@@ -585,7 +585,7 @@ def _new_harness(
         "wop-"
         + digest(
             {
-                "domain": "pillarmesh-warehouse-operation-v1",
+                "domain": "heinzel-warehouse-operation-v1",
                 "tenant_id": tenant_id,
                 "sequence": 1,
             }
@@ -737,7 +737,7 @@ def _claim_retirement_operation(
         "wop-"
         + digest(
             {
-                "domain": "pillarmesh-warehouse-operation-v1",
+                "domain": "heinzel-warehouse-operation-v1",
                 "tenant_id": binding.tenant_id,
                 "sequence": sequence,
             }
@@ -846,7 +846,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from pillarmesh_warehouse_control import WarehouseSecretRetiredError, WarehouseSecretStorageError
+from heinzel_warehouse_control import WarehouseSecretRetiredError, WarehouseSecretStorageError
 from tests.integration.test_postgresql_warehouse_live import _new_harness
 
 with tempfile.TemporaryDirectory() as directory:
@@ -927,11 +927,11 @@ def test_rendered_postgresql_compose_separates_primary_and_restore_routes(
             / "providers"
             / "postgresql"
             / "src"
-            / "pillarmesh_provider_postgresql"
+            / "heinzel_provider_postgresql"
             / "warehouse.py"
         ).resolve(),
         Path(provider_compose_module.__file__).resolve(): (
-            ROOT / "packages" / "provider-sdk" / "src" / "pillarmesh_provider_sdk" / "compose.py"
+            ROOT / "packages" / "provider-sdk" / "src" / "heinzel_provider_sdk" / "compose.py"
         ).resolve(),
         Path(warehouse_lifecycle_module.__file__).resolve(): (
             ROOT / "tests" / "conformance" / "warehouse_lifecycle.py"
@@ -949,15 +949,15 @@ def test_rendered_postgresql_compose_separates_primary_and_restore_routes(
     private_directory = tmp_path / "private"
     private_directory.mkdir(mode=0o700)
     environment = {
-        "PILLARMESH_POSTGRES_BOOTSTRAP_PASSWORD": "render-only-secret",
-        "PILLARMESH_POSTGRES_CONTAINER_NAME": "pm-render-primary",
-        "PILLARMESH_POSTGRES_DATA_VOLUME_NAME": "pm-render-primary-data",
-        "PILLARMESH_POSTGRES_HOST_PORT": "55432",
-        "PILLARMESH_POSTGRES_LOOPBACK_NETWORK_INTERNAL": "false",
-        "PILLARMESH_POSTGRES_LOOPBACK_NETWORK_NAME": "pm-render-primary-loopback",
-        "PILLARMESH_POSTGRES_NETWORK_NAME": "pm-render-primary-internal",
-        "PILLARMESH_POSTGRES_PRIVATE_DIRECTORY": str(private_directory),
-        "PILLARMESH_POSTGRES_RESTORE_CONTAINER_NAME": "pm-render-inactive-restore",
+        "HEINZEL_POSTGRES_BOOTSTRAP_PASSWORD": "render-only-secret",
+        "HEINZEL_POSTGRES_CONTAINER_NAME": "pm-render-primary",
+        "HEINZEL_POSTGRES_DATA_VOLUME_NAME": "pm-render-primary-data",
+        "HEINZEL_POSTGRES_HOST_PORT": "55432",
+        "HEINZEL_POSTGRES_LOOPBACK_NETWORK_INTERNAL": "false",
+        "HEINZEL_POSTGRES_LOOPBACK_NETWORK_NAME": "pm-render-primary-loopback",
+        "HEINZEL_POSTGRES_NETWORK_NAME": "pm-render-primary-internal",
+        "HEINZEL_POSTGRES_PRIVATE_DIRECTORY": str(private_directory),
+        "HEINZEL_POSTGRES_RESTORE_CONTAINER_NAME": "pm-render-inactive-restore",
     }
     compose = DockerComposeProcess(compose_file=COMPOSE_FILE)
 
@@ -974,12 +974,12 @@ def test_rendered_postgresql_compose_separates_primary_and_restore_routes(
             arguments=("--profile", "restore", "config", "--format", "json"),
             environment={
                 **environment,
-                "PILLARMESH_POSTGRES_CONTAINER_NAME": "pm-render-inactive-primary",
-                "PILLARMESH_POSTGRES_DATA_VOLUME_NAME": "pm-render-restore-data",
-                "PILLARMESH_POSTGRES_LOOPBACK_NETWORK_INTERNAL": "true",
-                "PILLARMESH_POSTGRES_LOOPBACK_NETWORK_NAME": "pm-render-restore-loopback",
-                "PILLARMESH_POSTGRES_NETWORK_NAME": "pm-render-restore-internal",
-                "PILLARMESH_POSTGRES_RESTORE_CONTAINER_NAME": "pm-render-restore",
+                "HEINZEL_POSTGRES_CONTAINER_NAME": "pm-render-inactive-primary",
+                "HEINZEL_POSTGRES_DATA_VOLUME_NAME": "pm-render-restore-data",
+                "HEINZEL_POSTGRES_LOOPBACK_NETWORK_INTERNAL": "true",
+                "HEINZEL_POSTGRES_LOOPBACK_NETWORK_NAME": "pm-render-restore-loopback",
+                "HEINZEL_POSTGRES_NETWORK_NAME": "pm-render-restore-internal",
+                "HEINZEL_POSTGRES_RESTORE_CONTAINER_NAME": "pm-render-restore",
             },
         )
     )["services"]["postgresql_restore"]

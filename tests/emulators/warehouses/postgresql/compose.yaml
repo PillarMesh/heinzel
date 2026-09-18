@@ -1,36 +1,36 @@
 x-postgresql-service: &postgresql-service
     image: postgres:18.6-bookworm@sha256:33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935
     environment:
-      POSTGRES_DB: pillarmesh_warehouse
+      POSTGRES_DB: heinzel_warehouse
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
-      POSTGRES_PASSWORD: ${PILLARMESH_POSTGRES_BOOTSTRAP_PASSWORD:?required}
+      POSTGRES_PASSWORD: ${HEINZEL_POSTGRES_BOOTSTRAP_PASSWORD:?required}
       POSTGRES_USER: postgres
     entrypoint:
       - /bin/bash
       - -ceu
       - |
-        install -d -m 0700 -o postgres -g postgres /var/lib/postgresql/pillarmesh-tls
-        install -m 0600 -o postgres -g postgres /pillarmesh-private/server.key /var/lib/postgresql/pillarmesh-tls/server.key
-        install -m 0644 -o postgres -g postgres /pillarmesh-private/server.crt /var/lib/postgresql/pillarmesh-tls/server.crt
-        install -m 0644 -o postgres -g postgres /pillarmesh-private/ca.crt /var/lib/postgresql/pillarmesh-tls/ca.crt
-        install -m 0600 -o postgres -g postgres /pillarmesh-private/pg_hba.conf /var/lib/postgresql/pillarmesh-tls/pg_hba.conf
+        install -d -m 0700 -o postgres -g postgres /var/lib/postgresql/heinzel-tls
+        install -m 0600 -o postgres -g postgres /heinzel-private/server.key /var/lib/postgresql/heinzel-tls/server.key
+        install -m 0644 -o postgres -g postgres /heinzel-private/server.crt /var/lib/postgresql/heinzel-tls/server.crt
+        install -m 0644 -o postgres -g postgres /heinzel-private/ca.crt /var/lib/postgresql/heinzel-tls/ca.crt
+        install -m 0600 -o postgres -g postgres /heinzel-private/pg_hba.conf /var/lib/postgresql/heinzel-tls/pg_hba.conf
         exec /usr/local/bin/docker-entrypoint.sh postgres \
           -c listen_addresses=* \
           -c password_encryption=scram-sha-256 \
           -c ssl=on \
-          -c ssl_ca_file=/var/lib/postgresql/pillarmesh-tls/ca.crt \
-          -c ssl_cert_file=/var/lib/postgresql/pillarmesh-tls/server.crt \
-          -c ssl_key_file=/var/lib/postgresql/pillarmesh-tls/server.key \
+          -c ssl_ca_file=/var/lib/postgresql/heinzel-tls/ca.crt \
+          -c ssl_cert_file=/var/lib/postgresql/heinzel-tls/server.crt \
+          -c ssl_key_file=/var/lib/postgresql/heinzel-tls/server.key \
           -c ssl_min_protocol_version=TLSv1.3 \
-          -c hba_file=/var/lib/postgresql/pillarmesh-tls/pg_hba.conf
+          -c hba_file=/var/lib/postgresql/heinzel-tls/pg_hba.conf
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready --dbname pillarmesh_warehouse --username postgres"]
+      test: ["CMD-SHELL", "pg_isready --dbname heinzel_warehouse --username postgres"]
       interval: 1s
       timeout: 3s
       retries: 90
     volumes:
       - warehouse_data:/var/lib/postgresql
-      - ${PILLARMESH_POSTGRES_PRIVATE_DIRECTORY:?required}:/pillarmesh-private:ro
+      - ${HEINZEL_POSTGRES_PRIVATE_DIRECTORY:?required}:/heinzel-private:ro
     networks:
       - warehouse_internal
       - host_loopback
@@ -38,25 +38,25 @@ x-postgresql-service: &postgresql-service
 services:
   postgresql:
     <<: *postgresql-service
-    container_name: ${PILLARMESH_POSTGRES_CONTAINER_NAME:?required}
+    container_name: ${HEINZEL_POSTGRES_CONTAINER_NAME:?required}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "127.0.0.1:${PILLARMESH_POSTGRES_HOST_PORT:?required}:5432"
+      - "127.0.0.1:${HEINZEL_POSTGRES_HOST_PORT:?required}:5432"
 
   postgresql_restore:
     <<: *postgresql-service
     profiles: ["restore"]
-    container_name: ${PILLARMESH_POSTGRES_RESTORE_CONTAINER_NAME:?required}
+    container_name: ${HEINZEL_POSTGRES_RESTORE_CONTAINER_NAME:?required}
 
 volumes:
   warehouse_data:
-    name: ${PILLARMESH_POSTGRES_DATA_VOLUME_NAME:?required}
+    name: ${HEINZEL_POSTGRES_DATA_VOLUME_NAME:?required}
 
 networks:
   warehouse_internal:
-    name: ${PILLARMESH_POSTGRES_NETWORK_NAME:?required}
+    name: ${HEINZEL_POSTGRES_NETWORK_NAME:?required}
     internal: true
   host_loopback:
-    name: ${PILLARMESH_POSTGRES_LOOPBACK_NETWORK_NAME:?required}
-    internal: ${PILLARMESH_POSTGRES_LOOPBACK_NETWORK_INTERNAL:?required}
+    name: ${HEINZEL_POSTGRES_LOOPBACK_NETWORK_NAME:?required}
+    internal: ${HEINZEL_POSTGRES_LOOPBACK_NETWORK_INTERNAL:?required}

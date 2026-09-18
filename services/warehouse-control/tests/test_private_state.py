@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
     PrivateWarehouseResource,

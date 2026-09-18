@@ -5,7 +5,7 @@ from queue import Queue
 from threading import Barrier, Event, Thread
 
 import pytest
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     ConversationEntry,
     DecisionBinding,
     DecisionKind,
@@ -13,7 +13,7 @@ from pillarmesh_request_management import (
     RequestManagementService,
     RequestState,
 )
-from pillarmesh_request_management.repository import SQLiteRequestRepository, StaleRevisionError
+from heinzel_request_management.repository import SQLiteRequestRepository, StaleRevisionError
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)

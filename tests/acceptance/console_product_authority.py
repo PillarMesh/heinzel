@@ -4,15 +4,15 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
-from pillarmesh_compiler import ProductGenerationReference
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import SourceFreshnessObservation
-from pillarmesh_runtime import (
+from heinzel_compiler import ProductGenerationReference
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import SourceFreshnessObservation
+from heinzel_runtime import (
     AnswerProductGenerationReference,
     ProductMaterializationReceipt,
     QueryGenerationState,
 )
-from pillarmesh_semantic_registry import ApprovedProductVersionMetadata
+from heinzel_semantic_registry import ApprovedProductVersionMetadata
 
 from tests.acceptance.console_answer_authority import ProductAnswerAuthority
 
@@ -161,13 +161,13 @@ class DurableProductAnswerAuthorityReader:
             product_generation_refs=product_generation_refs,
             freshness_observation_ref=digest(
                 {
-                    "domain": "pillarmesh-source-freshness-set-v1",
+                    "domain": "heinzel-source-freshness-set-v1",
                     "observations": tuple(freshness_observations),
                 }
             ),
             quality_observation_ref=digest(
                 {
-                    "domain": "pillarmesh-product-quality-set-v1",
+                    "domain": "heinzel-product-quality-set-v1",
                     "receipts": tuple(receipts),
                 }
             ),

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
+from heinzel_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
 
 
 def test_query_signatures_are_deterministic_and_bound_to_digest() -> None:
@@ -27,7 +27,7 @@ def test_invalid_query_signatures_fail_closed(signature: str) -> None:
 def test_query_verification_rejects_a_signature_from_another_artifact_domain() -> None:
     import base64
 
-    from pillarmesh_contract_model import canonical_bytes
+    from heinzel_contract_model import canonical_bytes
 
     key = Ed25519PrivateKey.generate()
     signature = key.sign(canonical_bytes({"plan_digest": "a" * 64}))
@@ -60,13 +60,13 @@ def test_ambiguous_key_identifiers_are_rejected(key_id: str) -> None:
 def test_query_signature_wire_format_uses_the_pinned_domain() -> None:
     import base64
 
-    from pillarmesh_contract_model import canonical_bytes
+    from heinzel_contract_model import canonical_bytes
 
     key = Ed25519PrivateKey.generate()
     expected = key.sign(
         canonical_bytes(
             {
-                "domain": "pillarmesh-governed-query-plan-v1",
+                "domain": "heinzel-governed-query-plan-v1",
                 "plan_digest": "a" * 64,
             }
         )

@@ -4,8 +4,8 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management.product_intent import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management.product_intent import (
     ApprovedProductIntent,
     DeliveryIntent,
     DimensionIntent,
@@ -24,8 +24,8 @@ from pillarmesh_request_management.product_intent import (
     ProductIntentNoValidPlan,
     ProductIntentSourceCoverage,
 )
-from pillarmesh_request_management.repository import SQLiteRequestRepository
-from pillarmesh_request_management.service import RequestManagementService
+from heinzel_request_management.repository import SQLiteRequestRepository
+from heinzel_request_management.service import RequestManagementService
 from pydantic import ValidationError
 
 NOW = datetime(2026, 9, 11, 12, 0, tzinfo=UTC)

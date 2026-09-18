@@ -7,15 +7,15 @@ from io import BytesIO
 from typing import cast
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import AcquisitionFieldValue, AcquisitionRecord
-from pillarmesh_provider_sdk.acquisition_encoding import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import AcquisitionFieldValue, AcquisitionRecord
+from heinzel_provider_sdk.acquisition_encoding import (
     AcquisitionCeilingExceeded,
     CanonicalJsonlSegmentEncoder,
     encode_canonical_jsonl,
     iter_artifact_chunks,
 )
-from pillarmesh_provider_sdk.acquisition_protocols import AcquisitionArtifactReader
+from heinzel_provider_sdk.acquisition_protocols import AcquisitionArtifactReader
 
 _UPDATED_AT = datetime(2026, 9, 1, 12, 0, tzinfo=UTC)
 _RECORD_BYTES = (
@@ -41,7 +41,7 @@ def _record(*, record_key: str = "order:7") -> AcquisitionRecord:
 
 def _record_set_digest(*records: AcquisitionRecord) -> str:
     hasher = hashlib.sha256()
-    hasher.update(b"pillarmesh-acquisition-record-set-v1\0")
+    hasher.update(b"heinzel-acquisition-record-set-v1\0")
     for record in records:
         model_digest = bytes.fromhex(digest(record))
         hasher.update(len(model_digest).to_bytes(8, "big"))

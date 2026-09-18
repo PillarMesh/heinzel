@@ -7,19 +7,19 @@ from decimal import Decimal
 from pathlib import Path
 from typing import BinaryIO
 
-import pillarmesh_runtime.acquisition as acquisition_module
+import heinzel_runtime.acquisition as acquisition_module
 import pytest
-from pillarmesh_connection_broker import SourceConnectionBindingState
-from pillarmesh_evidence import AcquisitionEvidenceReceipt
-from pillarmesh_provider_sdk import AcquisitionAcknowledgement, AcquisitionIntent
-from pillarmesh_runtime import (
+from heinzel_connection_broker import SourceConnectionBindingState
+from heinzel_evidence import AcquisitionEvidenceReceipt
+from heinzel_provider_sdk import AcquisitionAcknowledgement, AcquisitionIntent
+from heinzel_runtime import (
     AcquisitionAuthorizationError,
     AcquisitionIntegrityError,
     AcquisitionPreparationResult,
     AcquisitionRunner,
     AcquisitionStaleRevision,
 )
-from pillarmesh_state import (
+from heinzel_state import (
     AcquisitionArtifactStoreError,
     AcquisitionStateNotFoundError,
     SQLiteAcquisitionStateRepository,

@@ -1,16 +1,16 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_contract_service import (
+from heinzel_contract_model import digest
+from heinzel_contract_service import (
     BusinessProcessManifest,
     ProcessPackageReceipt,
     ProcessPackageService,
 )
-from pillarmesh_contract_service.process_service import SQLiteProcessPackageRepository
-from pillarmesh_request_management import RequestManagementService
-from pillarmesh_request_management.repository import SQLiteRequestRepository
-from pillarmesh_warehouse_control import (
+from heinzel_contract_service.process_service import SQLiteProcessPackageRepository
+from heinzel_request_management import RequestManagementService
+from heinzel_request_management.repository import SQLiteRequestRepository
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     PrivateWarehouseOperation,
@@ -24,7 +24,7 @@ from pillarmesh_warehouse_control import (
     WarehouseValidationEvidence,
     WarehouseValidationProfile,
 )
-from pillarmesh_warehouse_control.repository import SQLiteWarehouseRepository
+from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
 

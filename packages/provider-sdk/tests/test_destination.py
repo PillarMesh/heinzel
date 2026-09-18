@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_provider_sdk import LandReceipt, RawGenerationTarget, raw_generation_key
+from heinzel_provider_sdk import LandReceipt, RawGenerationTarget, raw_generation_key
 from pydantic import ValidationError
 
 _NOW = datetime(2026, 9, 14, 12, 0, tzinfo=UTC)

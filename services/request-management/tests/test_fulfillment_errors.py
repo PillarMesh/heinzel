@@ -5,7 +5,7 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     FulfillmentAuthorityError,
     FulfillmentGroundingError,
     FulfillmentIntegrityError,

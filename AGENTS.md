@@ -1,4 +1,4 @@
-# PillarMesh Contributor Instructions
+# Heinzel Contributor Instructions
 
 ## Scope and Instruction Precedence
 
@@ -181,7 +181,7 @@ Recognize the drift by its symptom, because it does not look like an authenticat
 
 ```text
 remote: Repository not found.
-fatal: repository 'https://github.com/PillarMesh/pillarmesh.git/' not found
+fatal: repository 'https://github.com/PillarMesh/heinzel.git/' not found
 ```
 
-`gh` reports the same absence as `GraphQL: Could not resolve to a Repository with the name 'PillarMesh/pillarmesh'`. Both read as though the repository was renamed or deleted. Never conclude that a repository, branch, or pull request is missing from such an error until after switching to `ks2002119` in the same shell invocation and retrying.
+`gh` reports the same absence as `GraphQL: Could not resolve to a Repository with the name 'PillarMesh/heinzel'`. Both read as though the repository was renamed or deleted. Never conclude that a repository, branch, or pull request is missing from such an error until after switching to `ks2002119` in the same shell invocation and retrying.

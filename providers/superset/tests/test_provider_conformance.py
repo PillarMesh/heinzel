@@ -3,15 +3,15 @@ from __future__ import annotations
 from dataclasses import replace
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_provider_sdk.bi import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import ProviderError
+from heinzel_provider_sdk.bi import (
     BiDashboardDefinition,
     BiDataset,
     dashboard_external_key,
     run_bi_provider_conformance,
 )
-from pillarmesh_provider_superset import (
+from heinzel_provider_superset import (
     SupersetClientError,
     SupersetDashboard,
     SupersetProvider,

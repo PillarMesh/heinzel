@@ -10,12 +10,12 @@ from collections.abc import Iterator
 
 import psycopg
 import pytest
-from pillarmesh_provider_postgresql.destination import (
+from heinzel_provider_postgresql.destination import (
     PostgreSQLDestinationProvider,
     PostgreSQLLandStore,
     PostgreSQLLandStoreSettings,
 )
-from pillarmesh_provider_sdk.destination_conformance import destination_segment, destination_target
+from heinzel_provider_sdk.destination_conformance import destination_segment, destination_target
 
 _IMAGE = (
     "postgres:18.6-bookworm@sha256:33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935"
@@ -31,15 +31,15 @@ def _available_loopback_port() -> int:
 pytestmark = [
     pytest.mark.emulator,
     pytest.mark.skipif(
-        os.environ.get("PILLARMESH_RUN_DESTINATION_EMULATORS") != "1",
-        reason="set PILLARMESH_RUN_DESTINATION_EMULATORS=1",
+        os.environ.get("HEINZEL_RUN_DESTINATION_EMULATORS") != "1",
+        reason="set HEINZEL_RUN_DESTINATION_EMULATORS=1",
     ),
 ]
 
 
 @pytest.fixture
 def postgresql_dsn() -> Iterator[str]:
-    name = f"pillarmesh-land-pg-{uuid.uuid4().hex[:12]}"
+    name = f"heinzel-land-pg-{uuid.uuid4().hex[:12]}"
     password = f"destination-{uuid.uuid4().hex}"
     port = _available_loopback_port()
     subprocess.run(

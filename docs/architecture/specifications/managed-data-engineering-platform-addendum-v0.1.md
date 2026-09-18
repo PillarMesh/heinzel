@@ -1,4 +1,4 @@
-# PillarMesh Managed Data Engineering Platform Addendum v0.1
+# Heinzel Managed Data Engineering Platform Addendum v0.1
 
 **Status:** Proposed for final review
 
@@ -39,7 +39,7 @@
   admitted governed queries. It can read explicitly approved consumption objects and has no
   warehouse write authority.
 - 2026-09-12 — Section 18.2 separates authenticated observations from the connected enterprise
-  policy authority, PillarMesh-applied access grants, and warehouse principal provisioning. It
+  policy authority, Heinzel-applied access grants, and warehouse principal provisioning. It
   defines the durable entitlement records required for current requester rechecks.
 
 - 2026-08-28 — Section 6.4 now defines the fail-closed response to version drift after a
@@ -54,9 +54,9 @@
 
 ## 1. Purpose
 
-This addendum changes PillarMesh from a compiler and managed execution plane that assumes an external customer warehouse into a fully managed data engineering platform. PillarMesh manages source integrations, a dedicated analytical warehouse, transformations, catalog, business-process semantics, BI, scheduling, integrity, evidence, maintenance, and recovery. The primary user is a one-person or very small data engineering team that must deliver trustworthy data products without operating a collection of separate infrastructure products.
+This addendum changes Heinzel from a compiler and managed execution plane that assumes an external customer warehouse into a fully managed data engineering platform. Heinzel manages source integrations, a dedicated analytical warehouse, transformations, catalog, business-process semantics, BI, scheduling, integrity, evidence, maintenance, and recovery. The primary user is a one-person or very small data engineering team that must deliver trustworthy data products without operating a collection of separate infrastructure products.
 
-The competitive category is provider-managed data integration, as exemplified by products such as Fivetran, rather than a database engine such as Snowflake. PillarMesh differs by taking operational responsibility through the destination warehouse and governed consumption layer, and by compiling integrations from approved business-process and semantic contracts rather than treating connector success as the terminal outcome.
+The competitive category is provider-managed data integration, as exemplified by products such as Fivetran, rather than a database engine such as Snowflake. Heinzel differs by taking operational responsibility through the destination warehouse and governed consumption layer, and by compiling integrations from approved business-process and semantic contracts rather than treating connector success as the terminal outcome.
 
 This addendum preserves the compiler-centered invariants of the foundational architecture:
 
@@ -72,15 +72,15 @@ This addendum preserves the compiler-centered invariants of the foundational arc
 
 This addendum supersedes the following product-boundary decisions for post-M0 work:
 
-1. PillarMesh now provides a managed analytical warehouse as a mandatory part of the product. It operates supported database engines; it does not implement a database engine.
+1. Heinzel now provides a managed analytical warehouse as a mandatory part of the product. It operates supported database engines; it does not implement a database engine.
 2. Every tenant receives one dedicated primary warehouse binding. The initial engine catalog is PostgreSQL and ClickHouse.
-3. Integrations terminate in the tenant's PillarMesh-operated warehouse. Arbitrary customer-managed destinations are not part of the initial product.
-4. PillarMesh provides a narrow contract-trigger service for scheduled, manual, and bounded backfill execution. It does not provide a general DAG or business-workflow scheduler.
-5. PillarMesh manages transformations and semantic models. Generated artifacts remain inspectable, versioned, testable, and exportable in a dbt-compatible representation.
-6. PillarMesh provides a managed OpenMetadata catalog when a customer has no supported catalog and uses a supported existing catalog when one is present. It does not require two user-facing catalogs.
-7. PillarMesh provides a managed Apache Superset deployment for governed dashboards, exploration, and report rendering.
+3. Integrations terminate in the tenant's Heinzel-operated warehouse. Arbitrary customer-managed destinations are not part of the initial product.
+4. Heinzel provides a narrow contract-trigger service for scheduled, manual, and bounded backfill execution. It does not provide a general DAG or business-workflow scheduler.
+5. Heinzel manages transformations and semantic models. Generated artifacts remain inspectable, versioned, testable, and exportable in a dbt-compatible representation.
+6. Heinzel provides a managed OpenMetadata catalog when a customer has no supported catalog and uses a supported existing catalog when one is present. It does not require two user-facing catalogs.
+7. Heinzel provides a managed Apache Superset deployment for governed dashboards, exploration, and report rendering.
 8. The primary customer operating model is supervised autopilot: routine physical work runs within pre-authorized policy; semantic, policy, access, material cost, migration, and destructive changes require risk-tiered human approval.
-9. Business requests, incidents, and platform proposals enter one typed request-management boundary. PillarMesh may investigate and draft automatically but may not activate materially new meaning without authorization.
+9. Business requests, incidents, and platform proposals enter one typed request-management boundary. Heinzel may investigate and draft automatically but may not activate materially new meaning without authorization.
 10. A source connection is never sufficient admission evidence. An executable Integration Contract must be grounded in an approved business-process model, catalog authorities, ontology, constraints, and current provider observations.
 
 Historical M0 documents remain records of the PostgreSQL-to-Snowflake thin-thread experiment. They are not silently rewritten and do not define the destination or product scope after this addendum.
@@ -89,15 +89,15 @@ Historical M0 documents remain records of the PostgreSQL-to-Snowflake thin-threa
 
 ### 3.1 Promise
 
-PillarMesh delivers governed data products from operational sources without requiring the customer to assemble or operate connector infrastructure, a warehouse, a scheduler, a transformation runtime, a catalog, a BI service, and an evidence system independently.
+Heinzel delivers governed data products from operational sources without requiring the customer to assemble or operate connector infrastructure, a warehouse, a scheduler, a transformation runtime, a catalog, a BI service, and an evidence system independently.
 
 The concise product promise is:
 
-> Connect your sources. PillarMesh runs the rest.
+> Connect your sources. Heinzel runs the rest.
 
 The architectural promise is narrower and testable:
 
-> PillarMesh compiles approved business outcomes into legal, versioned integrations, operates their dedicated destination data plane, and continuously proves source-to-consumer conformance.
+> Heinzel compiles approved business outcomes into legal, versioned integrations, operates their dedicated destination data plane, and continuously proves source-to-consumer conformance.
 
 ### 3.2 Ideal initial customer
 
@@ -134,7 +134,7 @@ The initial product is not a fit for a customer that:
 - No unrestricted user SQL mutation or agent write authority.
 - No automatic semantic migration or warehouse-engine switch.
 - No claim of universal exactly-once behavior where a provider lacks the necessary primitive.
-- No free-form SQL run by PillarMesh to answer a stakeholder, whether AI generated it or it was
+- No free-form SQL run by Heinzel to answer a stakeholder, whether AI generated it or it was
   relayed from a question. A person holding an approved access grant runs their own SQL only
   through the customer SQL principal (section 18.1).
 
@@ -173,7 +173,7 @@ API, and an agent interface (section 13.9). An agent acts only as a delegated hu
 never holds approval authority. Post-MVP scouts (section 17.1) will run approved questions on a
 schedule and turn findings into briefs or inbox items, never into actions.
 
-This section does not change the product boundary of ADR-0003. PillarMesh answers from the warehouse
+This section does not change the product boundary of ADR-0003. Heinzel answers from the warehouse
 it operates. A read-only overlay that indexes or queries a customer-managed warehouse is a different
 product boundary. It is deferred (section 20.10) and requires a new product-boundary ADR before any
 design work.
@@ -194,9 +194,9 @@ The data engineering architect remains responsible for:
 - semantic migrations and exceptions; and
 - irreversible retirement or deletion approval.
 
-### 4.2 PillarMesh responsibility
+### 4.2 Heinzel responsibility
 
-PillarMesh manages:
+Heinzel manages:
 
 - warehouse and service provisioning;
 - connector installation, authentication, upgrades, and recovery;
@@ -212,7 +212,7 @@ PillarMesh manages:
 
 ### 4.3 Supervised autopilot
 
-The engineer's primary surface is a decision inbox rather than a task queue of routine operations. PillarMesh must not wake an operator for a transient retry, connector-token refresh, routine resynchronization, safe additive column, bounded warehouse resize, backup rotation, or Superset worker restart. It must request attention for changed business meaning, unresolved ownership, policy conflict, widened access, material recurring cost, persistent data-loss risk, migration, or an unrecoverable contract violation.
+The engineer's primary surface is a decision inbox rather than a task queue of routine operations. Heinzel must not wake an operator for a transient retry, connector-token refresh, routine resynchronization, safe additive column, bounded warehouse resize, backup rotation, or Superset worker restart. It must request attention for changed business meaning, unresolved ownership, policy conflict, widened access, material recurring cost, persistent data-loss risk, migration, or an unrecoverable contract violation.
 
 Routine answering follows the same rule. A stakeholder question inside an approved answer scope
 policy (section 13.8) is answered without waking the architect. The architect is asked only when a
@@ -265,7 +265,7 @@ Initial setup asks the tenant administrator to approve:
 - approval roles and cost thresholds; and
 - notification and incident contacts.
 
-PillarMesh recommends an engine and capacity from declared workload characteristics, but the customer makes the final choice before provisioning. Both initial engines must pass the MVP destination-portability gate before either is offered to customers.
+Heinzel recommends an engine and capacity from declared workload characteristics, but the customer makes the final choice before provisioning. Both initial engines must pass the MVP destination-portability gate before either is offered to customers.
 
 ### 6.2 Warehouse binding
 
@@ -277,7 +277,7 @@ WarehouseBinding
   binding_id
   tenant_id
   engine_kind                postgresql | clickhouse
-  deployment_mode            pillarmesh_cloud
+  deployment_mode            heinzel_cloud
   region
   capacity_profile           mvp-fixed
   capability_profile_digest
@@ -520,14 +520,14 @@ caller-supplied Boolean can weaken that admission rule.
 The logical binding reserves future modes:
 
 ```text
-pillarmesh_cloud
+heinzel_cloud
 customer_cloud
 customer_on_prem
 ```
 
-Customer-cloud and on-premises modes mean that the customer supplies infrastructure while PillarMesh retains database, runtime, connector, catalog, and BI operational authority. They are not bring-your-own-warehouse modes.
+Customer-cloud and on-premises modes mean that the customer supplies infrastructure while Heinzel retains database, runtime, connector, catalog, and BI operational authority. They are not bring-your-own-warehouse modes.
 
-The initial on-premises connectivity mode is narrower: an outbound-only relay reaches a private source while the managed data plane remains in a PillarMesh region. The relay receives signed, bounded work leases, resolves credentials locally, exposes no public listener, and has no planning authority.
+The initial on-premises connectivity mode is narrower: an outbound-only relay reaches a private source while the managed data plane remains in a Heinzel region. The relay receives signed, bounded work leases, resolves credentials locally, exposes no public listener, and has no planning authority.
 
 A fully disconnected control plane is deferred because it would require local identity, compiler, signer, trigger, state, evidence, registry, update, monitoring, catalog, BI, and warehouse services with a separate release and security model.
 
@@ -567,13 +567,13 @@ For order-to-cash:
 - a paid eligible order produces an active subscription within the declared window; and
 - recognized revenue is attributable to a valid lifecycle and approved recognition rule.
 
-PillarMesh distinguishes a source defect, integration defect, late-arriving fact, policy violation, process exception, and warehouse corruption. A valid business exception is not automatically repaired as a pipeline defect.
+Heinzel distinguishes a source defect, integration defect, late-arriving fact, policy violation, process exception, and warehouse corruption. A valid business exception is not automatically repaired as a pipeline defect.
 
 ### 8.4 Process-package intake
 
 The MVP accepts one immutable, versioned `BusinessProcessPackage` consisting of a UTF-8 Markdown narrative and a strict JSON manifest. The manifest identifies process name, owner, participants, outcomes, known entities, events, states, rules, source references, and unresolved questions. Each uploaded artifact retains its original bytes, media type, digest, uploader, and receipt time outside the deterministic semantic payload.
 
-PillarMesh may extract and propose process objects, ontology terms, mappings, constraints, and questions from the package. The original upload, extracted candidates, human corrections, approvals, and compiled process version remain distinct and attributable. Re-upload creates a new package version; it never mutates an approved process or silently recompiles an active Integration Contract.
+Heinzel may extract and propose process objects, ontology terms, mappings, constraints, and questions from the package. The original upload, extracted candidates, human corrections, approvals, and compiled process version remain distinct and attributable. Re-upload creates a new package version; it never mutates an approved process or silently recompiles an active Integration Contract.
 
 ```text
 SemanticCandidateSet
@@ -596,11 +596,11 @@ SemanticCandidateSet
 
 ### 9.1 Catalog operating model
 
-At setup, PillarMesh asks whether the customer has an authoritative catalog.
+At setup, Heinzel asks whether the customer has an authoritative catalog.
 
-- If no supported catalog exists, PillarMesh provisions and operates OpenMetadata as the customer's catalog experience.
-- If a supported catalog exists, PillarMesh connects read-only first, observes its capabilities and authorities, and uses that catalog as the customer-facing authority. It does not also provision OpenMetadata by default.
-- PillarMesh retains only the narrow versioned semantic and authority records required to compile and prove its own contracts. That private registry is not exposed as a competing general catalog.
+- If no supported catalog exists, Heinzel provisions and operates OpenMetadata as the customer's catalog experience.
+- If a supported catalog exists, Heinzel connects read-only first, observes its capabilities and authorities, and uses that catalog as the customer-facing authority. It does not also provision OpenMetadata by default.
+- Heinzel retains only the narrow versioned semantic and authority records required to compile and prove its own contracts. That private registry is not exposed as a competing general catalog.
 
 The first external catalog adapter after the bundled path is DataHub. Apache Atlas and commercial enterprise catalogs are deferred. A catalog whose APIs cannot provide stable identities, versioned observations, ownership, glossary/classification authority, and lineage cannot satisfy this mode; the customer must use managed OpenMetadata or wait for a compatible adapter.
 
@@ -616,7 +616,7 @@ CatalogBinding
   binding_id
   tenant_id
   provider_kind              openmetadata
-  deployment_mode            pillarmesh_managed
+  deployment_mode            heinzel_managed
   capability_profile_digest
   lifecycle_state
   revision
@@ -652,13 +652,13 @@ retired      → (terminal)
 | Business meaning and process semantics | Approved business owner |
 | Enterprise policy | Connected policy authority |
 | Imported glossary/classification | Declared external catalog authority |
-| Approved PillarMesh process and contract | PillarMesh semantic registry |
-| Physical plan and generated models | PillarMesh compiler |
-| Runtime outcome | PillarMesh evidence chain |
+| Approved Heinzel process and contract | Heinzel semantic registry |
+| Physical plan and generated models | Heinzel compiler |
+| Runtime outcome | Heinzel evidence chain |
 | Search, browsing, and catalog presentation | OpenMetadata |
 | Dashboard rendering and exploration | Superset |
 
-PillarMesh never turns an unreviewed catalog description, inferred lineage edge, or AI suggestion into executable authority.
+Heinzel never turns an unreviewed catalog description, inferred lineage edge, or AI suggestion into executable authority.
 
 Authority is resolved by `(information_kind, source_kind)`, never by one global ranking.
 Only the following source kinds are admitted, in decreasing precedence, for each information
@@ -747,7 +747,7 @@ approval records -- which is the property this resolution exists to establish.
 
 ### 9.3 Publication and proposals
 
-PillarMesh publishes source observations, warehouse assets, data products, ownership, glossary associations, classifications, quality results, freshness, lineage, contracts, incidents, and Superset assets to OpenMetadata.
+Heinzel publishes source observations, warehouse assets, data products, ownership, glossary associations, classifications, quality results, freshness, lineage, contracts, incidents, and Superset assets to OpenMetadata.
 
 Catalog changes that may alter execution become typed change requests. Meaning, identity, classification, access, relationship, metric, constraint, and deprecation changes require impact analysis and approval. Cosmetic descriptions may synchronize automatically under policy.
 
@@ -919,7 +919,7 @@ ManagedIntegrationContract
 
 ### 11.1 Connector lifecycle
 
-PillarMesh owns:
+Heinzel owns:
 
 - installation and versioning;
 - authentication and credential rotation;
@@ -949,9 +949,9 @@ Logical CDC, MySQL, Salesforce, files, and event sources follow after the MVP un
 
 The MVP must compile the same supported semantic data product to either a tenant-managed PostgreSQL or ClickHouse warehouse. Each provider implements the same observable destination contract but may use different physical mechanisms.
 
-PostgreSQL and ClickHouse must reuse the same canonical Integration Contract, semantic fixtures, expected results, and observable destination conformance suite. This is the MVP proof that the customer can choose a warehouse without binding PillarMesh's semantic product to one engine.
+PostgreSQL and ClickHouse must reuse the same canonical Integration Contract, semantic fixtures, expected results, and observable destination conformance suite. This is the MVP proof that the customer can choose a warehouse without binding Heinzel's semantic product to one engine.
 
-PostgreSQL is the transactional reference. ClickHouse uses native ingestion and deduplication semantics. A ClickHouse limitation produces `No Valid Plan` for an incompatible contract; PillarMesh does not imitate a transactional guarantee it cannot prove.
+PostgreSQL is the transactional reference. ClickHouse uses native ingestion and deduplication semantics. A ClickHouse limitation produces `No Valid Plan` for an incompatible contract; Heinzel does not imitate a transactional guarantee it cannot prove.
 
 ### 11.4 Plan 4A source acquisition contract
 
@@ -1342,7 +1342,7 @@ assigned an earlier timestamp but committed after the snapshot from being skippe
 
 Backward timestamp movement violates the contract and is detected only through reconciliation.
 Physical deletes are not observable in Plan 4A. A contract requiring physical-delete capture is
-`No Valid Plan`; PillarMesh does not claim delete correctness from an upsert-only cursor.
+`No Valid Plan`; Heinzel does not claim delete correctness from an upsert-only cursor.
 
 Order, Subscription, and Account Segment facts come from approved PostgreSQL tables. Subscription
 includes lifecycle status so a later plan can compute churn. A tenant whose subscription facts live
@@ -1394,7 +1394,7 @@ reconciliation, visibility, transformation, freshness, or consumer delivery.
 
 ### 12.1 Transformation authority
 
-PillarMesh generates, tests, versions, deploys, and operates transformation models. Models are deterministic compiler artifacts derived from approved contracts. AI may propose mappings or SQL, but generated output must pass typed validation, deterministic tests, policy checks, and approval where meaning changes.
+Heinzel generates, tests, versions, deploys, and operates transformation models. Models are deterministic compiler artifacts derived from approved contracts. AI may propose mappings or SQL, but generated output must pass typed validation, deterministic tests, policy checks, and approval where meaning changes.
 
 The MVP exports a dbt-compatible project representation and uses versioned dbt artifacts where practical. The dbt adapter remains an execution and observation capability, not the authority for business meaning.
 
@@ -1409,7 +1409,7 @@ The warehouse has four logical layers:
 
 ### 12.3 Continuous constraints
 
-PillarMesh evaluates uniqueness, referential integrity, cardinality, domain constraints, valid process transitions, temporal ordering, identity resolution, source-to-core reconciliation, core-to-product reconciliation, freshness, completeness, classification, and metric consistency.
+Heinzel evaluates uniqueness, referential integrity, cardinality, domain constraints, valid process transitions, temporal ordering, identity resolution, source-to-core reconciliation, core-to-product reconciliation, freshness, completeness, classification, and metric consistency.
 
 Raw queryability does not authorize a dashboard or report to bypass the conformed and product layers.
 
@@ -1546,19 +1546,19 @@ Any non-terminal state may also move to `cancelled`. `rejected`, `no_valid_plan`
 
 ### 13.4 Automated work
 
-PillarMesh may automatically validate authorization, discover metadata, profile bounded samples, search the catalog, detect duplicates and dependencies, draft process and ontology changes, compile candidate contracts, estimate cost and freshness, run isolated tests, and prepare previews. It may also interpret a question into a candidate typed intent, compute impact analysis, and compile, execute, verify, and deliver a governed answer that an approved answer scope policy admits.
+Heinzel may automatically validate authorization, discover metadata, profile bounded samples, search the catalog, detect duplicates and dependencies, draft process and ontology changes, compile candidate contracts, estimate cost and freshness, run isolated tests, and prepare previews. It may also interpret a question into a candidate typed intent, compute impact analysis, and compile, execute, verify, and deliver a governed answer that an approved answer scope policy admits.
 
 It may not activate new semantic meaning, widen access, accept policy conflicts, approve material cost, migrate bindings, or perform irreversible deletion without the required human authority. It may not answer a question outside an approved answer scope policy without per-question approval. It may not deliver a value without a verified execution receipt.
 
 ### 13.5 Conversation
 
-PillarMesh asks business-meaning questions directly to the requester while allowing the data engineer to observe, intervene, or take over. Technical, policy, ownership, and access questions route to the named responsible role. The engineer must not become a manual message relay.
+Heinzel asks business-meaning questions directly to the requester while allowing the data engineer to observe, intervene, or take over. Technical, policy, ownership, and access questions route to the named responsible role. The engineer must not become a manual message relay.
 
 Request-management records a conversation entry's author role as historical provenance
 in the same transaction as its actor, body, and advanced request revision. Authenticated
 adapters supply their trusted active role; a browser claim cannot override it. The
 closed vocabulary is requester, data architect, data owner, policy approver, budget
-approver, and PillarMesh for system-authored entries. Recording a role neither grants
+approver, and Heinzel for system-authored entries. Recording a role neither grants
 permission nor replaces the required approval or authorization checks.
 
 Older entries and internal callers without role provenance remain readable with an
@@ -1589,9 +1589,9 @@ is projected explicitly without substituting an answer or silently retrying prep
 Only preparation capabilities actually composed at the server are offered in the UI.
 
 
-A stakeholder data question is operational work, not an unrestricted natural-language query against raw tables. PillarMesh resolves the requester, purpose, authorized scope, applicable process and metric versions, catalog assets, freshness, and quality state before preparing an answer. An answer must identify the governed datasets and metric definitions used, their as-of time, material quality limitations, and lineage or evidence references. A value is computed by a governed query (section 12.4) and delivered only through the contract of section 13.8. A restated definition never stands in for a computed value. If the question cannot be answered from approved assets, PillarMesh creates a dependent data-product or semantic-change request instead of inventing a result.
+A stakeholder data question is operational work, not an unrestricted natural-language query against raw tables. Heinzel resolves the requester, purpose, authorized scope, applicable process and metric versions, catalog assets, freshness, and quality state before preparing an answer. An answer must identify the governed datasets and metric definitions used, their as-of time, material quality limitations, and lineage or evidence references. A value is computed by a governed query (section 12.4) and delivered only through the contract of section 13.8. A restated definition never stands in for a computed value. If the question cannot be answered from approved assets, Heinzel creates a dependent data-product or semantic-change request instead of inventing a result.
 
-An access request binds requester, purpose, data product, fields, classification, access mode, duration, and approving authority. PillarMesh proposes the least-privilege grant, previews its effective scope, obtains required approval, applies it through a managed role, validates intended and denied access, records evidence, and expires or revokes it according to policy. Neither an inbox conversation nor an AI recommendation grants access by itself.
+An access request binds requester, purpose, data product, fields, classification, access mode, duration, and approving authority. Heinzel proposes the least-privilege grant, previews its effective scope, obtains required approval, applies it through a managed role, validates intended and denied access, records evidence, and expires or revokes it according to policy. Neither an inbox conversation nor an AI recommendation grants access by itself.
 
 ### 13.7 Plan 3B governed fulfillment contract
 
@@ -1990,7 +1990,7 @@ cancelled false
 ```
 
 Every predicate term is required as one admission decision. Matching authority alone is illegal.
-If the policy snapshot expires, PillarMesh re-resolves it. A canonically equivalent authorization
+If the policy snapshot expires, Heinzel re-resolves it. A canonically equivalent authorization
 apart from the observation window may admit against the fresh snapshot. Any changed disposition,
 effective scope, or required authority supersedes the proposal and recollects approvals. Resolution
 failure records `No Valid Plan`.
@@ -2555,7 +2555,7 @@ Routine retries, replay, safe maintenance, bounded resynchronization, pre-author
 
 ## 15. Scheduling and run intents
 
-PillarMesh compiles freshness and execution requirements into a versioned `TriggerPolicy`.
+Heinzel compiles freshness and execution requirements into a versioned `TriggerPolicy`.
 
 Initial modes are periodic, calendar, manual, and bounded backfill. Event-driven triggers follow later.
 
@@ -2569,13 +2569,13 @@ The trigger service creates an idempotent run intent only for an already activat
 
 Overlap policies are `forbid`, `queue_one`, and compiler-proven `allow_partition_safe`. Misfire policies are `run_immediately`, `coalesce_to_latest`, `run_each_missed_window`, and `require_approval`.
 
-A schedule states when PillarMesh tries. Freshness states what PillarMesh must achieve. A successful invocation does not prove freshness.
+A schedule states when Heinzel tries. Freshness states what Heinzel must achieve. A successful invocation does not prove freshness.
 
 ## 16. BI and reporting
 
 ### 16.1 Superset boundary
 
-Apache Superset is the initial BI capability provider. PillarMesh owns semantic metrics, dimensions, data-product versions, ownership, freshness, access policy, dashboard contracts, report schedules, and delivery evidence. Superset owns interactive query, visualization rendering, dashboard layout, filters, drill-down, and export rendering.
+Apache Superset is the initial BI capability provider. Heinzel owns semantic metrics, dimensions, data-product versions, ownership, freshness, access policy, dashboard contracts, report schedules, and delivery evidence. Superset owns interactive query, visualization rendering, dashboard layout, filters, drill-down, and export rendering.
 
 Superset is never authoritative for business meaning, legality, access policy, scheduling, or evidence.
 
@@ -2616,7 +2616,7 @@ Promotion from draft to certified creates a semantic diff and approval request.
 
 ### 16.5 Scheduled reports
 
-PillarMesh owns the canonical report schedule, verifies data and authorization, asks Superset to render, validates output, delivers through an approved channel, and records delivery evidence. The MVP supports in-product delivery and one testable email channel. PDF and CSV artifacts are retained according to policy.
+Heinzel owns the canonical report schedule, verifies data and authorization, asks Superset to render, validates output, delivers through an approved channel, and records delivery evidence. The MVP supports in-product delivery and one testable email channel. PDF and CSV artifacts are retained according to policy.
 
 A report is blocked or visibly marked according to policy when freshness, quality, access, or compilation state is invalid.
 
@@ -2624,7 +2624,7 @@ A report is blocked or visibly marked according to policy when freshness, qualit
 
 The architect home shows decision count, data-product health, current data age, contract freshness, active and queued runs, incidents, cost proposals, platform health, and restore-rehearsal status.
 
-PillarMesh evidence links:
+Heinzel evidence links:
 
 ```text
 request
@@ -2700,7 +2700,7 @@ never answers outside its policy.
 - Secrets are resolved through private handles and never enter contracts, graphs, evidence, tickets, prompts, or logs.
 - Source and provider metadata are untrusted input.
 - Raw data is excluded from the control plane except through explicitly approved bounded diagnostic paths.
-- Catalog and BI embeds use PillarMesh identity and authorization; public links are disabled by default.
+- Catalog and BI embeds use Heinzel identity and authorization; public links are disabled by default.
 - Certified assets inherit contract access policy.
 - Destructive actions resolve exact targets and require explicit authority.
 - Evidence artifacts are privacy-designed and exported through a fail-closed allowlist.
@@ -2742,7 +2742,7 @@ not `ready` until both pass for every class.
 
 The connected enterprise policy system remains authoritative for requester entitlement.
 Access-control persists authenticated observations from it, derives current snapshots, and owns
-the separate lifecycle of access grants that PillarMesh applies. Request and contract approvals do
+the separate lifecycle of access grants that Heinzel applies. Request and contract approvals do
 not become entitlement observations. Warehouse principals are effect identities provisioned by
 warehouse-control and do not become user grants.
 
@@ -2880,7 +2880,7 @@ credential, TLS trust bundle, timeout, authority reference, connection-binding r
 key reference, and Ed25519 public key. Unknown fields are invalid. The body payload digest covers
 the canonical `SignedEntitlementBody` claims excluding `source_payload_digest`. The hexadecimal
 signature covers canonical bytes of
-`{"domain":"pillarmesh-enterprise-entitlement-v1","body":body}`. Authentication provenance is
+`{"domain":"heinzel-enterprise-entitlement-v1","body":body}`. Authentication provenance is
 derived from verified bytes and local adapter configuration; response-supplied authentication
 claims have no authority. Missing, unavailable, malformed, incorrectly scoped, unknown-key, or
 invalid-signature responses fail closed.
@@ -2908,7 +2908,7 @@ private secret inventory, provisioning, and the positive and denial probes, toge
 
 ## 19. Backup, recovery, and exit
 
-PillarMesh owns warehouse, OpenMetadata, Superset metadata, state, answer result snapshot, and evidence backups. Recovery proof requires restoration into an isolated target and verification of representative data, contracts, lineage, dashboard compilation, and query behavior. Backup upload alone is insufficient.
+Heinzel owns warehouse, OpenMetadata, Superset metadata, state, answer result snapshot, and evidence backups. Recovery proof requires restoration into an isolated target and verification of representative data, contracts, lineage, dashboard compilation, and query behavior. Backup upload alone is insufficient.
 
 Customers own their data. Exit supports an approved final consistent snapshot, Parquet and CSV data export, SQL schema where meaningful, canonical contract and evidence export, lineage export, credential revocation, retention disposition, and verified deletion after the contractual period.
 
@@ -2920,7 +2920,7 @@ The MVP is defined from the data engineering architect's point of view. It prove
 
 The architect's MVP job is:
 
-> Set up a PillarMesh-managed warehouse and catalog; upload an approved business-process description; turn that process and observed source metadata into governed Integration Contracts and data products; then answer stakeholder data questions, fulfill data-access requests, and review integration, quality, and maintenance decisions through one inbox.
+> Set up a Heinzel-managed warehouse and catalog; upload an approved business-process description; turn that process and observed source metadata into governed Integration Contracts and data products; then answer stakeholder data questions, fulfill data-access requests, and review integration, quality, and maintenance decisions through one inbox.
 
 Revenue-to-cash is the acceptance fixture used to prove this journey. It is not the product definition or a hard-coded workflow.
 
@@ -2928,7 +2928,7 @@ Revenue-to-cash is the acceptance fixture used to prove this journey. It is not 
 
 The MVP deliberately contains:
 
-- one tenant deployment model: dedicated PillarMesh cloud;
+- one tenant deployment model: dedicated Heinzel cloud;
 - two customer-selectable warehouse engines behind one destination contract: PostgreSQL and ClickHouse;
 - one fixed capacity profile in one deployment region;
 - one uploaded business-process package, exercised with a revenue-to-cash fixture;
@@ -2942,7 +2942,7 @@ The MVP deliberately contains:
 - context-graph impact analysis for drift, metric, contract, policy, grant, and retirement changes; and
 - one agent interface limited to the read and question tools of section 13.9.
 
-These are limits on the first releasable product, not changes to the platform's provider-neutral contracts. Every included component must be operated, observed, recovered, and evidenced by PillarMesh.
+These are limits on the first releasable product, not changes to the platform's provider-neutral contracts. Every included component must be operated, observed, recovered, and evidenced by Heinzel.
 
 ### 20.3 Included user journey
 
@@ -2951,14 +2951,14 @@ The architect completes four phases.
 #### Phase A: establish the managed environment
 
 1. Create an organization, choose PostgreSQL or ClickHouse, select the supported region and fixed capacity profile, assign approval roles, and approve the immutable warehouse binding.
-2. Let PillarMesh provision, secure, validate, monitor, back up, and register the managed warehouse.
-3. Let PillarMesh provision OpenMetadata and Superset and bind their identities and authority boundaries.
+2. Let Heinzel provision, secure, validate, monitor, back up, and register the managed warehouse.
+3. Let Heinzel provision OpenMetadata and Superset and bind their identities and authority boundaries.
 4. Connect approved PostgreSQL and Stripe sources using least-privilege credentials and positive and denial probes.
 
 #### Phase B: establish business and integration meaning
 
 1. Upload a versioned business-process package containing process narrative, actors, events, states, outcomes, source references, ownership, and known rules.
-2. Review PillarMesh's extracted process model, ontology candidates, identities, relationships, lifecycle, constraints, metrics, classifications, and unresolved questions.
+2. Review Heinzel's extracted process model, ontology candidates, identities, relationships, lifecycle, constraints, metrics, classifications, and unresolved questions.
 3. Answer or route unresolved meaning and policy questions to the named owner through the inbox.
 4. Approve the exact process version, ontology authority, Integration Contract, generated warehouse models, quality rules, schedule, access policy, dashboard, report, and cost estimate.
 
@@ -2987,8 +2987,8 @@ The UI required for this journey is limited to environment setup, process upload
 - ClickHouse destination.
 - Dedicated OpenMetadata catalog.
 - Dedicated Apache Superset BI service.
-- PillarMesh transformation, trigger, governed answer, report, evidence, backup, and restore runtimes.
-- PillarMesh context graph and agent interface.
+- Heinzel transformation, trigger, governed answer, report, evidence, backup, and restore runtimes.
+- Heinzel context graph and agent interface.
 
 The source subset is fixed to the objects and fields needed by the approved story. Generic PostgreSQL replication and unrestricted Stripe coverage are not MVP commitments.
 
@@ -3057,7 +3057,7 @@ One person may hold several roles in an MVP tenant, but authorization and eviden
 9. Add the same new source facts, invoke the daily trigger in each tenant, and trace both runs to equivalent warehouse freshness and report delivery.
 10. Replay the same run intent on each engine and prove no duplicate semantic effect.
 11. Approve an answer scope policy for revenue and refunds. Submit an in-scope question about the facts added in step 9. Verify that it is answered without per-question approval, that its values equal an independent query of those facts on each engine, and that the answer carries restatement, metric version, generation, as-of time, freshness, quality limitations, lineage, and statement digest. Verify that its history shows policy admission, not a reviewed approval.
-12. Submit an unanswerable or unauthorized question; verify that PillarMesh creates the required dependent request or denies disclosure rather than fabricating or leaking an answer.
+12. Submit an unanswerable or unauthorized question; verify that Heinzel creates the required dependent request or denies disclosure rather than fabricating or leaking an answer.
 13. Submit five questions, supplying their candidate intents through the injected interpreter port. Verify each exact outcome, and that no statement executes for any of them:
     - an ambiguous term returns `clarification_required`;
     - an approved metric outside the policy scope returns `review_required`;
@@ -3136,11 +3136,11 @@ Expansion is evidence-gated rather than calendar-gated:
 2. **Catalog federation:** integrate one supported external catalog without creating a duplicate authority; prove authority binding, conflict handling, lineage round trips, access propagation, and fail-closed behavior.
 3. **Scheduling and latency:** add configurable schedules, then CDC or streaming, only after bounded triggers, state, replay, and recovery remain deterministic under load.
 4. **Business-process breadth:** add a second curated process only after its ontology, identities, lifecycle, metrics, reconciliations, dashboard, and report can be compiled without weakening the revenue-to-cash contract.
-5. **Placement:** add customer-cloud and then on-premises managed data planes after provisioning, upgrade, observability, backup, support access, and exit controls pass the same service boundary as PillarMesh cloud.
+5. **Placement:** add customer-cloud and then on-premises managed data planes after provisioning, upgrade, observability, backup, support access, and exit controls pass the same service boundary as Heinzel cloud.
 6. **Platform scale:** add capacity profiles, high availability, cross-region recovery, and shared infrastructure only with tenant-isolation, cost, noisy-neighbor, and witnessed recovery evidence.
 7. **Scouts:** add scouts after governed answers and the trigger service pass MVP acceptance. They must prove deterministic condition evaluation, deduplication, suspension on lost entitlement or expired policy, and a brief whose every value traces to a verified execution receipt.
 8. **Agent breadth:** add agent write tools or agent-initiated access requests one at a time. Each must prove that the agent path creates the same typed request, that approval stays with human principals, and that delegation revocation takes effect on the next call.
-9. **Customer-managed warehouse overlay:** consider only after a new product-boundary ADR accepts it. That design must define read-only enforcement in a warehouse PillarMesh does not operate, how semantic authority and evidence survive without owning LAND and TRANSFORM, and which claims of section 3.1 no longer hold.
+9. **Customer-managed warehouse overlay:** consider only after a new product-boundary ADR accepts it. That design must define read-only enforcement in a warehouse Heinzel does not operate, how semantic authority and evidence survive without owning LAND and TRANSFORM, and which claims of section 3.1 no longer hold.
 
 ## 21. Delivery sequence
 

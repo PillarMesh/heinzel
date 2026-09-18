@@ -100,8 +100,8 @@ def _postgres_router(
 ) -> Router:
     env = config.environment
     session = principal if session_principal is None else session_principal
-    source = f"{env['PILLARMESH_POSTGRES_SCHEMA']}.{env['PILLARMESH_POSTGRES_TABLE']}"
-    marker = f"{env['PILLARMESH_POSTGRES_SCHEMA']}.environment_marker"
+    source = f"{env['HEINZEL_POSTGRES_SCHEMA']}.{env['HEINZEL_POSTGRES_TABLE']}"
+    marker = f"{env['HEINZEL_POSTGRES_SCHEMA']}.environment_marker"
 
     def table_privilege(privilege: str, table: str) -> bool:
         granted = principal == "runtime_one" and table in {source, marker} and privilege == "SELECT"
@@ -128,7 +128,7 @@ def _postgres_router(
         if "from pg_catalog.pg_class c" in rendered:
             return (
                 (
-                    (env["PILLARMESH_POSTGRES_TABLE"], "r", "m0_owner"),
+                    (env["HEINZEL_POSTGRES_TABLE"], "r", "m0_owner"),
                     ("environment_marker", "r", "m0_owner"),
                 ),
                 (),
@@ -160,7 +160,7 @@ def _postgres_router(
             if "has_database_privilege" in rendered and "'connect'" in rendered:
                 allowed = True
             elif "has_schema_privilege" in rendered and "'usage'" in rendered:
-                allowed = len(params) > 1 and params[1] == env["PILLARMESH_POSTGRES_SCHEMA"]
+                allowed = len(params) > 1 and params[1] == env["HEINZEL_POSTGRES_SCHEMA"]
             elif "has_column_privilege" in rendered:
                 table = str(params[1])
                 column = str(params[2])
@@ -198,10 +198,10 @@ def _show_rows(privileges: tuple[tuple[str, str], ...]) -> Result:
 
 def _snowflake_router(config: AcceptanceConfig) -> Router:
     env = config.environment
-    runtime = env["PILLARMESH_SNOWFLAKE_ROLE"]
-    owner = "PILLARMESH_M0_OWNER"
-    database = env["PILLARMESH_SNOWFLAKE_DATABASE"]
-    schema = f"{database}.{env['PILLARMESH_SNOWFLAKE_SCHEMA']}"
+    runtime = env["HEINZEL_SNOWFLAKE_ROLE"]
+    owner = "HEINZEL_M0_OWNER"
+    database = env["HEINZEL_SNOWFLAKE_DATABASE"]
+    schema = f"{database}.{env['HEINZEL_SNOWFLAKE_SCHEMA']}"
 
     def qualified(name: str) -> str:
         return f"{schema}.{name}"
@@ -211,32 +211,31 @@ def _snowflake_router(config: AcceptanceConfig) -> Router:
         if text == (
             "SELECT CURRENT_USER(), CURRENT_ACCOUNT_NAME(), CURRENT_ACCOUNT(), CURRENT_ROLE()"
         ):
-            row = (env["PILLARMESH_SNOWFLAKE_USER"], "DEDICATED_ACCOUNT", "LOCATOR", runtime)
+            row = (env["HEINZEL_SNOWFLAKE_USER"], "DEDICATED_ACCOUNT", "LOCATOR", runtime)
             return ((row,), ())
         if text.startswith("SHOW GRANTS TO USER"):
             return ((("USER", runtime),), ("granted_to", "role"))
         if text.startswith("SHOW GRANTS ON"):
             privileges: list[tuple[str, str]] = [("OWNERSHIP", owner)]
             usage_objects = {
-                f"SHOW GRANTS ON WAREHOUSE {env['PILLARMESH_SNOWFLAKE_WAREHOUSE']}",
+                f"SHOW GRANTS ON WAREHOUSE {env['HEINZEL_SNOWFLAKE_WAREHOUSE']}",
                 f"SHOW GRANTS ON DATABASE {database}",
                 f"SHOW GRANTS ON SCHEMA {schema}",
             }
             if text in usage_objects:
                 privileges.append(("USAGE", runtime))
-            elif text == f"SHOW GRANTS ON STAGE {qualified(env['PILLARMESH_SNOWFLAKE_STAGE'])}":
+            elif text == f"SHOW GRANTS ON STAGE {qualified(env['HEINZEL_SNOWFLAKE_STAGE'])}":
                 privileges.extend((("READ", runtime), ("WRITE", runtime)))
             elif text == (
-                f"SHOW GRANTS ON TABLE {qualified(env['PILLARMESH_SNOWFLAKE_TARGET_TABLE'])}"
+                f"SHOW GRANTS ON TABLE {qualified(env['HEINZEL_SNOWFLAKE_TARGET_TABLE'])}"
             ):
                 privileges.extend((("SELECT", runtime), ("INSERT", runtime), ("UPDATE", runtime)))
             elif text == (
-                "SHOW GRANTS ON TABLE "
-                f"{qualified(env['PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE'])}"
+                f"SHOW GRANTS ON TABLE {qualified(env['HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE'])}"
             ):
                 privileges.append(("SELECT", runtime))
             elif text == (
-                f"SHOW GRANTS ON TABLE {qualified(env['PILLARMESH_SNOWFLAKE_LEDGER_TABLE'])}"
+                f"SHOW GRANTS ON TABLE {qualified(env['HEINZEL_SNOWFLAKE_LEDGER_TABLE'])}"
             ):
                 privileges.extend((("SELECT", runtime), ("INSERT", runtime)))
             elif text == f"SHOW GRANTS ON TABLE {qualified('ENVIRONMENT_MARKER')}":
@@ -244,21 +243,21 @@ def _snowflake_router(config: AcceptanceConfig) -> Router:
             return _show_rows(tuple(privileges))
         if text.startswith("SHOW GRANTS TO ROLE"):
             rows = (
-                ("WAREHOUSE", env["PILLARMESH_SNOWFLAKE_WAREHOUSE"], "USAGE"),
+                ("WAREHOUSE", env["HEINZEL_SNOWFLAKE_WAREHOUSE"], "USAGE"),
                 ("DATABASE", database, "USAGE"),
                 ("SCHEMA", schema, "USAGE"),
-                ("STAGE", qualified(env["PILLARMESH_SNOWFLAKE_STAGE"]), "READ"),
-                ("STAGE", qualified(env["PILLARMESH_SNOWFLAKE_STAGE"]), "WRITE"),
-                ("TABLE", qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"]), "SELECT"),
-                ("TABLE", qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"]), "INSERT"),
-                ("TABLE", qualified(env["PILLARMESH_SNOWFLAKE_TARGET_TABLE"]), "UPDATE"),
+                ("STAGE", qualified(env["HEINZEL_SNOWFLAKE_STAGE"]), "READ"),
+                ("STAGE", qualified(env["HEINZEL_SNOWFLAKE_STAGE"]), "WRITE"),
+                ("TABLE", qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"]), "SELECT"),
+                ("TABLE", qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"]), "INSERT"),
+                ("TABLE", qualified(env["HEINZEL_SNOWFLAKE_TARGET_TABLE"]), "UPDATE"),
                 (
                     "TABLE",
-                    qualified(env["PILLARMESH_SNOWFLAKE_NEGATIVE_TARGET_TABLE"]),
+                    qualified(env["HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE"]),
                     "SELECT",
                 ),
-                ("TABLE", qualified(env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"]), "SELECT"),
-                ("TABLE", qualified(env["PILLARMESH_SNOWFLAKE_LEDGER_TABLE"]), "INSERT"),
+                ("TABLE", qualified(env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"]), "SELECT"),
+                ("TABLE", qualified(env["HEINZEL_SNOWFLAKE_LEDGER_TABLE"]), "INSERT"),
                 ("TABLE", qualified("ENVIRONMENT_MARKER"), "SELECT"),
             )
             return (rows, ("granted_on", "name", "privilege"))
@@ -276,8 +275,8 @@ def _snowflake_router(config: AcceptanceConfig) -> Router:
                 (),
             )
         if text == "SELECT CURRENT_USER()":
-            return (((env["PILLARMESH_SNOWFLAKE_USER"],),), ())
-        if text.startswith("SELECT COUNT(*) FROM PILLARMESH_M0.TRANSFER.ORDERS"):
+            return (((env["HEINZEL_SNOWFLAKE_USER"],),), ())
+        if text.startswith("SELECT COUNT(*) FROM HEINZEL_M0.TRANSFER.ORDERS"):
             return (((0,),), ())
         if text.startswith("SELECT COUNT(*) FROM IDENTIFIER"):
             error = RuntimeError("denied")
@@ -297,7 +296,7 @@ def test_live_preflight_maps_real_grant_shapes_and_keeps_fixture_key_limited(
     snowflake = ScriptedConnection(_snowflake_router(config))
 
     def postgres_connect(dsn: str) -> ScriptedConnection:
-        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+        return fixture if dsn == config.environment["HEINZEL_POSTGRES_FIXTURE_DSN"] else runtime
 
     actions = LiveProviderActions(
         config,
@@ -312,7 +311,7 @@ def test_live_preflight_maps_real_grant_shapes_and_keeps_fixture_key_limited(
     assert attestation.postgres_audit_body_digest == TRUSTED_POSTGRES_AUDIT_BODY_DIGEST
     assert attestation.snowflake_runtime_grants == SNOWFLAKE_RUNTIME_GRANTS
     assert attestation.snowflake_marker_denial_database == "UNRELATED_PRIVATE"
-    assert attestation.snowflake_marker_denial_database_owner_role == "PILLARMESH_M0_OWNER"
+    assert attestation.snowflake_marker_denial_database_owner_role == "HEINZEL_M0_OWNER"
     assert any(query.startswith("SHOW GRANTS ON") for query, _params in snowflake.statements)
     assert not any("environment_id" in query.casefold() for query, _params in fixture.statements)
     assert not any("pg_proc" in query.casefold() for query, _params in fixture.statements)
@@ -343,7 +342,7 @@ def test_live_preflight_rejects_assumed_postgres_runtime_or_fixture_identity(
     )
 
     def postgres_connect(dsn: str) -> ScriptedConnection:
-        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+        return fixture if dsn == config.environment["HEINZEL_POSTGRES_FIXTURE_DSN"] else runtime
 
     actions = LiveProviderActions(
         config,
@@ -366,7 +365,7 @@ def test_live_preflight_rejects_fixture_without_key_column_select(
     )
 
     def postgres_connect(dsn: str) -> ScriptedConnection:
-        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+        return fixture if dsn == config.environment["HEINZEL_POSTGRES_FIXTURE_DSN"] else runtime
 
     actions = LiveProviderActions(
         config,
@@ -396,7 +395,7 @@ def test_live_preflight_rejects_fixture_select_on_non_key_column(
     )
 
     def postgres_connect(dsn: str) -> ScriptedConnection:
-        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+        return fixture if dsn == config.environment["HEINZEL_POSTGRES_FIXTURE_DSN"] else runtime
 
     actions = LiveProviderActions(
         config,
@@ -427,7 +426,7 @@ def test_live_preflight_rejects_fixture_broad_select_or_maintain_privilege(
     )
 
     def postgres_connect(dsn: str) -> ScriptedConnection:
-        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+        return fixture if dsn == config.environment["HEINZEL_POSTGRES_FIXTURE_DSN"] else runtime
 
     actions = LiveProviderActions(
         config,
@@ -448,14 +447,14 @@ SELECT coalesce(sum(s.calls), 0)::bigint
 FROM public.pg_stat_statements AS s
 JOIN pg_catalog.pg_roles AS r ON r.oid = s.userid
 WHERE r.rolname = session_user
-  AND s.query ILIKE '%pillarmesh_m0%orders%'
+  AND s.query ILIKE '%heinzel_m0%orders%'
   AND s.query ~* '^[[:space:]]*(select|declare)'
 """.strip()
     runtime = ScriptedConnection(_postgres_router(config, "runtime_one", audit_body=stale_body))
     fixture = ScriptedConnection(_postgres_router(config, "fixture"))
 
     def postgres_connect(dsn: str) -> ScriptedConnection:
-        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+        return fixture if dsn == config.environment["HEINZEL_POSTGRES_FIXTURE_DSN"] else runtime
 
     actions = LiveProviderActions(
         config,
@@ -566,10 +565,10 @@ def test_live_replay_and_negative_proofs_map_rows_stage_and_tagged_history(
     config = _config(tmp_path)
     committed = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
     row = (KEY, "synthetic-row-canary", Decimal("10.50"), "USD", "acceptance", committed)
-    target = "PILLARMESH_M0.TRANSFER.ORDERS"
-    negative = "PILLARMESH_M0.TRANSFER.ORDERS_UNSUPPORTED_KEY"
-    ledger = "PILLARMESH_M0.TRANSFER.COMMIT_LEDGER"
-    stage = "PILLARMESH_M0.TRANSFER.M0_STAGE"
+    target = "HEINZEL_M0.TRANSFER.ORDERS"
+    negative = "HEINZEL_M0.TRANSFER.ORDERS_UNSUPPORTED_KEY"
+    ledger = "HEINZEL_M0.TRANSFER.COMMIT_LEDGER"
+    stage = "HEINZEL_M0.TRANSFER.M0_STAGE"
     history = (
         ("SELECT", _SNOWFLAKE_METADATA_QUERIES[0]),
         ("SELECT", "SELECT * FROM INFORMATION_SCHEMA.TABLES"),
@@ -750,7 +749,7 @@ def test_live_preflight_reports_table_select_without_the_key_column_label(
     )
 
     def postgres_connect(dsn: str) -> ScriptedConnection:
-        return fixture if dsn == config.environment["PILLARMESH_POSTGRES_FIXTURE_DSN"] else runtime
+        return fixture if dsn == config.environment["HEINZEL_POSTGRES_FIXTURE_DSN"] else runtime
 
     actions = LiveProviderActions(
         config,

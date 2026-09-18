@@ -9,9 +9,9 @@
     <listen_host>0.0.0.0</listen_host>
     <openSSL>
         <server>
-            <certificateFile>/var/lib/clickhouse/pillarmesh-tls/server.crt</certificateFile>
-            <privateKeyFile>/var/lib/clickhouse/pillarmesh-tls/server.key</privateKeyFile>
-            <caConfig>/var/lib/clickhouse/pillarmesh-tls/ca.crt</caConfig>
+            <certificateFile>/var/lib/clickhouse/heinzel-tls/server.crt</certificateFile>
+            <privateKeyFile>/var/lib/clickhouse/heinzel-tls/server.key</privateKeyFile>
+            <caConfig>/var/lib/clickhouse/heinzel-tls/ca.crt</caConfig>
             <verificationMode>strict</verificationMode>
             <loadDefaultCAFile>false</loadDefaultCAFile>
             <cacheSessions>true</cacheSessions>

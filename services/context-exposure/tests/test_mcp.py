@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
+from heinzel_context_exposure import AgentRequestView
+from heinzel_context_exposure.mcp_server import build_server
 from mcp.server.mcpserver.exceptions import ToolError
-from pillarmesh_context_exposure import AgentRequestView
-from pillarmesh_context_exposure.mcp_server import build_server
 from pydantic import BaseModel, ConfigDict
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)

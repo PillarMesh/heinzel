@@ -4,14 +4,14 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from pillarmesh_contract_model import InformationKind, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import InformationKind, digest
+from heinzel_request_management import (
     DecisionKind,
     RequestManagementService,
     RequestState,
     SQLiteRequestRepository,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     AuthorityResolution,
     AuthorityResolutionStatus,
     AuthoritySourceKind,
@@ -23,7 +23,7 @@ from pillarmesh_semantic_registry import (
     SemanticRevision,
     SQLiteSemanticRepository,
 )
-from pillarmesh_semantic_registry.repository import _CandidateDraft
+from heinzel_semantic_registry.repository import _CandidateDraft
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 21, 12, tzinfo=UTC)

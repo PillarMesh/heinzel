@@ -1,9 +1,9 @@
 import json
 from pathlib import Path
 
-from pillarmesh_authoring_mcp.app import AuthoringApplication
-from pillarmesh_evidence import PackageResult
-from pillarmesh_evidence.package_models import CheckDisposition
+from heinzel_authoring_mcp.app import AuthoringApplication
+from heinzel_evidence import PackageResult
+from heinzel_evidence.package_models import CheckDisposition
 
 
 def test_package_command_result_omits_local_destination_path(tmp_path: Path) -> None:

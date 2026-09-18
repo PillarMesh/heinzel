@@ -10,13 +10,13 @@ from datetime import UTC, datetime
 
 import psycopg
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_postgresql import (
+from heinzel_contract_model import digest
+from heinzel_provider_postgresql import (
     PostgreSQLProductSqlObservationRequest,
     PostgreSQLProductSqlObservationSettings,
     PostgreSQLProductSqlObserver,
 )
-from pillarmesh_warehouse_control import (
+from heinzel_warehouse_control import (
     EncryptionAtRestDisposition,
     EngineKind,
     WarehouseValidationEvidence,
@@ -32,8 +32,8 @@ _IMAGE_DIGEST = _IMAGE.rsplit("@sha256:", 1)[1]
 pytestmark = [
     pytest.mark.emulator,
     pytest.mark.skipif(
-        os.environ.get("PILLARMESH_RUN_DESTINATION_EMULATORS") != "1",
-        reason="set PILLARMESH_RUN_DESTINATION_EMULATORS=1",
+        os.environ.get("HEINZEL_RUN_DESTINATION_EMULATORS") != "1",
+        reason="set HEINZEL_RUN_DESTINATION_EMULATORS=1",
     ),
 ]
 
@@ -46,7 +46,7 @@ def _available_loopback_port() -> int:
 
 @pytest.fixture
 def postgresql_dsn() -> Iterator[str]:
-    name = f"pillarmesh-product-sql-pg-{uuid.uuid4().hex[:12]}"
+    name = f"heinzel-product-sql-pg-{uuid.uuid4().hex[:12]}"
     password = f"observation-{uuid.uuid4().hex}"
     port = _available_loopback_port()
     subprocess.run(
@@ -109,7 +109,7 @@ def test_live_observer_reads_postgresql_catalog_and_sum_behavior(
     engine_version = f"{int(server_version_number) // 10_000}.{int(server_version_number) % 10_000}"
     engine_build_digest = digest(
         {
-            "domain": "pillarmesh-postgresql-engine-build-v1",
+            "domain": "heinzel-postgresql-engine-build-v1",
             "version": {
                 "server_version_num": str(server_version_number),
                 "server_version": str(server_version_text),
@@ -206,7 +206,7 @@ def test_live_observer_does_not_trust_an_unvalidated_not_null_constraint(
         engine_version=engine_version,
         engine_build_digest=digest(
             {
-                "domain": "pillarmesh-postgresql-engine-build-v1",
+                "domain": "heinzel-postgresql-engine-build-v1",
                 "version": {
                     "server_version_num": str(server_version_number),
                     "server_version": str(server_version_text),

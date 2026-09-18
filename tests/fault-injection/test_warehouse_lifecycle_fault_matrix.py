@@ -4,22 +4,22 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-import pillarmesh_warehouse_control as warehouse_control
+import heinzel_warehouse_control as warehouse_control
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_warehouse_control import (
+from heinzel_contract_model import digest
+from heinzel_warehouse_control import (
     EngineKind,
     WarehouseFailureClassification,
     WarehouseLifecycleCheckpoint,
     WarehousePersistenceError,
 )
 
-import tests.acceptance.plan3a_fault_matrix as fault_matrix_module
-from tests.acceptance.plan3a_fault_matrix import (
+import tests.acceptance.warehouse_lifecycle_fault_matrix as fault_matrix_module
+from tests.acceptance.warehouse_lifecycle_fault_matrix import (
     WarehouseFaultScenarioOutcome,
     canonical_fault_matrix_outcomes,
     required_fault_scenario_ids,
-    run_plan3a_fault_matrix,
+    run_warehouse_lifecycle_fault_matrix,
 )
 
 EXPECTED_CHECKPOINTS = {
@@ -83,7 +83,7 @@ EXPECTED_CLASSIFICATION_PROOF_COUNTS = {
 def fault_outcomes(
     tmp_path_factory: pytest.TempPathFactory,
 ) -> tuple[WarehouseFaultScenarioOutcome, ...]:
-    return run_plan3a_fault_matrix(tmp_path_factory.mktemp("warehouse-fault-matrix"))
+    return run_warehouse_lifecycle_fault_matrix(tmp_path_factory.mktemp("warehouse-fault-matrix"))
 
 
 def _engine_outcomes(
@@ -116,8 +116,8 @@ def test_fault_matrix_is_the_exact_canonical_64_scenario_set(
 def test_fault_matrix_outcomes_are_deterministic_across_private_roots(
     tmp_path: Path,
 ) -> None:
-    first = run_plan3a_fault_matrix(tmp_path / "first-fault-matrix")
-    second = run_plan3a_fault_matrix(tmp_path / "second-fault-matrix")
+    first = run_warehouse_lifecycle_fault_matrix(tmp_path / "first-fault-matrix")
+    second = run_warehouse_lifecycle_fault_matrix(tmp_path / "second-fault-matrix")
 
     assert first == second
 
@@ -128,7 +128,7 @@ def test_first_operation_claim_restart_cannot_adopt_without_a_provision_effect(
     root = tmp_path / "first-operation-claim"
     scenario_id = "checkpoint:after_operation_claim:1"
 
-    run_plan3a_fault_matrix(root)
+    run_warehouse_lifecycle_fault_matrix(root)
     state_path = root / "postgresql" / digest(scenario_id)[:16] / "provider-state.json"
     provider_state = json.loads(state_path.read_text())
 
@@ -146,7 +146,7 @@ def test_noop_reopen_cannot_satisfy_observed_session_proof(
     )
 
     with pytest.raises((RuntimeError, ValueError)):
-        run_plan3a_fault_matrix(tmp_path / "noop-reopen")
+        run_warehouse_lifecycle_fault_matrix(tmp_path / "noop-reopen")
 
 
 def test_reopen_closes_old_repository_and_replaces_session_objects(tmp_path: Path) -> None:
@@ -218,7 +218,7 @@ def test_every_actual_checkpoint_occurrence_restarts_and_replays_to_cleanup(
             "distinct_session_generation_count": 3,
             "session_generation_digest": digest(
                 {
-                    "domain": "pillarmesh-plan3a-session-generation-journal-v1",
+                    "domain": "heinzel-warehouse-lifecycle-session-generation-journal-v1",
                     "generations": (1, 2, 3),
                 }
             ),

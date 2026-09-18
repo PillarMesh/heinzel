@@ -13,9 +13,9 @@ from pathlib import Path
 from threading import Event, Thread
 from typing import IO
 
-import pillarmesh_provider_sdk.compose as compose_module
+import heinzel_provider_sdk.compose as compose_module
 import pytest
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     MAX_COMPOSE_OUTPUT_BYTES,
     ComposeCommandError,
     DockerComposeProcess,
@@ -190,7 +190,7 @@ def test_compose_exec_uses_the_explicit_environment_without_inherited_provider_s
     captured_environments: list[object] = []
     monkeypatch.setenv("PATH", "/test/bin")
     monkeypatch.setenv("DOCKER_HOST", "tcp://caller.example.test:2376")
-    monkeypatch.setenv("PILLARMESH_AMBIENT_SECRET", "must-not-cross-boundary")
+    monkeypatch.setenv("HEINZEL_AMBIENT_SECRET", "must-not-cross-boundary")
 
     def start(
         command: list[str],
@@ -1244,7 +1244,7 @@ def test_compose_exec_preserves_interrupt_when_child_cleanup_cannot_reap(
     ) -> tuple[list[object], list[object], list[object]]:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("pillarmesh_provider_sdk.compose.select.select", interrupt_select)
+    monkeypatch.setattr("heinzel_provider_sdk.compose.select.select", interrupt_select)
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
         run=lambda command, *, env, stdin, stdout, stderr: child,
@@ -1269,7 +1269,7 @@ def test_compose_exec_preserves_cancellation_when_child_cleanup_cannot_reap(
     ) -> tuple[list[object], list[object], list[object]]:
         raise _SimulatedCancellation
 
-    monkeypatch.setattr("pillarmesh_provider_sdk.compose.select.select", cancel_select)
+    monkeypatch.setattr("heinzel_provider_sdk.compose.select.select", cancel_select)
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
         run=lambda command, *, env, stdin, stdout, stderr: child,
@@ -1294,7 +1294,7 @@ def test_compose_exec_sanitizes_an_ordinary_io_error_before_unreaped_cleanup(
     ) -> tuple[list[object], list[object], list[object]]:
         raise RuntimeError("private command failure")
 
-    monkeypatch.setattr("pillarmesh_provider_sdk.compose.select.select", fail_select)
+    monkeypatch.setattr("heinzel_provider_sdk.compose.select.select", fail_select)
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
         run=lambda command, *, env, stdin, stdout, stderr: child,
@@ -1522,7 +1522,7 @@ def test_compose_exec_preserves_keyboard_interrupt_when_stdin_cleanup_close_fail
     ) -> tuple[list[object], list[object], list[object]]:
         raise KeyboardInterrupt
 
-    monkeypatch.setattr("pillarmesh_provider_sdk.compose.select.select", interrupt_select)
+    monkeypatch.setattr("heinzel_provider_sdk.compose.select.select", interrupt_select)
     process = DockerComposeProcess(
         compose_file=tmp_path / "compose.yaml",
         run=lambda command, *, env, stdin, stdout, stderr: child,
@@ -1596,7 +1596,7 @@ def test_compose_exec_sanitizes_every_bounded_io_error(
         )
     elif boundary == "select":
         monkeypatch.setattr(
-            "pillarmesh_provider_sdk.compose.select.select",
+            "heinzel_provider_sdk.compose.select.select",
             lambda readable, writable, exceptional, timeout: (_ for _ in ()).throw(
                 error_type(private_error)
             ),
@@ -1639,7 +1639,7 @@ def test_compose_stream_sanitizes_every_bounded_io_error(
         child.stdout = _FilenoFailureStream(private_error, error_type)
     elif boundary == "select":
         monkeypatch.setattr(
-            "pillarmesh_provider_sdk.compose.select.select",
+            "heinzel_provider_sdk.compose.select.select",
             lambda readable, writable, exceptional, timeout: (_ for _ in ()).throw(
                 error_type(private_error)
             ),
@@ -1677,7 +1677,7 @@ def test_compose_io_cleanup_cannot_replace_the_sanitized_primary_failure(
     private_error = "private select driver detail"
     child = _UnreapableProcess()
     monkeypatch.setattr(
-        "pillarmesh_provider_sdk.compose.select.select",
+        "heinzel_provider_sdk.compose.select.select",
         lambda readable, writable, exceptional, timeout: (_ for _ in ()).throw(
             OSError(private_error)
         ),

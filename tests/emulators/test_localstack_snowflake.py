@@ -7,9 +7,9 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import OrderRow, SourceBoundary
-from pillarmesh_provider_snowflake import encode_segment
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import OrderRow, SourceBoundary
+from heinzel_provider_snowflake import encode_segment
 
 from tests.emulators.localstack_support import (
     assert_expected_observation,
@@ -20,7 +20,7 @@ from tests.emulators.localstack_support import (
 @pytest.mark.live
 @pytest.mark.emulator
 def test_provider_stages_commits_verifies_and_replays(tmp_path: Path) -> None:
-    if os.getenv("PILLARMESH_LOCALSTACK_SNOWFLAKE") != "1":
+    if os.getenv("HEINZEL_LOCALSTACK_SNOWFLAKE") != "1":
         pytest.skip("LocalStack Snowflake must be started by the emulator launcher")
 
     provider = localstack_provider()

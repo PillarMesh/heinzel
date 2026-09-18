@@ -10,7 +10,7 @@ production service.
 
 - Python and `uv` versions pinned by this repository.
 - PostgreSQL `initdb` and `pg_ctl` binaries from one installation available on `PATH`, or their
-  directory configured through `PILLARMESH_TEST_POSTGRES_BIN_DIR`.
+  directory configured through `HEINZEL_TEST_POSTGRES_BIN_DIR`.
 - A non-root operating-system account. PostgreSQL refuses to initialize a cluster as root.
 
 The test generates new bootstrap, runtime, and signing secrets in memory for every run. PostgreSQL
@@ -29,7 +29,7 @@ uv run pytest -m live tests/integration/test_postgresql_answer_query_live.py -q
 When Homebrew PostgreSQL is installed outside `PATH`, use:
 
 ```sh
-PILLARMESH_TEST_POSTGRES_BIN_DIR=/opt/homebrew/bin \
+HEINZEL_TEST_POSTGRES_BIN_DIR=/opt/homebrew/bin \
   uv run pytest -m live tests/integration/test_postgresql_answer_query_live.py -q
 ```
 

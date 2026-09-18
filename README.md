@@ -1,8 +1,8 @@
-# PillarMesh
+# Heinzel
 
-PillarMesh is an Enterprise Data Compiler: a contract-first platform that compiles declared data outcomes into legal, feasible, signed execution graphs and executes them deterministically with attributable evidence.
+Heinzel is an Enterprise Data Compiler: a contract-first platform that compiles declared data outcomes into legal, feasible, signed execution graphs and executes them deterministically with attributable evidence.
 
-The current product boundary is set by the [managed data engineering platform addendum](docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md). PillarMesh operates the tenant's analytical warehouse rather than integrating with an arbitrary customer-managed destination, and the initial engine catalog is PostgreSQL and ClickHouse.
+The current product boundary is set by the [managed data engineering platform addendum](docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md). Heinzel operates the tenant's analytical warehouse rather than integrating with an arbitrary customer-managed destination, and the initial engine catalog is PostgreSQL and ClickHouse.
 
 The repository contains the data architect control-plane foundation: immutable managed-warehouse bindings, immutable business-process package intake, and a typed architect inbox with attributable conversation and revision-bound decisions. It also contains the completed M0 evidence thin thread, which is [historical](#historical-m0).
 
@@ -22,10 +22,10 @@ Plan 2 proves the data-architect journey from an immutable business-process pack
 candidate extraction, authority resolution, owner review, approved semantics, managed Integration
 Contract formation, OpenMetadata publication, drift intake, backup/restore, and exact cleanup.
 
-- [Setup](docs/plan2/setup.md)
-- [Offline and witnessed acceptance](docs/plan2/acceptance-run.md)
-- [Evidence package](docs/plan2/evidence-package.md)
-- [Exact teardown](docs/plan2/teardown.md)
+- [Setup](docs/semantic-formation/setup.md)
+- [Offline and witnessed acceptance](docs/semantic-formation/acceptance-run.md)
+- [Evidence package](docs/semantic-formation/evidence-package.md)
+- [Exact teardown](docs/semantic-formation/teardown.md)
 
 ## Plan 3A: Managed Warehouse Lifecycle
 
@@ -33,10 +33,10 @@ Plan 3A proves that the managed warehouse control plane preserves one provider-n
 across PostgreSQL and ClickHouse: provision, validate, back up and restore, suspend and resume,
 retire under retention, and perform exact authorized cleanup with sanitized evidence.
 
-- [Setup](docs/plan3a/setup.md)
-- [Witnessed acceptance](docs/plan3a/acceptance-run.md)
-- [Evidence package](docs/plan3a/evidence-package.md)
-- [Exact teardown](docs/plan3a/teardown.md)
+- [Setup](docs/warehouse-lifecycle/setup.md)
+- [Witnessed acceptance](docs/warehouse-lifecycle/acceptance-run.md)
+- [Evidence package](docs/warehouse-lifecycle/evidence-package.md)
+- [Exact teardown](docs/warehouse-lifecycle/teardown.md)
 
 ## Historical M0
 

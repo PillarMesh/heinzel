@@ -2,7 +2,7 @@ import base64
 from urllib.parse import quote
 
 import pytest
-from pillarmesh_evidence import ScanInput, scan_bytes
+from heinzel_evidence import ScanInput, scan_bytes
 
 
 @pytest.mark.parametrize(

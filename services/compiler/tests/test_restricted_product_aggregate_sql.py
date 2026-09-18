@@ -8,12 +8,12 @@ from typing import Literal, cast
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_compiler import NoValidPlan, compile_product_iir
-from pillarmesh_compiler.clickhouse_sql import emit_clickhouse
-from pillarmesh_compiler.postgresql_sql import emit_postgresql
-from pillarmesh_compiler.restricted_sql import evaluate_project_sum_shape
-from pillarmesh_contract_model import digest
-from pillarmesh_iir import (
+from heinzel_compiler import NoValidPlan, compile_product_iir
+from heinzel_compiler.clickhouse_sql import emit_clickhouse
+from heinzel_compiler.postgresql_sql import emit_postgresql
+from heinzel_compiler.restricted_sql import evaluate_project_sum_shape
+from heinzel_contract_model import digest
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ArithmeticExpression,
@@ -24,7 +24,7 @@ from pillarmesh_iir import (
     ProjectOperation,
     SourceRelation,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     InvalidProductSqlProviderObservation,
     ProductSqlColumnObservation,
     ProductSqlProviderObservation,

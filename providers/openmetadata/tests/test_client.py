@@ -4,9 +4,8 @@ import traceback
 from collections.abc import Callable
 
 import pytest
-from httpx import ConnectError, ReadTimeout, Response
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_openmetadata import (
+from heinzel_contract_model import digest
+from heinzel_provider_openmetadata import (
     CatalogObjectRef,
     CatalogObjectSnapshot,
     CatalogProviderError,
@@ -16,11 +15,12 @@ from pillarmesh_provider_openmetadata import (
     OpenMetadataClient,
     OpenMetadataSettings,
 )
-from pillarmesh_provider_openmetadata.client import (
+from heinzel_provider_openmetadata.client import (
     _description_metadata,
     _description_with_metadata,
     _OpenMetadataCredentials,
 )
+from httpx import ConnectError, ReadTimeout, Response
 from pydantic import SecretStr, ValidationError
 
 _NAMESPACE_ID = "00000000-0000-4000-8000-000000000001"
@@ -41,19 +41,19 @@ _PERSONA_ID = "00000000-0000-4000-8000-000000000015"
 _PIPELINE_ID = "00000000-0000-4000-8000-000000000016"
 _TENANT_A_TERM_ID = "00000000-0000-4000-8000-000000000017"
 _TENANT_B_TERM_ID = "00000000-0000-4000-8000-000000000018"
-_NAMESPACE_NAME = "pm-968bb22cb2fc16a3bacfbea1"
-_RUNTIME_NAME = "pm-a607919ea6e8047b38e4d6f9"
-_TERM_NAME = "pm-0cae9afc772ff0a6e37098f6"
-_CLASSIFICATION_NAME = "pm-754ba436ad8a765e2b2a56ff"
-_TAG_NAME = "pm-6b815d4afc56e4ec98d97fe2"
-_RUNTIME_POLICY_NAME = "pm-47b7aa5d7c9a18ad6374d3ff"
-_RUNTIME_ROLE_NAME = "pm-9e96921a9419be296013e46e"
+_NAMESPACE_NAME = "pm-101bbf8269af2fd0e1708ef6"
+_RUNTIME_NAME = "pm-ef525dda6c89d89fa44d2365"
+_TERM_NAME = "pm-b737523ad62976c68466c6f0"
+_CLASSIFICATION_NAME = "pm-670a8fe851b1ccf63e25ecfb"
+_TAG_NAME = "pm-f127ed4829f6b89dbab0eb66"
+_RUNTIME_POLICY_NAME = "pm-e1575b4de2c2a93dcbe3d9e9"
+_RUNTIME_ROLE_NAME = "pm-80ec50d546f51e4336a5828c"
 _CAPTURED_GLOSSARY_RESPONSE: dict[str, object] = {
     "id": _NAMESPACE_ID,
     "name": _NAMESPACE_NAME,
     "fullyQualifiedName": _NAMESPACE_NAME,
-    "displayName": "PillarMesh namespace",
-    "description": "PillarMesh managed tenant catalog namespace.",
+    "displayName": "Heinzel namespace",
+    "description": "Heinzel managed tenant catalog namespace.",
     "version": 0.1,
     "updatedAt": 1_755_663_200_000,
     "updatedBy": "admin",
@@ -104,7 +104,7 @@ _CAPTURED_GLOSSARY_TERM_RESPONSE: dict[str, object] = {
         "name": _NAMESPACE_NAME,
         "fullyQualifiedName": _NAMESPACE_NAME,
     },
-    "description": "PillarMesh managed glossary term.",
+    "description": "Heinzel managed glossary term.",
     "changeDescription": _CAPTURED_CHANGE_DESCRIPTION,
     "incrementalChangeDescription": _CAPTURED_INCREMENTAL_CHANGE_DESCRIPTION,
     "conceptMappings": [
@@ -143,7 +143,7 @@ _CAPTURED_GLOSSARY_TERM_RESPONSE: dict[str, object] = {
 _CAPTURED_TAG_RESPONSE: dict[str, object] = {
     "id": _TAG_ID,
     "name": _TAG_NAME,
-    "description": "PillarMesh managed classification tag.",
+    "description": "Heinzel managed classification tag.",
     "autoClassificationEnabled": True,
     "autoClassificationPriority": 50,
     "classification": {
@@ -196,7 +196,7 @@ _LINEAGE_DESCRIPTION = _description_with_metadata("validation", {"producer_ref":
 _LINEAGE_IDENTIFIER = (
     '{"fromEntity":{"id":"11111111-1111-4111-8111-111111111111",'
     '"type":"glossaryTerm"},"toEntity":{"id":"22222222-2222-4222-8222-222222222222",'
-    '"type":"glossaryTerm"},"description":"validation\\n\\nPillarMesh metadata v1: '
+    '"type":"glossaryTerm"},"description":"validation\\n\\nHeinzel metadata v1: '
     'eyJwcm9kdWNlcl9yZWYiOiJ2YWxpZGF0aW9uIn0."}'
 )
 _CAPTURED_USER_RESPONSE: dict[str, object] = {
@@ -222,7 +222,7 @@ def test_governed_metadata_uses_a_provider_durable_markdown_trailer() -> None:
 
     assert "<!--" not in description
     assert "`" not in description
-    assert "PillarMesh metadata v1: " in description
+    assert "Heinzel metadata v1: " in description
     assert description.endswith(".")
     assert visible == "Customer definition."
     assert metadata == {"owner_ref": "finance"}
@@ -494,7 +494,7 @@ class NonCanonicalNamespaceCreationTransport(NamespaceCreationTransport):
 
 class CapturedGlossaryResponseTransport(_AuthenticatedTransport):
     def get(self, url: str, **kwargs: object) -> Response:
-        assert url.endswith("/api/v1/glossaries/name/pm-968bb22cb2fc16a3bacfbea1")
+        assert url.endswith("/api/v1/glossaries/name/pm-101bbf8269af2fd0e1708ef6")
         return _response(404, {"message": "missing"})
 
     def request(self, method: str, url: str, **kwargs: object) -> Response:
@@ -613,14 +613,14 @@ class WrongGlossaryTermRelationshipTransport(_AuthenticatedTransport):
                 200,
                 {
                     "id": _NAMESPACE_ID,
-                    "name": "pm-968bb22cb2fc16a3bacfbea1",
-                    "fullyQualifiedName": "pm-968bb22cb2fc16a3bacfbea1",
+                    "name": "pm-101bbf8269af2fd0e1708ef6",
+                    "fullyQualifiedName": "pm-101bbf8269af2fd0e1708ef6",
                 },
             )
         if "/api/v1/users/name/" in url:
             return _response(
                 200,
-                {"id": _RUNTIME_ID, "name": "pm-a607919ea6e8047b38e4d6f9"},
+                {"id": _RUNTIME_ID, "name": "pm-ef525dda6c89d89fa44d2365"},
             )
         assert "/api/v1/glossaryTerms/name/" in url
         return _response(404, {"message": "missing"})
@@ -666,8 +666,8 @@ class WrongGetGlossaryTermRelationshipTransport(_AuthenticatedTransport):
             200,
             {
                 "id": _TERM_ID,
-                "name": "pm-0cae9afc772ff0a6e37098f6",
-                "fullyQualifiedName": ("pm-968bb22cb2fc16a3bacfbea1.pm-0cae9afc772ff0a6e37098f6"),
+                "name": "pm-b737523ad62976c68466c6f0",
+                "fullyQualifiedName": ("pm-101bbf8269af2fd0e1708ef6.pm-b737523ad62976c68466c6f0"),
                 "glossary": {
                     "id": _NAMESPACE_ID,
                     "type": "glossary",
@@ -830,14 +830,14 @@ class ClassificationAttachmentTransport(_AuthenticatedTransport):
                 200,
                 {
                     "id": _NAMESPACE_ID,
-                    "name": "pm-968bb22cb2fc16a3bacfbea1",
-                    "fullyQualifiedName": "pm-968bb22cb2fc16a3bacfbea1",
+                    "name": "pm-101bbf8269af2fd0e1708ef6",
+                    "fullyQualifiedName": "pm-101bbf8269af2fd0e1708ef6",
                 },
             )
         if "/api/v1/users/name/" in url:
             return _response(
                 200,
-                {"id": _RUNTIME_ID, "name": "pm-a607919ea6e8047b38e4d6f9"},
+                {"id": _RUNTIME_ID, "name": "pm-ef525dda6c89d89fa44d2365"},
             )
         if "/api/v1/glossaryTerms/name/" in url:
             return _response(404, {"message": "missing"})
@@ -858,11 +858,11 @@ class ClassificationAttachmentTransport(_AuthenticatedTransport):
             {
                 "id": self.subject_get_id,
                 "name": self.term_name,
-                "fullyQualifiedName": f"pm-968bb22cb2fc16a3bacfbea1.{self.term_name}",
+                "fullyQualifiedName": f"pm-101bbf8269af2fd0e1708ef6.{self.term_name}",
                 "glossary": {
                     "id": _NAMESPACE_ID,
                     "type": "glossary",
-                    "name": "pm-968bb22cb2fc16a3bacfbea1",
+                    "name": "pm-101bbf8269af2fd0e1708ef6",
                 },
                 "tags": tags,
             },
@@ -934,11 +934,11 @@ class ClassificationAttachmentTransport(_AuthenticatedTransport):
             {
                 "id": self.patch_id,
                 "name": self.term_name,
-                "fullyQualifiedName": f"pm-968bb22cb2fc16a3bacfbea1.{self.term_name}",
+                "fullyQualifiedName": f"pm-101bbf8269af2fd0e1708ef6.{self.term_name}",
                 "glossary": {
                     "id": _NAMESPACE_ID,
                     "type": "glossary",
-                    "name": "pm-968bb22cb2fc16a3bacfbea1",
+                    "name": "pm-101bbf8269af2fd0e1708ef6",
                 },
                 "tags": tags,
             },
@@ -997,15 +997,15 @@ class GlossaryLookupTransport(_AuthenticatedTransport):
     def get(self, url: str, **kwargs: object) -> Response:
         self.urls.append(url)
         if url.endswith(
-            "/api/v1/glossaryTerms/name/pm-968bb22cb2fc16a3bacfbea1.pm-5a81cbddc8d6cc4d0d36d0bb"
+            "/api/v1/glossaryTerms/name/pm-101bbf8269af2fd0e1708ef6.pm-098658aa36e7aee42d2cb763"
         ):
             return _response(
                 200,
                 {
                     "id": _TERM_ID,
-                    "name": "pm-5a81cbddc8d6cc4d0d36d0bb",
+                    "name": "pm-098658aa36e7aee42d2cb763",
                     "fullyQualifiedName": (
-                        "pm-968bb22cb2fc16a3bacfbea1.pm-5a81cbddc8d6cc4d0d36d0bb"
+                        "pm-101bbf8269af2fd0e1708ef6.pm-098658aa36e7aee42d2cb763"
                     ),
                     "glossary": {
                         "id": _NAMESPACE_ID,
@@ -1421,14 +1421,14 @@ class LineageCreationTransport(_AuthenticatedTransport):
                 200,
                 {
                     "id": _NAMESPACE_ID,
-                    "name": "pm-968bb22cb2fc16a3bacfbea1",
-                    "fullyQualifiedName": "pm-968bb22cb2fc16a3bacfbea1",
+                    "name": "pm-101bbf8269af2fd0e1708ef6",
+                    "fullyQualifiedName": "pm-101bbf8269af2fd0e1708ef6",
                 },
             )
         if "/api/v1/users/name/" in url:
             return _response(
                 200,
-                {"id": _RUNTIME_ID, "name": "pm-a607919ea6e8047b38e4d6f9"},
+                {"id": _RUNTIME_ID, "name": "pm-ef525dda6c89d89fa44d2365"},
             )
         if "/api/v1/glossaryTerms/name/" in url:
             return _response(404, {"message": "missing"})
@@ -1533,11 +1533,11 @@ class RestartableLineageTransport(LineageCreationTransport):
                     {
                         "id": identifier,
                         "name": name,
-                        "fullyQualifiedName": f"pm-968bb22cb2fc16a3bacfbea1.{name}",
+                        "fullyQualifiedName": f"pm-101bbf8269af2fd0e1708ef6.{name}",
                         "glossary": {
                             "id": _NAMESPACE_ID,
                             "type": "glossary",
-                            "name": "pm-968bb22cb2fc16a3bacfbea1",
+                            "name": "pm-101bbf8269af2fd0e1708ef6",
                         },
                     },
                 )
@@ -1888,8 +1888,8 @@ def test_namespace_creation_supplies_the_required_description() -> None:
     assert isinstance(transport.payload, dict)
     assert transport.payload == {
         "name": transport.payload["name"],
-        "displayName": "PillarMesh tenant-a",
-        "description": "PillarMesh managed tenant catalog namespace.",
+        "displayName": "Heinzel tenant-a",
+        "description": "Heinzel managed tenant catalog namespace.",
     }
 
 
@@ -2093,7 +2093,7 @@ def test_captured_openmetadata_glossary_term_response_validates() -> None:
         identity="term",
         payload=GlossaryTermPayload(
             name="term",
-            definition="PillarMesh managed glossary term.",
+            definition="Heinzel managed glossary term.",
             owner_ref="runtime",
             provenance_ref="validation",
         ),
@@ -2327,7 +2327,7 @@ def test_glossary_term_response_is_bound_to_the_expected_glossary_and_parent(
             identity="term",
             payload=GlossaryTermPayload(
                 name="term",
-                definition="PillarMesh managed glossary term.",
+                definition="Heinzel managed glossary term.",
                 owner_ref="runtime",
                 provenance_ref="validation",
             ),
@@ -2397,7 +2397,7 @@ def test_captured_openmetadata_tag_response_validates() -> None:
         identity="term",
         payload=GlossaryTermPayload(
             name="term",
-            definition="PillarMesh managed glossary term.",
+            definition="Heinzel managed glossary term.",
             owner_ref="runtime",
             provenance_ref="validation",
         ),
@@ -2421,7 +2421,7 @@ def test_captured_openmetadata_tag_response_validates() -> None:
 def test_classification_accepts_the_same_tenant_logical_identity_with_colons() -> None:
     transport = RecordingTransport()
     client = authenticated_client(transport)
-    logical_identity = "pillarmesh:semantic-version:entity:customer"
+    logical_identity = "heinzel:semantic-version:entity:customer"
     client.ensure_glossary_term(
         tenant_key="tenant-a",
         identity=logical_identity,
@@ -2486,7 +2486,7 @@ def test_classification_attachment_requires_the_exact_subject_and_requested_tag(
         identity="term",
         payload=GlossaryTermPayload(
             name="term",
-            definition="PillarMesh managed glossary term.",
+            definition="Heinzel managed glossary term.",
             owner_ref="runtime",
             provenance_ref="validation",
         ),
@@ -2519,7 +2519,7 @@ def test_classification_attachment_requires_independent_persistence_read_back() 
         identity="term",
         payload=GlossaryTermPayload(
             name="term",
-            definition="PillarMesh managed glossary term.",
+            definition="Heinzel managed glossary term.",
             owner_ref="runtime",
             provenance_ref="validation",
         ),
@@ -2552,7 +2552,7 @@ def test_classification_attachment_requests_tags_for_independent_read_back() -> 
         identity="term",
         payload=GlossaryTermPayload(
             name="term",
-            definition="PillarMesh managed glossary term.",
+            definition="Heinzel managed glossary term.",
             owner_ref="runtime",
             provenance_ref="validation",
         ),
@@ -2585,7 +2585,7 @@ def test_classification_tag_response_is_bound_to_the_expected_classification_and
         identity="term",
         payload=GlossaryTermPayload(
             name="term",
-            definition="PillarMesh managed glossary term.",
+            definition="Heinzel managed glossary term.",
             owner_ref="runtime",
             provenance_ref="validation",
         ),
@@ -2616,7 +2616,7 @@ def test_recognizer_configuration_fields_are_rejected() -> None:
         identity="term",
         payload=GlossaryTermPayload(
             name="term",
-            definition="PillarMesh managed glossary term.",
+            definition="Heinzel managed glossary term.",
             owner_ref="runtime",
             provenance_ref="validation",
         ),
@@ -2657,7 +2657,7 @@ def test_glossary_term_lookup_uses_its_fully_qualified_name() -> None:
 
     assert snapshot.object_kind == "glossary_term"
     assert transport.urls[-1].endswith(
-        "/api/v1/glossaryTerms/name/pm-968bb22cb2fc16a3bacfbea1.pm-5a81cbddc8d6cc4d0d36d0bb"
+        "/api/v1/glossaryTerms/name/pm-101bbf8269af2fd0e1708ef6.pm-098658aa36e7aee42d2cb763"
     )
 
 
@@ -3447,7 +3447,7 @@ def test_publication_references_use_governed_descriptions_and_round_trip_readbac
         ),
     )
     assert classification_payload["description"] == _description_with_metadata(
-        "PillarMesh managed classification.",
+        "Heinzel managed classification.",
         {
             "classification_ref": "classification-a",
             "provenance_ref": "provenance-b",
@@ -3458,7 +3458,7 @@ def test_publication_references_use_governed_descriptions_and_round_trip_readbac
         "validation", {"producer_ref": "producer-a"}
     )
     # OpenMetadata 1.13.3 persists glossary-term entity edges but logs its own
-    # "Unsupported Entity Type ... for column lineage" message. PillarMesh sends
+    # "Unsupported Entity Type ... for column lineage" message. Heinzel sends
     # no column-lineage payload, and independently verifies both the exact edge and
     # graph before treating the operation as successful.
     assert "columnsLineage" not in lineage_payload["edge"]["lineageDetails"]

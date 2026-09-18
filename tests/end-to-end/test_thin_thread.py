@@ -3,12 +3,12 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
-from pillarmesh_authoring_mcp import AuthoringApplication
-from pillarmesh_contract_model import FIXED_PROJECTION, IntegrationContract, digest
-from pillarmesh_contract_service import ContractService
-from pillarmesh_evidence import SQLiteStore
-from pillarmesh_execution_graph import GraphSigner, GraphVerifier
-from pillarmesh_provider_sdk import (
+from heinzel_authoring_mcp import AuthoringApplication
+from heinzel_contract_model import FIXED_PROJECTION, IntegrationContract, digest
+from heinzel_contract_service import ContractService
+from heinzel_evidence import SQLiteStore
+from heinzel_execution_graph import GraphSigner, GraphVerifier
+from heinzel_provider_sdk import (
     ColumnObservation,
     CommitReceipt,
     DriftProbe,
@@ -18,8 +18,8 @@ from pillarmesh_provider_sdk import (
     SourceBoundary,
     VisibilityProof,
 )
-from pillarmesh_provider_snowflake import encode_segment
-from pillarmesh_runtime import Runtime
+from heinzel_provider_snowflake import encode_segment
+from heinzel_runtime import Runtime
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
@@ -163,7 +163,7 @@ class Destination:
         }
 
     def commit_or_resolve(self, manifest: SegmentManifest) -> CommitReceipt:
-        from pillarmesh_contract_model import digest
+        from heinzel_contract_model import digest
 
         manifest_digest = digest(manifest)
         existing = self.ledger.get(manifest.batch_id)
@@ -185,7 +185,7 @@ class Destination:
         )
 
     def verify_visibility(self, manifest: SegmentManifest, acceptance_key: int) -> VisibilityProof:
-        from pillarmesh_contract_model import digest
+        from heinzel_contract_model import digest
 
         value_digest = digest(self.rows[acceptance_key])
         return VisibilityProof(
@@ -208,7 +208,7 @@ def contract_payload() -> dict[str, object]:
         },
         "destination": {
             "connection_handle": "sf-m0",
-            "database": "PILLARMESH_M0",
+            "database": "HEINZEL_M0",
             "schema": "PUBLIC",
             "table": "ORDERS",
             "key": "order_id",

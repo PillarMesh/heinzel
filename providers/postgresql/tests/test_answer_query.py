@@ -6,26 +6,26 @@ from decimal import Decimal
 
 import psycopg
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_dbt_adapter import DbtDecimalMagnitudeCheck
-from pillarmesh_provider_postgresql import (
+from heinzel_contract_model import digest
+from heinzel_dbt_adapter import DbtDecimalMagnitudeCheck
+from heinzel_provider_postgresql import (
     PostgreSQLAnswerQueryProvider,
     PostgreSQLAnswerQuerySettings,
     compose_postgresql_answer_query_provider,
 )
-from pillarmesh_provider_postgresql.answer_query import PostgreSQLAnswerGenerationBinding
-from pillarmesh_provider_postgresql.product_materialization import (
+from heinzel_provider_postgresql.answer_query import PostgreSQLAnswerGenerationBinding
+from heinzel_provider_postgresql.product_materialization import (
     _postgresql_product_generation_commit_reference,
 )
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import (
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import (
     AnswerProductGenerationReference,
     AnswerQueryParameter,
     AnswerQueryReference,
     AnswerQueryTimedOut,
     ReadOnlyAnswerQuery,
 )
-from pillarmesh_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
+from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
 from pydantic import SecretStr, ValidationError
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
@@ -188,7 +188,7 @@ def _settings() -> PostgreSQLAnswerQuerySettings:
 def _generation_binding() -> PostgreSQLAnswerGenerationBinding:
     provider_commit_reference = digest(
         {
-            "domain": "pillarmesh-postgresql-product-generation-v1",
+            "domain": "heinzel-postgresql-product-generation-v1",
             "tenant_id": "tenant-a",
             "product_id": "product-1",
             "product_revision": 1,
@@ -284,7 +284,7 @@ def test_postgresql_uses_a_read_only_transaction_timeout_bindings_and_streaming_
         ("3000",),
     )
     assert len(connection.control) == 7
-    assert connection.cursor_name == "pillarmesh_answer_query"
+    assert connection.cursor_name == "heinzel_answer_query"
     assert connection.query_cursor.executed == (_request().statement, (5,))
     assert connection.query_cursor.itersize == 64
     assert tuple((column.name, column.value_type) for column in cursor.columns) == (
@@ -610,7 +610,7 @@ def test_postgresql_rechecks_signed_magnitudes_before_executing_the_governed_que
         (Decimal("-1e48"), Decimal("1e48")),
         (Decimal("-1e48"), Decimal("1e48")),
     )
-    assert connection.cursor_name == "pillarmesh_answer_query"
+    assert connection.cursor_name == "heinzel_answer_query"
     cursor.close()
 
 

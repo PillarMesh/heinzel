@@ -7,7 +7,7 @@ mints per read, not part of the state the browser is agreeing to.
 
 from __future__ import annotations
 
-from pillarmesh_console.contracts import setup_snapshot_digest
+from heinzel_console.contracts import setup_snapshot_digest
 
 
 def _snapshot(reset_token: str) -> dict[str, object]:

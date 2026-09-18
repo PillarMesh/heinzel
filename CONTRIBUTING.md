@@ -1,4 +1,4 @@
-# Contributing to PillarMesh
+# Contributing to Heinzel
 
 ## Before You Change Code
 

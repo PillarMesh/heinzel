@@ -1,42 +1,42 @@
 [project]
-name = "pillarmesh-console"
+name = "heinzel-console"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
   # Governed-local projections call the owning services' public read interfaces.
   # The console never opens another component's database.
-  "pillarmesh-access-control",
-  "pillarmesh-bi-control",
-  "pillarmesh-catalog-control",
-  "pillarmesh-contract-model",
-  "pillarmesh-contract-service",
-  "pillarmesh-evidence",
-  "pillarmesh-knowledge-graph",
-  "pillarmesh-provider-sdk",
-  "pillarmesh-request-management",
-  "pillarmesh-runtime",
-  "pillarmesh-semantic-registry",
-  "pillarmesh-state",
-  "pillarmesh-warehouse-control",
+  "heinzel-access-control",
+  "heinzel-bi-control",
+  "heinzel-catalog-control",
+  "heinzel-contract-model",
+  "heinzel-contract-service",
+  "heinzel-evidence",
+  "heinzel-knowledge-graph",
+  "heinzel-provider-sdk",
+  "heinzel-request-management",
+  "heinzel-runtime",
+  "heinzel-semantic-registry",
+  "heinzel-state",
+  "heinzel-warehouse-control",
   "pydantic>=2.11,<3",
   "starlette>=1.6,<2",
   "uvicorn>=0.52,<1",
 ]
 
 [tool.uv.sources]
-pillarmesh-access-control = { workspace = true }
-pillarmesh-bi-control = { workspace = true }
-pillarmesh-catalog-control = { workspace = true }
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-contract-service = { workspace = true }
-pillarmesh-evidence = { workspace = true }
-pillarmesh-knowledge-graph = { workspace = true }
-pillarmesh-provider-sdk = { workspace = true }
-pillarmesh-request-management = { workspace = true }
-pillarmesh-runtime = { workspace = true }
-pillarmesh-semantic-registry = { workspace = true }
-pillarmesh-state = { workspace = true }
-pillarmesh-warehouse-control = { workspace = true }
+heinzel-access-control = { workspace = true }
+heinzel-bi-control = { workspace = true }
+heinzel-catalog-control = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-contract-service = { workspace = true }
+heinzel-evidence = { workspace = true }
+heinzel-knowledge-graph = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-request-management = { workspace = true }
+heinzel-runtime = { workspace = true }
+heinzel-semantic-registry = { workspace = true }
+heinzel-state = { workspace = true }
+heinzel-warehouse-control = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

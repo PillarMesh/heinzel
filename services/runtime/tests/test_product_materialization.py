@@ -6,8 +6,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_execution_graph import (
+from heinzel_contract_model import digest
+from heinzel_execution_graph import (
     Decimal57OutputCheck,
     GenerationScopedProductSource,
     ProductExecutionAuthorizationSigner,
@@ -16,12 +16,12 @@ from pillarmesh_execution_graph import (
     ProductPhysicalPlan,
     ProductTarget,
 )
-from pillarmesh_runtime.product_input_cardinality import (
+from heinzel_runtime.product_input_cardinality import (
     ProductInputCardinalityEvidence,
     ProductInputReceiptCardinality,
     SQLiteProductInputCardinalityEvidenceRepository,
 )
-from pillarmesh_runtime.product_materialization import (
+from heinzel_runtime.product_materialization import (
     CatalogPublicationError,
     MaterializationAuthorityError,
     MaterializationObservation,
@@ -33,7 +33,7 @@ from pillarmesh_runtime.product_materialization import (
     PublicationRecoveryNotAllowedError,
     StalePublicationRevisionError,
 )
-from pillarmesh_state import (
+from heinzel_state import (
     IncidentRecord,
     RecoveryCommand,
     RecoveryCommandService,

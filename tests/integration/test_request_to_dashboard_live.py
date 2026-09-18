@@ -6,27 +6,27 @@ from pathlib import Path
 
 import httpx
 import pytest
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardAnswerAuthority,
     DashboardControlService,
     DashboardDesiredState,
     DashboardProductGenerationReference,
     SQLiteDashboardRepository,
 )
-from pillarmesh_console.contracts import (
+from heinzel_console.contracts import (
     AccessRevocationCommand,
     AdmissionCommand,
     CreateRequestCommand,
 )
-from pillarmesh_console.request_intake import request_intake_content
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_provider_superset import (
+from heinzel_console.request_intake import request_intake_content
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_provider_superset import (
     CredentialScopedSupersetProvider,
     HttpSupersetClient,
     HttpxSupersetTransport,
     SupersetCredentials,
 )
-from pillarmesh_request_management import FulfillmentProposal
+from heinzel_request_management import FulfillmentProposal
 from starlette.testclient import TestClient
 
 from tests.acceptance.run_console_governed import (

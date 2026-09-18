@@ -2,15 +2,15 @@ from __future__ import annotations
 
 from typing import Literal, Protocol
 
-from pillarmesh_compiler import (
+from heinzel_compiler import (
     ProductGenerationReference,
     QueryConsumptionObject,
     QueryDimension,
     QueryMetric,
     QueryReference,
 )
-from pillarmesh_contract_model import ArtifactModel, ArtifactReference
-from pillarmesh_semantic_registry import ApprovedProductQueryBinding
+from heinzel_contract_model import ArtifactModel, ArtifactReference
+from heinzel_semantic_registry import ApprovedProductQueryBinding
 from pydantic import ConfigDict, Field
 
 

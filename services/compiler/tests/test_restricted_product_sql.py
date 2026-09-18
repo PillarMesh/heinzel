@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import pytest
-from pillarmesh_compiler import NoValidPlan, compile_product_iir
-from pillarmesh_compiler.clickhouse_sql import emit_clickhouse
-from pillarmesh_compiler.postgresql_sql import emit_postgresql
-from pillarmesh_iir import (
+from heinzel_compiler import NoValidPlan, compile_product_iir
+from heinzel_compiler.clickhouse_sql import emit_clickhouse
+from heinzel_compiler.postgresql_sql import emit_postgresql
+from heinzel_iir import (
     ColumnDeclaration,
     ColumnReference,
     ComparisonExpression,

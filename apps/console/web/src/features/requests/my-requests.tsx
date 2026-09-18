@@ -6,7 +6,7 @@ import type {
   ClarifiedOutcomeAcceptanceCommand,
   ConsoleEnvelopeClarifiedOutcomeView,
   ConsoleEnvelopeConversationView,
-  ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView,
+  ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView,
   ConsoleEnvelopeRequesterRequestView,
   ConsoleEnvelopeAccessLifecycleView,
   ConversationMessageCommand,
@@ -42,7 +42,7 @@ export interface RequesterClient {
   ): Promise<ConsoleEnvelopeRequesterRequestView>
   getClarifiedOutcome(requestId: string): Promise<ConsoleEnvelopeClarifiedOutcomeView>
   getConversation(requestId: string): Promise<ConsoleEnvelopeConversationView>
-  getRequesterRequests(): Promise<ConsoleEnvelopeJsonTuplePillarmeshConsoleContractsRequesterRequestView>
+  getRequesterRequests(): Promise<ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView>
   revokeAccess(
     requestId: string,
     command: AccessRevocationCommand,
@@ -323,7 +323,7 @@ function WithdrawRequest({
     <div className="request-summary__withdrawal">
       {confirming ? (
         <>
-          <p>Withdrawing closes this request. PillarMesh will not prepare or deliver an answer.</p>
+          <p>Withdrawing closes this request. Heinzel will not prepare or deliver an answer.</p>
           <button disabled={submitting} onClick={() => void withdraw()} type="button">
             {submitting ? "Withdrawing…" : "Confirm withdrawal"}
           </button>

@@ -40,7 +40,7 @@ test("the requester surface refuses to render for a reviewer identity", async ({
   // must not render a partial requester surface when the read is denied.
   await expect(page.getByRole("alert")).toHaveText("Your requests could not be displayed safely.")
   await expect(page.getByRole("heading", {name: "My requests"})).toHaveCount(0)
-  await expect(page.getByRole("heading", {name: "Ask PillarMesh for something"})).toHaveCount(0)
+  await expect(page.getByRole("heading", {name: "Ask Heinzel for something"})).toHaveCount(0)
 
   expect((await request.get("/api/v1/requests/mine")).status()).toBe(404)
 })

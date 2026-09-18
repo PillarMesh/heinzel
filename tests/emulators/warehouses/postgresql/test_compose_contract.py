@@ -6,7 +6,7 @@ from typing import Any
 import yaml
 
 COMPOSE_PATH = Path(__file__).with_name("compose.yaml")
-CONTAINER_PRIVATE_DIRECTORY = "/var/lib/postgresql/pillarmesh-tls"
+CONTAINER_PRIVATE_DIRECTORY = "/var/lib/postgresql/heinzel-tls"
 
 
 def _postgresql_entrypoint() -> str:
@@ -22,8 +22,8 @@ def test_postgresql_bootstrap_copies_hba_configuration_out_of_private_bind_mount
     entrypoint = _postgresql_entrypoint()
 
     assert (
-        "install -m 0600 -o postgres -g postgres /pillarmesh-private/pg_hba.conf "
+        "install -m 0600 -o postgres -g postgres /heinzel-private/pg_hba.conf "
         f"{CONTAINER_PRIVATE_DIRECTORY}/pg_hba.conf"
     ) in entrypoint
     assert f"-c hba_file={CONTAINER_PRIVATE_DIRECTORY}/pg_hba.conf" in entrypoint
-    assert "-c hba_file=/pillarmesh-private/pg_hba.conf" not in entrypoint
+    assert "-c hba_file=/heinzel-private/pg_hba.conf" not in entrypoint

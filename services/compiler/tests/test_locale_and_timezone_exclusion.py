@@ -10,8 +10,8 @@ IIR's vocabulary.
 
 from __future__ import annotations
 
-from pillarmesh_compiler.restricted_sql import evaluate_project_sum_shape
-from pillarmesh_iir import (
+from heinzel_compiler.restricted_sql import evaluate_project_sum_shape
+from heinzel_iir import (
     AggregateMeasure,
     AggregateOperation,
     ApprovedFunctionCall,

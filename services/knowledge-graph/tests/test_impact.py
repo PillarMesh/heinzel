@@ -4,8 +4,8 @@ from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes
-from pillarmesh_knowledge_graph import (
+from heinzel_contract_model import ArtifactReference, canonical_bytes
+from heinzel_knowledge_graph import (
     ApprovalRequirement,
     ContextEdge,
     ContextGraphProjector,

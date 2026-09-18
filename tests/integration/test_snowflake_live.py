@@ -7,9 +7,9 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import OrderRow, SourceBoundary
-from pillarmesh_provider_snowflake import SnowflakeProvider, SnowflakeSettings, encode_segment
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import OrderRow, SourceBoundary
+from heinzel_provider_snowflake import SnowflakeProvider, SnowflakeSettings, encode_segment
 
 from tests.acceptance.resource_ledger import (
     PrivateResourceLedger,
@@ -17,17 +17,17 @@ from tests.acceptance.resource_ledger import (
 )
 
 _REQUIRED = (
-    "PILLARMESH_TEST_SNOWFLAKE_ACCOUNT",
-    "PILLARMESH_TEST_SNOWFLAKE_USER",
-    "PILLARMESH_TEST_SNOWFLAKE_PASSWORD",
-    "PILLARMESH_TEST_SNOWFLAKE_ROLE",
-    "PILLARMESH_TEST_SNOWFLAKE_WAREHOUSE",
-    "PILLARMESH_TEST_SNOWFLAKE_DATABASE",
-    "PILLARMESH_TEST_SNOWFLAKE_SCHEMA",
-    "PILLARMESH_TEST_SNOWFLAKE_STAGE",
-    "PILLARMESH_TEST_SNOWFLAKE_TARGET",
-    "PILLARMESH_TEST_SNOWFLAKE_LEDGER",
-    "PILLARMESH_LIVE_DIAGNOSTIC_LEDGER_DIR",
+    "HEINZEL_TEST_SNOWFLAKE_ACCOUNT",
+    "HEINZEL_TEST_SNOWFLAKE_USER",
+    "HEINZEL_TEST_SNOWFLAKE_PASSWORD",
+    "HEINZEL_TEST_SNOWFLAKE_ROLE",
+    "HEINZEL_TEST_SNOWFLAKE_WAREHOUSE",
+    "HEINZEL_TEST_SNOWFLAKE_DATABASE",
+    "HEINZEL_TEST_SNOWFLAKE_SCHEMA",
+    "HEINZEL_TEST_SNOWFLAKE_STAGE",
+    "HEINZEL_TEST_SNOWFLAKE_TARGET",
+    "HEINZEL_TEST_SNOWFLAKE_LEDGER",
+    "HEINZEL_LIVE_DIAGNOSTIC_LEDGER_DIR",
 )
 
 
@@ -164,4 +164,4 @@ def test_dedicated_snowflake_account_commits_and_verifies_fresh_row(
         digests = ",".join(
             str(item["resource_digest"]) for item in resources.sanitized_dispositions()
         )
-        record_property("pillarmesh_resource_digests", digests)
+        record_property("heinzel_resource_digests", digests)

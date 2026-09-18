@@ -1,8 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import (
     AccessScopePreview,
     ClarifiedOutcomeStatement,
     FulfillmentGroundingSnapshot,
@@ -12,7 +12,7 @@ from pillarmesh_request_management import (
     RequestState,
     StakeholderAnswerDraft,
 )
-from pillarmesh_request_management.models import DataAccessRequest, StakeholderQuestion
+from heinzel_request_management.models import DataAccessRequest, StakeholderQuestion
 
 NOW = datetime(2026, 8, 31, 12, tzinfo=UTC)
 DIGEST = "0" * 64

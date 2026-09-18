@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -19,7 +19,7 @@ from pillarmesh_contract_model import (
     TriggerRequirement,
     digest,
 )
-from pillarmesh_semantic_registry import (
+from heinzel_semantic_registry import (
     MaterializedProductEvidence,
     ProductVersionAuthorityService,
     SQLiteApprovedProductVersionRepository,

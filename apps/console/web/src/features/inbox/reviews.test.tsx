@@ -98,8 +98,8 @@ const conversation: ConversationView = {
   messages: [
     {
       message_id: "message-question",
-      author_role: "pillarmesh",
-      author_label: "PillarMesh",
+      author_role: "heinzel",
+      author_label: "Heinzel",
       body: "Which invoices count as recognized?",
       created_at: "2026-01-01T00:10:00Z",
     },
@@ -301,7 +301,7 @@ test("the conversation panel renders requester text as text and labels every aut
   const panel = screen.getByRole("region", {name: "Clarification conversation"})
   expect(panel).toHaveTextContent("<img src=x onerror=alert(1)>")
   expect(panel.querySelector("img")).toBeNull()
-  expect(panel).toHaveTextContent("PillarMesh question")
+  expect(panel).toHaveTextContent("Heinzel question")
   expect(panel).toHaveTextContent("Requester reply")
 })
 

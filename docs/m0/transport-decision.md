@@ -6,7 +6,7 @@
 > defines current product scope. See the
 > [managed data engineering platform addendum](../architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md).
 
-Decision: the checked-in M0 acceptance gate uses the pre-authorized `pillarmesh-m0` CLI fallback.
+Decision: the checked-in M0 acceptance gate uses the pre-authorized `heinzel-authoring` CLI fallback.
 
 The harness invokes the installed CLI in subprocesses so the witnessed path uses the same contract
 service, verification, activation, runtime, evidence, and package boundaries as the product CLI.

@@ -5,8 +5,8 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_execution_graph import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_execution_graph import (
     Decimal57OutputCheck,
     GenerationScopedProductSource,
     InvalidProductExecutionAuthorization,
@@ -210,7 +210,7 @@ def test_execution_authorization_signature_has_a_stable_domain_and_key_binding()
         base64.b64decode(signed.signature, validate=True),
         canonical_bytes(
             {
-                "domain": "pillarmesh-product-execution-authorization-v1",
+                "domain": "heinzel-product-execution-authorization-v1",
                 "authorization_digest": signed.authorization_digest,
                 "key_id": "execution-authority-1",
             }

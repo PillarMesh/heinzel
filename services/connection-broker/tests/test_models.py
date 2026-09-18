@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
-from pillarmesh_connection_broker import (
+from heinzel_connection_broker import (
     PrivateSourceCapability,
     SourceBindingValidationEvidence,
     SourceConnectionBinding,

@@ -3,9 +3,9 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_sdk import OrderRow, SourceBoundary
-from pillarmesh_provider_snowflake import EncodingLimits, ResourceLimitExceeded, encode_segment
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_sdk import OrderRow, SourceBoundary
+from heinzel_provider_snowflake import EncodingLimits, ResourceLimitExceeded, encode_segment
 
 
 def boundary() -> SourceBoundary:

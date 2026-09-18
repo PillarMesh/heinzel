@@ -6,8 +6,8 @@ from collections.abc import Iterator, Mapping
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_sdk import (
     AcquisitionField,
     AcquisitionIntent,
     AcquisitionObjectSchema,
@@ -17,14 +17,14 @@ from pillarmesh_provider_sdk import (
     AcquisitionSessionIncomplete,
     acquisition_intent_key,
 )
-from pillarmesh_provider_stripe import (
+from heinzel_provider_stripe import (
     STRIPE_API_VERSION,
     StripeEventCursor,
     StripeObjectDeclaration,
     StripeSettings,
 )
-from pillarmesh_provider_stripe.acquisition import StripeAcquisitionProvider
-from pillarmesh_provider_stripe.settings import StripeObjectKind
+from heinzel_provider_stripe.acquisition import StripeAcquisitionProvider
+from heinzel_provider_stripe.settings import StripeObjectKind
 from pydantic import SecretStr
 
 _NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
@@ -217,7 +217,7 @@ def _settings() -> StripeSettings:
             "refund.failed",
             "refund.updated",
         ),
-        customer_identity_metadata_key="pillarmesh_customer_id",
+        customer_identity_metadata_key="heinzel_customer_id",
     )
 
 

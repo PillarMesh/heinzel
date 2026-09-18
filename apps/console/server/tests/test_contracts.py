@@ -5,8 +5,8 @@ from datetime import UTC, date, datetime
 from typing import get_args, get_origin
 
 import pytest
-from pillarmesh_console import contracts
-from pillarmesh_console.contracts import (
+from heinzel_console import contracts
+from heinzel_console.contracts import (
     AccessPreviewProposalView,
     AccessRevocationCommand,
     ApiMeta,
@@ -30,7 +30,7 @@ from pillarmesh_console.contracts import (
     StrictModel,
     WarehouseBindingCommand,
 )
-from pillarmesh_request_management import ConversationAuthorRole
+from heinzel_request_management import ConversationAuthorRole
 from pydantic import TypeAdapter, ValidationError
 
 
@@ -366,7 +366,7 @@ def test_create_request_requires_the_initial_resource_revision() -> None:
 
 
 def test_setup_snapshot_digest_changes_with_revision_and_material_state() -> None:
-    from pillarmesh_console.contracts import setup_snapshot_digest
+    from heinzel_console.contracts import setup_snapshot_digest
 
     payload = {
         "workspace_ref": "workspace-revenue",
@@ -702,7 +702,7 @@ def test_request_proposal_branch_models_require_kind_on_the_wire() -> None:
 
 def test_conversation_role_vocabulary_matches_the_owning_entry_contract() -> None:
     owning_roles = set(get_args(ConversationAuthorRole.__value__))
-    projected_roles = set(get_args(contracts.ActorRole.__value__)) | {"pillarmesh"}
+    projected_roles = set(get_args(contracts.ActorRole.__value__)) | {"heinzel"}
     assert owning_roles == projected_roles
     assert (
         contracts.ConversationMessageView.model_validate(
@@ -732,7 +732,7 @@ def test_conversation_commands_cannot_supply_a_separate_author_role() -> None:
 
 
 def test_leased_run_status_mirrors_the_state_owned_lifecycle_vocabulary() -> None:
-    from pillarmesh_state import RunLifecycleStatus
+    from heinzel_state import RunLifecycleStatus
 
     assert set(get_args(contracts.LeasedRunStatusView.__value__)) == set(
         get_args(RunLifecycleStatus.__value__)

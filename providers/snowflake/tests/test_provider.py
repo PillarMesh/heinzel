@@ -10,9 +10,9 @@ from typing import Any
 
 import pytest
 import snowflake.connector.errors
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_sdk import OrderRow, ProviderError, SegmentManifest
-from pillarmesh_provider_snowflake import SnowflakeProvider, SnowflakeSettings
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_sdk import OrderRow, ProviderError, SegmentManifest
+from heinzel_provider_snowflake import SnowflakeProvider, SnowflakeSettings
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
@@ -122,9 +122,9 @@ def settings() -> SnowflakeSettings:
         account="account",
         user="runtime_user",
         password="secret-canary",
-        role="PILLARMESH_M0_RUNTIME",
-        warehouse="PILLARMESH_M0_WH",
-        database="PILLARMESH_M0",
+        role="HEINZEL_M0_RUNTIME",
+        warehouse="HEINZEL_M0_WH",
+        database="HEINZEL_M0",
         schema_name="TRANSFER",
         stage="M0_STAGE",
         target_table="ORDERS",
@@ -167,7 +167,7 @@ def test_stage_checks_bytes_and_uses_batch_scoped_prefix(tmp_path: Path) -> None
     provider.stage(segment, expected)
 
     put = next(query for query, _params in backend.calls if query.startswith("PUT "))
-    assert "@PILLARMESH_M0.TRANSFER.M0_STAGE/runs/batch-1 " in put
+    assert "@HEINZEL_M0.TRANSFER.M0_STAGE/runs/batch-1 " in put
     assert "secret-canary" not in repr(provider)
 
     segment.write_bytes(b"changed")

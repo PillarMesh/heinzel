@@ -113,7 +113,7 @@ export function AppShell({
       <SkipLink />
       <header className="app-shell__rail">
         <div className="app-shell__identity">
-          <p className="app-shell__wordmark">PillarMesh</p>
+          <p className="app-shell__wordmark">Heinzel</p>
           <p>{session.workspace.display_name}</p>
           <span>{session.active_role.replaceAll("_", " ")}</span>
         </div>
@@ -142,7 +142,7 @@ export function AppShell({
       <div className="app-shell__surface">
         <ModeBanner dataProvenance={dataProvenance} />
         <main
-          aria-label="PillarMesh console"
+          aria-label="Heinzel console"
           data-motion={reducedMotion ? "reduced" : "full"}
           id="main-content"
           ref={mainRef}

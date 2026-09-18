@@ -1,16 +1,16 @@
 [project]
-name = "pillarmesh-trigger"
+name = "heinzel-trigger"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
-  "pillarmesh-contract-model",
-  "pillarmesh-state",
+  "heinzel-contract-model",
+  "heinzel-state",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-state = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-state = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

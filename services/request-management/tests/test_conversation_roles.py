@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes
-from pillarmesh_request_management import (
+from heinzel_contract_model import canonical_bytes
+from heinzel_request_management import (
     ConversationAuthorRole,
     ConversationEntry,
     RequestManagementService,
@@ -25,7 +25,7 @@ NOW = datetime(2026, 9, 8, tzinfo=UTC)
         "data_owner",
         "policy_approver",
         "budget_approver",
-        "pillarmesh",
+        "heinzel",
     ],
 )
 def test_author_role_survives_database_reopen_with_the_message_and_revision(

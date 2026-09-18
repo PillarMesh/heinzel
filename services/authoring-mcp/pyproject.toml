@@ -1,31 +1,31 @@
 [project]
-name = "pillarmesh-authoring-mcp"
+name = "heinzel-authoring-mcp"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
   "mcp>=2,<3",
-  "pillarmesh-contract-model",
-  "pillarmesh-contract-service",
-  "pillarmesh-evidence",
-  "pillarmesh-execution-graph",
-  "pillarmesh-provider-postgresql",
-  "pillarmesh-provider-snowflake",
-  "pillarmesh-runtime",
+  "heinzel-contract-model",
+  "heinzel-contract-service",
+  "heinzel-evidence",
+  "heinzel-execution-graph",
+  "heinzel-provider-postgresql",
+  "heinzel-provider-snowflake",
+  "heinzel-runtime",
   "pydantic-settings>=2.10,<3",
 ]
 
 [project.scripts]
-pillarmesh-m0 = "pillarmesh_authoring_mcp.cli:main"
-pillarmesh-mcp = "pillarmesh_authoring_mcp.mcp_server:main"
+heinzel-authoring = "heinzel_authoring_mcp.cli:main"
+heinzel-mcp = "heinzel_authoring_mcp.mcp_server:main"
 
 [tool.uv.sources]
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-contract-service = { workspace = true }
-pillarmesh-evidence = { workspace = true }
-pillarmesh-execution-graph = { workspace = true }
-pillarmesh-provider-postgresql = { workspace = true }
-pillarmesh-provider-snowflake = { workspace = true }
-pillarmesh-runtime = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-contract-service = { workspace = true }
+heinzel-evidence = { workspace = true }
+heinzel-execution-graph = { workspace = true }
+heinzel-provider-postgresql = { workspace = true }
+heinzel-provider-snowflake = { workspace = true }
+heinzel-runtime = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

@@ -4,8 +4,8 @@ import sqlite3
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import digest
+from heinzel_request_management import (
     DelegatedRequestProvenance,
     RequestManagementService,
     SQLiteRequestRepository,

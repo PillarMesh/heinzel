@@ -56,7 +56,7 @@ class PrivateResourceLedger:
 
     @staticmethod
     def _digest(kind: str, exact_identifier: str) -> str:
-        payload = f"pillarmesh-m0-resource-v1\0{kind}\0{exact_identifier}".encode()
+        payload = f"heinzel-resource-v1\0{kind}\0{exact_identifier}".encode()
         return hashlib.sha256(payload).hexdigest()
 
     def register(
@@ -233,9 +233,9 @@ def live_diagnostic_ledger_path(
     *,
     repository_root: Path = REPOSITORY_ROOT,
 ) -> Path:
-    raw = environment.get("PILLARMESH_LIVE_DIAGNOSTIC_LEDGER_DIR")
+    raw = environment.get("HEINZEL_LIVE_DIAGNOSTIC_LEDGER_DIR")
     if not raw:
-        raise HarnessError("missing required variables: PILLARMESH_LIVE_DIAGNOSTIC_LEDGER_DIR")
+        raise HarnessError("missing required variables: HEINZEL_LIVE_DIAGNOSTIC_LEDGER_DIR")
     directory = Path(raw).expanduser()
     if not directory.is_absolute() or _inside(directory, repository_root):
         raise HarnessError("live diagnostic ledger directory is unsafe")

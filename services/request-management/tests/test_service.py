@@ -5,13 +5,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_request_management import (
     InboxRequest,
     RequestManagementService,
     RequestState,
 )
-from pillarmesh_request_management.repository import SQLiteRequestRepository
+from heinzel_request_management.repository import SQLiteRequestRepository
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)

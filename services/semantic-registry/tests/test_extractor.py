@@ -7,16 +7,16 @@ from hashlib import sha256
 from pathlib import Path
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_contract_service import BusinessProcessManifest, ProcessPackageReceipt
-from pillarmesh_semantic_registry import (
+from heinzel_contract_model import digest
+from heinzel_contract_service import BusinessProcessManifest, ProcessPackageReceipt
+from heinzel_semantic_registry import (
     CandidateKind,
     CandidateProvenance,
     DeterministicManifestExtractor,
     SemanticCandidateSet,
     SQLiteSemanticRepository,
 )
-from pillarmesh_semantic_registry.repository import (
+from heinzel_semantic_registry.repository import (
     SemanticArtifactConflictError,
     SemanticPersistenceError,
     _CandidateDraft,
@@ -70,7 +70,7 @@ def extractor(
 ) -> DeterministicManifestExtractor:
     return DeterministicManifestExtractor(
         repository,
-        extractor_id="pillarmesh-bounded-markdown",
+        extractor_id="heinzel-bounded-markdown",
         extractor_version=extractor_version,
         clock=lambda: recorded_at,
     )
@@ -144,7 +144,7 @@ def materialize_drafts(
         package_version=receipt.version,
         original_digest=receipt.original_digest,
         manifest_digest=receipt.manifest_digest,
-        extractor_id="pillarmesh-bounded-markdown",
+        extractor_id="heinzel-bounded-markdown",
         extractor_version="1.0.0",
         candidates=candidates,
         unresolved_questions=(),

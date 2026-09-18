@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import cast
 
 import pytest
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     ConnectedAuthorityProvenance,
     ConnectedPolicyAuthorityIntegrityError,
     ConnectedPolicyAuthorityUnavailable,
@@ -20,7 +20,7 @@ from pillarmesh_access_control import (
     EntitlementSnapshotIntegrityError,
     SQLiteEntitlementRepository,
 )
-from pillarmesh_contract_model import ArtifactReference
+from heinzel_contract_model import ArtifactReference
 
 NOW = datetime(2026, 9, 12, 18, 0, tzinfo=UTC)
 

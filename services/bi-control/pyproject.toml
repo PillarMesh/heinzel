@@ -1,23 +1,23 @@
 [project]
-name = "pillarmesh-bi-control"
+name = "heinzel-bi-control"
 version = "0.1.0"
 requires-python = "==3.13.*"
 dependencies = [
   "cryptography>=45,<47",
-  "pillarmesh-contract-model",
-  "pillarmesh-provider-sdk",
-  "pillarmesh-request-management",
-  "pillarmesh-runtime",
-  "pillarmesh-semantic-registry",
+  "heinzel-contract-model",
+  "heinzel-provider-sdk",
+  "heinzel-request-management",
+  "heinzel-runtime",
+  "heinzel-semantic-registry",
   "pydantic>=2.11,<3",
 ]
 
 [tool.uv.sources]
-pillarmesh-contract-model = { workspace = true }
-pillarmesh-provider-sdk = { workspace = true }
-pillarmesh-request-management = { workspace = true }
-pillarmesh-runtime = { workspace = true }
-pillarmesh-semantic-registry = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-request-management = { workspace = true }
+heinzel-runtime = { workspace = true }
+heinzel-semantic-registry = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

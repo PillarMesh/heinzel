@@ -8,10 +8,10 @@ from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Literal, cast, overload
 
-import pillarmesh_provider_sdk.source_conformance as source_conformance_module
+import heinzel_provider_sdk.source_conformance as source_conformance_module
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import (
     AcquisitionAcknowledgement,
     AcquisitionBoundary,
     AcquisitionCeilingExceeded,
@@ -26,8 +26,8 @@ from pillarmesh_provider_sdk import (
     ProviderObservation,
     acquisition_intent_key,
 )
-from pillarmesh_provider_sdk.acquisition_models import AcquisitionScalar
-from pillarmesh_provider_sdk.acquisition_protocols import (
+from heinzel_provider_sdk.acquisition_models import AcquisitionScalar
+from heinzel_provider_sdk.acquisition_protocols import (
     AcquisitionObjectObservation,
     AcquisitionSession,
     AcquisitionSessionIncomplete,
@@ -35,13 +35,13 @@ from pillarmesh_provider_sdk.acquisition_protocols import (
     CompletedAcquisition,
     SourceObservationRequest,
 )
-from pillarmesh_provider_sdk.errors import (
+from heinzel_provider_sdk.errors import (
     AcquisitionProviderError,
     AcquisitionProviderErrorClassification,
     AcquisitionProviderKind,
     AcquisitionProviderReasonCode,
 )
-from pillarmesh_provider_sdk.source_conformance import (
+from heinzel_provider_sdk.source_conformance import (
     SourceConformanceError,
     SourceConformanceScenario,
     exercise_source_provider,
@@ -2331,17 +2331,17 @@ def test_conformance_rejects_one_sided_scenario_authority_or_allowlist_mismatch(
 
 
 def test_provider_sdk_exports_the_shared_acquisition_boundary() -> None:
-    from pillarmesh_provider_sdk import AcquisitionArtifactReader as PublicArtifactReader
-    from pillarmesh_provider_sdk import AcquisitionObjectObservation as PublicObjectObservation
-    from pillarmesh_provider_sdk import AcquisitionProvider as PublicProvider
-    from pillarmesh_provider_sdk import AcquisitionSession as PublicSession
-    from pillarmesh_provider_sdk import CompletedAcquisition as PublicCompletion
-    from pillarmesh_provider_sdk import EncodedAcquisitionSegment as PublicEncodedSegment
-    from pillarmesh_provider_sdk import SourceConformanceScenario as PublicScenario
-    from pillarmesh_provider_sdk import verify_abandoned_session as PublicAbandonedSession
-    from pillarmesh_provider_sdk import verify_checkpoint_lifecycle as PublicCheckpointLifecycle
-    from pillarmesh_provider_sdk import verify_cross_tenant_denial as PublicCrossTenantDenial
-    from pillarmesh_provider_sdk import (
+    from heinzel_provider_sdk import AcquisitionArtifactReader as PublicArtifactReader
+    from heinzel_provider_sdk import AcquisitionObjectObservation as PublicObjectObservation
+    from heinzel_provider_sdk import AcquisitionProvider as PublicProvider
+    from heinzel_provider_sdk import AcquisitionSession as PublicSession
+    from heinzel_provider_sdk import CompletedAcquisition as PublicCompletion
+    from heinzel_provider_sdk import EncodedAcquisitionSegment as PublicEncodedSegment
+    from heinzel_provider_sdk import SourceConformanceScenario as PublicScenario
+    from heinzel_provider_sdk import verify_abandoned_session as PublicAbandonedSession
+    from heinzel_provider_sdk import verify_checkpoint_lifecycle as PublicCheckpointLifecycle
+    from heinzel_provider_sdk import verify_cross_tenant_denial as PublicCrossTenantDenial
+    from heinzel_provider_sdk import (
         verify_private_cursor_containment as PublicCursorContainment,
     )
 

@@ -6,27 +6,27 @@ from datetime import UTC, datetime
 from typing import ClassVar
 
 import pytest
-from pillarmesh_console.contracts import ActorRole
-from pillarmesh_console.impact_projection import (
+from heinzel_console.contracts import ActorRole
+from heinzel_console.impact_projection import (
     ImpactProjectionError,
     ImpactProjectionRecord,
     ImpactViewProjector,
     RequestImpactProjectionReader,
 )
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     ArtifactReference,
     ImpactAdmissionBinding,
     ImpactApprovalRequirement,
     ImpactAuthoritySnapshot,
     ImpactSubject,
 )
-from pillarmesh_knowledge_graph import (
+from heinzel_knowledge_graph import (
     ApprovalRequirement,
     ContextNode,
     ImpactAnalysis,
     ImpactReference,
 )
-from pillarmesh_request_management import ImpactAdmissionResolutionError
+from heinzel_request_management import ImpactAdmissionResolutionError
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
 DIGEST = "a" * 64

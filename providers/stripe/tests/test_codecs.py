@@ -6,16 +6,16 @@ from decimal import Decimal
 from typing import Literal
 
 import pytest
-from pillarmesh_contract_model import digest
-from pillarmesh_provider_sdk import AcquisitionFieldValue, AcquisitionRecord
-from pillarmesh_provider_stripe.codecs import (
+from heinzel_contract_model import digest
+from heinzel_provider_sdk import AcquisitionFieldValue, AcquisitionRecord
+from heinzel_provider_stripe.codecs import (
     StripeCodecError,
     normalize_stripe_event,
     normalize_stripe_object,
 )
 
 API_VERSION = "2026-02-25.clover"
-IDENTITY_METADATA_KEY = "pillarmesh_customer_identity"
+IDENTITY_METADATA_KEY = "heinzel_customer_identity"
 CREATED_EPOCH = 1_700_000_000
 EVENT_CREATED_EPOCH = 1_700_000_120
 CREATED_AT = datetime(2023, 11, 14, 22, 13, 20, tzinfo=UTC)

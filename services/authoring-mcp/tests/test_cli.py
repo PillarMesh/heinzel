@@ -4,10 +4,10 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-import pillarmesh_authoring_mcp.cli as cli_module
+import heinzel_authoring_mcp.cli as cli_module
 import pytest
-from pillarmesh_authoring_mcp.cli import run_cli
-from pillarmesh_evidence import PackageMetadata, ScanInput
+from heinzel_authoring_mcp.cli import run_cli
+from heinzel_evidence import PackageMetadata, ScanInput
 
 
 class FakeApplication:
@@ -99,7 +99,7 @@ def test_raw_acceptance_key_is_not_a_positional_cli_argument() -> None:
     assert application.calls == []
     assert canary not in output.getvalue()
     assert canary not in error.getvalue()
-    assert error.getvalue() == "pillarmesh-m0: error: command arguments are invalid\n"
+    assert error.getvalue() == "heinzel-authoring: error: command arguments are invalid\n"
 
 
 def test_unknown_cli_argument_is_rejected_without_echoing_its_value() -> None:
@@ -121,7 +121,7 @@ def test_unknown_cli_argument_is_rejected_without_echoing_its_value() -> None:
     assert application.calls == []
     assert canary not in output.getvalue()
     assert canary not in error.getvalue()
-    assert error.getvalue() == "pillarmesh-m0: error: command arguments are invalid\n"
+    assert error.getvalue() == "heinzel-authoring: error: command arguments are invalid\n"
 
 
 def test_entrypoint_rejects_invalid_argv_before_loading_settings(
@@ -137,7 +137,7 @@ def test_entrypoint_rejects_invalid_argv_before_loading_settings(
     monkeypatch.setattr(
         cli_module.sys,
         "argv",
-        ["pillarmesh-m0", "activate-stdin", "a" * 64, "b" * 64, canary],
+        ["heinzel-authoring", "activate-stdin", "a" * 64, "b" * 64, canary],
     )
 
     with redirect_stderr(error), pytest.raises(SystemExit) as caught:
@@ -145,7 +145,7 @@ def test_entrypoint_rejects_invalid_argv_before_loading_settings(
 
     assert caught.value.code == 2
     assert canary not in error.getvalue()
-    assert error.getvalue() == "pillarmesh-m0: error: command arguments are invalid\n"
+    assert error.getvalue() == "heinzel-authoring: error: command arguments are invalid\n"
 
 
 def test_export_evidence_reads_non_secret_metadata_path_and_canaries_from_environment(
@@ -176,7 +176,7 @@ def test_export_evidence_reads_non_secret_metadata_path_and_canaries_from_enviro
         application,
         output,
         input_stream=StringIO(),
-        environ={"PILLARMESH_SCAN_INPUT_JSON": json.dumps({"credential_canaries": [canary]})},
+        environ={"HEINZEL_SCAN_INPUT_JSON": json.dumps({"credential_canaries": [canary]})},
     )
 
     assert code == 0
@@ -200,7 +200,7 @@ def test_verify_evidence_passes_environment_canaries_without_echoing_them(tmp_pa
         application,
         output,
         input_stream=StringIO(),
-        environ={"PILLARMESH_SCAN_INPUT_JSON": json.dumps({"row_value_canaries": [canary]})},
+        environ={"HEINZEL_SCAN_INPUT_JSON": json.dumps({"row_value_canaries": [canary]})},
     )
 
     assert code == 0

@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from pillarmesh_catalog_control import CatalogBinding, CatalogBindingState
-from pillarmesh_contract_model import (
+from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -23,8 +23,8 @@ from pillarmesh_contract_model import (
     TriggerRequirement,
     digest,
 )
-from pillarmesh_contract_service import SourceFreshnessObservation
-from pillarmesh_provider_sdk import (
+from heinzel_contract_service import SourceFreshnessObservation
+from heinzel_provider_sdk import (
     CatalogNativeTableDefinition,
     CatalogNativeTableObservation,
     CatalogProductDefinition,
@@ -33,8 +33,8 @@ from pillarmesh_provider_sdk import (
     ProviderError,
     catalog_warehouse_service_external_key,
 )
-from pillarmesh_semantic_registry.product_authority import ApprovedProductVersionMetadata
-from pillarmesh_semantic_registry.product_catalog_publication import (
+from heinzel_semantic_registry.product_authority import ApprovedProductVersionMetadata
+from heinzel_semantic_registry.product_catalog_publication import (
     ProductCatalogColumnAuthority,
     ProductCatalogDefinitionAuthority,
     ProductCatalogPublicationExecutionService,
@@ -44,7 +44,7 @@ from pillarmesh_semantic_registry.product_catalog_publication import (
     SQLiteProductCatalogPublicationRepository,
     product_catalog_definition,
 )
-from pillarmesh_semantic_registry.query_binding import (
+from heinzel_semantic_registry.query_binding import (
     ApprovedProductQueryBinding,
     ProductQueryBindingApproval,
     ProductQueryBindingAuthorityService,
@@ -295,7 +295,7 @@ def _warehouse_hierarchy(
         database_service_name=catalog_warehouse_service_external_key(
             tenant_id=tenant_id, warehouse_binding_id=binding_id
         ),
-        database_name="pillarmesh",
+        database_name="heinzel",
         schema_name="consumption",
         table_name="product_revenue",
     )

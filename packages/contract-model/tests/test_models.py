@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 import pytest
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     FIXED_PROJECTION,
     DestinationBinding,
     IntegrationContract,
@@ -23,7 +23,7 @@ def contract_data() -> dict[str, object]:
         },
         "destination": {
             "connection_handle": "snowflake-m0",
-            "database": "PILLARMESH_M0",
+            "database": "HEINZEL_M0",
             "schema": "PUBLIC",
             "table": "ORDERS",
             "key": "order_id",
@@ -73,7 +73,7 @@ def test_bindings_reject_unchecked_identifiers() -> None:
     with pytest.raises(ValidationError, match="identifier"):
         DestinationBinding(
             connection_handle="sf-m0",
-            database="PILLARMESH_M0",
+            database="HEINZEL_M0",
             schema="PUBLIC",
             table='ORDERS"; DROP TABLE ORDERS',
             key="order_id",

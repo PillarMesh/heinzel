@@ -53,8 +53,8 @@ const stageLabels = {
 } satisfies Record<IncidentStage, string>
 
 const automaticActionLabels = {
-  reconcile_external_effect: "PillarMesh will reconcile the external effect before continuing.",
-  retry_transient_attempt: "PillarMesh will retry the failed attempt automatically.",
+  reconcile_external_effect: "Heinzel will reconcile the external effect before continuing.",
+  retry_transient_attempt: "Heinzel will retry the failed attempt automatically.",
 } satisfies Record<IncidentAutomaticAction, string>
 
 function defaultIdempotencyKey(): string {

@@ -11,12 +11,12 @@ from pathlib import Path
 import psycopg
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import ArtifactReference, canonical_bytes, digest
-from pillarmesh_contract_service import (
+from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
+from heinzel_contract_service import (
     SourceFreshnessObservation,
     SQLiteSourceFreshnessObservationRepository,
 )
-from pillarmesh_dbt_adapter import (
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtColumnTest,
     DbtDecimalMagnitudeCheck,
@@ -26,7 +26,7 @@ from pillarmesh_dbt_adapter import (
     SubprocessDbtRunner,
     compiled_dbt_model_signing_bytes,
 )
-from pillarmesh_execution_graph import (
+from heinzel_execution_graph import (
     Decimal57OutputCheck,
     GenerationScopedProductSource,
     ProductExecutionAuthorizationSigner,
@@ -35,7 +35,7 @@ from pillarmesh_execution_graph import (
     ProductPhysicalPlan,
     ProductTarget,
 )
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLAcquisitionProvider,
     PostgreSQLAcquisitionSettings,
     PostgreSQLDestinationProvider,
@@ -48,7 +48,7 @@ from pillarmesh_provider_postgresql import (
     PostgreSQLSourceObjectDeclaration,
     postgresql_materialized_schema_digest,
 )
-from pillarmesh_provider_sdk import (
+from heinzel_provider_sdk import (
     AcquisitionField,
     AcquisitionIntent,
     AcquisitionObjectSchema,
@@ -59,7 +59,7 @@ from pillarmesh_provider_sdk import (
     acquisition_intent_key,
     staged_segment_digest,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AnswerProductGenerationReference,
     AnswerQueryReference,
     CatalogPublicationError,
@@ -417,7 +417,7 @@ def _write_dbt_profile(
     parsed = psycopg.conninfo.conninfo_to_dict(bootstrap_dsn)
     directory.mkdir(mode=0o700)
     (directory / "profiles.yml").write_text(
-        "pillarmesh_materialization:\n"
+        "heinzel_materialization:\n"
         "  target: postgresql\n"
         "  outputs:\n"
         "    postgresql:\n"
@@ -426,7 +426,7 @@ def _write_dbt_profile(
         f"      port: {parsed['port']}\n"
         f"      dbname: {parsed['dbname']}\n"
         "      user: materialization_runtime\n"
-        "      password: \"{{ env_var('PILLARMESH_DBT_TEST_PASSWORD') }}\"\n"
+        "      password: \"{{ env_var('HEINZEL_DBT_TEST_PASSWORD') }}\"\n"
         f"      schema: {target_schema}\n"
         "      threads: 1\n"
         "      sslmode: disable\n",
@@ -472,7 +472,7 @@ def test_fresh_source_acquisition_land_and_dbt_materialization_commit_one_genera
             SourceFreshnessObservation(
                 observation_id=digest(
                     {
-                        "domain": "pillarmesh-source-freshness-v1",
+                        "domain": "heinzel-source-freshness-v1",
                         "source_ref": "source-live-a",
                         "input_generation_digest": input_generation_digest,
                     }
@@ -508,7 +508,7 @@ def test_fresh_source_acquisition_land_and_dbt_materialization_commit_one_genera
             )
         profiles_directory = tmp_path / "dbt-profiles"
         _write_dbt_profile(profiles_directory, bootstrap_dsn, target_schema=target_schema)
-        monkeypatch.setenv("PILLARMESH_DBT_TEST_PASSWORD", materialization_password)
+        monkeypatch.setenv("HEINZEL_DBT_TEST_PASSWORD", materialization_password)
         private_key = Ed25519PrivateKey.generate()
         signed_model = _signed_model(
             private_key,
@@ -546,7 +546,7 @@ def test_fresh_source_acquisition_land_and_dbt_materialization_commit_one_genera
                         profiles_directory=profiles_directory,
                         workspace_directory=tmp_path,
                         timeout_seconds=180,
-                        credential_environment_names=("PILLARMESH_DBT_TEST_PASSWORD",),
+                        credential_environment_names=("HEINZEL_DBT_TEST_PASSWORD",),
                     )
                 ),
             ),
@@ -747,7 +747,7 @@ def test_fresh_source_acquisition_land_and_dbt_materialization_commit_one_genera
                         profiles_directory=profiles_directory,
                         workspace_directory=tmp_path,
                         timeout_seconds=180,
-                        credential_environment_names=("PILLARMESH_DBT_TEST_PASSWORD",),
+                        credential_environment_names=("HEINZEL_DBT_TEST_PASSWORD",),
                     )
                 ),
             ),

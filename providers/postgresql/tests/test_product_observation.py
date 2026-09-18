@@ -10,22 +10,22 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import (
     Ed25519PrivateKey,
     Ed25519PublicKey,
 )
-from pillarmesh_contract_model import digest
-from pillarmesh_dbt_adapter import (
+from heinzel_contract_model import digest
+from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtDecimalMagnitudeCheck,
     SignedCompiledDbtModel,
     compiled_dbt_model_signing_bytes,
 )
-from pillarmesh_provider_postgresql import (
+from heinzel_provider_postgresql import (
     PostgreSQLMaterializationSettings,
     PostgreSQLObservedProductColumn,
     PostgreSQLObservedUniqueConstraint,
     PostgreSQLProductSemanticObservation,
     PostgreSQLProductSemanticObserver,
 )
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import ProductMaterializationReceipt
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import ProductMaterializationReceipt
 from pydantic import SecretStr
 
 _NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
@@ -42,7 +42,7 @@ def _commit_reference(
     magnitude_checks: tuple[DbtDecimalMagnitudeCheck, ...] = (),
 ) -> str:
     authority: dict[str, object] = {
-        "domain": "pillarmesh-postgresql-product-generation-v1",
+        "domain": "heinzel-postgresql-product-generation-v1",
         "tenant_id": "tenant-a",
         "product_id": "product-revenue",
         "product_revision": 2,
@@ -257,7 +257,7 @@ def test_observer_returns_actual_context_and_exact_owned_generation() -> None:
     assert observation.server_version_num == "140020"
     assert observation.engine_build_digest == digest(
         {
-            "domain": "pillarmesh-postgresql-engine-build-v1",
+            "domain": "heinzel-postgresql-engine-build-v1",
             "version": {
                 "server_version_num": "140020",
                 "server_version": "14.20 (Homebrew)",

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
@@ -20,7 +20,7 @@ from pillarmesh_contract_model import (
     TriggerRequirement,
     digest,
 )
-from pillarmesh_contract_service import (
+from heinzel_contract_service import (
     FormationDecisionBinding,
     FormationReferenceLoader,
     FormationReviewBundle,
@@ -28,7 +28,7 @@ from pillarmesh_contract_service import (
     IntegrationContractFormationService,
     ProcessPackageReceipt,
 )
-from pillarmesh_semantic_registry import AuthorityObservation, AuthoritySourceKind
+from heinzel_semantic_registry import AuthorityObservation, AuthoritySourceKind
 
 NOW = datetime(2026, 8, 21, 12, tzinfo=UTC)
 

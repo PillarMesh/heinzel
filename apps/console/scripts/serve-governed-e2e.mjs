@@ -8,7 +8,7 @@ import {fileURLToPath} from "node:url"
 
 const consoleRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
 const repositoryRoot = resolve(consoleRoot, "..", "..")
-const stateDirectory = await mkdtemp(join(tmpdir(), "pillarmesh-governed-e2e-"))
+const stateDirectory = await mkdtemp(join(tmpdir(), "heinzel-governed-e2e-"))
 const children = []
 let stopping = false
 

@@ -4,7 +4,7 @@ import runpy
 from pathlib import Path
 
 import pytest
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     FulfillmentAdmissionReceipt,
     FulfillmentIntegrityError,
     FulfillmentProposal,
@@ -53,7 +53,7 @@ def test_each_admission_write_failure_rolls_back_and_retry_converges(table: str)
     fulfillment, requests, prepared = prepared_service()
     repository, proposal, awaiting = prepared
     _approve_current_proposal(fulfillment, proposal, awaiting.revision)
-    trigger = f"fail_plan3b_{table}"
+    trigger = f"fail_request_fulfillment_{table}"
     repository._connection.execute(
         f"CREATE TRIGGER {trigger} BEFORE INSERT ON {table} "
         "BEGIN SELECT RAISE(ABORT, 'forced Plan 3B write failure'); END"

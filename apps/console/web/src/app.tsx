@@ -110,7 +110,7 @@ export function App({client}: AppProps) {
       setAttempt((current) => current + 1)
     }
     return (
-      <main aria-label="PillarMesh console" className="standalone-state">
+      <main aria-label="Heinzel console" className="standalone-state">
         <RecoveryPage
           actionLabel={actionLabel}
           correlationId={apiError?.correlationId}

@@ -4,7 +4,7 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     AccessEffectReceipt,
     AccessEffectSurface,
     AccessEffectTarget,
@@ -14,8 +14,8 @@ from pillarmesh_access_control import (
     RequestManagementAdmittedAccessProposalReader,
     SQLiteAccessGrantRepository,
 )
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import (
     AccessGrantAdmissionBinding,
     AccessGrantEffectTarget,
     AccessScopePreview,

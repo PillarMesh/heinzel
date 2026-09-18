@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
-from pillarmesh_state.run_models import RunIntent, TriggerWindow
-from pillarmesh_state.run_repository import SQLiteRunRepository
-from pillarmesh_state.run_service import RunService
+from heinzel_state.run_models import RunIntent, TriggerWindow
+from heinzel_state.run_repository import SQLiteRunRepository
+from heinzel_state.run_service import RunService
 
 NOW = datetime(2026, 9, 11, 12, tzinfo=UTC)
 

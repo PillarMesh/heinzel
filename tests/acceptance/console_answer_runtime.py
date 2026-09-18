@@ -7,17 +7,17 @@ from datetime import datetime
 from pathlib import Path
 from typing import Protocol
 
-from pillarmesh_access_control import (
+from heinzel_access_control import (
     AuthenticatedConnectedPolicyAuthority,
     CurrentEntitlementResolver,
     SQLiteEntitlementRepository,
 )
-from pillarmesh_compiler.query_repository import SQLiteQueryPlanRepository
-from pillarmesh_console.governed_adapters import (
+from heinzel_compiler.query_repository import SQLiteQueryPlanRepository
+from heinzel_console.governed_adapters import (
     InMemoryWorkspacePrincipalDirectory,
     SQLiteAnswerDownloadReceiptRepository,
 )
-from pillarmesh_request_management import (
+from heinzel_request_management import (
     AnswerInterpreter,
     AnswerPolicyAdmissionService,
     AnswerQuestionService,
@@ -42,11 +42,11 @@ from pillarmesh_request_management import (
     SQLiteRequestRepository,
     WorkflowIncidentProjectionDeferred,
 )
-from pillarmesh_request_management.answer_investigation import (
+from heinzel_request_management.answer_investigation import (
     SQLiteAnswerInvestigationAuthority,
 )
-from pillarmesh_request_management.answer_usage import DurableStatementCeilingBreachReader
-from pillarmesh_runtime import (
+from heinzel_request_management.answer_usage import DurableStatementCeilingBreachReader
+from heinzel_runtime import (
     AnswerExecutionIncidentProjectionUnavailable,
     AnswerExecutionIncidentProjector,
     AnswerExecutionReceipt,
@@ -57,7 +57,7 @@ from pillarmesh_runtime import (
     QueryResultNotFound,
     SQLiteAnswerResultStore,
 )
-from pillarmesh_state import SQLiteIncidentRepository
+from heinzel_state import SQLiteIncidentRepository
 
 from tests.acceptance.console_answer_authority import CurrentAnswerAuthority
 from tests.acceptance.console_product_authority import (

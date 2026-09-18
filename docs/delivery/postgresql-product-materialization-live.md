@@ -17,7 +17,7 @@ file-backed runtime ledger proves exact replay without a second generation.
 Run:
 
 ```sh
-PILLARMESH_TEST_POSTGRES_BIN_DIR=/opt/homebrew/bin \
+HEINZEL_TEST_POSTGRES_BIN_DIR=/opt/homebrew/bin \
   uv run pytest -m live \
   tests/integration/test_postgresql_product_materialization_live.py -q
 ```

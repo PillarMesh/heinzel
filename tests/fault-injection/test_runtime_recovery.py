@@ -3,11 +3,11 @@ from pathlib import Path
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_contract_model import FIXED_PROJECTION, canonical_bytes, digest
-from pillarmesh_evidence import MigrationError, SQLiteStore
-from pillarmesh_execution_graph import ExecutionGraph, GraphSigner, GraphVerifier
-from pillarmesh_provider_sdk import CommitReceipt, SegmentManifest, VisibilityProof
-from pillarmesh_runtime import Runtime
+from heinzel_contract_model import FIXED_PROJECTION, canonical_bytes, digest
+from heinzel_evidence import MigrationError, SQLiteStore
+from heinzel_execution_graph import ExecutionGraph, GraphSigner, GraphVerifier
+from heinzel_provider_sdk import CommitReceipt, SegmentManifest, VisibilityProof
+from heinzel_runtime import Runtime
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
@@ -69,7 +69,7 @@ def test_restart_after_commit_attempt_resolves_same_batch_without_blind_write(
         "run-1", "activation-1", graph.contract_digest, "9" * 64, signed.model_dump_json(), NOW
     )
     store.set_acceptance_key("run-1", 7)
-    batch_id = digest({"domain": "pillarmesh-m0-batch-v1", "run_id": "run-1", "graph": graph})[:32]
+    batch_id = digest({"domain": "heinzel-batch-v1", "run_id": "run-1", "graph": graph})[:32]
     segment = tmp_path / "segment.csv"
     segment.write_bytes(b"segment")
     manifest = SegmentManifest(
@@ -105,7 +105,7 @@ def test_restart_after_commit_attempt_resolves_same_batch_without_blind_write(
             state="running",
             event_type=event_type,
             occurred_at=NOW,
-            producer="pillarmesh-runtime",
+            producer="heinzel-runtime",
             attributes=attributes,
             batch_id=batch_id,
         )
@@ -211,11 +211,11 @@ def test_restart_after_extraction_reuses_private_path_and_acceptance_key(
             state="running",
             event_type=event_type,
             occurred_at=NOW,
-            producer="pillarmesh-runtime",
+            producer="heinzel-runtime",
             attributes={"digest": "1" * 64},
         )
         checkpoint = next_checkpoint
-    batch_id = digest({"domain": "pillarmesh-m0-batch-v1", "run_id": "run-1", "graph": graph})[:32]
+    batch_id = digest({"domain": "heinzel-batch-v1", "run_id": "run-1", "graph": graph})[:32]
     segment_path = tmp_path / "private-materialization" / "segment.csv"
     segment_path.parent.mkdir()
     segment_path.write_bytes(b"segment")
@@ -243,7 +243,7 @@ def test_restart_after_extraction_reuses_private_path_and_acceptance_key(
         row_count=manifest.row_count,
         encoded_bytes=manifest.encoded_bytes,
         occurred_at=NOW,
-        producer="pillarmesh-runtime",
+        producer="heinzel-runtime",
     )
     store.close()
 
@@ -328,7 +328,7 @@ def test_v1_manifest_cannot_resume_under_privacy_safe_runtime(tmp_path: Path) ->
             state="running",
             event_type=event_type,
             occurred_at=NOW,
-            producer="pillarmesh-runtime",
+            producer="heinzel-runtime",
             attributes=attributes,
             batch_id="batch-1",
         )

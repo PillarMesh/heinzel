@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pillarmesh_evidence import export_package, verify_package
+from heinzel_evidence import export_package, verify_package
 
 from services.evidence.tests.test_package import RUN_ID, _metadata, complete_store
 

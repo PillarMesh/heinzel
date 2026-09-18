@@ -1839,7 +1839,7 @@
         "meta",
         "data"
       ],
-      "title": "ConsoleEnvelope[JsonTuple[pillarmesh_console.contracts.RequesterRequestView]]",
+      "title": "ConsoleEnvelope[JsonTuple[heinzel_console.contracts.RequesterRequestView]]",
       "type": "object"
     },
     "ConsoleEnvelope_OperationView_": {
@@ -2382,7 +2382,7 @@
               "$ref": "#/$defs/ActorRole"
             },
             {
-              "const": "pillarmesh",
+              "const": "heinzel",
               "type": "string"
             },
             {

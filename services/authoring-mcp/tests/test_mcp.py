@@ -3,8 +3,8 @@ import json
 from typing import Any
 
 import pytest
+from heinzel_authoring_mcp.mcp_server import build_server
 from mcp.server.mcpserver.exceptions import ToolError
-from pillarmesh_authoring_mcp.mcp_server import build_server
 
 
 class PrivateApplication:
@@ -69,7 +69,7 @@ def test_mcp_run_and_trace_resource_do_not_return_private_acceptance_key() -> No
     canary = "984201"
 
     run_result = asyncio.run(server.call_tool("get_run", {"run_id": "run-private"}))
-    trace_result = asyncio.run(server.read_resource("pillarmesh://runs/run-private/trace"))
+    trace_result = asyncio.run(server.read_resource("heinzel://runs/run-private/trace"))
 
     assert canary not in json.dumps(run_result.model_dump(mode="json"))
     assert canary not in repr(trace_result)

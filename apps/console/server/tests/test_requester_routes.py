@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from pillarmesh_console import create_app
-from pillarmesh_console.auth import TrustedActorContext
-from pillarmesh_console.contracts import ActorRole, CreateRequestCommand
-from pillarmesh_console.fixture_backend import FixtureConsoleBackend
-from pillarmesh_console.fixture_data import BLOCKED_REQUEST_DIGEST, build_fixture_seed
-from pillarmesh_console.request_intake import request_intake_content
-from pillarmesh_contract_model import digest
+from heinzel_console import create_app
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.contracts import ActorRole, CreateRequestCommand
+from heinzel_console.fixture_backend import FixtureConsoleBackend
+from heinzel_console.fixture_data import BLOCKED_REQUEST_DIGEST, build_fixture_seed
+from heinzel_console.request_intake import request_intake_content
+from heinzel_contract_model import digest
 from starlette.testclient import TestClient
 
 _BLOCKED_REQUEST_ID = "request-blocked-acceptance"

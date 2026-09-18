@@ -4,10 +4,10 @@ from datetime import UTC, datetime, timedelta
 from typing import Never
 
 import pytest
-from pillarmesh_access_control import AccessGrant, AccessGrantDenied
-from pillarmesh_bi_control import DashboardAccessAuthorityError
-from pillarmesh_console.governed_adapters import DashboardAccessControlAuthority
-from pillarmesh_contract_model import ArtifactReference, digest
+from heinzel_access_control import AccessGrant, AccessGrantDenied
+from heinzel_bi_control import DashboardAccessAuthorityError
+from heinzel_console.governed_adapters import DashboardAccessControlAuthority
+from heinzel_contract_model import ArtifactReference, digest
 
 NOW = datetime(2026, 9, 15, 7, tzinfo=UTC)
 PRODUCT = ArtifactReference(artifact_id="product-revenue", version=2, digest="a" * 64)

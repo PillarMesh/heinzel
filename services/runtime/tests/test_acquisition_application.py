@@ -3,17 +3,17 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_contract_service import ActivatedAcquisitionContractRecord
-from pillarmesh_evidence import AcquisitionEvidenceReceipt
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import ActivatedAcquisitionContractRecord
+from heinzel_evidence import AcquisitionEvidenceReceipt
+from heinzel_provider_sdk import (
     AcquisitionField,
     AcquisitionIntent,
     AcquisitionNoValidPlan,
     AcquisitionObjectSchema,
     acquisition_intent_key,
 )
-from pillarmesh_runtime import (
+from heinzel_runtime import (
     AcquisitionApplication,
     AcquisitionContractError,
     AcquisitionOwnershipError,

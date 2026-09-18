@@ -5,7 +5,7 @@ from typing import Literal
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from pillarmesh_bi_control import (
+from heinzel_bi_control import (
     DashboardAnswerAuthority,
     DashboardCompositionError,
     DashboardCompositionService,
@@ -22,14 +22,14 @@ from pillarmesh_bi_control import (
     SQLiteDashboardContractRepository,
     SQLiteDashboardRepository,
 )
-from pillarmesh_contract_model import (
+from heinzel_contract_model import (
     ArtifactReference,
     FreshnessRequirement,
     canonical_bytes,
     digest,
 )
-from pillarmesh_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
-from pillarmesh_request_management import (
+from heinzel_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
+from heinzel_request_management import (
     AnswerAdmissionEvidence,
     AnswerExecutionEvidence,
     AnswerQueryColumnEvidence,
@@ -41,8 +41,8 @@ from pillarmesh_request_management import (
     RequestState,
     StakeholderQuestion,
 )
-from pillarmesh_runtime import MaterializationAuthorityError, ProductMaterializationReceipt
-from pillarmesh_semantic_registry import (
+from heinzel_runtime import MaterializationAuthorityError, ProductMaterializationReceipt
+from heinzel_semantic_registry import (
     ApprovedProductQueryBinding,
     ProductCatalogPublicationAuthorityError,
     ProductCatalogPublicationReceipt,
@@ -159,7 +159,7 @@ def _binding(
         version=7,
         digest=digest(
             {
-                "domain": "pillarmesh-product-query-consumption-v1",
+                "domain": "heinzel-product-query-consumption-v1",
                 "tenant_id": "tenant-a",
                 "product_ref": product_ref,
                 "generation": 7,
@@ -393,7 +393,7 @@ def _fixture(
         connection_secret_ref="secret://tenant-a/superset-database",
     )
     provider = _Provider()
-    from pillarmesh_bi_control import DashboardControlService
+    from heinzel_bi_control import DashboardControlService
 
     dashboard_repository = SQLiteDashboardRepository(":memory:")
 

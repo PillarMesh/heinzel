@@ -7,7 +7,7 @@
 > [managed data engineering platform addendum](../architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md).
 
 `uv run python tests/acceptance/run_m0.py run` exports one ignored package beneath the operator's
-external `PILLARMESH_OUTPUT_DIR`, then independently verifies it. Re-run the deterministic verifier
+external `HEINZEL_OUTPUT_DIR`, then independently verifies it. Re-run the deterministic verifier
 with:
 
 ```sh
@@ -22,7 +22,7 @@ cleanup status, and cleanup operation.
 
 The exact PostgreSQL row key, Snowflake target/ledger/stage identifiers, acceptance key, local
 paths, owner authorization reference, and explicit declared/observed provider-attestation record
-remain only in `PILLARMESH_CLEANUP_LEDGER_PATH`. The attestation record allowlists identifiers,
+remain only in `HEINZEL_CLEANUP_LEDGER_PATH`. The attestation record allowlists identifiers,
 ownership, grants, marker results, and audit-definition findings; it never serializes the complete
 environment and cannot contain DSNs, passwords, private signing keys, credential canaries, or row
 values. That owner-readable file must be outside the repository with mode 0600. Never share it as

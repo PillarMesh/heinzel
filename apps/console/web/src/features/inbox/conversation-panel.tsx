@@ -10,7 +10,7 @@ import type {
 import {ConsoleApiError, type MutationRequestContext} from "../../api/client"
 
 const authorLabels = {
-  pillarmesh: "PillarMesh question",
+  heinzel: "Heinzel question",
   requester: "Requester reply",
   data_architect: "Architect intervention",
   data_owner: "Data owner note",

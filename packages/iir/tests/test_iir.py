@@ -1,7 +1,7 @@
 from copy import deepcopy
 
-from pillarmesh_contract_model import FIXED_PROJECTION, IntegrationContract
-from pillarmesh_iir import lower_contract
+from heinzel_contract_model import FIXED_PROJECTION, IntegrationContract
+from heinzel_iir import lower_contract
 
 
 def contract_data() -> dict[str, object]:
@@ -16,7 +16,7 @@ def contract_data() -> dict[str, object]:
         },
         "destination": {
             "connection_handle": "sf-one",
-            "database": "PILLARMESH_M0",
+            "database": "HEINZEL_M0",
             "schema": "PUBLIC",
             "table": "ORDERS",
             "key": "order_id",

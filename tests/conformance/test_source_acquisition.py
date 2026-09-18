@@ -5,8 +5,8 @@ from decimal import Decimal
 from typing import Literal
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_sdk import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_sdk import (
     AcquisitionCeilingExceeded,
     SourceConformanceError,
     verify_checkpoint_lifecycle,
@@ -17,11 +17,11 @@ def test_shared_harness_runs_three_object_source_without_resolving_destination()
     from tests.conformance.source_acquisition import (
         DestinationProviderResolutionGuard,
         FakeSourceProvider,
-        build_plan4a_application_source_fixture,
+        build_source_acquisition_application_source_fixture,
         run_shared_source_conformance,
     )
 
-    fixture = build_plan4a_application_source_fixture(provider_kind="postgresql")
+    fixture = build_source_acquisition_application_source_fixture(provider_kind="postgresql")
     provider = FakeSourceProvider(fixture)
     destination_guard = DestinationProviderResolutionGuard()
 
@@ -57,11 +57,11 @@ def test_strict_consumer_links_the_exact_prepared_batch_to_one_checkpoint_revisi
     from tests.conformance.source_acquisition import (
         DestinationProviderResolutionGuard,
         FakeSourceProvider,
-        build_plan4a_application_source_fixture,
+        build_source_acquisition_application_source_fixture,
         run_shared_source_conformance,
     )
 
-    fixture = build_plan4a_application_source_fixture(provider_kind="postgresql")
+    fixture = build_source_acquisition_application_source_fixture(provider_kind="postgresql")
     result = run_shared_source_conformance(
         FakeSourceProvider(fixture),
         fixture,
@@ -99,11 +99,11 @@ def test_strict_consumer_rejects_any_forged_prepared_linkage(
         FakeSourceProvider,
         StrictAcknowledgementConsumer,
         StrictAcknowledgementError,
-        build_plan4a_application_source_fixture,
+        build_source_acquisition_application_source_fixture,
         run_shared_source_conformance,
     )
 
-    fixture = build_plan4a_application_source_fixture(provider_kind="postgresql")
+    fixture = build_source_acquisition_application_source_fixture(provider_kind="postgresql")
     result = run_shared_source_conformance(
         FakeSourceProvider(fixture),
         fixture,
@@ -124,11 +124,11 @@ def test_strict_consumer_revalidates_a_forged_manifest_before_acknowledging() ->
         FakeSourceProvider,
         StrictAcknowledgementConsumer,
         StrictAcknowledgementError,
-        build_plan4a_application_source_fixture,
+        build_source_acquisition_application_source_fixture,
         run_shared_source_conformance,
     )
 
-    fixture = build_plan4a_application_source_fixture(provider_kind="postgresql")
+    fixture = build_source_acquisition_application_source_fixture(provider_kind="postgresql")
     result = run_shared_source_conformance(
         FakeSourceProvider(fixture),
         fixture,
@@ -147,11 +147,11 @@ def test_public_evidence_excludes_source_rows_provider_ids_cursors_and_private_d
     from tests.conformance.source_acquisition import (
         DestinationProviderResolutionGuard,
         FakeSourceProvider,
-        build_plan4a_application_source_fixture,
+        build_source_acquisition_application_source_fixture,
         run_shared_source_conformance,
     )
 
-    fixture = build_plan4a_application_source_fixture(provider_kind="postgresql")
+    fixture = build_source_acquisition_application_source_fixture(provider_kind="postgresql")
     result = run_shared_source_conformance(
         FakeSourceProvider(fixture),
         fixture,
@@ -187,11 +187,11 @@ def test_shared_ceiling_refusal_aborts_before_completion_without_a_destination(
     from tests.conformance.source_acquisition import (
         DestinationProviderResolutionGuard,
         FakeSourceProvider,
-        build_plan4a_application_source_fixture,
+        build_source_acquisition_application_source_fixture,
         exercise_source_ceiling_refusal,
     )
 
-    fixture = build_plan4a_application_source_fixture(provider_kind="postgresql")
+    fixture = build_source_acquisition_application_source_fixture(provider_kind="postgresql")
     provider = FakeSourceProvider(fixture)
     destination_guard = DestinationProviderResolutionGuard()
 
@@ -215,11 +215,11 @@ def test_shared_replay_rejects_changed_canonical_source_content() -> None:
     from tests.conformance.source_acquisition import (
         DestinationProviderResolutionGuard,
         FakeSourceProvider,
-        build_plan4a_application_source_fixture,
+        build_source_acquisition_application_source_fixture,
         run_shared_source_conformance,
     )
 
-    fixture = build_plan4a_application_source_fixture(provider_kind="stripe")
+    fixture = build_source_acquisition_application_source_fixture(provider_kind="stripe")
     changed_order = fixture.records[1].model_copy(
         update={
             "fields": tuple(

@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
-from pillarmesh_compiler import (
+from heinzel_compiler import (
     GovernedQueryInput,
     GovernedQueryPlan,
     GovernedQueryPlanNotRequired,
@@ -22,7 +22,7 @@ from pillarmesh_compiler import (
     QueryTimeWindow,
     compile_governed_query,
 )
-from pillarmesh_contract_model import digest
+from heinzel_contract_model import digest
 from pydantic import ValidationError
 
 _DIGEST = "a" * 64

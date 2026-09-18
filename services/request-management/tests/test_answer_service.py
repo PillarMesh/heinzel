@@ -4,8 +4,8 @@ import sqlite3
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from pillarmesh_contract_model import ArtifactReference, digest
-from pillarmesh_request_management import (
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_request_management import (
     AnswerIntentCandidate,
     AnswerQuestion,
     AnswerQuestionService,
@@ -20,8 +20,8 @@ from pillarmesh_request_management import (
     ProductOwnerAuthority,
     SQLiteAnswerValidationRepository,
 )
-from pillarmesh_request_management.answer_models import AnswerProductGenerationReference
-from pillarmesh_request_management.answer_service import AnswerInterpretationDenied
+from heinzel_request_management.answer_models import AnswerProductGenerationReference
+from heinzel_request_management.answer_service import AnswerInterpretationDenied
 
 NOW = datetime(2026, 9, 11, 18, 0, tzinfo=UTC)
 DIGEST = "a" * 64

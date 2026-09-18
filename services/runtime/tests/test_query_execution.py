@@ -5,9 +5,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes, digest
-from pillarmesh_provider_sdk import ProviderError
-from pillarmesh_runtime import (
+from heinzel_contract_model import canonical_bytes, digest
+from heinzel_provider_sdk import ProviderError
+from heinzel_runtime import (
     AnswerExecutionAuthorization,
     AnswerExecutionAuthorizationError,
     AnswerExecutionConflict,
@@ -28,7 +28,7 @@ from pillarmesh_runtime import (
     ReadOnlyAnswerQuery,
     SQLiteAnswerResultStore,
 )
-from pillarmesh_runtime.answer_models import AnswerQueryValue
+from heinzel_runtime.answer_models import AnswerQueryValue
 
 NOW = datetime(2026, 9, 11, 21, tzinfo=UTC)
 

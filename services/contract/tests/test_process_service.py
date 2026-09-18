@@ -6,13 +6,13 @@ from queue import Queue
 from threading import Barrier, Thread
 
 import pytest
-from pillarmesh_contract_model import canonical_bytes
-from pillarmesh_contract_service import (
+from heinzel_contract_model import canonical_bytes
+from heinzel_contract_service import (
     BusinessProcessManifest,
     ProcessPackageReceipt,
     ProcessPackageService,
 )
-from pillarmesh_contract_service.process_service import SQLiteProcessPackageRepository
+from heinzel_contract_service.process_service import SQLiteProcessPackageRepository
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 17, 12, tzinfo=UTC)
@@ -362,7 +362,7 @@ def test_failed_store_publishes_nothing_and_burns_no_version(tmp_path: Path) -> 
     assert committed.execute("SELECT COUNT(*) FROM process_packages").fetchone()[0] == 1
 
 
-def _write_pre_plan2_database(path: str, manifest_bytes: bytes) -> str:
+def _write_pre_semantic_formation_database(path: str, manifest_bytes: bytes) -> str:
     """Recreate the schema and a row exactly as the previous release wrote them."""
     manifest_digest = hashlib.sha256(manifest_bytes).hexdigest()
     connection = sqlite3.connect(path)
@@ -419,10 +419,12 @@ def _write_pre_plan2_database(path: str, manifest_bytes: bytes) -> str:
     return manifest_digest
 
 
-def test_opening_a_pre_plan2_database_migrates_instead_of_failing(tmp_path: Path) -> None:
+def test_opening_a_pre_semantic_formation_database_migrates_instead_of_failing(
+    tmp_path: Path,
+) -> None:
     database_path = str(tmp_path / "process.db")
     manifest_bytes = canonical_bytes(manifest())
-    legacy_digest = _write_pre_plan2_database(database_path, manifest_bytes)
+    legacy_digest = _write_pre_semantic_formation_database(database_path, manifest_bytes)
 
     repository = SQLiteProcessPackageRepository(database_path)
     packages = ProcessPackageService(repository, clock=lambda: NOW)
@@ -443,7 +445,7 @@ def test_opening_a_pre_plan2_database_migrates_instead_of_failing(tmp_path: Path
 
 def test_migration_is_idempotent_across_reopens(tmp_path: Path) -> None:
     database_path = str(tmp_path / "process.db")
-    _write_pre_plan2_database(database_path, canonical_bytes(manifest()))
+    _write_pre_semantic_formation_database(database_path, canonical_bytes(manifest()))
 
     SQLiteProcessPackageRepository(database_path).close()
     reopened = SQLiteProcessPackageRepository(database_path)
