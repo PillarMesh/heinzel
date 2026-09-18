@@ -2,6 +2,14 @@
 name = "heinzel-provider-postgresql"
 version = "0.1.0"
 requires-python = "==3.13.*"
+description = "PostgreSQL source, warehouse, LAND and materialization provider."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
+]
 dependencies = [
   "heinzel-dbt-adapter",
   "heinzel-contract-model",
@@ -12,6 +20,10 @@ dependencies = [
   "psycopg[binary]>=3.2,<4",
   "pydantic>=2.11,<3",
 ]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
 
 [tool.uv.sources]
 heinzel-dbt-adapter = { workspace = true }

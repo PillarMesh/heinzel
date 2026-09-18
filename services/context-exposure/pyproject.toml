@@ -2,6 +2,14 @@
 name = "heinzel-context-exposure"
 version = "0.1.0"
 requires-python = "==3.13.*"
+description = "Governed agent interface over MCP."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
+]
 dependencies = [
   "mcp>=2,<3",
   "heinzel-access-control",
@@ -10,6 +18,10 @@ dependencies = [
   "pydantic>=2.11,<3",
   "pydantic-settings>=2.10,<3",
 ]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
 
 [project.scripts]
 heinzel-agent-mcp = "heinzel_context_exposure.mcp_server:main"

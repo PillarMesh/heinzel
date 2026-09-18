@@ -2,6 +2,14 @@
 name = "heinzel-console"
 version = "0.1.0"
 requires-python = "==3.13.*"
+description = "Governed web console server for Heinzel."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
+]
 dependencies = [
   # Governed-local projections call the owning services' public read interfaces.
   # The console never opens another component's database.
@@ -22,6 +30,10 @@ dependencies = [
   "starlette>=1.6,<2",
   "uvicorn>=0.52,<1",
 ]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
 
 [tool.uv.sources]
 heinzel-access-control = { workspace = true }

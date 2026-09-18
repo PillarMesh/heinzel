@@ -2,6 +2,14 @@
 name = "heinzel-access-control"
 version = "0.1.0"
 requires-python = "==3.13.*"
+description = "Access proposals, grants, expiry and revocation."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: OS Independent",
+]
 dependencies = [
   "cryptography>=46.0,<47",
   "httpx>=0.28,<1",
@@ -10,6 +18,10 @@ dependencies = [
   "heinzel-request-management",
   "pydantic>=2.11,<3",
 ]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
 
 [tool.uv.sources]
 heinzel-contract-model = { workspace = true }
