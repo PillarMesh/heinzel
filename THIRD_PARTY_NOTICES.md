@@ -1,9 +1,7 @@
 # Third-Party Notices
 
 This product bundles the following third-party components into the built
-console application. This list currently covers the bundled fonts; it will
-cover all bundled third-party code once the licence notices for the bundled
-JavaScript dependencies land.
+console application.
 
 ## IBM Plex Sans and IBM Plex Mono
 
@@ -17,3 +15,15 @@ JavaScript dependencies land.
 - License text ships with the build at:
   - `dist/licenses/ibm-plex-sans-OFL.txt`
   - `dist/licenses/ibm-plex-mono-OFL.txt`
+
+## Bundled JavaScript dependencies (react, react-dom, react-router, scheduler, ajv, and others)
+
+Minification strips the licence banners these packages would otherwise carry
+in the built bundle. A Vite build plugin
+(`apps/console/build/third-party-licenses.ts`) collects every third-party
+package actually bundled into the console and emits their licence texts,
+concatenated with an `name@version` and SPDX licence header per package, to:
+
+- `dist/licenses/THIRD_PARTY.txt`
+
+The build fails if a bundled package has no licence file to ship.

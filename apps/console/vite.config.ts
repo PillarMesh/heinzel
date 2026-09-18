@@ -1,9 +1,10 @@
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vitest/config"
+import { thirdPartyLicensesPlugin } from "./build/third-party-licenses"
 
 export default defineConfig({
   root: "web",
-  plugins: [react()],
+  plugins: [react(), thirdPartyLicensesPlugin()],
   server: {
     // The development proxy must preserve the origin so the same-origin and CSRF
     // checks the API enforces in production also hold while developing.
@@ -20,6 +21,9 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // The default include pattern is relative to `root` ("web") and would miss the build-tooling
+    // test below `../build`, which has no DOM to test against and needs no jsdom setup.
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "../build/**/*.{test,spec}.ts"],
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
     // `userEvent` drives each keystroke through jsdom asynchronously, so the

@@ -27,4 +27,13 @@ export default tseslint.config(
       "no-undef": "off",
     },
   },
+  {
+    // Build-time tooling (the Vite plugin config) runs in Node, not the browser, so the React
+    // plugins do not apply.
+    files: ["build/**/*.ts"],
+    extends: [js.configs.recommended, ...tseslint.configs.recommended],
+    rules: {
+      "no-undef": "off",
+    },
+  },
 )

@@ -14,5 +14,5 @@
     "useDefineForClassFields": true,
     "jsx": "react-jsx"
   },
-  "include": ["vite.config.ts", "web/src", "e2e"]
+  "include": ["vite.config.ts", "build", "web/src", "e2e"]
 }
