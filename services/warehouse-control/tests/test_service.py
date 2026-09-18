@@ -299,3 +299,44 @@ def test_two_connection_transition_race_returns_stale_revision(tmp_path: Path) -
         if isinstance(result, ValueError) and str(result) == "binding revision is stale"
     ]
     assert len(stale_errors) == 1
+
+
+def test_binding_lifecycle_transition_table_is_exact_and_retired_is_terminal() -> None:
+    """Every binding state has exactly these successors; a ready binding drains via retiring."""
+    from heinzel_warehouse_control.service import _TRANSITIONS
+
+    assert set(_TRANSITIONS) == set(WarehouseBindingState)
+    assert {
+        source.value: frozenset(target.value for target in targets)
+        for source, targets in _TRANSITIONS.items()
+    } == {
+        "draft": frozenset({"provisioning", "retired"}),
+        "provisioning": frozenset({"validating", "failed"}),
+        "validating": frozenset({"ready", "failed"}),
+        "ready": frozenset({"suspended", "retiring"}),
+        "suspended": frozenset({"ready", "retiring"}),
+        "retiring": frozenset({"retired"}),
+        "failed": frozenset({"retired"}),
+        "retired": frozenset(),
+    }
+
+
+def test_plain_transitions_are_exact_and_never_enter_ready_or_retired() -> None:
+    """Plain transitions never produce ready, retired, failed or suspended states."""
+    from heinzel_warehouse_control.service import _PLAIN_TRANSITIONS, _TRANSITIONS
+
+    assert set(_PLAIN_TRANSITIONS) == set(WarehouseBindingState)
+    assert {
+        source.value: frozenset(target.value for target in targets)
+        for source, targets in _PLAIN_TRANSITIONS.items()
+    } == {
+        "draft": frozenset({"provisioning"}),
+        "provisioning": frozenset({"validating"}),
+        "validating": frozenset(),
+        "ready": frozenset({"retiring"}),
+        "suspended": frozenset({"retiring"}),
+        "retiring": frozenset(),
+        "failed": frozenset(),
+        "retired": frozenset(),
+    }
+    assert all(targets <= _TRANSITIONS[source] for source, targets in _PLAIN_TRANSITIONS.items())
