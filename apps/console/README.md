@@ -18,6 +18,15 @@ Run the Python shell from the repository root:
 uv run uvicorn heinzel_console:create_app --factory --host 127.0.0.1 --port 8000
 ```
 
+## Exposure
+
+The console server has no authentication. Unless a caller of `create_app` supplies its own backend
+and actor context, it serves the in-memory fixture backend and treats every request as one fixed
+actor, a data architect in `tenant-primary` (see `server/src/heinzel_console/app.py`). The
+commands in this README and the npm scripts bind it to `127.0.0.1`, which is also uvicorn's
+default, and the Vite development server listens on `localhost`. Keep it on loopback: do not bind
+it to another interface or expose it to a network.
+
 ## Local demonstration
 
 One command starts the loopback API and the Vite development server together, prints the local URL,
@@ -95,8 +104,8 @@ license FAQ explicitly permits combining MPL-2.0 and Apache-licensed code. It is
 test tooling, and its file-level terms remain attached to the installed package. The two IBM Plex
 packages are SIL Open Font License 1.1; only their latin `woff2` files are referenced, so the build
 copies three font files and no stylesheet from either package. They are bundled rather than fetched
-because the server sends `default-src 'self'`, and because the previous stack named `Avenir Next`,
-which exists only on macOS.
+because the server sends `default-src 'self'`, and so that the interface does not depend on a
+platform-specific system font.
 
 | Dependency | License | Purpose |
 | --- | --- | --- |
