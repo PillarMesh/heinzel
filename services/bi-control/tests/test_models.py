@@ -92,3 +92,23 @@ def test_dashboard_publication_requires_timezone_aware_utc(
 
     with pytest.raises(ValidationError, match="timezone-aware UTC"):
         DashboardPublication.model_validate(values)
+
+
+def test_dashboard_contract_fields_are_exact_and_ordered() -> None:
+    assert tuple(DashboardContract.model_fields) == (
+        "dashboard_id",
+        "version",
+        "owner",
+        "audience",
+        "data_product_versions",
+        "metric_versions",
+        "dimensions",
+        "filters",
+        "visual_intents",
+        "drill_paths",
+        "freshness_requirement",
+        "access_policy",
+        "report_delivery_policy",
+        "acceptance_tests",
+        "lifecycle_state",
+    )
