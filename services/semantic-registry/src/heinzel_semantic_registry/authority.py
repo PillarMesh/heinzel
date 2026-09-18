@@ -194,8 +194,8 @@ class AuthorityResolver:
         # Bind the winner from the aspect the candidate itself asserts. Selecting merely
         # from its contradiction group is not enough: imported_classification shares a
         # group with business_meaning, so an entity candidate could record the catalog's
-        # classification as the authority for a claim section 9.2 assigns to the approved
-        # business owner. The assertions agree by this point, so only the attribution
+        # classification as the authority for a business-meaning claim, whose authority is
+        # the approved business owner. The assertions agree by this point, so only the attribution
         # would be wrong -- which is the part this subsystem exists to get right.
         governing_kind = _CANDIDATE_GOVERNING_KIND[candidate.kind]
         governing_group = _contradiction_group(governing_kind)

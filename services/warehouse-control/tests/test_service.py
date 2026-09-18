@@ -189,8 +189,9 @@ def test_one_tenant_cannot_read_or_move_another_tenants_binding() -> None:
 
 
 def test_two_drafts_for_one_tenant_receive_distinct_identities() -> None:
-    # Specification section 6.3 requires a migration to create a NEW binding for the
-    # same tenant. Under the frozen clock these are created in the same instant.
+    # Once provisioning begins a binding's tenant, engine, deployment mode and region are
+    # immutable, so a migration must create a NEW binding for the same tenant. Under the
+    # frozen clock these are created in the same instant.
     control = service()
 
     first = draft(control)

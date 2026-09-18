@@ -103,8 +103,9 @@ async function postCommand(
 
 /**
  * Restores the seeded fixture so each test starts from the same authoritative
- * state. This is the demo reset the design calls for; it is invoked over the same
- * versioned command the browser would use, because the shell ships no control for it.
+ * state. This is the fixture-mode demo reset that ends the acceptance journey; it
+ * is invoked over the same versioned command the browser would use, because the
+ * shell ships no control for it.
  */
 export async function resetDemoFixture(request: APIRequestContext): Promise<SetupData> {
   const setup = await readSetup(request)

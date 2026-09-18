@@ -10,13 +10,21 @@ import {
 } from "./demo-fixture"
 
 /**
- * The architect half of the acceptance journey in section 11.3 of the design.
+ * The architect half of the browser acceptance journey: enter a fresh workspace,
+ * select and confirm the warehouse binding, reach the returning-user inbox,
+ * review and approve a governed stakeholder-answer proposal, see a proposal whose
+ * clarified outcome is unaccepted blocked on the requester, review an access
+ * preview, reload a stale proposal, inspect a `No Valid Plan` outcome, and reset
+ * the demo.
  *
  * One boundary of the shipped fixture shapes what can be asserted here:
  * `FixtureConsoleBackend` never advances `SetupView.active_stage`, and the
- * trusted context the server issues holds `data_architect` alone. Steps 3 to 6
- * and step 8 therefore have no reachable browser state and are recorded as
- * `fixme` rather than asserted against a weaker claim.
+ * trusted context the server issues holds `data_architect` alone. Observing
+ * managed-service and source validation, uploading the fixture package, resolving
+ * a semantic question, approving meaning, data product and activation, and the
+ * requester's own question, clarification reply and acceptance therefore have no
+ * reachable browser state and are recorded as `fixme` rather than asserted
+ * against a weaker claim.
  */
 
 test.describe("production content security policy", () => {
@@ -200,7 +208,8 @@ test.describe("architect journey", () => {
     // Approval is not delivery. The request stays awaiting approval and the console
     // offers admission, which is the owning transaction that admits the proposal to
     // execution; the demonstration used to jump straight to `execution_ready`, which
-    // claimed answer-delivery behaviour section 4.2 forbids claiming as live.
+    // claimed unimplemented answer-delivery behaviour as live, which the console
+    // must never do.
     await expect(detail).toContainText("awaiting approval")
     await expect(detail).toContainText("No decision is admissible from this projection.")
     const midway = await (await request.get("/api/v1/inbox/request-answer")).json()

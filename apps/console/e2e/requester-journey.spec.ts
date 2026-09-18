@@ -3,8 +3,10 @@ import {expect, test} from "@playwright/test"
 import {expectFixtureBanner, readSession, resetDemoFixture} from "./demo-fixture"
 
 /**
- * The requester half of the acceptance journey in section 11.3, steps 8 and the
- * requester-acceptance half of step 9.
+ * The requester half of the browser acceptance journey: submit a stakeholder
+ * question as the requester, answer one clarification, and accept the clarified
+ * outcome, so that the architect later sees that acceptance as a satisfied
+ * required authority.
  *
  * GAP. There is no way to act as a requester in this build. `create_app` installs
  * `_default_context`, a fixed `TrustedActorContext` whose roles are

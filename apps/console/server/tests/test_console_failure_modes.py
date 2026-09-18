@@ -1,4 +1,4 @@
-"""Regressions for the console review findings.
+"""Regressions for ways the console server misbehaved.
 
 Each test names the way the product misbehaved, not the shape of the fix.
 """
@@ -148,7 +148,7 @@ def test_an_accidental_key_error_is_not_silently_a_missing_resource() -> None:
 
 
 def test_a_duplicate_command_gives_up_rather_than_pinning_a_worker() -> None:
-    """A hung command plus the retry the design mandates exhausted the threadpool."""
+    """A hung command plus browser retries after a lost response exhausted the threadpool."""
     keys = InFlightCommandKeys(wait_timeout_seconds=0.2)
     context = _context()
     started = time.monotonic()

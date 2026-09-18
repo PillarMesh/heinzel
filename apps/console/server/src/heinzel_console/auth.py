@@ -77,8 +77,8 @@ class InFlightCommandKeys:
 
     The wait is bounded. An unbounded one let a hung command hold every duplicate
     of itself, and each duplicate holds a threadpool worker, so a handful of
-    retries - which the design tells the browser to make after an unknown outcome
-    - could stop every synchronous route in the console, not just the stuck one.
+    retries - which the browser makes when a command's response is lost - could
+    stop every synchronous route in the console, not just the stuck one.
     """
 
     def __init__(self, *, wait_timeout_seconds: float = 15.0) -> None:

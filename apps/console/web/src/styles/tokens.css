@@ -3,9 +3,8 @@
 /*
  * Evidence Ledger tokens.
  *
- * The direction section 10 of the console design approves: deep navy shell, quiet
- * work surfaces, one blue that means *action*, and semantic colour reserved for
- * lifecycle meaning. Colour never carries status alone.
+ * The visual direction: deep navy shell, quiet work surfaces, one blue that means
+ * *action*, and semantic colour reserved for lifecycle meaning. Colour never carries status alone.
  *
  * Type was previously `Avenir Next Condensed` over `Avenir Next`, which exists only
  * on macOS. Everywhere else it fell through to `Arial Narrow`, so the product had a

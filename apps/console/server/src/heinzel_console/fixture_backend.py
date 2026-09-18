@@ -999,7 +999,8 @@ class FixtureConsoleBackend:
         """Admission follows the proposal's own declared authorities.
 
         Offering it while an authority the same screen lists as unrecorded is still
-        outstanding is the answer-delivery claim section 4.2 forbids making as live.
+        outstanding would claim unimplemented answer-delivery behaviour as live, which
+        the console must never do.
         """
         if detail.state != "awaiting_approval" or detail.proposal is None:
             return None

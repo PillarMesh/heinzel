@@ -401,8 +401,8 @@ def test_cross_kind_agreement_resolves_without_creating_global_precedence() -> N
 
     assert resolution.status is AuthorityResolutionStatus.RESOLVED
     # Both agree, so only attribution is at stake: an entity candidate is a
-    # business-meaning claim, and section 9.2 assigns that to the approved business
-    # owner, never to the declared catalog authority.
+    # business-meaning claim, and the authority for business meaning is the approved
+    # business owner, never the declared catalog authority.
     assert resolution.selected_observation_digest == digest(meaning)
     assert set(resolution.considered_observation_digests) == {
         digest(meaning),

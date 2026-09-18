@@ -208,9 +208,10 @@ test("the clarification thread is reachable by keyboard while the requester is a
   // This test used to assert that both intervention controls were permanently
   // disabled, with the panel blaming the server for a conversation digest the
   // fixture supplies. That was the wiring defect written down as a requirement:
-  // section 5.5 of the design names the conversation as the place the architect
-  // "observes, intervenes, or takes over". Being blocked on the requester removes
-  // the architect's *decision*, not their voice.
+  // the request's clarification conversation is where the architect observes,
+  // intervenes in, or takes over a business-meaning question routed to the
+  // requester. Being blocked on the requester removes the architect's
+  // *decision*, not their voice.
   await openRequest(page, "request-blocked-acceptance")
 
   const conversation = page.getByRole("region", {name: "Clarification conversation"})
