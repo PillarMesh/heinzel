@@ -16,7 +16,7 @@
 | Engine version | `18.6` |
 | Image | `postgres:18.6-bookworm` |
 | Image digest | `sha256:33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935` |
-| Build digest | `37b575bed7f1f55dc90308c50dc9ec6d4d8a9362d1c3d9d4643501d8c8274bab` |
+| Build digest | `2be1a2fe4ea12e75c75dbab4979762d277528c463413849c36f330c08d6454e0` |
 | Database encoding | `UTF8` |
 | SUM input / accumulator / result | `NUMERIC(38,9)` / `INTERNAL` / `NUMERIC` |
 | SUM overflow / null input / empty group | `promote` / `exclude` / `no_row` |
@@ -42,6 +42,8 @@ What the identity fields do and do not bind:
 Every statement case ran this exact statement, digest `21bf1cf19fae5a92451fd84f5e8c7812cbf6a58bbe617e2aa282367a79a9eebe`. An offline test
 fails if the compiler's emitted statement ever differs from it, so this evidence cannot silently
 outlive a change to the emitter.
+
+The guard's error text was renamed after capture; outcomes record only SQLSTATE, so they are unaffected. A live re-capture is pending.
 
 ```sql
 SELECT "revenue_events"."region" AS "region", CAST(pg_catalog.sum(CAST("revenue_events"."revenue" AS NUMERIC(57,9))) AS NUMERIC(57,9)) AS "total_revenue" FROM (SELECT (CASE WHEN pg_catalog.jsonb_typeof("payload" OPERATOR(pg_catalog.->) 'region') OPERATOR(pg_catalog.=) 'string' THEN "payload" OPERATOR(pg_catalog.->>) 'region' ELSE CAST(CAST('heinzel refused a string landing value in generation ' OPERATOR(pg_catalog.||) "generation_id" AS NUMERIC) AS pg_catalog.text) END) COLLATE pg_catalog."C" AS "region", CAST(CASE WHEN pg_catalog.jsonb_typeof("payload" OPERATOR(pg_catalog.->) 'revenue') OPERATOR(pg_catalog.=) 'string' AND "payload" OPERATOR(pg_catalog.->>) 'revenue' OPERATOR(pg_catalog.~) '^-?(0|[1-9][0-9]{0,28})([.][0-9]{1,9})?$' THEN "payload" OPERATOR(pg_catalog.->>) 'revenue' ELSE 'heinzel refused a decimal landing value in generation ' OPERATOR(pg_catalog.||) "generation_id" END AS NUMERIC(38,9)) AS "revenue" FROM "raw"."raw_sales" WHERE "generation_id" OPERATOR(pg_catalog.=) 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS "revenue_events" GROUP BY "revenue_events"."region"

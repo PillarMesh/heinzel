@@ -8,7 +8,7 @@
     "engine_version": "18.6",
     "engine_image": "postgres:18.6-bookworm",
     "engine_image_digest": "33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935",
-    "engine_build_digest": "37b575bed7f1f55dc90308c50dc9ec6d4d8a9362d1c3d9d4643501d8c8274bab",
+    "engine_build_digest": "2be1a2fe4ea12e75c75dbab4979762d277528c463413849c36f330c08d6454e0",
     "database_encoding": "UTF8",
     "sum_semantics": {
       "input_physical_type": "NUMERIC(38,9)",
