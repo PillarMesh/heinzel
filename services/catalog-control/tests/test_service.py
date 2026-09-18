@@ -319,3 +319,23 @@ def test_record_validation_translates_unrelated_sqlite_integrity_error() -> None
 
     assert captured.value.operation == "record catalog validation"
     assert isinstance(captured.value.__cause__, sqlite3.IntegrityError)
+
+
+def test_binding_lifecycle_transition_table_is_exact_and_retired_is_terminal() -> None:
+    """Every catalog binding state has exactly these successors, and retired has none."""
+    from heinzel_catalog_control.service import _TRANSITIONS
+
+    assert set(_TRANSITIONS) == set(CatalogBindingState)
+    assert {
+        source.value: frozenset(target.value for target in targets)
+        for source, targets in _TRANSITIONS.items()
+    } == {
+        "draft": frozenset({"provisioning", "retired"}),
+        "provisioning": frozenset({"validating", "failed"}),
+        "validating": frozenset({"ready", "failed"}),
+        "ready": frozenset({"suspended", "retiring"}),
+        "suspended": frozenset({"ready", "retiring"}),
+        "retiring": frozenset({"retired"}),
+        "failed": frozenset({"retired"}),
+        "retired": frozenset(),
+    }

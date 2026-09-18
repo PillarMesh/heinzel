@@ -108,3 +108,19 @@ def test_catalog_binding_uses_canonical_digest_compatible_serialization() -> Non
 def test_private_catalog_resource_is_not_exported_from_package_root() -> None:
     assert "PrivateCatalogResource" not in catalog_control.__all__
     assert not hasattr(catalog_control, "PrivateCatalogResource")
+
+
+def test_catalog_binding_fields_are_exact_and_ordered() -> None:
+    assert tuple(CatalogBinding.model_fields) == (
+        "schema_version",
+        "binding_id",
+        "tenant_id",
+        "provider_kind",
+        "deployment_mode",
+        "capability_profile_digest",
+        "lifecycle_state",
+        "revision",
+        "created_at",
+        "updated_at",
+        "provisioned_at",
+    )
