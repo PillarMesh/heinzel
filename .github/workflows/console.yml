@@ -69,8 +69,6 @@ jobs:
                 ''|*$'\n'*|*$'\r'*) affected=true ;;
                 apps/console/*) affected=true ;;
                 pyproject.toml|uv.lock|.python-version) affected=true ;;
-                docs/superpowers/specs/2026-09-01-data-architect-console-design.md) affected=true ;;
-                docs/superpowers/plans/2026-09-01-data-architect-console.md) affected=true ;;
                 tests/ci/test_console_workflow.py) affected=true ;;
                 .github/workflows/console.yml) affected=true ;;
               esac

@@ -21,8 +21,6 @@ AFFECTED_PATHS = (
     "pyproject.toml",
     "uv.lock",
     ".python-version",
-    "docs/superpowers/specs/2026-09-01-data-architect-console-design",
-    "docs/superpowers/plans/2026-09-01-data-architect-console",
     "tests/ci/test_console_workflow",
     ".github/workflows/console",
 )

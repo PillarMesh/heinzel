@@ -19,7 +19,6 @@ required_paths='
 .github/pull_request_template.md
 .github/workflows/repository-structure.yml
 .python-version
-AGENTS.md
 CONTRIBUTING.md
 LICENSE
 NOTICE
@@ -36,10 +35,6 @@ docs/architecture/decisions/ADR-0001-monorepo-structure.md
 docs/architecture/decisions/ADR-0003-managed-data-engineering-platform.md
 docs/architecture/decisions/ADR-0007-access-control.md
 docs/architecture/repository-layout.md
-docs/architecture/specifications/enterprise-data-compiler-foundational-architecture-v0.3.docx
-docs/architecture/specifications/enterprise-data-compiler-revenue-to-cash-mvp-implementation-plan-v1.4.docx
-docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md
-docs/superpowers/specs/2026-08-12-initial-monorepo-structure-design.md
 packages
 packages/README.md
 providers
@@ -62,7 +57,7 @@ for entry_path in "$TARGET"/* "$TARGET"/.[!.]* "$TARGET"/..?*; do
     [ -e "$entry_path" ] || continue
     entry=${entry_path##*/}
     case "$entry" in
-        .git|.editorconfig|.env.example|.gitattributes|.gitignore|.github|.mypy_cache|.pytest_cache|.python-version|.ruff_cache|.superpowers|.venv|AGENTS.md|CLAUDE.md|CONTRIBUTING.md|LICENSE|NOTICE|CODE_OF_CONDUCT.md|CHANGELOG.md|THIRD_PARTY_NOTICES.md|README.md|SECURITY.md|apps|deploy|docs|packages|providers|pyproject.toml|services|tests|uv.lock)
+        .git|.editorconfig|.env.example|.gitattributes|.gitignore|.github|.mypy_cache|.pytest_cache|.python-version|.ruff_cache|.hypothesis|.venv|AGENTS.md|CONTRIBUTING.md|LICENSE|NOTICE|CODE_OF_CONDUCT.md|CHANGELOG.md|THIRD_PARTY_NOTICES.md|README.md|SECURITY.md|apps|deploy|docs|packages|providers|pyproject.toml|services|tests|uv.lock)
             ;;
         *)
             printf 'UNEXPECTED: %s\n' "$entry" >&2

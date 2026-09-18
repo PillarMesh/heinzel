@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from heinzel_contract_model import FIXED_PROJECTION, IntegrationContract
 from heinzel_evidence import PackageMetadata
 
 from tests.acceptance import run_m0
@@ -721,16 +720,6 @@ def test_contract_and_fixture_labels_are_opaque_and_independent_from_key(tmp_pat
         {"source": "status", "destination": "order_status"},
         {"source": "updated_at", "destination": "updated_at"},
     ]
-
-
-def test_checked_in_contract_fixture_is_fixed_shape_and_contains_no_secret_placeholder() -> None:
-    fixture_path = Path(__file__).parents[2] / "docs" / "m0" / "contract.example.json"
-
-    fixture = IntegrationContract.model_validate_json(fixture_path.read_bytes())
-
-    assert fixture.projection == FIXED_PROJECTION
-    assert fixture.contract_id == "contract-opaque-example"
-    assert "<secret>" not in fixture_path.read_text(encoding="utf-8")
 
 
 def test_env_example_matches_exact_required_variable_inventory() -> None:

@@ -16,7 +16,6 @@ apps/console/dist/
 apps/console/test-results/
 apps/console/test-results-governed/
 apps/console/playwright-report/
-.superpowers/
 .worktrees/
 worktrees/
 output/

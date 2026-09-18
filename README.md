@@ -2,17 +2,17 @@
 
 Heinzel is an Enterprise Data Compiler: a contract-first platform that compiles declared data outcomes into legal, feasible, signed execution graphs and executes them deterministically with attributable evidence.
 
-The current product boundary is set by the [managed data engineering platform addendum](docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md). Heinzel operates the tenant's analytical warehouse rather than integrating with an arbitrary customer-managed destination, and the initial engine catalog is PostgreSQL and ClickHouse.
+The current product boundary is set by the managed data engineering platform addendum. Heinzel operates the tenant's analytical warehouse rather than integrating with an arbitrary customer-managed destination, and the initial engine catalog is PostgreSQL and ClickHouse.
 
 The repository contains the data architect control-plane foundation: immutable managed-warehouse bindings, immutable business-process package intake, and a typed architect inbox with attributable conversation and revision-bound decisions. It also contains the completed M0 evidence thin thread, which is [historical](#historical-m0).
 
 ## Start Here
 
-- [Managed data engineering platform addendum](docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md)
+- Managed data engineering platform addendum
 - [Managed data plane decision](docs/architecture/decisions/ADR-0003-managed-data-engineering-platform.md)
 - [Repository layout](docs/architecture/repository-layout.md)
 - [Monorepo decision](docs/architecture/decisions/ADR-0001-monorepo-structure.md)
-- [Initial structure design](docs/superpowers/specs/2026-08-12-initial-monorepo-structure-design.md)
+- Initial structure design
 - [Contributing](CONTRIBUTING.md)
 - [Security](SECURITY.md)
 
@@ -22,10 +22,10 @@ Plan 2 proves the data-architect journey from an immutable business-process pack
 candidate extraction, authority resolution, owner review, approved semantics, managed Integration
 Contract formation, OpenMetadata publication, drift intake, backup/restore, and exact cleanup.
 
-- [Setup](docs/semantic-formation/setup.md)
-- [Offline and witnessed acceptance](docs/semantic-formation/acceptance-run.md)
-- [Evidence package](docs/semantic-formation/evidence-package.md)
-- [Exact teardown](docs/semantic-formation/teardown.md)
+- Setup
+- Offline and witnessed acceptance
+- Evidence package
+- Exact teardown
 
 ## Plan 3A: Managed Warehouse Lifecycle
 
@@ -33,10 +33,10 @@ Plan 3A proves that the managed warehouse control plane preserves one provider-n
 across PostgreSQL and ClickHouse: provision, validate, back up and restore, suspend and resume,
 retire under retention, and perform exact authorized cleanup with sanitized evidence.
 
-- [Setup](docs/warehouse-lifecycle/setup.md)
-- [Witnessed acceptance](docs/warehouse-lifecycle/acceptance-run.md)
-- [Evidence package](docs/warehouse-lifecycle/evidence-package.md)
-- [Exact teardown](docs/warehouse-lifecycle/teardown.md)
+- Setup
+- Witnessed acceptance
+- Evidence package
+- Exact teardown
 
 ## Historical M0
 
@@ -44,12 +44,12 @@ M0 was the PostgreSQL-to-Snowflake thin-thread experiment: one curated PostgreSQ
 
 These records remain valid as historical evidence. They are not rewritten, and they do not define the destination or product scope after the addendum above. Snowflake is no longer a product destination.
 
-- [M0 account setup](docs/m0/setup.md)
-- [M0 LocalStack Snowflake smoke test](docs/m0/local-emulator.md)
-- [M0 acceptance run](docs/m0/acceptance-run.md)
-- [M0 evidence package](docs/m0/evidence-package.md)
-- [M0 acceptance transport decision](docs/m0/transport-decision.md)
-- [M0 teardown](docs/m0/teardown.md)
+- M0 account setup
+- M0 LocalStack Snowflake smoke test
+- M0 acceptance run
+- M0 evidence package
+- M0 acceptance transport decision
+- M0 teardown
 
 ## Validate the Repository
 

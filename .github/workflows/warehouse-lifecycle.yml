@@ -76,10 +76,6 @@ jobs:
                 services/warehouse-control/*|providers/postgresql/*|providers/clickhouse/*) affected=true ;;
                 packages/provider-sdk/*|packages/contract-model/*) affected=true ;;
                 pyproject.toml|uv.lock|.python-version) affected=true ;;
-                docs/warehouse-lifecycle/*) affected=true ;;
-                docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md) affected=true ;;
-                docs/superpowers/specs/2026-08-24-plan-3a-managed-warehouse-lifecycle-design.md) affected=true ;;
-                docs/superpowers/plans/2026-08-24-plan-3a-managed-warehouse-lifecycle.md) affected=true ;;
                 tests/emulators/warehouses/*|tests/acceptance/*|tests/conformance/*) affected=true ;;
                 tests/fault-injection/*|tests/end-to-end/*) affected=true ;;
                 tests/integration/test_postgresql_warehouse_live.py) affected=true ;;
