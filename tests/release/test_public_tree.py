@@ -49,8 +49,10 @@ _ALLOWED_REFERENCE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"ghcr\.io/pillarmesh/"),
     re.compile(r"(?i)(?<![a-z0-9.-])(?:www\.)?pillarmesh\.com(?![a-z0-9-]|\.[a-z0-9])"),
     re.compile(r"a product of PillarMesh"),
+    # These two exist for package author metadata: a pyproject.toml `authors` entry, in its
+    # Python-dict-literal form and its TOML inline-table form.
     re.compile(r'"name":\s*"PillarMesh"'),
-    re.compile(r'name\s*=\s*"PillarMesh"'),
+    re.compile(r'(?<![\w.-])name\s*=\s*"PillarMesh"'),
 )
 
 # A domain is exempt from the personal-email check when its final label (the TLD) is one of
@@ -224,6 +226,8 @@ def scan_tree(root: Path = ROOT, terms: _Terms | None = None) -> tuple[Finding, 
         ("internal.pillarmesh.com", "company name outside allowed references"),
         ("github.com/PillarMesh/pillarmesh", "company name outside allowed references"),
         ('"team": "PillarMesh"', "company name outside allowed references"),
+        ('team_name = "PillarMesh"', "company name outside allowed references"),
+        ('display_name = "PillarMesh"', "company name outside allowed references"),
         ("mail someone@gmail.com", "personal email"),
         ("reachme@testers.co", "personal email"),
     ],
@@ -253,6 +257,8 @@ def test_generic_terms_catch_each_kind(line: str, expected_reason: str) -> None:
         "admin@open-metadata.org ships as a vendor default",
         '{"name": "PillarMesh", "email": "karthik@pillarmesh.com"}',
         'name = "PillarMesh"',
+        'authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]',
+        'authors=[{name="PillarMesh"}]',
     ],
 )
 def test_generic_terms_allow_company_references_and_ordinary_words(line: str) -> None:
