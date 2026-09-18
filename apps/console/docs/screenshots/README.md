@@ -1,8 +1,7 @@
 # Console demonstration screenshots
 
-These images are generated, never hand-edited. They are the demonstration package
-described in section 12 of
-`docs/superpowers/specs/2026-09-01-data-architect-console-design.md`.
+These images are generated, never hand-edited. None are committed at the moment; run the
+suite below to produce them locally.
 
 ## Regenerating
 
@@ -27,7 +26,7 @@ CSRF token, bearer token, password, secret, or e-mail address. All content is sy
 the tenant is `Northwind Demo`, the workspace is `Revenue to cash`, and every route
 carries the persistent `Demo scenario - no managed effects` banner.
 
-## What is here
+## What the suite captures
 
 | File | Screen | Viewport |
 | --- | --- | --- |
@@ -46,9 +45,9 @@ the admissible actions enabled.
 
 ## What is missing, and why
 
-Two of the eight images named in section 12 cannot be produced from the committed
-fixtures. The corresponding tests in `e2e/screenshots.spec.ts` are marked `fixme` rather
-than approximated with a different screen.
+Two further screens cannot be produced from the committed fixtures. The corresponding
+tests in `e2e/screenshots.spec.ts` are marked `fixme` rather than approximated with a
+different screen.
 
 - **`meaning-review.png`** — the meaning approval gate has no reachable browser state.
   `SetupWorkbench` renders strictly by `SetupView.active_stage`, and
