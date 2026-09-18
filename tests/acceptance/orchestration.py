@@ -131,7 +131,7 @@ def build_contract(
         "deletion_behavior": "not_observed",
         "freshness_seconds": 300,
         "data_classification": "synthetic_non_sensitive",
-        "evidence_retention": "m0_30_days",
+        "evidence_retention": "snapshot_30_days",
         "producer": "heinzel-contract-service",
     }
 

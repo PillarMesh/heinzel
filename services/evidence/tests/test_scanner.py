@@ -49,7 +49,7 @@ def test_scanner_finds_canary_forms_without_echoing_source_value(
         ),
         (b'"path":"file:///tmp/private/segment.csv"', ScanInput(), "file_uri"),
         (
-            b'"dsn":"postgresql://runtime:password@db.invalid/m0"',
+            b'"dsn":"postgresql://runtime:password@db.invalid/orders"',
             ScanInput(),
             "connection_string",
         ),

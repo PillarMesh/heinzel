@@ -100,7 +100,7 @@ packages = [
   "tests.acceptance.warehouse_lifecycle_fault_matrix",
   "tests.acceptance.warehouse_lifecycle_orchestration",
   "tests.acceptance.run_console_governed",
-  "tests.acceptance.run_m0",
+  "tests.acceptance.run_snapshot",
   "tests.acceptance.run_semantic_formation",
   "tests.acceptance.run_warehouse_lifecycle",
   "tests.acceptance.run_request_fulfillment",

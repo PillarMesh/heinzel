@@ -71,7 +71,7 @@ SELECT coalesce(sum(s.calls), 0)::bigint
 FROM public.pg_stat_statements AS s
 JOIN pg_catalog.pg_roles AS r ON r.oid = s.userid
 WHERE pg_catalog.pg_has_role(session_user, r.oid, 'MEMBER')
-  AND s.query ILIKE '%heinzel_m0%orders%'
+  AND s.query ILIKE '%heinzel_snapshot%orders%'
   AND s.query ~* '^[[:space:]]*(select|declare)'
 """.strip()
 

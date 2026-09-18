@@ -16,7 +16,7 @@ def test_a_prepared_acquisition_retains_its_receipt_for_its_own_tenant(tmp_path:
     only statement here that the seam is closed, and it is what makes a listed
     receipt evidence of work the runtime actually recorded.
     """
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     store = SQLiteStore.open(path)
     runner, observation, *_rest = _runner(evidence_delegate=SQLiteAcquisitionEvidenceWriter(store))
 

@@ -55,14 +55,14 @@ def _contract() -> IntegrationContract:
             "contract_id": "contract-package-001",
             "version": 1,
             "source": {
-                "connection_handle": "pg-m0",
-                "schema": "m0_source",
+                "connection_handle": "pg-snapshot",
+                "schema": "snapshot_source",
                 "table": "orders",
                 "primary_key": "order_id",
             },
             "destination": {
-                "connection_handle": "sf-m0",
-                "database": "HEINZEL_M0",
+                "connection_handle": "sf-snapshot",
+                "database": "HEINZEL_SNAPSHOT",
                 "schema": "PUBLIC",
                 "table": "ORDERS",
                 "key": "order_id",
@@ -114,7 +114,7 @@ def _observations() -> tuple[ProviderObservation, ProviderObservation]:
     return (
         ProviderObservation(
             provider="postgresql",
-            connection_handle="pg-m0",
+            connection_handle="pg-snapshot",
             object_identity="pg:opaque-source",
             object_kind="base_table",
             schema_digest="1" * 64,
@@ -136,7 +136,7 @@ def _observations() -> tuple[ProviderObservation, ProviderObservation]:
         ),
         ProviderObservation(
             provider="snowflake",
-            connection_handle="sf-m0",
+            connection_handle="sf-snapshot",
             object_identity="sf:opaque-destination",
             object_kind="base_table",
             schema_digest="2" * 64,
@@ -738,7 +738,7 @@ def _inject_payload(path: Path, payload: bytes) -> None:
         lambda path: _inject_payload(path, b'["984201"]'),
         lambda path: _inject_payload(path, b'["credential-never-export"]'),
         lambda path: _inject_payload(path, b'["Y3JlZGVudGlhbC1uZXZlci1leHBvcnQ="]'),
-        lambda path: _inject_payload(path, b'["postgresql://user:pass@db.invalid/m0"]'),
+        lambda path: _inject_payload(path, b'["postgresql://user:pass@db.invalid/orders"]'),
         lambda path: _inject_payload(path, b'["-----BEGIN PRIVATE KEY-----"]'),
     ],
     ids=[
@@ -890,7 +890,7 @@ def test_verifier_rejects_qualified_commit_ledger_identity(tmp_path: Path) -> No
     entry = next(item for item in index["artifacts"] if item["kind"] == "commit_receipt")
     artifact = package.path / entry["relative_path"]
     value = json.loads(artifact.read_bytes())
-    value["ledger_identity"] = "HEINZEL_M0.PUBLIC.COMMIT_LEDGER"
+    value["ledger_identity"] = "HEINZEL_SNAPSHOT.PUBLIC.COMMIT_LEDGER"
     payload = canonical_bytes(value)
     replacement_digest = hashlib.sha256(payload).hexdigest()
     replacement_path = f"artifacts/commit_receipt/{replacement_digest}.json"

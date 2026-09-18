@@ -117,7 +117,7 @@ def managed_contract() -> ManagedIntegrationContract:
     )
 
 
-def test_managed_contract_v2_keeps_m0_contract_model_unchanged() -> None:
+def test_managed_contract_v2_keeps_snapshot_contract_model_unchanged() -> None:
     contract = managed_contract()
 
     assert contract.schema_version == "2"

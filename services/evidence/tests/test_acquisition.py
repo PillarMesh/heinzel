@@ -130,13 +130,13 @@ def test_durable_writer_retains_what_it_appends(tmp_path: Path) -> None:
     built was discarded the moment the process ended. This is the smallest statement
     that the seam now leads somewhere durable.
     """
-    store = SQLiteStore.open(tmp_path / "m0.sqlite3")
+    store = SQLiteStore.open(tmp_path / "evidence.sqlite3")
     writer = SQLiteAcquisitionEvidenceWriter(store)
     receipt = _receipt()
 
     writer.append(receipt)
     store.close()
 
-    assert SQLiteStore.open(tmp_path / "m0.sqlite3").list_acquisition_receipts("tenant-a") == (
-        receipt,
-    )
+    assert SQLiteStore.open(tmp_path / "evidence.sqlite3").list_acquisition_receipts(
+        "tenant-a"
+    ) == (receipt,)

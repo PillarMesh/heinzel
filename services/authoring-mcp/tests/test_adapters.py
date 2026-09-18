@@ -79,8 +79,8 @@ def test_settings_repr_and_validation_never_expose_credentials(tmp_path: Path) -
         signing_key_id="key-1",
         signing_private_key_b64="private-canary",
         postgres_dsn="postgres-canary",
-        postgres_connection_handle="pg-m0",
-        postgres_schema="m0_source",
+        postgres_connection_handle="pg-snapshot",
+        postgres_schema="snapshot_source",
         postgres_table="orders",
         snowflake_account="account",
         snowflake_user="user",
@@ -92,7 +92,7 @@ def test_settings_repr_and_validation_never_expose_credentials(tmp_path: Path) -
         snowflake_stage="STAGE",
         snowflake_target_table="ORDERS",
         snowflake_ledger_table="COMMIT_LEDGER",
-        snowflake_connection_handle="sf-m0",
+        snowflake_connection_handle="sf-snapshot",
     )
 
     rendered = repr(settings)

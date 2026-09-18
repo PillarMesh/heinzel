@@ -181,7 +181,7 @@ def create_historical_v1_database(path: Path) -> None:
 
 
 def test_evidence_chain_continues_after_restart(tmp_path: Path) -> None:
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     first = store(path)
     first.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
     event_one = first.append_event("run-1", "activation", NOW, "contract", {"digest": "a" * 64})
@@ -198,7 +198,7 @@ def test_evidence_chain_continues_after_restart(tmp_path: Path) -> None:
 
 
 def test_evidence_rows_cannot_be_updated_or_deleted(tmp_path: Path) -> None:
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     database = store(path)
     database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
     database.append_event("run-1", "activation", NOW, "contract", {})
@@ -212,7 +212,7 @@ def test_evidence_rows_cannot_be_updated_or_deleted(tmp_path: Path) -> None:
 
 
 def test_checkpoint_and_event_are_atomic(tmp_path: Path) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
 
     with pytest.raises(TypeError, match="floating-point"):
@@ -234,7 +234,7 @@ def test_checkpoint_and_event_are_atomic(tmp_path: Path) -> None:
 def test_publish_verification_persists_artifacts_summary_and_reference_atomically(
     tmp_path: Path,
 ) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     payloads = (
         ("intent_ir", b'{"artifact":"iir"}'),
         ("physical_plan", b'{"artifact":"plan"}'),
@@ -258,7 +258,7 @@ def test_publish_verification_persists_artifacts_summary_and_reference_atomicall
 def test_publish_verification_rolls_back_every_write_on_third_artifact_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     payloads = (
         ("intent_ir", b'{"artifact":"iir"}'),
         ("physical_plan", b'{"artifact":"plan"}'),
@@ -296,7 +296,7 @@ def test_publish_verification_rolls_back_every_write_on_third_artifact_failure(
 def test_publish_verification_rejects_payload_digest_mismatch_before_writing(
     tmp_path: Path, mismatch: str
 ) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     parent_payload = b'{"artifact":"iir"}'
     parent_digest = hashlib.sha256(parent_payload).hexdigest()
     summary_payload = b'{"artifact":"activation-summary"}'
@@ -321,7 +321,7 @@ def test_publish_verification_rejects_payload_digest_mismatch_before_writing(
 def test_publish_verification_rolls_back_commit_failure_and_preserves_error(
     tmp_path: Path,
 ) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     parent_payload = b'{"artifact":"iir"}'
     parent_digest = hashlib.sha256(parent_payload).hexdigest()
     summary_payload = b'{"artifact":"activation-summary"}'
@@ -356,7 +356,7 @@ def test_publish_verification_rolls_back_commit_failure_and_preserves_error(
 def test_publish_verification_rolls_back_parent_missing_before_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     parent_payload = b'{"artifact":"iir"}'
     parent_digest = hashlib.sha256(parent_payload).hexdigest()
     summary_payload = b'{"artifact":"activation-summary"}'
@@ -388,7 +388,7 @@ def test_publish_verification_rolls_back_parent_missing_before_commit(
 def test_record_extraction_persists_artifacts_private_path_and_checkpoint_atomically(
     tmp_path: Path,
 ) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
     database.transition_run("run-1", "created", "running", "snapshot_opened", NOW)
     database.set_acceptance_key("run-1", 984201)
@@ -424,7 +424,7 @@ def test_record_extraction_persists_artifacts_private_path_and_checkpoint_atomic
 def test_record_extraction_rolls_back_every_write_when_event_append_fails(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
     database.transition_run("run-1", "created", "running", "snapshot_opened", NOW)
     database.set_acceptance_key("run-1", 984201)
@@ -466,7 +466,7 @@ def test_record_extraction_rolls_back_base_exception_and_closes_transaction(
     class InjectedInterrupt(BaseException):
         pass
 
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
     database.transition_run("run-1", "created", "running", "snapshot_opened", NOW)
     database.set_acceptance_key("run-1", 984201)
@@ -504,7 +504,7 @@ def test_record_extraction_rolls_back_base_exception_and_closes_transaction(
 
 
 def test_terminal_state_cannot_regress(tmp_path: Path) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
     database.transition_run("run-1", "created", "succeeded", "terminal", NOW)
 
@@ -513,7 +513,7 @@ def test_terminal_state_cannot_regress(tmp_path: Path) -> None:
 
 
 def test_only_one_different_activation_can_be_active(tmp_path: Path) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     original = database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
     repeated = database.create_run("run-2", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
 
@@ -525,7 +525,7 @@ def test_only_one_different_activation_can_be_active(tmp_path: Path) -> None:
 def test_v1_database_is_refused_without_application_table_access_or_mutation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     create_historical_v1_database(path)
     original_bytes = path.read_bytes()
     statements: list[str] = []
@@ -557,7 +557,7 @@ def test_v1_database_is_refused_without_application_table_access_or_mutation(
 def test_private_state_is_durable_immutable_and_not_returned_by_run_or_trace(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     database = store(path)
     database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
 
@@ -586,7 +586,7 @@ def test_private_state_is_durable_immutable_and_not_returned_by_run_or_trace(
 
 
 def test_private_state_rejects_missing_run(tmp_path: Path) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
 
     with pytest.raises(KeyError, match="missing"):
         database.get_private_state("missing")
@@ -597,7 +597,7 @@ def test_private_state_rejects_missing_run(tmp_path: Path) -> None:
 
 
 def test_migration_checksum_and_newer_version_are_rejected(tmp_path: Path) -> None:
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     database = store(path)
     database.close()
     connection = sqlite3.connect(path)
@@ -620,7 +620,7 @@ def test_migration_checksum_and_newer_version_are_rejected(tmp_path: Path) -> No
 
 
 def test_ref_prefix_matches_literally_not_as_a_like_pattern(tmp_path: Path) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     database.bind_artifact_ref("contracts", f"orders_sync:{1:020d}", "a" * 64)
     database.bind_artifact_ref("contracts", f"ordersXsync:{9:020d}", "b" * 64)
     database.bind_artifact_ref("contracts", f"100%off:{2:020d}", "c" * 64)
@@ -637,7 +637,7 @@ def test_ref_prefix_matches_literally_not_as_a_like_pattern(tmp_path: Path) -> N
 def test_interrupted_migration_never_leaves_a_schema_without_its_version_row(
     tmp_path: Path,
 ) -> None:
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     connection = sqlite3.connect(path, isolation_level=None)
 
     class FailingInsert:
@@ -673,7 +673,7 @@ def test_interrupted_migration_never_leaves_a_schema_without_its_version_row(
 
 
 def test_replayed_activated_run_does_not_duplicate_lifecycle_evidence(tmp_path: Path) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     lifecycle_events = (
         ("draft_created", {"contract_digest": "a" * 64}),
         ("activation", {"summary_digest": "b" * 64}),
@@ -725,7 +725,7 @@ def test_runs_list_for_the_contracts_they_were_witnessed_under(tmp_path: Path) -
     digest is the evidence half of deriving a run's tenant without storing one on
     an append-only record.
     """
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     _settled_run(database, "run-1", "activation-1", "a" * 64)
     _settled_run(database, "run-2", "activation-2", "a" * 64)
     _settled_run(database, "run-3", "activation-3", "c" * 64)
@@ -742,14 +742,14 @@ def test_listing_no_contracts_returns_no_runs_rather_than_every_run(tmp_path: Pa
     pins the answer as behaviour rather than as an implementation detail: it holds
     whether the filter short-circuits in Python or collapses in SQL.
     """
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     _settled_run(database, "run-1", "activation-1", "a" * 64)
 
     assert database.list_runs_for_contracts(()) == ()
 
 
 def test_listed_runs_are_ordered_newest_first_and_are_deterministic(tmp_path: Path) -> None:
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     database.create_run("run-1", "activation-1", "a" * 64, "b" * 64, "{}", NOW)
     database.transition_run("run-1", "created", "succeeded", "closed", NOW)
     later = datetime(2026, 8, 14, 12, 0, tzinfo=UTC)
@@ -771,7 +771,7 @@ def test_a_store_can_be_opened_for_use_from_a_threadpool_worker(tmp_path: Path) 
     """
     import threading
 
-    database = SQLiteStore.open(tmp_path / "m0.sqlite3", check_same_thread=False)
+    database = SQLiteStore.open(tmp_path / "evidence.sqlite3", check_same_thread=False)
     _settled_run(database, "run-1", "activation-1", "a" * 64)
     listed: list[tuple[RunRecord, ...]] = []
 
@@ -792,7 +792,7 @@ def test_runs_are_ordered_by_instant_rather_than_by_timestamp_text(tmp_path: Pat
     a run recorded at 12:00+05:30 (06:30Z) ahead of one at 09:00Z, reversing
     newest-first for any estate that records under more than one offset.
     """
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     earlier = datetime(2026, 9, 1, 12, tzinfo=timezone(timedelta(hours=5, minutes=30)))
     later = datetime(2026, 9, 1, 9, tzinfo=UTC)
     database.create_run("run-earlier", "activation-1", "a" * 64, "b" * 64, "{}", earlier)
@@ -875,7 +875,7 @@ def test_acquisition_receipts_are_listed_for_their_own_tenant_only(tmp_path: Pat
     tenant it belongs to, so listing one tenant's receipts must never require the
     caller to know anything about that tenant's contracts.
     """
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     mine = _receipt(tenant_id="tenant-a", evidence_id="evidence-ref:mine")
     theirs = _receipt(tenant_id="tenant-b", evidence_id="evidence-ref:theirs")
 
@@ -889,7 +889,7 @@ def test_acquisition_receipts_are_listed_for_their_own_tenant_only(tmp_path: Pat
 
 def test_acquisition_receipts_are_retained_across_a_restart(tmp_path: Path) -> None:
     """The whole point of the writer: a receipt outlives the process that produced it."""
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     database = store(path)
     receipt = _receipt()
     database.append_acquisition_receipt(receipt)
@@ -901,7 +901,7 @@ def test_acquisition_receipts_are_retained_across_a_restart(tmp_path: Path) -> N
 
 
 def test_acquisition_receipt_rows_cannot_be_updated_or_deleted(tmp_path: Path) -> None:
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     database = store(path)
     database.append_acquisition_receipt(_receipt())
     connection = sqlite3.connect(path)
@@ -921,7 +921,7 @@ def test_replaying_an_identical_receipt_is_accepted_without_duplicating_it(
     Refusing the second append would turn a recovered run into an integrity error,
     because the runtime classifies any writer failure as `evidence_write_failed`.
     """
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     receipt = _receipt()
 
     database.append_acquisition_receipt(receipt)
@@ -937,7 +937,7 @@ def test_a_contradictory_receipt_under_an_existing_identity_is_refused(tmp_path:
     what the run actually recorded, which is the one thing an evidence store may
     not do.
     """
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     database.append_acquisition_receipt(_receipt())
 
     with pytest.raises(ValueError, match="different payload"):
@@ -957,7 +957,7 @@ def test_listed_acquisition_receipts_are_ordered_newest_first_and_are_determinis
     the text order is already the instant order. `evidence_id` breaks ties so two
     receipts recorded in the same instant list in a stable order.
     """
-    database = store(tmp_path / "m0.sqlite3")
+    database = store(tmp_path / "evidence.sqlite3")
     later = datetime(2026, 9, 1, 12, tzinfo=UTC)
     database.append_acquisition_receipt(_receipt(evidence_id="evidence-ref:first"))
     database.append_acquisition_receipt(_receipt(evidence_id="evidence-ref:second"))
@@ -984,7 +984,7 @@ def test_a_version_2_database_is_upgraded_in_place_and_keeps_its_evidence(
     and an evidence service that discards evidence to gain a table is a worse
     outcome than carrying one upgrade path.
     """
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     create_historical_v2_database(path)
 
     upgraded = store(path)
@@ -1007,7 +1007,7 @@ def test_a_version_2_database_whose_schema_was_altered_is_refused_rather_than_up
     Without this the upgrade would run over a database whose tables are unknown,
     and record a version 3 checksum asserting a shape nobody verified.
     """
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     create_historical_v2_database(path)
     connection = sqlite3.connect(path)
     connection.execute("UPDATE schema_metadata SET checksum = 'tampered'")
@@ -1067,7 +1067,7 @@ def test_a_version_2_store_that_cannot_be_written_reports_a_migration_failure(
     prove nothing. It also keeps the test honest where a suite runs as root, which
     file permissions alone would not.
     """
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     create_historical_v2_database(path)
     connection = sqlite3.connect(f"file:{path}?mode=ro", uri=True, isolation_level=None)
 
@@ -1088,7 +1088,7 @@ def test_a_locked_version_2_store_is_not_reported_as_needing_write_access(
     failure into a permanent one is exactly what disables every retry built above
     it.
     """
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     create_historical_v2_database(path)
     holder = sqlite3.connect(path, isolation_level=None, timeout=0)
     holder.execute("BEGIN IMMEDIATE")
@@ -1110,7 +1110,7 @@ def test_an_interrupted_receipt_append_does_not_strand_its_transaction(tmp_path:
     transaction within a transaction" -- on the thread-tolerant connection the
     console shares, that strands every subsequent writer, not just this one.
     """
-    path = tmp_path / "m0.sqlite3"
+    path = tmp_path / "evidence.sqlite3"
     store(path).close()
     connection = sqlite3.connect(path, isolation_level=None)
     refusing = _RefusingConnection(

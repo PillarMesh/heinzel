@@ -26,14 +26,14 @@ def contract() -> IntegrationContract:
             "contract_id": "contract-001",
             "version": 1,
             "source": {
-                "connection_handle": "pg-m0",
-                "schema": "m0_source",
+                "connection_handle": "pg-snapshot",
+                "schema": "snapshot_source",
                 "table": "orders",
                 "primary_key": "order_id",
             },
             "destination": {
-                "connection_handle": "sf-m0",
-                "database": "HEINZEL_M0",
+                "connection_handle": "sf-snapshot",
+                "database": "HEINZEL_SNAPSHOT",
                 "schema": "PUBLIC",
                 "table": "ORDERS",
                 "key": "order_id",
@@ -84,7 +84,7 @@ def ledger_columns() -> tuple[ColumnObservation, ...]:
 def observations() -> tuple[ProviderObservation, ProviderObservation]:
     source = ProviderObservation(
         provider="postgresql",
-        connection_handle="pg-m0",
+        connection_handle="pg-snapshot",
         object_identity="pg:fixture:orders:42",
         object_kind="base_table",
         schema_digest="1" * 64,
@@ -106,8 +106,8 @@ def observations() -> tuple[ProviderObservation, ProviderObservation]:
     )
     destination = ProviderObservation(
         provider="snowflake",
-        connection_handle="sf-m0",
-        object_identity="sf:HEINZEL_M0.PUBLIC.ORDERS",
+        connection_handle="sf-snapshot",
+        object_identity="sf:HEINZEL_SNAPSHOT.PUBLIC.ORDERS",
         object_kind="base_table",
         schema_digest="2" * 64,
         columns=columns(destination=True),
@@ -245,7 +245,7 @@ def test_unsafe_required_evidence_redaction_is_not_admitted(
         pytest.param(
             lambda c, s, d: (c, s.model_copy(update={"columns": s.columns[:-1]}), d),
             3,
-            "source and destination columns must match the fixed M0 mapping",
+            "source and destination columns must match the fixed snapshot mapping",
             ("1" * 64, "2" * 64),
             id="precondition-3-mutmut-107",
         ),
@@ -263,8 +263,8 @@ def test_unsafe_required_evidence_redaction_is_not_admitted(
                 d.model_copy(update={"commit_ledger_object_kind": "view"}),
             ),
             5,
-            "Snowflake target and commit ledger schemas must exactly match M0",
-            ("sf:HEINZEL_M0.PUBLIC.ORDERS",),
+            "Snowflake target and commit ledger schemas must exactly match the snapshot contract",
+            ("sf:HEINZEL_SNAPSHOT.PUBLIC.ORDERS",),
             id="precondition-5-mutmut-144",
         ),
         pytest.param(
@@ -277,7 +277,7 @@ def test_unsafe_required_evidence_redaction_is_not_admitted(
         pytest.param(
             lambda c, s, d: (c.model_copy(update={"materialization_mode": "cdc"}), s, d),
             7,
-            "snapshot and commit semantics must exactly match M0",
+            "snapshot and commit semantics must exactly match the snapshot contract",
             (),
             id="precondition-7-mutmut-235",
         ),
@@ -295,7 +295,7 @@ def test_unsafe_required_evidence_redaction_is_not_admitted(
         pytest.param(
             lambda c, s, d: (c, s, d.model_copy(update={"capabilities": ()})),
             9,
-            "providers must declare every required M0 capability",
+            "providers must declare every required snapshot capability",
             (),
             id="precondition-9-mutmut-287",
         ),
@@ -346,7 +346,7 @@ def test_admitted_plan_operator_sequence_is_exact() -> None:
 
 def test_compiler_is_reproducible_and_graph_is_signed() -> None:
     source, destination = observations()
-    signer = GraphSigner.generate("m0-key")
+    signer = GraphSigner.generate("snapshot-key")
 
     first = compile_contract(contract(), source, destination, signer, NOW)
     second = compile_contract(contract(), source, destination, signer, NOW)
@@ -360,7 +360,7 @@ def test_compiler_is_reproducible_and_graph_is_signed() -> None:
     assert digest(first.physical_plan) == first.signed_graph.graph.physical_plan_digest
     assert digest(first.legality_decision) == first.signed_graph.graph.legality_decision_digest
     assert digest(first.signed_graph) == first.signed_graph_artifact_digest
-    verified = GraphVerifier({"m0-key": signer.public_key}).verify(first.signed_graph, NOW)
+    verified = GraphVerifier({"snapshot-key": signer.public_key}).verify(first.signed_graph, NOW)
     assert verified.contract_digest == first.contract_digest
 
 
@@ -368,7 +368,7 @@ def test_modified_contract_and_observation_artifacts_break_graph_parent_binding(
     source, destination = observations()
     original_contract = contract()
     bundle = compile_contract(
-        original_contract, source, destination, GraphSigner.generate("m0-key"), NOW
+        original_contract, source, destination, GraphSigner.generate("snapshot-key"), NOW
     )
     graph = bundle.signed_graph.graph
     modified_contract = original_contract.model_copy(update={"contract_id": "contract-tampered"})
@@ -387,7 +387,9 @@ def test_modified_contract_and_observation_artifacts_break_graph_parent_binding(
 
 def test_compilation_bundle_rejects_a_mismatched_graph_parent() -> None:
     source, destination = observations()
-    bundle = compile_contract(contract(), source, destination, GraphSigner.generate("m0-key"), NOW)
+    bundle = compile_contract(
+        contract(), source, destination, GraphSigner.generate("snapshot-key"), NOW
+    )
     mismatched_graph = bundle.signed_graph.graph.model_copy(
         update={"physical_plan_digest": "f" * 64}
     )
@@ -406,7 +408,9 @@ def test_compilation_bundle_rejects_a_mismatched_graph_parent() -> None:
 
 def test_admitted_legality_decision_rejects_a_mismatched_physical_plan_parent() -> None:
     source, destination = observations()
-    bundle = compile_contract(contract(), source, destination, GraphSigner.generate("m0-key"), NOW)
+    bundle = compile_contract(
+        contract(), source, destination, GraphSigner.generate("snapshot-key"), NOW
+    )
 
     with pytest.raises(ValidationError, match="physical plan digest"):
         type(bundle.legality_decision).model_validate(
@@ -620,13 +624,13 @@ def test_every_admitted_provider_pair_has_an_executable_regression_fixture() -> 
 
 def test_graph_verifier_rejects_tampering() -> None:
     source, destination = observations()
-    signer = GraphSigner.generate("m0-key")
+    signer = GraphSigner.generate("snapshot-key")
     result = compile_contract(contract(), source, destination, signer, NOW)
     tampered_graph = result.signed_graph.graph.model_copy(update={"max_rows": 10_001})
     tampered = result.signed_graph.model_copy(update={"graph": tampered_graph})
 
     with pytest.raises(InvalidGraph, match="digest"):
-        GraphVerifier({"m0-key": signer.public_key}).verify(tampered, NOW)
+        GraphVerifier({"snapshot-key": signer.public_key}).verify(tampered, NOW)
 
 
 def test_graph_evidence_mismatch_is_compiler_defect() -> None:
@@ -637,7 +641,7 @@ def test_graph_evidence_mismatch_is_compiler_defect() -> None:
             contract(),
             source,
             destination,
-            GraphSigner.generate("m0-key"),
+            GraphSigner.generate("snapshot-key"),
             NOW,
             graph_evidence_override=("terminal_success",),
         )

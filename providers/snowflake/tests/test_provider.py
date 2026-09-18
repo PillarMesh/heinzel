@@ -122,11 +122,11 @@ def settings() -> SnowflakeSettings:
         account="account",
         user="runtime_user",
         password="secret-canary",
-        role="HEINZEL_M0_RUNTIME",
-        warehouse="HEINZEL_M0_WH",
-        database="HEINZEL_M0",
+        role="HEINZEL_SNAPSHOT_RUNTIME",
+        warehouse="HEINZEL_SNAPSHOT_WH",
+        database="HEINZEL_SNAPSHOT",
         schema_name="TRANSFER",
-        stage="M0_STAGE",
+        stage="SNAPSHOT_STAGE",
         target_table="ORDERS",
         ledger_table="COMMIT_LEDGER",
         connection_handle="destination-account",
@@ -167,7 +167,7 @@ def test_stage_checks_bytes_and_uses_batch_scoped_prefix(tmp_path: Path) -> None
     provider.stage(segment, expected)
 
     put = next(query for query, _params in backend.calls if query.startswith("PUT "))
-    assert "@HEINZEL_M0.TRANSFER.M0_STAGE/runs/batch-1 " in put
+    assert "@HEINZEL_SNAPSHOT.TRANSFER.SNAPSHOT_STAGE/runs/batch-1 " in put
     assert "secret-canary" not in repr(provider)
 
     segment.write_bytes(b"changed")

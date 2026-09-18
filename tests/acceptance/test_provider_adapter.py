@@ -116,20 +116,20 @@ def _postgres_router(
         rendered = text.casefold()
         params = parameters or ()
         if "session_user, current_user, current_database()," in rendered:
-            return (((session, principal, "m0_acceptance", "m0_owner"),), ())
+            return (((session, principal, "snapshot_acceptance", "snapshot_owner"),), ())
         if "current_user, current_database()," in rendered:
-            return (((principal, "m0_acceptance", "m0_owner"),), ())
+            return (((principal, "snapshot_acceptance", "snapshot_owner"),), ())
         if text == "SELECT session_user, current_user, current_database()":
-            return (((session, principal, "m0_acceptance"),), ())
+            return (((session, principal, "snapshot_acceptance"),), ())
         if text == "SELECT current_user, current_database()":
-            return (((principal, "m0_acceptance"),), ())
+            return (((principal, "snapshot_acceptance"),), ())
         if "from pg_catalog.pg_namespace n where n.nspname=%s" in rendered:
-            return ((("m0_owner",),), ())
+            return ((("snapshot_owner",),), ())
         if "from pg_catalog.pg_class c" in rendered:
             return (
                 (
-                    (env["HEINZEL_POSTGRES_TABLE"], "r", "m0_owner"),
-                    ("environment_marker", "r", "m0_owner"),
+                    (env["HEINZEL_POSTGRES_TABLE"], "r", "snapshot_owner"),
+                    ("environment_marker", "r", "snapshot_owner"),
                 ),
                 (),
             )
@@ -138,7 +138,7 @@ def _postgres_router(
                 (
                     (
                         "f",
-                        "m0_owner",
+                        "snapshot_owner",
                         True,
                         "sql",
                         "s",
@@ -199,7 +199,7 @@ def _show_rows(privileges: tuple[tuple[str, str], ...]) -> Result:
 def _snowflake_router(config: AcceptanceConfig) -> Router:
     env = config.environment
     runtime = env["HEINZEL_SNOWFLAKE_ROLE"]
-    owner = "HEINZEL_M0_OWNER"
+    owner = "HEINZEL_SNAPSHOT_OWNER"
     database = env["HEINZEL_SNOWFLAKE_DATABASE"]
     schema = f"{database}.{env['HEINZEL_SNOWFLAKE_SCHEMA']}"
 
@@ -266,7 +266,7 @@ def _snowflake_router(config: AcceptanceConfig) -> Router:
                 (
                     (
                         config.environment_identity,
-                        "M0_OWNER",
+                        "SNAPSHOT_OWNER",
                         owner,
                         "UNRELATED_PRIVATE",
                         owner,
@@ -276,7 +276,7 @@ def _snowflake_router(config: AcceptanceConfig) -> Router:
             )
         if text == "SELECT CURRENT_USER()":
             return (((env["HEINZEL_SNOWFLAKE_USER"],),), ())
-        if text.startswith("SELECT COUNT(*) FROM HEINZEL_M0.TRANSFER.ORDERS"):
+        if text.startswith("SELECT COUNT(*) FROM HEINZEL_SNAPSHOT.TRANSFER.ORDERS"):
             return (((0,),), ())
         if text.startswith("SELECT COUNT(*) FROM IDENTIFIER"):
             error = RuntimeError("denied")
@@ -311,7 +311,7 @@ def test_live_preflight_maps_real_grant_shapes_and_keeps_fixture_key_limited(
     assert attestation.postgres_audit_body_digest == TRUSTED_POSTGRES_AUDIT_BODY_DIGEST
     assert attestation.snowflake_runtime_grants == SNOWFLAKE_RUNTIME_GRANTS
     assert attestation.snowflake_marker_denial_database == "UNRELATED_PRIVATE"
-    assert attestation.snowflake_marker_denial_database_owner_role == "HEINZEL_M0_OWNER"
+    assert attestation.snowflake_marker_denial_database_owner_role == "HEINZEL_SNAPSHOT_OWNER"
     assert any(query.startswith("SHOW GRANTS ON") for query, _params in snowflake.statements)
     assert not any("environment_id" in query.casefold() for query, _params in fixture.statements)
     assert not any("pg_proc" in query.casefold() for query, _params in fixture.statements)
@@ -320,10 +320,10 @@ def test_live_preflight_maps_real_grant_shapes_and_keeps_fixture_key_limited(
 @pytest.mark.parametrize(
     ("runtime_session", "runtime_current", "fixture_session", "fixture_current"),
     (
-        ("m0_owner", "runtime_one", "fixture", "fixture"),
-        ("runtime_one", "m0_owner", "fixture", "fixture"),
-        ("runtime_one", "runtime_one", "m0_owner", "fixture"),
-        ("runtime_one", "runtime_one", "fixture", "m0_owner"),
+        ("snapshot_owner", "runtime_one", "fixture", "fixture"),
+        ("runtime_one", "snapshot_owner", "fixture", "fixture"),
+        ("runtime_one", "runtime_one", "snapshot_owner", "fixture"),
+        ("runtime_one", "runtime_one", "fixture", "snapshot_owner"),
     ),
 )
 def test_live_preflight_rejects_assumed_postgres_runtime_or_fixture_identity(
@@ -447,7 +447,7 @@ SELECT coalesce(sum(s.calls), 0)::bigint
 FROM public.pg_stat_statements AS s
 JOIN pg_catalog.pg_roles AS r ON r.oid = s.userid
 WHERE r.rolname = session_user
-  AND s.query ILIKE '%heinzel_m0%orders%'
+  AND s.query ILIKE '%heinzel_snapshot%orders%'
   AND s.query ~* '^[[:space:]]*(select|declare)'
 """.strip()
     runtime = ScriptedConnection(_postgres_router(config, "runtime_one", audit_body=stale_body))
@@ -474,11 +474,11 @@ def test_live_provider_admission_uses_stable_database_lock_and_releases_it(
     def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
         text = str(query)
         if text == "SELECT current_database(), pg_backend_pid(), pg_try_advisory_lock(%s, %s)":
-            return ((("m0_acceptance", 42, True),), ())
+            return ((("snapshot_acceptance", 42, True),), ())
         if "pg_try_advisory_lock" in text:
-            return ((("m0_acceptance", True),), ())
+            return ((("snapshot_acceptance", True),), ())
         if "from pg_catalog.pg_locks" in text.casefold():
-            return ((("m0_acceptance", 42, 1),), ())
+            return ((("snapshot_acceptance", 42, 1),), ())
         if "pg_advisory_unlock" in text:
             return (((True,),), ())
         raise AssertionError(text)
@@ -509,11 +509,11 @@ def test_live_provider_admission_fails_when_retained_lock_is_lost(tmp_path: Path
     def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
         text = str(query)
         if text == "SELECT current_database(), pg_backend_pid(), pg_try_advisory_lock(%s, %s)":
-            return ((("m0_acceptance", 42, True),), ())
+            return ((("snapshot_acceptance", 42, True),), ())
         if "pg_try_advisory_lock" in text:
-            return ((("m0_acceptance", True),), ())
+            return ((("snapshot_acceptance", True),), ())
         if "from pg_catalog.pg_locks" in text.casefold():
-            return ((("m0_acceptance", 42, 0),), ())
+            return ((("snapshot_acceptance", 42, 0),), ())
         if "pg_advisory_unlock" in text:
             return (((False,),), ())
         raise AssertionError(text)
@@ -536,7 +536,7 @@ def test_live_provider_admission_rejects_a_lock_held_on_another_host(tmp_path: P
 
     def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
         assert "pg_try_advisory_lock" in str(query)
-        return ((("m0_acceptance", 42, False),), ())
+        return ((("snapshot_acceptance", 42, False),), ())
 
     connection = ScriptedConnection(route)
     actions = LiveProviderActions(config, postgres_connect=lambda _dsn: connection)
@@ -565,10 +565,10 @@ def test_live_replay_and_negative_proofs_map_rows_stage_and_tagged_history(
     config = _config(tmp_path)
     committed = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
     row = (KEY, "synthetic-row-canary", Decimal("10.50"), "USD", "acceptance", committed)
-    target = "HEINZEL_M0.TRANSFER.ORDERS"
-    negative = "HEINZEL_M0.TRANSFER.ORDERS_UNSUPPORTED_KEY"
-    ledger = "HEINZEL_M0.TRANSFER.COMMIT_LEDGER"
-    stage = "HEINZEL_M0.TRANSFER.M0_STAGE"
+    target = "HEINZEL_SNAPSHOT.TRANSFER.ORDERS"
+    negative = "HEINZEL_SNAPSHOT.TRANSFER.ORDERS_UNSUPPORTED_KEY"
+    ledger = "HEINZEL_SNAPSHOT.TRANSFER.COMMIT_LEDGER"
+    stage = "HEINZEL_SNAPSHOT.TRANSFER.SNAPSHOT_STAGE"
     history = (
         ("SELECT", _SNOWFLAKE_METADATA_QUERIES[0]),
         ("SELECT", "SELECT * FROM INFORMATION_SCHEMA.TABLES"),
@@ -644,7 +644,7 @@ def test_admission_probe_reports_driver_failure_without_leaking_its_message(
     def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
         text = str(query)
         if "pg_try_advisory_lock" in text:
-            return ((("m0_acceptance", 42, True),), ())
+            return ((("snapshot_acceptance", 42, True),), ())
         if "from pg_catalog.pg_locks" in text.casefold():
             raise Terminated("terminating connection dsn=postgres://secret@host/db")
         raise AssertionError(text)
@@ -670,7 +670,7 @@ def test_admission_probe_does_not_convert_an_operator_interrupt(tmp_path: Path) 
     def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
         text = str(query)
         if "pg_try_advisory_lock" in text:
-            return ((("m0_acceptance", 42, True),), ())
+            return ((("snapshot_acceptance", 42, True),), ())
         if "from pg_catalog.pg_locks" in text.casefold():
             raise KeyboardInterrupt
         if "pg_advisory_unlock" in text:
@@ -695,7 +695,7 @@ def test_admission_release_failure_never_replaces_the_primary_error(tmp_path: Pa
     def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
         text = str(query)
         if "pg_try_advisory_lock" in text:
-            return ((("m0_acceptance", 42, True),), ())
+            return ((("snapshot_acceptance", 42, True),), ())
         if "pg_advisory_unlock" in text:
             return (((False,),), ())
         raise AssertionError(text)
@@ -722,9 +722,9 @@ def test_admission_release_failure_surfaces_when_nothing_else_failed(tmp_path: P
     def route(query: object, _parameters: tuple[Any, ...] | None) -> Result:
         text = str(query)
         if "pg_try_advisory_lock" in text:
-            return ((("m0_acceptance", 42, True),), ())
+            return ((("snapshot_acceptance", 42, True),), ())
         if "from pg_catalog.pg_locks" in text.casefold():
-            return ((("m0_acceptance", 42, 1),), ())
+            return ((("snapshot_acceptance", 42, 1),), ())
         if "pg_advisory_unlock" in text:
             return (((False,),), ())
         raise AssertionError(text)

@@ -131,7 +131,7 @@ def _run_existing_verification(config: AcceptanceConfig) -> Mapping[str, Any]:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="run_m0.py")
+    parser = argparse.ArgumentParser(prog="run_snapshot.py")
     parser.add_argument("command", choices=("preflight", "run", "verify", "cleanup-status"))
     return parser
 

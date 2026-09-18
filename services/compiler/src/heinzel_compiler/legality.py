@@ -136,7 +136,7 @@ def evaluate_legality(
         _result(
             3,
             source.columns == SOURCE_COLUMNS and destination.columns == DESTINATION_COLUMNS,
-            "source and destination columns must match the fixed M0 mapping",
+            "source and destination columns must match the fixed snapshot mapping",
             source.schema_digest,
             destination.schema_digest,
         ),
@@ -157,7 +157,7 @@ def evaluate_legality(
                 _known_equal(destination.commit_ledger_key_name, "batch_id"),
                 _known_equal(destination.commit_ledger_key_constraint, "primary_key"),
             ),
-            "Snowflake target and commit ledger schemas must exactly match M0",
+            "Snowflake target and commit ledger schemas must exactly match the snapshot contract",
             destination.object_identity,
         ),
         _result(
@@ -179,7 +179,7 @@ def evaluate_legality(
                 contract.commit_behavior == "idempotent_key_upsert",
                 contract.deletion_behavior == "not_observed",
             ),
-            "snapshot and commit semantics must exactly match M0",
+            "snapshot and commit semantics must exactly match the snapshot contract",
         ),
         _result(
             8,
@@ -192,7 +192,7 @@ def evaluate_legality(
                 _has_capabilities(source.capabilities, SOURCE_CAPABILITIES),
                 _has_capabilities(destination.capabilities, DESTINATION_CAPABILITIES),
             ),
-            "providers must declare every required M0 capability",
+            "providers must declare every required snapshot capability",
         ),
         _result(
             10,

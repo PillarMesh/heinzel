@@ -110,13 +110,13 @@ class IntegrationContract(ArtifactModel):
     deletion_behavior: Literal["not_observed"] = "not_observed"
     freshness_seconds: int = Field(gt=0, le=3600)
     data_classification: Literal["synthetic_non_sensitive"] = "synthetic_non_sensitive"
-    evidence_retention: Literal["m0_30_days"] = "m0_30_days"
+    evidence_retention: Literal["snapshot_30_days"] = "snapshot_30_days"
     producer: Literal["heinzel-contract-service"] = "heinzel-contract-service"
 
     @model_validator(mode="after")
     def fixed_shape(self) -> Self:
         if self.projection != FIXED_PROJECTION:
-            raise ValueError("projection must equal the fixed M0 projection")
+            raise ValueError("projection must equal the fixed snapshot projection")
         return self
 
     @property

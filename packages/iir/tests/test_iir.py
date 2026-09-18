@@ -10,13 +10,13 @@ def contract_data() -> dict[str, object]:
         "version": 1,
         "source": {
             "connection_handle": "pg-one",
-            "schema": "m0_source",
+            "schema": "snapshot_source",
             "table": "orders",
             "primary_key": "order_id",
         },
         "destination": {
             "connection_handle": "sf-one",
-            "database": "HEINZEL_M0",
+            "database": "HEINZEL_SNAPSHOT",
             "schema": "PUBLIC",
             "table": "ORDERS",
             "key": "order_id",

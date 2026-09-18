@@ -216,7 +216,7 @@ class PostgresProvider:
                 table=sql.Identifier(self._settings.schema_name, self._settings.table_name),
                 key=sql.Identifier(self._settings.key_name),
             )
-            read_cursor = connection.cursor(name="heinzel_m0_snapshot")
+            read_cursor = connection.cursor(name="heinzel_snapshot_read")
             read_cursor.execute(read_query)
         except BaseException:
             connection.rollback()

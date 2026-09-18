@@ -31,14 +31,14 @@ def contract(version: int = 1) -> IntegrationContract:
             "contract_id": "contract-001",
             "version": version,
             "source": {
-                "connection_handle": "pg-m0",
-                "schema": "m0_source",
+                "connection_handle": "pg-snapshot",
+                "schema": "snapshot_source",
                 "table": "orders",
                 "primary_key": "order_id",
             },
             "destination": {
-                "connection_handle": "sf-m0",
-                "database": "HEINZEL_M0",
+                "connection_handle": "sf-snapshot",
+                "database": "HEINZEL_SNAPSHOT",
                 "schema": "PUBLIC",
                 "table": "ORDERS",
                 "key": "order_id",
@@ -90,7 +90,7 @@ def observations(observed_at: datetime = NOW) -> tuple[ProviderObservation, Prov
     return (
         ProviderObservation(
             provider="postgresql",
-            connection_handle="pg-m0",
+            connection_handle="pg-snapshot",
             object_identity="pg:fixture:orders:42",
             object_kind="base_table",
             schema_digest="1" * 64,
@@ -112,7 +112,7 @@ def observations(observed_at: datetime = NOW) -> tuple[ProviderObservation, Prov
         ),
         ProviderObservation(
             provider="snowflake",
-            connection_handle="sf-m0",
+            connection_handle="sf-snapshot",
             object_identity="sf:fixture:orders",
             object_kind="base_table",
             schema_digest="2" * 64,
@@ -174,7 +174,7 @@ def service(
     store = SQLiteStore.open(tmp_path / "state.db")
     contract_service = ContractService(
         store=store,
-        signer=GraphSigner.generate("m0-key"),
+        signer=GraphSigner.generate("snapshot-key"),
         source_resolver=lambda _handle: source,
         destination_resolver=lambda _handle: destination,
         clock=lambda: NOW,
@@ -189,7 +189,7 @@ def test_contract_activation_and_retirement_are_tenant_qualified_and_revisioned(
     lifecycle = SQLiteAcquisitionContractLifecycleRepository(":memory:")
     contract_service = ContractService(
         store=SQLiteStore.open(":memory:"),
-        signer=GraphSigner.generate("m0-key"),
+        signer=GraphSigner.generate("snapshot-key"),
         source_resolver=lambda _handle: Provider(source_observation),
         destination_resolver=lambda _handle: Provider(destination_observation),
         clock=lambda: NOW,
@@ -217,7 +217,7 @@ def test_contract_retirement_fails_closed_when_authority_cannot_be_invalidated()
     lifecycle = SQLiteAcquisitionContractLifecycleRepository(":memory:")
     contract_service = ContractService(
         store=SQLiteStore.open(":memory:"),
-        signer=GraphSigner.generate("m0-key"),
+        signer=GraphSigner.generate("snapshot-key"),
         source_resolver=lambda _handle: Provider(source_observation),
         destination_resolver=lambda _handle: Provider(destination_observation),
         clock=lambda: NOW,
@@ -246,7 +246,7 @@ def test_unknown_cross_tenant_inactive_and_stale_retirement_have_no_authority_ef
     lifecycle = SQLiteAcquisitionContractLifecycleRepository(":memory:")
     contract_service = ContractService(
         store=SQLiteStore.open(":memory:"),
-        signer=GraphSigner.generate("m0-key"),
+        signer=GraphSigner.generate("snapshot-key"),
         source_resolver=lambda _handle: Provider(source_observation),
         destination_resolver=lambda _handle: Provider(destination_observation),
         clock=lambda: NOW,
@@ -328,7 +328,7 @@ def test_verify_captures_evaluation_time_after_observations(tmp_path: Path) -> N
     destination = ClockedProvider(destination_observation)
     contract_service = ContractService(
         store=SQLiteStore.open(tmp_path / "state.db"),
-        signer=GraphSigner.generate("m0-key"),
+        signer=GraphSigner.generate("snapshot-key"),
         source_resolver=lambda _handle: source,
         destination_resolver=lambda _handle: destination,
         clock=clock,
@@ -479,7 +479,7 @@ def test_activation_rejects_expiry_and_stable_provider_drift(tmp_path: Path) -> 
     store = SQLiteStore.open(tmp_path / "state.db")
     contract_service = ContractService(
         store=store,
-        signer=GraphSigner.generate("m0-key"),
+        signer=GraphSigner.generate("snapshot-key"),
         source_resolver=lambda _handle: source,
         destination_resolver=lambda _handle: destination,
         clock=lambda: current,

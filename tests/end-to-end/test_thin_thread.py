@@ -69,7 +69,7 @@ class Source:
     def observe(self) -> ProviderObservation:
         return ProviderObservation(
             provider="postgresql",
-            connection_handle="pg-m0",
+            connection_handle="pg-snapshot",
             object_identity="pg:fixture:orders:42",
             object_kind="base_table",
             schema_digest="1" * 64,
@@ -127,7 +127,7 @@ class Destination:
     def observe(self) -> ProviderObservation:
         return ProviderObservation(
             provider="snowflake",
-            connection_handle="sf-m0",
+            connection_handle="sf-snapshot",
             object_identity="sf:fixture:orders",
             object_kind="base_table",
             schema_digest="2" * 64,
@@ -201,14 +201,14 @@ def contract_payload() -> dict[str, object]:
         "contract_id": "contract-001",
         "version": 1,
         "source": {
-            "connection_handle": "pg-m0",
-            "schema": "m0_source",
+            "connection_handle": "pg-snapshot",
+            "schema": "snapshot_source",
             "table": "orders",
             "primary_key": "order_id",
         },
         "destination": {
-            "connection_handle": "sf-m0",
-            "database": "HEINZEL_M0",
+            "connection_handle": "sf-snapshot",
+            "database": "HEINZEL_SNAPSHOT",
             "schema": "PUBLIC",
             "table": "ORDERS",
             "key": "order_id",
@@ -221,7 +221,7 @@ def contract_payload() -> dict[str, object]:
 def test_fresh_row_reaches_terminal_visibility_and_reconstructable_trace(tmp_path: Path) -> None:
     source = Source()
     destination = Destination()
-    signer = GraphSigner.generate("m0-key")
+    signer = GraphSigner.generate("snapshot-key")
     store = SQLiteStore.open(tmp_path / "state.db")
     contracts = ContractService(
         store=store,
@@ -232,7 +232,7 @@ def test_fresh_row_reaches_terminal_visibility_and_reconstructable_trace(tmp_pat
     )
     runtime = Runtime(
         store=store,
-        verifier=GraphVerifier({"m0-key": signer.public_key}),
+        verifier=GraphVerifier({"snapshot-key": signer.public_key}),
         source_resolver=lambda _handle: source,
         destination_resolver=lambda _handle: destination,
         segment_encoder=encode_segment,
@@ -278,7 +278,7 @@ def test_fresh_row_reaches_terminal_visibility_and_reconstructable_trace(tmp_pat
 def test_no_valid_plan_reads_no_rows_and_mutates_nothing(tmp_path: Path) -> None:
     source = Source()
     destination = Destination()
-    signer = GraphSigner.generate("m0-key")
+    signer = GraphSigner.generate("snapshot-key")
     store = SQLiteStore.open(tmp_path / "state.db")
     contracts = ContractService(
         store=store,

@@ -16,14 +16,14 @@ def contract_data() -> dict[str, object]:
         "contract_id": "contract-001",
         "version": 1,
         "source": {
-            "connection_handle": "pg-m0",
-            "schema": "m0_source",
+            "connection_handle": "pg-snapshot",
+            "schema": "snapshot_source",
             "table": "orders",
             "primary_key": "order_id",
         },
         "destination": {
-            "connection_handle": "snowflake-m0",
-            "database": "HEINZEL_M0",
+            "connection_handle": "snowflake-snapshot",
+            "database": "HEINZEL_SNAPSHOT",
             "schema": "PUBLIC",
             "table": "ORDERS",
             "key": "order_id",
@@ -33,7 +33,7 @@ def contract_data() -> dict[str, object]:
     }
 
 
-def test_contract_accepts_only_fixed_m0_shape() -> None:
+def test_contract_accepts_only_fixed_snapshot_shape() -> None:
     contract = IntegrationContract.model_validate(contract_data())
 
     assert contract.materialization_mode == "snapshot"
@@ -49,7 +49,7 @@ def test_contract_rejects_additional_projection() -> None:
     projection.append(ProjectionField(source="extra", destination="extra").model_dump())
     data["projection"] = projection
 
-    with pytest.raises(ValidationError, match="fixed M0 projection"):
+    with pytest.raises(ValidationError, match="fixed snapshot projection"):
         IntegrationContract.model_validate(data)
 
 
@@ -64,7 +64,7 @@ def test_contract_rejects_unknown_fields() -> None:
 def test_bindings_reject_unchecked_identifiers() -> None:
     with pytest.raises(ValidationError, match="identifier"):
         SourceBinding(
-            connection_handle="pg-m0",
+            connection_handle="pg-snapshot",
             schema="public; drop schema public",
             table="orders",
             primary_key="order_id",
@@ -72,8 +72,8 @@ def test_bindings_reject_unchecked_identifiers() -> None:
 
     with pytest.raises(ValidationError, match="identifier"):
         DestinationBinding(
-            connection_handle="sf-m0",
-            database="HEINZEL_M0",
+            connection_handle="sf-snapshot",
+            database="HEINZEL_SNAPSHOT",
             schema="PUBLIC",
             table='ORDERS"; DROP TABLE ORDERS',
             key="order_id",

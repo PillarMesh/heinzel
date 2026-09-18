@@ -14,14 +14,14 @@ from typing import Any
 import pytest
 from heinzel_evidence import PackageMetadata
 
-from tests.acceptance import run_m0
+from tests.acceptance import run_snapshot
 from tests.acceptance.config import REQUIRED_VARIABLES
 from tests.acceptance.private_files import atomic_private_replace
 from tests.acceptance.provider_adapter import (
     TRUSTED_POSTGRES_AUDIT_BODY_DIGEST,
     TRUSTED_POSTGRES_AUDIT_CONFIG,
 )
-from tests.acceptance.run_m0 import (
+from tests.acceptance.run_snapshot import (
     AcceptanceConfig,
     AcceptanceHarness,
     AcceptanceResult,
@@ -58,25 +58,25 @@ def _environment(tmp_path: Path) -> dict[str, str]:
         "HEINZEL_CLEANUP_LEDGER_PATH": str(tmp_path / "cleanup-ledger.json"),
         "HEINZEL_SIGNING_KEY_ID": "operator-one-key",
         "HEINZEL_SIGNING_PRIVATE_KEY_B64": "signing-private-canary",
-        "HEINZEL_POSTGRES_DSN": "postgresql://runtime-one:secret@db/m0_acceptance",
-        "HEINZEL_POSTGRES_DATABASE": "m0_acceptance",
+        "HEINZEL_POSTGRES_DSN": "postgresql://runtime-one:secret@db/snapshot_acceptance",
+        "HEINZEL_POSTGRES_DATABASE": "snapshot_acceptance",
         "HEINZEL_POSTGRES_RUNTIME_PRINCIPAL": "runtime_one",
-        "HEINZEL_POSTGRES_OWNER_PRINCIPAL": "m0_owner",
+        "HEINZEL_POSTGRES_OWNER_PRINCIPAL": "snapshot_owner",
         "HEINZEL_POSTGRES_CONNECTION_HANDLE": "pg-operator-one",
-        "HEINZEL_POSTGRES_SCHEMA": "heinzel_m0",
+        "HEINZEL_POSTGRES_SCHEMA": "heinzel_snapshot",
         "HEINZEL_POSTGRES_TABLE": "orders",
         "HEINZEL_POSTGRES_DENIAL_SCHEMA": "unrelated_private",
-        "HEINZEL_POSTGRES_FIXTURE_DSN": "postgresql://fixture:secret@db/m0_acceptance",
+        "HEINZEL_POSTGRES_FIXTURE_DSN": "postgresql://fixture:secret@db/snapshot_acceptance",
         "HEINZEL_POSTGRES_FIXTURE_PRINCIPAL": "fixture",
         "HEINZEL_SNOWFLAKE_ACCOUNT": "DEDICATED_ACCOUNT",
         "HEINZEL_SNOWFLAKE_USER": "RUNTIME_ONE",
         "HEINZEL_SNOWFLAKE_PASSWORD": "snowflake-password-canary",
-        "HEINZEL_SNOWFLAKE_OWNER_USER": "M0_OWNER",
-        "HEINZEL_SNOWFLAKE_ROLE": "HEINZEL_M0_RUNTIME",
-        "HEINZEL_SNOWFLAKE_WAREHOUSE": "HEINZEL_M0_WH",
-        "HEINZEL_SNOWFLAKE_DATABASE": "HEINZEL_M0",
+        "HEINZEL_SNOWFLAKE_OWNER_USER": "SNAPSHOT_OWNER",
+        "HEINZEL_SNOWFLAKE_ROLE": "HEINZEL_SNAPSHOT_RUNTIME",
+        "HEINZEL_SNOWFLAKE_WAREHOUSE": "HEINZEL_SNAPSHOT_WH",
+        "HEINZEL_SNOWFLAKE_DATABASE": "HEINZEL_SNAPSHOT",
         "HEINZEL_SNOWFLAKE_SCHEMA": "TRANSFER",
-        "HEINZEL_SNOWFLAKE_STAGE": "M0_STAGE",
+        "HEINZEL_SNOWFLAKE_STAGE": "SNAPSHOT_STAGE",
         "HEINZEL_SNOWFLAKE_TARGET_TABLE": "ORDERS",
         "HEINZEL_SNOWFLAKE_NEGATIVE_TARGET_TABLE": "ORDERS_UNSUPPORTED_KEY",
         "HEINZEL_SNOWFLAKE_LEDGER_TABLE": "COMMIT_LEDGER",
@@ -100,16 +100,16 @@ def _attestation(environment_identity: str) -> DedicatedEnvironmentAttestation:
             postgres_fixture_current="fixture",
             snowflake_runtime="RUNTIME_ONE",
         ),
-        postgres_database="m0_acceptance",
-        postgres_database_owner="m0_owner",
-        postgres_schema_owner="m0_owner",
+        postgres_database="snapshot_acceptance",
+        postgres_database_owner="snapshot_owner",
+        postgres_schema_owner="snapshot_owner",
         postgres_marker_environment_id=environment_identity,
         postgres_source_kind="base_table",
         postgres_marker_kind="base_table",
-        postgres_source_owner="m0_owner",
-        postgres_marker_owner="m0_owner",
+        postgres_source_owner="snapshot_owner",
+        postgres_marker_owner="snapshot_owner",
         postgres_audit_kind="function",
-        postgres_audit_owner="m0_owner",
+        postgres_audit_owner="snapshot_owner",
         postgres_audit_security_definer=True,
         postgres_audit_language="sql",
         postgres_audit_volatility="stable",
@@ -133,13 +133,13 @@ def _attestation(environment_identity: str) -> DedicatedEnvironmentAttestation:
         postgres_denial_schema_exists=True,
         snowflake_account="DEDICATED_ACCOUNT",
         snowflake_account_locator="DEDICATED_ACCOUNT_LOCATOR",
-        snowflake_role="HEINZEL_M0_RUNTIME",
-        snowflake_user_roles=("HEINZEL_M0_RUNTIME",),
+        snowflake_role="HEINZEL_SNAPSHOT_RUNTIME",
+        snowflake_user_roles=("HEINZEL_SNAPSHOT_RUNTIME",),
         snowflake_marker_environment_identity=environment_identity,
-        snowflake_marker_owner_user="M0_OWNER",
-        snowflake_marker_owner_role="HEINZEL_M0_OWNER",
+        snowflake_marker_owner_user="SNAPSHOT_OWNER",
+        snowflake_marker_owner_role="HEINZEL_SNAPSHOT_OWNER",
         snowflake_marker_denial_database="UNRELATED_PRIVATE",
-        snowflake_marker_denial_database_owner_role="HEINZEL_M0_OWNER",
+        snowflake_marker_denial_database_owner_role="HEINZEL_SNAPSHOT_OWNER",
         snowflake_object_kinds=(
             ("database", "DATABASE"),
             ("environment_marker", "TABLE"),
@@ -152,38 +152,38 @@ def _attestation(environment_identity: str) -> DedicatedEnvironmentAttestation:
             ("warehouse", "WAREHOUSE"),
         ),
         snowflake_object_owners=(
-            ("database", "HEINZEL_M0_OWNER"),
-            ("environment_marker", "HEINZEL_M0_OWNER"),
-            ("file_format", "HEINZEL_M0_OWNER"),
-            ("ledger", "HEINZEL_M0_OWNER"),
-            ("negative_target", "HEINZEL_M0_OWNER"),
-            ("schema", "HEINZEL_M0_OWNER"),
-            ("stage", "HEINZEL_M0_OWNER"),
-            ("target", "HEINZEL_M0_OWNER"),
-            ("warehouse", "HEINZEL_M0_OWNER"),
+            ("database", "HEINZEL_SNAPSHOT_OWNER"),
+            ("environment_marker", "HEINZEL_SNAPSHOT_OWNER"),
+            ("file_format", "HEINZEL_SNAPSHOT_OWNER"),
+            ("ledger", "HEINZEL_SNAPSHOT_OWNER"),
+            ("negative_target", "HEINZEL_SNAPSHOT_OWNER"),
+            ("schema", "HEINZEL_SNAPSHOT_OWNER"),
+            ("stage", "HEINZEL_SNAPSHOT_OWNER"),
+            ("target", "HEINZEL_SNAPSHOT_OWNER"),
+            ("warehouse", "HEINZEL_SNAPSHOT_OWNER"),
         ),
         snowflake_object_grants=(
-            ("database", "OWNERSHIP", "HEINZEL_M0_OWNER"),
-            ("database", "USAGE", "HEINZEL_M0_RUNTIME"),
-            ("environment_marker", "OWNERSHIP", "HEINZEL_M0_OWNER"),
-            ("environment_marker", "SELECT", "HEINZEL_M0_RUNTIME"),
-            ("file_format", "OWNERSHIP", "HEINZEL_M0_OWNER"),
-            ("ledger", "INSERT", "HEINZEL_M0_RUNTIME"),
-            ("ledger", "OWNERSHIP", "HEINZEL_M0_OWNER"),
-            ("ledger", "SELECT", "HEINZEL_M0_RUNTIME"),
-            ("negative_target", "OWNERSHIP", "HEINZEL_M0_OWNER"),
-            ("negative_target", "SELECT", "HEINZEL_M0_RUNTIME"),
-            ("schema", "OWNERSHIP", "HEINZEL_M0_OWNER"),
-            ("schema", "USAGE", "HEINZEL_M0_RUNTIME"),
-            ("stage", "OWNERSHIP", "HEINZEL_M0_OWNER"),
-            ("stage", "READ", "HEINZEL_M0_RUNTIME"),
-            ("stage", "WRITE", "HEINZEL_M0_RUNTIME"),
-            ("target", "INSERT", "HEINZEL_M0_RUNTIME"),
-            ("target", "OWNERSHIP", "HEINZEL_M0_OWNER"),
-            ("target", "SELECT", "HEINZEL_M0_RUNTIME"),
-            ("target", "UPDATE", "HEINZEL_M0_RUNTIME"),
-            ("warehouse", "OWNERSHIP", "HEINZEL_M0_OWNER"),
-            ("warehouse", "USAGE", "HEINZEL_M0_RUNTIME"),
+            ("database", "OWNERSHIP", "HEINZEL_SNAPSHOT_OWNER"),
+            ("database", "USAGE", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("environment_marker", "OWNERSHIP", "HEINZEL_SNAPSHOT_OWNER"),
+            ("environment_marker", "SELECT", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("file_format", "OWNERSHIP", "HEINZEL_SNAPSHOT_OWNER"),
+            ("ledger", "INSERT", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("ledger", "OWNERSHIP", "HEINZEL_SNAPSHOT_OWNER"),
+            ("ledger", "SELECT", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("negative_target", "OWNERSHIP", "HEINZEL_SNAPSHOT_OWNER"),
+            ("negative_target", "SELECT", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("schema", "OWNERSHIP", "HEINZEL_SNAPSHOT_OWNER"),
+            ("schema", "USAGE", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("stage", "OWNERSHIP", "HEINZEL_SNAPSHOT_OWNER"),
+            ("stage", "READ", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("stage", "WRITE", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("target", "INSERT", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("target", "OWNERSHIP", "HEINZEL_SNAPSHOT_OWNER"),
+            ("target", "SELECT", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("target", "UPDATE", "HEINZEL_SNAPSHOT_RUNTIME"),
+            ("warehouse", "OWNERSHIP", "HEINZEL_SNAPSHOT_OWNER"),
+            ("warehouse", "USAGE", "HEINZEL_SNAPSHOT_RUNTIME"),
         ),
         snowflake_runtime_grants=(
             "INSERT_LEDGER",
@@ -494,7 +494,7 @@ def test_documented_preflight_command_fails_names_only_without_credentials(
     result = subprocess.run(
         (
             sys.executable,
-            str(repository_root / "tests" / "acceptance" / "run_m0.py"),
+            str(repository_root / "tests" / "acceptance" / "run_snapshot.py"),
             "preflight",
         ),
         cwd=repository_root,
@@ -657,7 +657,7 @@ def test_preflight_rejects_connected_principal_mismatch(tmp_path: Path) -> None:
         ("postgres_denial_schema_exists", False),
         ("snowflake_account", "PRODUCTION"),
         ("snowflake_role", "ACCOUNTADMIN"),
-        ("snowflake_user_roles", ("HEINZEL_M0_RUNTIME", "ACCOUNTADMIN")),
+        ("snowflake_user_roles", ("HEINZEL_SNAPSHOT_RUNTIME", "ACCOUNTADMIN")),
         ("snowflake_marker_environment_identity", "wrong-environment"),
         ("snowflake_marker_owner_user", "WRONG_OWNER"),
         ("snowflake_marker_owner_role", "ACCOUNTADMIN"),
@@ -667,7 +667,7 @@ def test_preflight_rejects_connected_principal_mismatch(tmp_path: Path) -> None:
         ("snowflake_object_owners", (("target", "ACCOUNTADMIN"),)),
         (
             "snowflake_object_grants",
-            (("target", "SELECT", "HEINZEL_M0_RUNTIME"), ("target", "SELECT", "PUBLIC")),
+            (("target", "SELECT", "HEINZEL_SNAPSHOT_RUNTIME"), ("target", "SELECT", "PUBLIC")),
         ),
         ("snowflake_runtime_grants", ("OWNERSHIP",)),
     ],
@@ -856,7 +856,7 @@ def test_run_keeps_attestation_details_only_in_private_ledger(tmp_path: Path) ->
     attestation = ledger["context"]["attestation"]
     assert attestation["status"] == "passed"
     assert attestation["declared"]["postgres_runtime_principal"] == "runtime_one"
-    assert attestation["declared"]["snowflake_role"] == "HEINZEL_M0_RUNTIME"
+    assert attestation["declared"]["snowflake_role"] == "HEINZEL_SNAPSHOT_RUNTIME"
     assert attestation["observed"]["snowflake_account_locator"] == ("DEDICATED_ACCOUNT_LOCATOR")
     assert attestation["observed"]["postgres_fixture_grants"] == [
         "CONNECT_DATABASE",
@@ -886,9 +886,9 @@ def test_run_keeps_attestation_details_only_in_private_ledger(tmp_path: Path) ->
     )
     for private_identifier in (
         "DEDICATED_ACCOUNT_LOCATOR",
-        "HEINZEL_M0_RUNTIME",
-        "m0_owner",
-        "heinzel_m0.orders",
+        "HEINZEL_SNAPSHOT_RUNTIME",
+        "snapshot_owner",
+        "heinzel_snapshot.orders",
     ):
         assert private_identifier.encode() not in public_bytes
 
@@ -1115,7 +1115,7 @@ def test_cleanup_status_is_sanitized_read_only_and_non_destructive(tmp_path: Pat
     ledger = PrivateResourceLedger(ledger_path, clock=lambda: NOW)
     ledger.register(
         kind="source_row",
-        exact_identifier="postgresql:m0.orders:order_id=984201",
+        exact_identifier="postgresql:snapshot.orders:order_id=984201",
         retention_seconds=30 * 24 * 60 * 60,
         cleanup_operation="delete_synthetic_rows",
     )
@@ -1193,8 +1193,8 @@ def test_resource_dispositions_expose_digests_without_provider_identifiers(
     assert metadata["resources"]
     assert package_digest in {item["resource_digest"] for item in metadata["resources"]}
     assert all(len(item["resource_digest"]) == 64 for item in metadata["resources"])
-    assert "HEINZEL_M0" not in serialized
-    assert "heinzel_m0" not in serialized
+    assert "HEINZEL_SNAPSHOT" not in serialized
+    assert "heinzel_snapshot" not in serialized
     assert str(KEY) not in serialized
 
 
@@ -1560,10 +1560,10 @@ def test_cli_reports_a_note_attached_to_a_failure(
         error.add_note("provider admission release also failed: OperationalError [57P01]")
         raise error
 
-    monkeypatch.setattr(run_m0, "cleanup_status", failing)
+    monkeypatch.setattr(run_snapshot, "cleanup_status", failing)
     monkeypatch.setenv("HEINZEL_CLEANUP_LEDGER_PATH", str(tmp_path / "ledger.json"))
 
-    assert run_m0.main(["cleanup-status"]) == 2
+    assert run_snapshot.main(["cleanup-status"]) == 2
 
     reported = capsys.readouterr().err
     assert "private cleanup ledger is invalid" in reported

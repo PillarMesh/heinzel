@@ -16,7 +16,7 @@ def test_dedicated_postgres_account_supports_observe_and_snapshot(
         PostgresSettings(
             dsn=dsn,
             connection_handle="live-postgresql",
-            schema_name=os.getenv("HEINZEL_TEST_POSTGRES_SCHEMA", "heinzel_m0"),
+            schema_name=os.getenv("HEINZEL_TEST_POSTGRES_SCHEMA", "heinzel_snapshot"),
             table_name=os.getenv("HEINZEL_TEST_POSTGRES_TABLE", "orders"),
         )
     )

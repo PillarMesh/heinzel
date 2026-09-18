@@ -33,7 +33,7 @@ def test_order_row_requires_utc_observation_time() -> None:
 
 
 @pytest.mark.parametrize("field", ["customer_ref", "status"])
-def test_order_row_rejects_text_outside_the_fixed_m0_domain(field: str) -> None:
+def test_order_row_rejects_text_outside_the_fixed_snapshot_domain(field: str) -> None:
     payload = {
         "order_id": 7,
         "customer_ref": "customer-7",
@@ -60,7 +60,7 @@ def test_provider_observation_rejects_driver_objects() -> None:
         ProviderObservation.model_validate(
             {
                 "provider": "postgresql",
-                "connection_handle": "pg-m0",
+                "connection_handle": "pg-snapshot",
                 "object_identity": "pg:db:42",
                 "object_kind": "base_table",
                 "schema_digest": "a" * 64,
@@ -94,7 +94,7 @@ def test_provider_observation_rejects_driver_objects() -> None:
 def test_provider_observation_has_no_unsafe_required_fact_defaults(required_fact: str) -> None:
     payload = {
         "provider": "postgresql",
-        "connection_handle": "pg-m0",
+        "connection_handle": "pg-snapshot",
         "object_identity": "pg:db:42",
         "object_kind": "base_table",
         "schema_digest": "a" * 64,

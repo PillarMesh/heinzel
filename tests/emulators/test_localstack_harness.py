@@ -85,7 +85,7 @@ def test_compose_configuration_is_pinned_and_host_private() -> None:
     init_mount = next(
         volume
         for volume in service["volumes"]
-        if volume["target"] == "/etc/localstack/init/ready.d/10-m0.sf.sql"
+        if volume["target"] == "/etc/localstack/init/ready.d/10-snapshot.sf.sql"
     )
     assert init_mount["type"] == "bind"
     assert init_mount["read_only"] is True
@@ -174,17 +174,17 @@ def test_expected_localstack_observation_records_unavailable_key_metadata() -> N
     ("ddl", "expected"),
     [
         (
-            "CREATE TABLE HEINZEL_M0.TRANSFER.ORDERS "
+            "CREATE TABLE HEINZEL_SNAPSHOT.TRANSFER.ORDERS "
             '(ORDER_ID NUMBER NOT NULL, CONSTRAINT PK_ORDERS PRIMARY KEY ("ORDER_ID"))',
             ("order_id", "primary_key"),
         ),
         (
-            "CREATE TABLE HEINZEL_M0.TRANSFER.ORDERS "
+            "CREATE TABLE HEINZEL_SNAPSHOT.TRANSFER.ORDERS "
             "(ORDER_ID NUMBER, CUSTOMER_REF TEXT, PRIMARY KEY (ORDER_ID, CUSTOMER_REF))",
             (None, "none"),
         ),
         (
-            "CREATE TABLE HEINZEL_M0.TRANSFER.ORDERS (ORDER_ID NUMBER NOT NULL)",
+            "CREATE TABLE HEINZEL_SNAPSHOT.TRANSFER.ORDERS (ORDER_ID NUMBER NOT NULL)",
             (None, "none"),
         ),
     ],
@@ -209,7 +209,7 @@ def test_localstack_key_observation_uses_ddl_and_fails_closed(
     assert provider._key_constraint(cursor, "ORDERS") == expected
     assert cursor.call == (
         "SELECT GET_DDL('TABLE', %s)",
-        ("HEINZEL_M0.TRANSFER.ORDERS",),
+        ("HEINZEL_SNAPSHOT.TRANSFER.ORDERS",),
     )
 
 
