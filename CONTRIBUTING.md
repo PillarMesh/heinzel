@@ -41,6 +41,11 @@ HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1 uv run pytest -m live -q \
   tests/integration/test_postgresql_compiled_product_journey_live.py
 ```
 
+CI runs the journeys that need only Docker in the `Live journeys` workflow: nightly, on demand,
+and when a maintainer applies the `run-live` label to a pull request. A later push does not
+re-run them; a maintainer reviews it and removes and re-applies the label. The run fails if any
+selected test skips, because a skipped journey is a gap, not a pass.
+
 ## Commits and pull requests
 
 - [Conventional Commits](https://www.conventionalcommits.org/): `type(scope): subject`, imperative
@@ -65,6 +70,10 @@ author's name and email. CI checks every commit in a pull request with `tests/ci
 blocks the pull request if any commit is unsigned. To sign off commits you have already made, run
 `git rebase --signoff upstream/main` (where `upstream` is this repository) and force-push your
 branch.
+
+To bring your branch up to date, rebase it onto `upstream/main` rather than using the "Update
+branch" button on the pull request. That button adds a merge commit authored by you but without
+your sign-off, which fails the check.
 
 ## Use of AI tools
 

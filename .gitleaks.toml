@@ -40,8 +40,12 @@ paths = ['''(?:^|/)tests/acceptance/console_native_answer_fixture\.py$''']
 regexes = ['''^Ed25519PrivateKey$''']
 
 [[allowlists]]
-description = "The evidence scanner's own fixture: a PEM header followed by 'not-a-real-key'."
+# The rule matches from the first fixture's PEM header to the second fixture's header, so the
+# allowlisted value is exactly that span of two adjacent test cases, and nothing longer.
+description = "The evidence scanner's own fixtures: PEM headers followed by 'not-a-real-key'."
 targetRules = ["private-key"]
 condition = "AND"
 paths = ['''(?:^|/)services/evidence/tests/test_scanner\.py$''']
-regexes = ['''not-a-real-key''']
+regexes = [
+  '''\A-----BEGIN PRIVATE KEY-----\\nnot-a-real-key",\s+ScanInput\(\),\s+"private_key_marker",\s+\),\s+\(\s+b"-----BEGIN ENCRYPTED PRIVATE KEY-----\z''',
+]

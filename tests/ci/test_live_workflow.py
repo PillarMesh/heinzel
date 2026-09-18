@@ -59,15 +59,19 @@ def test_workflow_runs_nightly_on_demand_and_on_labelled_pull_requests(
 
     assert set(triggers) == {"schedule", "pull_request", "workflow_dispatch"}
     assert triggers["schedule"] == [{"cron": "0 3 * * *"}]
-    assert triggers["pull_request"] == {"types": ["labeled", "synchronize"]}
+    # No `synchronize`: a new push, possibly from a fork, runs only once a maintainer re-applies
+    # the label after reviewing it.
+    assert triggers["pull_request"] == {"types": ["labeled"]}
 
 
 def test_pull_requests_run_only_with_the_run_live_label(workflow: dict[str, Any]) -> None:
     condition = " ".join(_job(workflow)["if"].split())
 
-    assert "github.event_name != 'pull_request'" in condition
-    assert "contains(github.event.pull_request.labels.*.name, 'run-live')" in condition
-    assert "github.event.label.name == 'run-live'" in condition
+    # Only `labeled` triggers a pull request run, so the label just applied must be run-live;
+    # adding some other label to a run-live pull request starts nothing.
+    assert condition == (
+        "github.event_name != 'pull_request' || github.event.label.name == 'run-live'"
+    )
 
 
 def test_the_token_is_read_only_and_no_secret_is_referenced(workflow: dict[str, Any]) -> None:
@@ -76,8 +80,11 @@ def test_the_token_is_read_only_and_no_secret_is_referenced(workflow: dict[str, 
     assert "secrets." not in WORKFLOW_PATH.read_text(encoding="utf-8")
 
 
-def test_a_newer_pull_request_push_supersedes_the_outdated_run(workflow: dict[str, Any]) -> None:
-    concurrency = workflow["concurrency"]
+def test_a_newer_labelled_run_supersedes_the_outdated_one(workflow: dict[str, Any]) -> None:
+    # Job-level: a workflow-level group would let a skipped run, started by adding some other
+    # label, cancel the live run in progress.
+    assert "concurrency" not in workflow
+    concurrency = _job(workflow)["concurrency"]
 
     assert concurrency["group"] == "${{ github.workflow }}-${{ github.ref }}"
     assert concurrency["cancel-in-progress"] == "${{ github.event_name == 'pull_request' }}"
@@ -122,3 +129,9 @@ def test_emulator_marked_journeys_are_selected_and_skips_fail_the_run(
     assert '-m "live or emulator"' in command
     assert '--junitxml="$RUNNER_TEMP/live-journeys.xml"' in command
     assert "skipped == 0" in check
+
+
+def test_the_checkout_does_not_persist_the_token(workflow: dict[str, Any]) -> None:
+    checkout = _step(workflow, "Check out repository")
+
+    assert checkout["with"]["persist-credentials"] is False

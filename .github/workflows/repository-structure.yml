@@ -27,8 +27,16 @@ jobs:
         with:
           # The DCO check walks every commit in the pull request, and refuses a shallow clone.
           fetch-depth: 0
+          persist-credentials: false
+      # Dependabot cannot sign off, so its pull requests are exempt. The exemption needs both the
+      # pull request author and the triggering actor to be Dependabot: the author alone would
+      # also exempt a person's commits pushed onto a Dependabot branch, and the actor alone would
+      # exempt any pull request Dependabot can be made to trigger, such as by a rebase request.
       - name: Check DCO sign-off
-        if: github.event_name == 'pull_request'
+        if: >-
+          github.event_name == 'pull_request' &&
+          !(github.event.pull_request.user.login == 'dependabot[bot]' &&
+          github.actor == 'dependabot[bot]')
         env:
           # The pull request head, not github.sha: that is GitHub's unsigned test-merge commit.
           BASE_SHA: ${{ github.event.pull_request.base.sha }}

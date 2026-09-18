@@ -1,30 +1,33 @@
 name: Live journeys
 
-# Nightly, on demand, and on a pull request labelled `run-live`. The journeys start pinned engine
-# images in Docker and need no repository secrets, so a fork's pull request can run them too.
+# Nightly, on demand, and when a maintainer applies the `run-live` label to a pull request. The
+# journeys start pinned engine images in Docker and read no repository secret.
+#
+# There is deliberately no `synchronize` trigger: a new push to a pull request, possibly from a
+# fork, runs only after a maintainer has reviewed it and removed and re-applied `run-live`.
 on:
   schedule:
     - cron: "0 3 * * *"
   pull_request:
-    types: [labeled, synchronize]
+    types: [labeled]
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  # A newer push to a labelled pull request supersedes the outdated run; a scheduled or
-  # dispatched run is left to finish so its evidence is not discarded.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   live:
-    # Adding some other label to an already-labelled pull request must not start a second run.
+    # Adding some other label to a pull request starts nothing.
     if: >-
       github.event_name != 'pull_request' ||
-      (contains(github.event.pull_request.labels.*.name, 'run-live') &&
-      (github.event.action != 'labeled' || github.event.label.name == 'run-live'))
+      github.event.label.name == 'run-live'
+    # Job-level, so a run skipped by the condition above never enters the group: at workflow
+    # level, adding some other label would cancel the live run in progress. Re-applying the
+    # label supersedes the outdated run; a scheduled or dispatched run is left to finish so its
+    # evidence is not discarded.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-latest
     # About 35 minutes of journeys when measured locally, plus image pulls.
     timeout-minutes: 90
@@ -34,6 +37,7 @@ jobs:
         with:
           # The pull request head commit, not the ephemeral merge commit.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
       - name: Install uv and Python
         uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
         with:

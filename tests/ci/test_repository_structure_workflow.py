@@ -84,6 +84,7 @@ def test_checkout_is_pinned_to_a_reviewed_commit_with_full_history(
     assert checkout["uses"] == _CHECKOUT_PIN
     # check_dco.py refuses a shallow clone, which would hide commits outside the fetched depth.
     assert checkout["with"]["fetch-depth"] == 0
+    assert checkout["with"]["persist-credentials"] is False
 
 
 def test_every_action_is_pinned_to_a_full_commit_sha(workflow: dict[str, Any]) -> None:
@@ -102,7 +103,13 @@ def test_pull_requests_check_dco_sign_off_on_the_head_commit_right_after_checkou
     dco = _step(workflow, "Check DCO sign-off")
 
     assert names.index("Check DCO sign-off") == names.index("Check out repository") + 1
-    assert dco["if"] == "github.event_name == 'pull_request'"
+    # Dependabot cannot sign off. Both the pull request author and the triggering actor must be
+    # Dependabot, so a person pushing to a Dependabot branch is still checked.
+    assert " ".join(dco["if"].split()) == (
+        "github.event_name == 'pull_request' && "
+        "!(github.event.pull_request.user.login == 'dependabot[bot]' && "
+        "github.actor == 'dependabot[bot]')"
+    )
     # github.sha on a pull request is GitHub's unsigned test-merge commit, never the head.
     assert dco["env"] == {
         "BASE_SHA": "${{ github.event.pull_request.base.sha }}",

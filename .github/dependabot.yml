@@ -29,3 +29,28 @@ updates:
       actions-minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+  # Emulator images. The PostgreSQL and ClickHouse engine digests are also pinned in the provider
+  # settings, the compiler, recorded evidence and the warehouse lifecycle workflow; a bump here
+  # must update every pin together, or the live journeys and evidence checks will disagree.
+  # Every bump is grouped whatever its size, because the images are reviewed together.
+  - package-ecosystem: docker
+    directories: [/tests/emulators/superset]
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      emulator-images:
+        patterns: ["*"]
+  - package-ecosystem: docker-compose
+    directories:
+      - /tests/emulators/localstack-snowflake
+      - /tests/emulators/openmetadata
+      - /tests/emulators/superset
+      - /tests/emulators/warehouses/clickhouse
+      - /tests/emulators/warehouses/postgresql
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      emulator-compose-images:
+        patterns: ["*"]
