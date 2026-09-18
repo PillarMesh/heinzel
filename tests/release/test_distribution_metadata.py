@@ -10,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[2]
 REPOSITORY_URL = "https://github.com/PillarMesh/heinzel"
 REQUIRED_AUTHOR = {"name": "PillarMesh", "email": "karthik@pillarmesh.com"}
 REQUIRED_CLASSIFIER = "Programming Language :: Python :: 3.13"
+REQUIRED_PLATFORM_CLASSIFIER = "Operating System :: POSIX"
+FORBIDDEN_PLATFORM_CLASSIFIER = "Operating System :: OS Independent"
 
 
 def _members() -> list[Path]:
@@ -52,6 +54,13 @@ def _problems(member: Path, project: dict[str, Any]) -> list[str]:
     classifiers = project.get("classifiers", [])
     if REQUIRED_CLASSIFIER not in classifiers:
         problems.append(f"classifiers is missing {REQUIRED_CLASSIFIER!r}")
+    if REQUIRED_PLATFORM_CLASSIFIER not in classifiers:
+        problems.append(f"classifiers is missing {REQUIRED_PLATFORM_CLASSIFIER!r}")
+    if FORBIDDEN_PLATFORM_CLASSIFIER in classifiers:
+        problems.append(
+            f"classifiers must not include {FORBIDDEN_PLATFORM_CLASSIFIER!r}: several packages "
+            "import the POSIX-only fcntl module, so the project is not OS-independent"
+        )
     license_classifiers = [c for c in classifiers if c.startswith("License ::")]
     if license_classifiers:
         problems.append(

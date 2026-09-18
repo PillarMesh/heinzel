@@ -8,7 +8,7 @@ license = "Apache-2.0"
 authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
 classifiers = [
   "Programming Language :: Python :: 3.13",
-  "Operating System :: OS Independent",
+  "Operating System :: POSIX",
 ]
 dependencies = [
   "mcp>=2,<3",
