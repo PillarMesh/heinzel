@@ -1,4 +1,4 @@
-"""Contract tests for the M0 offline assurance workflow's triggers.
+"""Contract tests for the Offline assurance workflow's triggers.
 
 The offline job runs the whole lint, type, test and boundary suite, several minutes per run.
 Unfiltered, a push to a pull request branch fires it twice, once for `push` and once for

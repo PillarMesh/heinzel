@@ -592,7 +592,7 @@ def test_live_job_executes_only_the_task9_acceptance_authority(
     runner_directory = tmp_path / "runner"
     runner_directory.mkdir()
     completed = _run_step(
-        _job_step(workflow, "lifecycle", "Run witnessed Plan 3A acceptance"),
+        _job_step(workflow, "lifecycle", "Run witnessed warehouse lifecycle acceptance"),
         tmp_path=tmp_path,
         environment={
             **_witness_private_environment(runner_directory),
@@ -631,7 +631,7 @@ def test_witness_failure_records_numeric_cost_without_changing_exit_status(
     runner_directory = tmp_path / "runner"
     runner_directory.mkdir()
     completed = _run_step(
-        _job_step(workflow, "lifecycle", "Run witnessed Plan 3A acceptance"),
+        _job_step(workflow, "lifecycle", "Run witnessed warehouse lifecycle acceptance"),
         tmp_path=tmp_path,
         environment={
             **_witness_private_environment(runner_directory),
@@ -670,7 +670,7 @@ def test_witness_failure_records_numeric_cost_without_changing_exit_status(
 
 def test_witness_ceiling_leaves_job_time_for_always_teardown(workflow: dict[str, Any]) -> None:
     lifecycle = workflow["jobs"]["lifecycle"]
-    witness = _job_step(workflow, "lifecycle", "Run witnessed Plan 3A acceptance")
+    witness = _job_step(workflow, "lifecycle", "Run witnessed warehouse lifecycle acceptance")
 
     assert lifecycle["timeout-minutes"] > 10
     assert "--timeout-seconds 600" in str(witness["run"])
@@ -726,8 +726,10 @@ def test_successful_witness_strictly_validates_and_uploads_only_public_evidence(
     workflow: dict[str, Any],
 ) -> None:
     lifecycle_steps = workflow["jobs"]["lifecycle"]["steps"]
-    validation = _job_step(workflow, "lifecycle", "Validate sanitized Plan 3A evidence")
-    evidence_upload = _job_step(workflow, "lifecycle", "Upload sanitized Plan 3A evidence")
+    validation = _job_step(workflow, "lifecycle", "Validate sanitized warehouse lifecycle evidence")
+    evidence_upload = _job_step(
+        workflow, "lifecycle", "Upload sanitized warehouse lifecycle evidence"
+    )
     cost_upload = _job_step(workflow, "lifecycle", "Upload the sanitized cost artifact")
 
     assert str(validation["run"]).strip() == (
@@ -771,8 +773,10 @@ def test_failed_evidence_validation_still_uploads_the_evidence(workflow: dict[st
     nothing to inspect.
     """
     steps = workflow["jobs"]["lifecycle"]["steps"]
-    validation = _job_step(workflow, "lifecycle", "Validate sanitized Plan 3A evidence")
-    evidence_upload = _job_step(workflow, "lifecycle", "Upload sanitized Plan 3A evidence")
+    validation = _job_step(workflow, "lifecycle", "Validate sanitized warehouse lifecycle evidence")
+    evidence_upload = _job_step(
+        workflow, "lifecycle", "Upload sanitized warehouse lifecycle evidence"
+    )
 
     assert steps.index(validation) < steps.index(evidence_upload)
     assert str(evidence_upload["if"]).strip() == "always()"

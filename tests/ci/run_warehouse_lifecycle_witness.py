@@ -569,7 +569,7 @@ def run_bounded_witness(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run the bounded Plan 3A CI witness")
+    parser = argparse.ArgumentParser(description="Run the bounded warehouse lifecycle CI witness")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout-seconds", type=float, default=MAX_WITNESS_SECONDS)
     parser.add_argument("--sample-interval-seconds", type=float, default=1.0)
@@ -581,7 +581,7 @@ def _authenticated_scope_loader() -> DockerScopeLoader:
     authority = importlib.import_module("tests.acceptance.run_warehouse_lifecycle")
     candidate = vars(authority).get("load_authenticated_docker_resources_from_environment")
     if not isinstance(candidate, _AuthenticatedResourceLoaderBoundary):
-        raise RuntimeError("Plan 3A authenticated resource loader is unavailable")
+        raise RuntimeError("warehouse lifecycle authenticated resource loader is unavailable")
 
     def load_scope() -> DockerResourceScope:
         resources = candidate(os.environ)
@@ -616,14 +616,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             scope_loader=scope_loader,
         )
     except (OSError, RuntimeError, ValueError):
-        print("ERROR: Plan 3A bounded witness configuration failed", file=sys.stderr)
+        print("ERROR: warehouse lifecycle bounded witness configuration failed", file=sys.stderr)
         return 2
     if exit_code == TIMEOUT_EXIT_CODE:
-        print("ERROR: Plan 3A witnessed command exceeded 600 seconds", file=sys.stderr)
+        print("ERROR: warehouse lifecycle witnessed command exceeded 600 seconds", file=sys.stderr)
     elif exit_code == SAMPLER_FAILURE_EXIT_CODE:
-        print("ERROR: Plan 3A Docker usage sampling failed", file=sys.stderr)
+        print("ERROR: warehouse lifecycle Docker usage sampling failed", file=sys.stderr)
     elif exit_code == TERMINATION_FAILURE_EXIT_CODE:
-        print("ERROR: Plan 3A witness process termination was not verified", file=sys.stderr)
+        print(
+            "ERROR: warehouse lifecycle witness process termination was not verified",
+            file=sys.stderr,
+        )
     return exit_code
 
 

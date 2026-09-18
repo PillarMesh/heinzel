@@ -1,4 +1,4 @@
-name: M0 offline assurance
+name: Offline assurance
 
 on:
   pull_request:

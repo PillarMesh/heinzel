@@ -141,7 +141,7 @@ jobs:
             echo "HEINZEL_WAREHOUSE_LIFECYCLE_EVIDENCE_SIGNING_KEY=$evidence_signing_key"
             echo "HEINZEL_WAREHOUSE_LIFECYCLE_CREDENTIAL_CANARIES=$credential_canaries"
           } >> "$GITHUB_ENV"
-      - name: Run witnessed Plan 3A acceptance
+      - name: Run witnessed warehouse lifecycle acceptance
         id: witness
         run: |
           uv run python -m tests.ci.run_warehouse_lifecycle_witness \
@@ -151,9 +151,9 @@ jobs:
             -- \
             uv run python -m tests.acceptance.run_warehouse_lifecycle run \
               --authorize-retention-cleanup
-      - name: Validate sanitized Plan 3A evidence
+      - name: Validate sanitized warehouse lifecycle evidence
         run: uv run python -m tests.acceptance.run_warehouse_lifecycle validate-evidence
-      - name: Upload sanitized Plan 3A evidence
+      - name: Upload sanitized warehouse lifecycle evidence
         # Always: a failed validate-evidence step is exactly when the evidence
         # is needed, and skipping the upload discards it with the runner.
         if: always()
