@@ -1,13 +1,16 @@
-# Security Policy
+# Security policy
 
-## Reporting a Vulnerability
+## Reporting a vulnerability
 
-Do not open a public issue for a suspected vulnerability or include secrets, customer data, credentials, or exploit details in public discussions.
+Please report vulnerabilities privately through GitHub:
+**Security → Report a vulnerability** on
+[github.com/PillarMesh/heinzel](https://github.com/PillarMesh/heinzel/security/advisories/new).
+Do not open a public issue, and do not include secrets, customer data or credentials in any report.
 
-Use GitHub's private vulnerability-reporting feature for this repository. If that feature is unavailable, contact the repository owners privately through the organization before sharing details.
+Include the affected component, the impact, and how to reproduce it.
 
-Include the affected component, impact, reproduction conditions, and any safe mitigation you have identified. Allow the maintainers time to investigate before public disclosure.
+We aim to acknowledge reports within 3 business days and to agree a disclosure timeline with you.
 
-## Security Boundaries
+## Supported versions
 
-Heinzel must preserve tenant isolation, opaque connection handles, short-lived capability grants, signed execution graphs, single-writer epoch fencing, and attributable evidence. Raw secrets must never appear in MCP results, logs, evidence payloads, or committed repository files.
+Heinzel has not yet made a tagged release. Security fixes land on `main`.
