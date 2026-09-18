@@ -111,3 +111,18 @@ def test_pull_requests_check_dco_sign_off_on_the_head_commit_right_after_checkou
     # Expressions reach the shell only through the environment, never interpolated into it.
     assert dco["run"] == 'python3 tests/ci/check_dco.py "$BASE_SHA" "$HEAD_SHA"'
     assert "${{" not in dco["run"]
+
+
+def test_every_pull_request_scans_the_committed_tree_with_a_digest_pinned_gitleaks(
+    workflow: dict[str, Any],
+) -> None:
+    scan = _step(workflow, "Scan the tree for secrets")["run"]
+
+    assert "git archive HEAD" in scan
+    assert (
+        "ghcr.io/gitleaks/gitleaks@sha256:"
+        "c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f"
+    ) in scan
+    assert "--config /repo/.gitleaks.toml" in scan
+    assert "--redact" in scan
+    assert "if" not in _step(workflow, "Scan the tree for secrets")
