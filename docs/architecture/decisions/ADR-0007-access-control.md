@@ -2,26 +2,25 @@
 
 - Status: Proposed
 - Date: 2026-09-12
-- Governing design: `docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md`
+- Context: [Architecture](../../architecture.md), [ADR-0003](ADR-0003-managed-data-engineering-platform.md)
 
 ## Context
 
-The managed-data-platform addendum makes a connected enterprise policy system authoritative for
-enterprise policy. Sections 13.7 and 13.8 require current requester entitlements during proposal
-preparation, answer validation, policy admission, query execution, and verified delivery. The
+Heinzel treats a connected enterprise policy system as authoritative for enterprise policy. It
+requires current requester entitlements during proposal preparation, answer validation, policy admission, query execution, and verified delivery. The
 existing implementation can carry entitlement references and digests, but it has no durable reader
 for the connected authority. Contract approval identifiers have consequently been available at
 composition sites even though an approval proves a decision about one artifact and says nothing
 about the requester's current access.
 
-Task 12 also introduces a Heinzel `AccessGrant` lifecycle. That grant is a capability Heinzel
+Heinzel also needs its own `AccessGrant` lifecycle. That grant is a capability Heinzel
 applies after request-management admission. It is not the enterprise entitlement against which the
 proposal was checked. A third concept, the warehouse principal, is an engine identity provisioned
 and probed by warehouse-control. Conflating any two of these lets a local approval manufacture its
 own prerequisite authority or lets a database role become an access-policy record.
 
-The repository layout currently assigns grants to runtime even though the delivery plan assigns
-grant application, expiry, revocation, and receipts to access-control. Warehouse-control already
+The repository layout assigned grants to runtime, although grant application, expiry, revocation,
+and receipts belong with access control. Warehouse-control already
 owns principal provisioning and private credential handles. These ownership statements must be
 reconciled before access effects or governed-answer composition are enabled.
 
@@ -66,9 +65,9 @@ revision, changed scope, revocation, or expiry cannot compare equal.
 
 Every current resolution calls an `AuthenticatedConnectedPolicyAuthority`. Missing or unavailable
 authority fails closed even when an earlier observation remains in SQLite. The SQLite ledger alone
-is historical evidence and is never a live entitlement adapter. Before governed-local or a live
-deployment can claim entitlement enforcement, it must compose a concrete authenticated
-connected-policy adapter for the tenant's declared enterprise policy system. That adapter must
+is historical evidence and is never a live entitlement adapter. Before the console's governed-local
+mode or a live deployment can claim entitlement enforcement, it must compose a concrete
+authenticated connected-policy adapter for the tenant's declared enterprise policy system. That adapter must
 authenticate the upstream response, verify its source revision and payload digest, normalize exact
 Heinzel artifact references and closed filter domains, and return the strict assertion model.
 Scripted or fixture assertions cannot satisfy this requirement.
@@ -77,7 +76,7 @@ Scripted or fixture assertions cannot satisfy this requirement.
 
 An `AccessGrant` is a Heinzel-owned applied capability. It is created only from an admitted
 request-management access proposal and is narrowed against a freshly resolved current entitlement
-snapshot. In addition to the fields in Task 12, it binds that snapshot's digest. Append-only grant
+snapshot. In addition to its own scope and term, it binds that snapshot's digest. Append-only grant
 revisions carry `pending`, `active`, `revocation_pending`, `revoked`, or `failed` state; exact
 provider-effect receipts identify each application or cleanup effect without exposing provider
 identifiers publicly.
@@ -120,10 +119,11 @@ It proves exact replay, authenticated provenance, equivocation and rollback reje
 and expiry, tenant and principal isolation, verified scope and signature, and fail-closed missing,
 invalid, or unavailable authority.
 
-It does not implement an enterprise-vendor integration, local-development authority server,
-`AccessGrant`, provider effects, expiry scheduling, or live composition. Those remain blocking
-work. A tenant must configure and operate a conforming authority before replacing any
-caller-supplied entitlement digest in governed-local.
+It did not implement an enterprise-vendor integration, local-development authority server,
+`AccessGrant`, provider effects, expiry scheduling, or live composition. `AccessGrant` and its
+provider effects have since been added to access-control; [capability status](../../status.md)
+records what works today. A tenant must configure and operate a conforming authority before
+replacing any caller-supplied entitlement digest in the console's governed-local mode.
 
 The first concrete transport is the vendor-neutral `SignedHttpConnectedPolicyAuthority`. It sends
 an exact tenant, principal, and purpose lookup to a configured HTTPS
@@ -152,8 +152,8 @@ contract approvals and must not expose a public grant-mutation endpoint.
 - The same semantic authority remains digest-stable across harmless read-time changes.
 - Access-control becomes the single owner of access desired state across result, warehouse, and BI
   surfaces, while provider IDs and credentials remain private to their established boundaries.
-- Task 12 needs a configured connected-policy authority in addition to database and Superset effect
-  adapters before live access or governed-answer delivery can be claimed.
+- Live access or governed-answer delivery can be claimed only with a configured connected-policy
+  authority in addition to database and Superset effect adapters.
 
 ## Alternatives Considered
 

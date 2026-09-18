@@ -10,7 +10,7 @@ This document is the canonical repository placement guide. Component directories
 
 ## Services
 
-The service map mirrors the concrete control-plane components in Revenue-to-Cash MVP Implementation Plan v1.4 Table 4 and the data-plane boundaries in §3.2, with names normalized to the EDC vocabulary.
+The service map declares each service's ownership boundary. [docs/architecture.md](../architecture.md) describes how the services work together.
 
 | Path | Owns | Must not own |
 | --- | --- | --- |
@@ -25,9 +25,9 @@ The service map mirrors the concrete control-plane components in Revenue-to-Cash
 | `services/dbt-adapter` | Version-pinned invocation and manifest/test/lineage observation | Business transformation semantics or SQL authoring |
 | `services/evidence` | Append-only contract, decision, execution, reconciliation, and incident facts | Unverifiable health synthesis |
 | `services/knowledge-graph` | Provenance-bearing compiler projection, metadata snapshots, lineage, context graph, and impact analysis | Replacement enterprise catalog, authoritative metadata mutation, or approval requirements that replace an owning service's |
-| `services/provider-registry` | Versioned declarations, conformance tier, evidence validity | Trust based on provider assertion alone |
-| `services/reconciliation` | Declared lifecycle predicates, deadlines, exceptions, evidence links | Source mutation or probabilistic matching |
-| `services/relay` | Restricted private-network capability invocation of signed fragments | Planning authority or general scheduling |
+| `services/provider-registry` (not yet created) | Versioned declarations, conformance tier, evidence validity | Trust based on provider assertion alone |
+| `services/reconciliation` (not yet created) | Declared lifecycle predicates, deadlines, exceptions, evidence links | Source mutation or probabilistic matching |
+| `services/relay` (not yet created) | Restricted private-network capability invocation of signed fragments | Planning authority or general scheduling |
 | `services/request-management` | Typed stakeholder questions, answer scope policies, answer intent validation, policy admission, governed answer delivery, data-access requests, business and engineering requests, incidents, platform proposals, conversations, assignment, dependency edges, and request lifecycle | Semantic approval authority, general workflow definitions, or execution state |
 | `services/runtime` | Signed-graph verification, deterministic operators, grants, governed query execution and result snapshots, execution evidence | Semantic reinterpretation or physical plan selection |
 | `services/semantic-registry` | Immutable semantic candidates, per-information-kind authority resolution, ontology review bundles, approved semantic versions, and catalog drift proposals | Catalog provisioning, provider-local identifiers, execution, or physical plan selection |
@@ -35,13 +35,16 @@ The service map mirrors the concrete control-plane components in Revenue-to-Cash
 | `services/trigger` | Versioned trigger policies, deterministic scheduled-window identities, misfire and overlap materialization into run intents | DAG authoring, plan selection, provider access, or direct execution |
 | `services/warehouse-control` | Tenant warehouse-binding lifecycle, managed data-plane provisioning, private infrastructure inventory, backup/restore coordination, upgrade and retirement admission | Database-engine implementation, business semantics, or raw credentials in public artifacts |
 
-The compiler legality table has a stable internal boundary:
+The compiler legality table has a stable internal boundary, described in
+[services/compiler/legality/README.md](../../services/compiler/legality/README.md):
 
 ```text
 services/compiler/legality/
-├── fixtures/
-├── proof-notes/
-└── rules/
+├── fixtures/        snapshot rule fixtures
+├── product-sql/     candidate product SQL rule and its fixtures
+│   ├── fixtures/
+│   └── rules/
+└── rules/           snapshot rule
 ```
 
 ## Providers
@@ -52,17 +55,17 @@ services/compiler/legality/
 
 | Path | Owns | Must not own |
 | --- | --- | --- |
-| `packages/client-sdk` | Supported client-facing interfaces | Control-plane implementation |
+| `packages/client-sdk` (not yet created) | Supported client-facing interfaces | Control-plane implementation |
 | `packages/contract-model` | Permanent, user-owned Integration Contract model and validation | API/event/configuration contracts by implication |
 | `packages/execution-graph` | Disposable signed-graph shape, digest/signature verification, compatibility | Planning logic or execution state |
 | `packages/iir` | Compiler-owned, versioned semantic IIR and serialization | Physical Plan or Execution Graph state |
-| `packages/observability` | Shared telemetry conventions and helpers | Evidence authority |
+| `packages/observability` (not yet created) | Shared telemetry conventions and helpers | Evidence authority |
 | `packages/provider-sdk` | Provider authoring interfaces, declaration helpers, conformance utilities | Provider-specific code |
 
 ## Other Top-Level Areas
 
 - `deploy/`: infrastructure-neutral deployment material after an ADR selects technology.
-- `docs/`: architecture, decisions, specifications, and substantive product/operations/security material.
+- `docs/`: the architecture overview, capability status, this layout, and architecture decision records.
 - `tests/`: repository structure and cross-component integration, compatibility, conformance, fault-injection, and end-to-end suites. Unit tests remain colocated.
 
 ## Structural Change Rule

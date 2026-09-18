@@ -2,17 +2,17 @@
 
 - Status: Proposed
 - Date: 2026-08-27
-- Governing design: `docs/superpowers/specs/2026-08-27-processing-model-design.md`
+- Context: [Architecture](../../architecture.md), [legality rules](../../../services/compiler/legality/README.md)
 
 ## Context
 
-Addendum v0.1 §12.1 makes Heinzel the authority that generates, tests, versions, and deploys transformation models, and says the MVP exports a dbt-compatible project representation. It does not state what language the compiler emits or what semantic target the compiler reasons against. That gap allows three incompatible readings — a Heinzel transformation DSL, general SQL, or a distributed engine plan — and each implies a different multi-year commitment.
+Heinzel is the authority that generates, tests, versions, and deploys transformation models, and it exports a dbt-compatible project representation. That did not settle what language the compiler emits or what semantic target the compiler reasons against. The gap allowed three incompatible readings — a Heinzel transformation DSL, general SQL, or a distributed engine plan — and each implies a different multi-year commitment.
 
-Three concerns are routinely conflated. The authoring surface and the internal representation are already settled by EDC v0.3: the human declares an Integration Contract and the compiler owns the semantic IIR. Only the emitted artifact is open.
+Three concerns are routinely conflated. The authoring surface and the internal representation are already settled: the human declares an Integration Contract and the compiler owns the semantic intermediate representation (IIR). Only the emitted artifact is open.
 
-Two constraints bear on the choice. EDC v0.3's thesis requires proving that a physical plan produces only histories the contract allows, which is undecidable for arbitrary SQL — three-valued logic, implicit casts, collation-dependent comparison, non-deterministic functions, and window-frame semantics all defeat it. Separately, Addendum §6.1 offers both PostgreSQL and ClickHouse, whose dialects diverge silently on null handling, precision, collation, locale, and timezone.
+Two constraints bear on the choice. Heinzel's central claim requires proving that a physical plan produces only histories the contract allows, which is undecidable for arbitrary SQL — three-valued logic, implicit casts, collation-dependent comparison, non-deterministic functions, and window-frame semantics all defeat it. Separately, Heinzel offers both PostgreSQL and ClickHouse, whose dialects diverge silently on null handling, precision, collation, locale, and timezone.
 
-Because Heinzel generates transformations, no human writes transformation code in the normal path. The ergonomic case for a DSL therefore has almost no user, while Addendum §12.1's requirement that a human approve generated output where meaning changes argues directly for an artifact the data engineer already reads.
+Because Heinzel generates transformations, no human writes transformation code in the normal path. The ergonomic case for a DSL therefore has almost no user, while the requirement that a human approve generated output where meaning changes argues directly for an artifact the data engineer already reads.
 
 ## Decision
 
@@ -20,11 +20,11 @@ The compiler lowers the semantic IIR to a **restricted SQL subset**, emitted per
 
 Heinzel does not build a user-facing transformation language.
 
-The emittable constructs form a declared, versioned allowlist. Each construct has semantics pinned separately for PostgreSQL and ClickHouse across the D1-D8 equivalence dimensions. The allowlist is governed exactly as the legality rule table is: curated, sound but deliberately incomplete, and expanded only with a reviewed proof note, positive and negative per-engine conformance fixtures, and an independent reviewer. A construct outside the allowlist produces `No Valid Plan` with a counterfactual naming the missing construct.
+The emittable constructs form a declared, versioned allowlist. Each construct has semantics pinned separately for PostgreSQL and ClickHouse across the D1-D8 equivalence dimensions (null and missing, precision and range, collation, locale, timezone, identifier encoding, literal typing, and relational behavior). The allowlist is governed exactly as the legality rule table is: curated, sound but deliberately incomplete, and expanded only with a reviewed proof, positive and negative per-engine conformance fixtures, and an independent reviewer. A construct outside the allowlist produces `No Valid Plan` with a counterfactual naming the missing construct.
 
 The compiler never parses SQL it did not generate. Analyzability comes from constraining emission, not from analyzing an arbitrary input language.
 
-Heinzel does not compile to Spark. The decisive reason is that warehouse SQL semantics are unavoidable regardless — Superset queries the warehouse (§16.1), the integrity layers live there (§12.2), and continuous constraints are evaluated there (§12.3) — so a Spark target would add a third semantic target rather than retire one. Compiling to Spark also moves resident data out over JDBC and back, does not improve the legality proof because Catalyst's rewrites determine what runs, and produces artifacts that are harder to review than SQL.
+Heinzel does not compile to Spark. The decisive reason is that warehouse SQL semantics are unavoidable regardless — Superset queries the warehouse, the integrity checks live there, and continuous constraints are evaluated there — so a Spark target would add a third semantic target rather than retire one. Compiling to Spark also moves resident data out over JDBC and back, does not improve the legality proof because Catalyst's rewrites determine what runs, and produces artifacts that are harder to review than SQL.
 
 ## Consequences
 
@@ -43,7 +43,7 @@ Heinzel does not compile to Spark. The decisive reason is that warehouse SQL sem
 
 ## Amendment 2026-09-11: governed answer query class
 
-Addendum v0.1 §12.4 adds a second, read-only class to the same allowlist: governed queries that answer stakeholder questions. The compiler lowers a validated answer intent into a statement that may use only:
+Governed answers add a second, read-only class to the same allowlist: governed queries that answer stakeholder questions. The compiler lowers a validated answer intent into a statement that may use only:
 
 - approved consumption objects;
 - metric-pinned aggregates;
@@ -53,7 +53,7 @@ Addendum v0.1 §12.4 adds a second, read-only class to the same allowlist: gover
 - compiled small-group suppression; and
 - ordering and a row limit.
 
-Query constructs are governed exactly as transformation constructs are: per-engine semantics pinned across D1-D8, a reviewed proof note, positive and negative per-engine fixtures, and an independent reviewer. A construct outside the allowlist produces `No Valid Plan` naming it.
+Query constructs are governed exactly as transformation constructs are: per-engine semantics pinned across D1-D8, a reviewed proof, positive and negative per-engine fixtures, and an independent reviewer. A construct outside the allowlist produces `No Valid Plan` naming it.
 
 Governed queries are not dbt models. The runtime executes them directly through the `answer_runtime` principal and records an execution receipt. The compiler still never parses SQL it did not generate, and no AI-authored or question-derived text reaches a statement.
 
@@ -98,7 +98,6 @@ predictably, and numeric JSON input for a declared string field stays inadmissib
 PostgreSQL alone coerces it predictably. Widening an activated rule later is ordinary governance;
 narrowing one after activation invalidates evidence already accepted for it.
 
-Consequence for the product: the addendum defines the MVP as a two-engine portability proof in
-its scope rule, exit criteria, and success measure. A PostgreSQL-only product engine does not pass
-that definition and is not called the MVP. It is Gate A, and the addendum MVP remains unpassed
-until ClickHouse activation completes.
+Consequence for the product: Heinzel's product claim is portability across two warehouse engines.
+A PostgreSQL-only product engine does not meet that claim, and it remains unmet until ClickHouse
+activation completes.

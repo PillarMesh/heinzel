@@ -34,8 +34,15 @@ effects` banner, and no command in it produces a managed effect.
 ## Governed local UI testing
 
 For separate requester and architect browser sessions backed by the owning services
-and disposable SQLite state, follow Local UI testing.
-This exercises persisted intake, conversation, review, approval, and admission.
+and disposable SQLite state, run:
+
+```sh
+cd apps/console
+npm run test:e2e:governed
+```
+
+This builds the bundle and exercises persisted intake, conversation, review, approval, and
+admission.
 
 ## Production same-origin build
 

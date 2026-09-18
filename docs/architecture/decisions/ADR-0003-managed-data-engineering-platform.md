@@ -2,11 +2,11 @@
 
 - Status: Accepted
 - Date: 2026-08-17
-- Governing design: `docs/architecture/specifications/managed-data-engineering-platform-addendum-v0.1.md`
+- Context: [Architecture](../../architecture.md)
 
 ## Context
 
-The foundational architecture makes Integration Contracts durable and keeps providers, plans, and execution graphs replaceable. Its initial product boundary assumes that Heinzel integrates with an externally managed warehouse. The M0 thin thread consequently targets Snowflake and proves compiler/runtime/evidence behavior, but it leaves a one-person data engineering team responsible for choosing, provisioning, securing, operating, backing up, and exposing the destination platform and its BI and catalog services.
+Heinzel makes Integration Contracts durable and keeps providers, plans, and execution graphs replaceable. Its initial product boundary assumed that Heinzel integrates with an externally managed warehouse. The first end-to-end thread, the PostgreSQL-to-Snowflake snapshot, consequently targets Snowflake and proves compiler, runtime and evidence behavior, but it leaves a one-person data engineering team responsible for choosing, provisioning, securing, operating, backing up, and exposing the destination platform and its BI and catalog services.
 
 The selected product category is provider-managed data integration. Connector operation alone is insufficient for the intended customer because destination configuration, semantic modeling, cataloging, dashboards, scheduled reports, recovery, and integrity would remain split among products and owners. Heinzel cannot claim accountable source-to-consumer outcomes while the destination data plane remains outside its operational authority.
 
@@ -43,7 +43,7 @@ Preserve future `customer_cloud` and `customer_on_prem` placement modes in which
 - Dedicated warehouse, OpenMetadata, and Superset deployments simplify tenant isolation and retirement but increase cost.
 - The platform must publish a clear shared-responsibility model, restore evidence, and open-format exit path.
 - The repository requires explicit ownership for request management, warehouse control, catalog control, semantic registry, and trigger materialization while reusing the existing compiler, contract, provider, runtime, evidence, knowledge-graph, dbt, and context-exposure boundaries.
-- Historical Snowflake M0 records remain valid as historical evidence but no longer define the post-M0 product destination.
+- The PostgreSQL-to-Snowflake snapshot remains in the repository as a proof of compiler, runtime and evidence behavior, but Snowflake is not a managed product destination. The snapshot contract's `evidence_retention` value has since been renamed to `snapshot_30_days` without a change to its `schema_version` of `1`, so snapshot contract records written with the earlier value no longer validate against the current contract model.
 
 ## Provider inventory
 

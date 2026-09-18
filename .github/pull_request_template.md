@@ -1,17 +1,10 @@
-## Summary
+## What changed
 
-Describe the outcome and motivation.
+## Why
 
-## Architecture Impact
+## How it was verified
 
-- Owning component:
-- Governing specification or ADR:
-- New or changed boundary:
-
-## Validation
-
-List tests and manual checks performed.
-
-## Security
-
-Describe effects on tenant isolation, credentials/grants, signed artifacts, state ownership, evidence, and data exposure. Write `None` when not applicable.
+- [ ] Offline checks pass (see `CONTRIBUTING.md`)
+- [ ] Tests added or updated; a bug fix includes a regression test that fails without the fix
+- [ ] `CHANGELOG.md` updated for user-visible changes
+- [ ] Every commit is signed off (`git commit -s`)

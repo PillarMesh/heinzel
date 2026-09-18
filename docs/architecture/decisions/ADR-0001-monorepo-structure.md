@@ -1,14 +1,14 @@
-# ADR-0001: Begin with an EDC-Aligned Modular Monorepo
+# ADR-0001: Begin with a Modular Monorepo
 
 - Status: Accepted
 - Date: 2026-08-12
-- Governing specifications: EDC Foundational Architecture v0.3 and Revenue-to-Cash MVP Implementation Plan v1.4
+- Context: [Architecture](../../architecture.md)
 
 ## Context
 
-Heinzel is beginning implementation of the Enterprise Data Compiler. Its early work crosses the Integration Contract, compiler artifacts, capability providers, deterministic runtime, state ownership, evidence, governed context, and product experience. Splitting these boundaries across repositories before teams, release cadences, and access requirements are known would add coordination cost and make architectural drift harder to detect.
+Heinzel compiles declared data outcomes into legal, signed execution and runs them with evidence. Its early work crosses the Integration Contract, compiler artifacts, capability providers, deterministic runtime, state ownership, evidence, governed context, and product experience. Splitting these boundaries across repositories before teams, release cadences, and access requirements are known would add coordination cost and make architectural drift harder to detect.
 
-A generic applications/services/connectors layout was also considered. It conflicts with the EDC model: there is no general orchestrator, a capability provider is not exclusively a source or destination, and the permanent Integration Contract is not a generic API-contract package.
+A generic applications/services/connectors layout was also considered. It conflicts with Heinzel's model: there is no general orchestrator, a capability provider is not exclusively a source or destination, and the permanent Integration Contract is not a generic API-contract package.
 
 ## Decision
 
@@ -16,7 +16,7 @@ Use one modular monorepo with top-level `apps/`, `services/`, `providers/`, `pac
 
 Create nested component directories only with their first substantive implementation. Track concise top-level boundary READMEs instead of speculative per-component placeholders.
 
-Repository terminology follows the canonical in-tree architecture and implementation specifications. A material boundary or vocabulary change must supersede this ADR rather than silently contradict it.
+Repository terminology follows `docs/architecture.md` and these decision records. A material boundary or vocabulary change must supersede this ADR rather than silently contradict it.
 
 ## Consequences
 
@@ -34,7 +34,7 @@ Rejected because no evidence yet justifies separate ownership, release, licensin
 
 ### Generic application/service/connector monorepo
 
-Rejected because it encodes a scheduler-oriented pipeline product and source/destination connector taxonomy that contradict the governing EDC architecture.
+Rejected because it encodes a scheduler-oriented pipeline product and source/destination connector taxonomy that contradict Heinzel's architecture.
 
 ### Unstructured single repository
 
