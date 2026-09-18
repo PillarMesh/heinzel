@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -7,8 +8,10 @@ import pytest
 from heinzel_contract_model import InformationKind, digest
 from heinzel_request_management import (
     DecisionKind,
+    InboxRequest,
     RequestManagementService,
     RequestState,
+    SchemaSemanticChangeRequest,
     SQLiteRequestRepository,
 )
 from heinzel_semantic_registry import (
@@ -17,6 +20,7 @@ from heinzel_semantic_registry import (
     AuthoritySourceKind,
     CandidateKind,
     CandidateProvenance,
+    OntologyReviewBundle,
     ResolutionReasonCode,
     ReviewItemDecision,
     SemanticReviewService,
@@ -61,7 +65,9 @@ def review_service(
     ), repository
 
 
-def create_bundle(service: SemanticReviewService, repository: SQLiteSemanticRepository):
+def create_bundle(
+    service: SemanticReviewService, repository: SQLiteSemanticRepository
+) -> OntologyReviewBundle:
     candidate_set = repository._materialize(
         tenant_id="tenant-a",
         package_id="package-a",
@@ -93,7 +99,9 @@ def create_bundle(service: SemanticReviewService, repository: SQLiteSemanticRepo
     )
 
 
-def database_dump(repository: object) -> tuple[str, ...]:
+def database_dump(
+    repository: SQLiteSemanticRepository | SQLiteRequestRepository,
+) -> tuple[str, ...]:
     return tuple(repository._connection.iterdump())
 
 
@@ -111,7 +119,10 @@ def test_submission_failure_after_each_repository_effect_restores_exact_state_an
         if failure_point == "bundle":
             original_store = semantic_repository.store_review_bundle
 
-            def fail_after_bundle(bundle_to_store, store=original_store):
+            def fail_after_bundle(
+                bundle_to_store: OntologyReviewBundle,
+                store: Callable[[OntologyReviewBundle], object] = original_store,
+            ) -> None:
                 store(bundle_to_store)
                 raise RuntimeError("after bundle effect")
 
@@ -119,7 +130,9 @@ def test_submission_failure_after_each_repository_effect_restores_exact_state_an
         elif failure_point == "request":
             original_submit = request_service.submit_schema_semantic_change
 
-            def fail_after_request(submit=original_submit, **kwargs):
+            def fail_after_request(
+                submit: Callable[..., object] = original_submit, **kwargs: object
+            ) -> None:
                 submit(**kwargs)
                 raise RuntimeError("after request effect")
 
@@ -132,12 +145,12 @@ def test_submission_failure_after_each_repository_effect_restores_exact_state_an
 
             selected_failure_point = failure_point
 
-            def fail_after_request(
-                *args,
-                transition=original_transition,
-                selected_failure=selected_failure_point,
-                **kwargs,
-            ):
+            def fail_after_transition(
+                *args: object,
+                transition: Callable[..., InboxRequest] = original_transition,
+                selected_failure: str = selected_failure_point,
+                **kwargs: object,
+            ) -> InboxRequest:
                 nonlocal transition_count
                 transitioned = transition(*args, **kwargs)
                 transition_count += 1
@@ -148,7 +161,7 @@ def test_submission_failure_after_each_repository_effect_restores_exact_state_an
                     raise RuntimeError(f"after {selected_failure} effect")
                 return transitioned
 
-            monkeypatch.setattr(request_service, "transition", fail_after_request)
+            monkeypatch.setattr(request_service, "transition", fail_after_transition)
 
         with pytest.raises(RuntimeError, match=f"after {failure_point} effect"):
             service.submit_bundle(
@@ -298,8 +311,17 @@ def test_request_transition_failure_after_bundle_finalization_restores_exact_sta
     request_before = database_dump(request_repository)
     original_transition = request_service.transition
 
-    def fail_after_transition(*args, **kwargs):
-        original_transition(*args, **kwargs)
+    def fail_after_transition(
+        tenant_id: str,
+        request_id: str,
+        state: RequestState,
+        *,
+        actor_id: str,
+        expected_revision: int,
+    ) -> None:
+        original_transition(
+            tenant_id, request_id, state, actor_id=actor_id, expected_revision=expected_revision
+        )
         raise RuntimeError("after final request transition")
 
     monkeypatch.setattr(request_service, "transition", fail_after_transition)
@@ -346,7 +368,9 @@ def test_bundle_failure_after_unresolved_request_transition_restores_exact_state
     request_before = database_dump(request_repository)
     original_store = semantic_repository.store_review_decision
 
-    def fail_after_bundle(bundle_to_store, revision):
+    def fail_after_bundle(
+        bundle_to_store: OntologyReviewBundle, revision: SemanticRevision | None
+    ) -> None:
         original_store(bundle_to_store, revision)
         raise RuntimeError("after unresolved bundle effect")
 
@@ -516,6 +540,7 @@ def test_submission_binds_the_persisted_awaiting_approval_bundle_and_request_pat
     persisted = repository.load_review_bundle("tenant-a", bundle.bundle_id)
 
     assert submitted.state.value == "awaiting_approval"
+    assert isinstance(submitted.payload, SchemaSemanticChangeRequest)
     assert submitted.payload.review_bundle_digest == digest(persisted)
     assert persisted.status == "awaiting_approval"
 

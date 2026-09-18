@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from typing import get_type_hints
 
 import pytest
 from heinzel_contract_model import (
     ApprovedSemanticVersion,
+    ContractFormationResult,
     ContractFormationStatus,
     InformationKind,
     digest,
@@ -65,7 +67,7 @@ def valid_input(*, observation: AuthorityObservation | None = None) -> ApprovalC
         provenance=CandidateProvenance(
             source_kind="manifest", source_digest="a" * 64, source_path="manifest"
         ),
-        confidence=1,
+        confidence=Decimal(1),
     )
     candidate_set = SemanticCandidateSet(
         set_id="set-0001",
@@ -150,6 +152,7 @@ def test_compiler_rejects_stale_authority_observation() -> None:
 
     repository = _StrictSemanticVersionRepository()
     result = ApprovedSemanticCompiler(repository).compile(valid_input(observation=stale), now=NOW)
+    assert isinstance(result, ContractFormationResult)
 
     assert result.status is ContractFormationStatus.NO_VALID_PLAN
     assert result.no_valid_plan is not None
@@ -167,6 +170,7 @@ def test_compiler_returns_no_valid_plan_for_conflicting_current_authorities() ->
     result = ApprovedSemanticCompiler(repository).compile(
         valid_input().model_copy(update={"authority_observations": (first, conflict)}), now=NOW
     )
+    assert isinstance(result, ContractFormationResult)
 
     assert result.status.value == "no_valid_plan"
     assert repository.stored_versions == ()
@@ -176,6 +180,7 @@ def test_compiler_returns_no_valid_plan_for_missing_approval() -> None:
     result = ApprovedSemanticCompiler(_StrictSemanticVersionRepository()).compile(
         valid_input().model_copy(update={"approval_ids": ()}), now=NOW
     )
+    assert isinstance(result, ContractFormationResult)
 
     assert result.status.value == "no_valid_plan"
 
@@ -188,7 +193,8 @@ def test_compiler_requires_a_runtime_resolvable_semantic_version_repository_prot
 
 def test_compiler_requires_a_repository_and_returns_only_a_persisted_semantic_version() -> None:
     with pytest.raises(TypeError):
-        ApprovedSemanticCompiler()
+        # The repository is required; refusing this call is the assertion.
+        ApprovedSemanticCompiler()  # type: ignore[call-arg]
 
     repository = _StrictSemanticVersionRepository()
     compiled = ApprovedSemanticCompiler(repository).compile(valid_input(), now=NOW)

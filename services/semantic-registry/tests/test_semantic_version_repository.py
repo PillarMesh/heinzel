@@ -6,7 +6,9 @@ import pytest
 from heinzel_contract_model import ApprovedSemanticVersion
 from heinzel_semantic_registry import ApprovedSemanticCompiler, SQLiteSemanticVersionRepository
 
-from .test_approval import NOW, valid_input
+# pytest resolves this sibling through importlib; mypy checks this directory
+# on its own, where the relative package does not exist.
+from .test_approval import NOW, valid_input  # type: ignore[import-not-found]
 
 
 def test_semantic_version_repository_allocates_tenant_versions_and_replays_exact_material(

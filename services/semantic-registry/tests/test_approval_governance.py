@@ -5,7 +5,15 @@ from datetime import UTC, datetime, timedelta
 from heinzel_contract_model import ContractFormationStatus
 from heinzel_semantic_registry import ApprovedSemanticCompiler
 
-from .test_approval import NOW, _StrictSemanticVersionRepository, valid_input
+# pytest resolves this sibling through importlib; mypy checks this directory
+# on its own, where the relative package does not exist.
+from .test_approval import (  # type: ignore[import-not-found]
+    NOW,
+    ApprovedSemanticVersion,
+    ContractFormationResult,
+    _StrictSemanticVersionRepository,
+    valid_input,
+)
 
 
 def test_compiler_requires_exact_current_authority_and_decision_binding_for_each_item() -> None:
@@ -20,6 +28,7 @@ def test_compiler_requires_exact_current_authority_and_decision_binding_for_each
     result = ApprovedSemanticCompiler(_StrictSemanticVersionRepository()).compile(
         compilation_input.model_copy(update={"authority_observations": (stale,)}), now=NOW
     )
+    assert isinstance(result, ContractFormationResult)
 
     assert result.status is ContractFormationStatus.NO_VALID_PLAN
     assert result.no_valid_plan is not None
@@ -42,6 +51,7 @@ def test_compiler_returns_governed_no_valid_plan_for_unknown_or_conflicting_cont
         ),
         now=datetime(2026, 8, 21, 12, tzinfo=UTC),
     )
+    assert isinstance(result, ContractFormationResult)
 
     assert result.status is ContractFormationStatus.NO_VALID_PLAN
     assert result.no_valid_plan is not None
@@ -60,9 +70,11 @@ def test_compiler_canonicalizes_unordered_inputs_before_identity_and_digest() ->
     first = ApprovedSemanticCompiler(_StrictSemanticVersionRepository()).compile(
         compilation_input, now=NOW
     )
+    assert isinstance(first, ApprovedSemanticVersion)
     second = ApprovedSemanticCompiler(_StrictSemanticVersionRepository()).compile(
         reversed_input, now=NOW
     )
+    assert isinstance(second, ApprovedSemanticVersion)
 
     assert first.semantic_version_id == second.semantic_version_id
     assert first.version == second.version

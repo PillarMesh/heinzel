@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 import pytest
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
@@ -11,6 +11,7 @@ from heinzel_contract_model import (
     ApprovedSemanticVersion,
     ArtifactReference,
     ContractConstraint,
+    ContractFormationStatus,
     DestinationProductRequirement,
     EvidencePolicy,
     FailurePolicy,
@@ -30,8 +31,14 @@ from heinzel_provider_openmetadata import (
 from heinzel_request_management import (
     RequestManagementService,
     RequestState,
+    SchemaSemanticChangeRequest,
     SQLiteRequestRepository,
 )
+from heinzel_semantic_registry.publication import (
+    CatalogPublicationRepository,
+    SemanticPublicationService,
+)
+from heinzel_semantic_registry.repository import SemanticRepository, SemanticVersionRepository
 
 if TYPE_CHECKING:
     from heinzel_semantic_registry.publication import (
@@ -91,7 +98,7 @@ def _contract(semantic_version: ApprovedSemanticVersion) -> ManagedIntegrationCo
         contract_id="contract-a",
         tenant_id=semantic_version.tenant_id,
         version=1,
-        formation_status="ready_to_activate",
+        formation_status=ContractFormationStatus.READY_TO_ACTIVATE,
         semantic_version_ref=ArtifactReference(
             artifact_id=semantic_version.semantic_version_id,
             version=semantic_version.version,
@@ -188,7 +195,7 @@ def test_publish_rejects_replay_when_persisted_semantic_bytes_differ_from_caller
     repository = SQLiteCatalogPublicationRepository(":memory:")
     service = _service(provider, repository=repository)
     semantic_version = _semantic_version()
-    arguments = {
+    arguments: _PublishArguments = {
         "binding": _binding(),
         "semantic_version": semantic_version,
         "contract": _contract(semantic_version),
@@ -245,7 +252,7 @@ def test_publication_effect_count_is_tenant_scoped_and_replay_stable() -> None:
     repository = SQLiteCatalogPublicationRepository(":memory:")
     service = _service(_PublicationProvider(), repository=repository)
     semantic_version = _semantic_version()
-    arguments = {
+    arguments: _PublishArguments = {
         "binding": _binding(),
         "semantic_version": semantic_version,
         "contract": _contract(semantic_version),
@@ -565,18 +572,23 @@ class _FullPublicationProvider:
         }
 
 
+class _PublishArguments(TypedDict):
+    """The three artifacts `publish` takes, built as a mapping and expanded."""
+
+    binding: CatalogBinding
+    semantic_version: ApprovedSemanticVersion
+    contract: ManagedIntegrationContract
+
+
 def _service(
     provider: CatalogPublicationProvider,
     *,
-    repository: object | None = None,
-    semantic_repository: object | None = None,
-    semantic_version_repository: object | None = None,
-):
+    repository: CatalogPublicationRepository | None = None,
+    semantic_repository: SemanticRepository | None = None,
+    semantic_version_repository: SemanticVersionRepository | None = None,
+) -> SemanticPublicationService:
     from heinzel_semantic_registry import SQLiteSemanticRepository
-    from heinzel_semantic_registry.publication import (
-        SemanticPublicationService,
-        SQLiteCatalogPublicationRepository,
-    )
+    from heinzel_semantic_registry.publication import SQLiteCatalogPublicationRepository
 
     request_service = RequestManagementService(
         SQLiteRequestRepository.open(":memory:"), clock=lambda: NOW
@@ -597,6 +609,11 @@ class _SemanticVersionLoader:
         self._semantic_version = semantic_version
         self.loaded: list[tuple[str, str, int]] = []
 
+    def store(self, semantic_version: ApprovedSemanticVersion) -> ApprovedSemanticVersion:
+        # Declared because `SemanticVersionRepository` does; this loader is read-only,
+        # and a publication that writes through it is a failure, not a silent pass.
+        raise AssertionError("the publication under test must not store a semantic version")
+
     def load(
         self, tenant_id: str, semantic_version_id: str, version: int
     ) -> ApprovedSemanticVersion:
@@ -608,7 +625,7 @@ def test_lost_publication_response_replay_creates_one_receipt_and_no_duplicate_i
     provider = _PublicationProvider()
     service = _service(provider)
     semantic_version = _semantic_version()
-    arguments = {
+    arguments: _PublishArguments = {
         "binding": _binding(),
         "semantic_version": semantic_version,
         "contract": _contract(semantic_version),
@@ -872,6 +889,7 @@ def test_drift_persists_tenant_scoped_immutable_before_and_after_authority_obser
 
     assert proposal is not None
     request = proposal.request.payload
+    assert isinstance(request, SchemaSemanticChangeRequest)
     assert request.before_observation_digest is not None
     assert request.after_observation_digest is not None
     stored = semantic_repository._connection.execute(
@@ -910,7 +928,7 @@ def test_ambiguous_conflict_replays_by_reading_back_the_previously_persisted_int
     provider = _PublicationProvider()
     service = _service(provider)
     semantic_version = _semantic_version()
-    arguments = {
+    arguments: _PublishArguments = {
         "binding": _binding(),
         "semantic_version": semantic_version,
         "contract": _contract(semantic_version),

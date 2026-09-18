@@ -7,6 +7,7 @@ from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
     ArtifactReference,
+    ContractFormationStatus,
     DestinationProductRequirement,
     EvidencePolicy,
     FailurePolicy,
@@ -89,7 +90,7 @@ def contract(version: ApprovedSemanticVersion) -> ManagedIntegrationContract:
         contract_id="contract-revenue",
         tenant_id="tenant-a",
         version=1,
-        formation_status="ready_to_activate",
+        formation_status=ContractFormationStatus.READY_TO_ACTIVATE,
         semantic_version_ref=reference(version.semantic_version_id, payload=version),
         source_observation_refs=(),
         mappings=(

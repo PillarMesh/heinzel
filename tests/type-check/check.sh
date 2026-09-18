@@ -29,6 +29,7 @@ services/compiler/tests
 services/context-exposure/tests
 services/dbt-adapter/tests
 services/request-management/tests
+services/semantic-registry/tests
 services/state/tests
 services/warehouse-control/tests
 tests/release
@@ -52,7 +53,6 @@ services/contract/tests
 services/evidence/tests
 services/knowledge-graph/tests
 services/runtime/tests
-services/semantic-registry/tests
 services/trigger/tests
 tests/acceptance
 tests/ci
