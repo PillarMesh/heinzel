@@ -94,6 +94,7 @@ packages = [
   "heinzel_runtime",
   "heinzel_semantic_registry",
   "heinzel_state",
+  "heinzel_trigger",
   "heinzel_warehouse_control",
   "tests.acceptance.console_postgresql_engine",
   "tests.acceptance.semantic_formation_orchestration",
