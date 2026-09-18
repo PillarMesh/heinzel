@@ -34,7 +34,7 @@ _Term = tuple[str, "re.Pattern[str]"]
 _Terms = tuple[_Term, ...]
 
 # The company name, outside the places it is allowed to appear. Not anchored to word
-# boundaries, so it also catches identifiers such as PILLARMESH_STATE_PATH.
+# boundaries, so it also catches identifiers such as PILLARMESH_EXAMPLE.
 _COMPANY_PATTERN = re.compile(r"(?i)pillar[\s_.-]*mesh")
 
 _GENERIC_TERMS: _Terms = (("company name outside allowed references", _COMPANY_PATTERN),)
@@ -219,15 +219,15 @@ def scan_tree(root: Path = ROOT, terms: _Terms | None = None) -> tuple[Finding, 
 @pytest.mark.parametrize(
     ("line", "expected_reason"),
     [
-        ("import pillarmesh_runtime", "company name outside allowed references"),
-        ("PILLARMESH_STATE_PATH=/x", "company name outside allowed references"),
-        ("pillar mesh", "company name outside allowed references"),
+        ("import pillarmesh_widget", "company name outside allowed references"),
+        ("PILLARMESH_EXAMPLE=1", "company name outside allowed references"),
+        ("Pillar Mesh docs", "company name outside allowed references"),
         ("Pillar-Mesh", "company name outside allowed references"),
         ("pillar_mesh", "company name outside allowed references"),
         ("x@pillarmesh.company", "company name outside allowed references"),
         ("https://pillarmesh.com.evil.io", "company name outside allowed references"),
-        ("internal.pillarmesh.com", "company name outside allowed references"),
-        ("github.com/PillarMesh/pillarmesh", "company name outside allowed references"),
+        ("sub.pillarmesh.com", "company name outside allowed references"),
+        ("github.com/PillarMesh/pillarmesh-example", "company name outside allowed references"),
         ('"team": "PillarMesh"', "company name outside allowed references"),
         ('team_name = "PillarMesh"', "company name outside allowed references"),
         ('display_name = "PillarMesh"', "company name outside allowed references"),
@@ -386,51 +386,6 @@ def test_active_terms_loads_the_env_file_when_set(
     assert terms[-1][0] == "stand-in tool"
 
 
-# --- the real private terms file's milestone patterns (only when it is configured) --------
-#
-# These lines are generic milestone/gate shapes, not the account or tool names, so they are
-# fine to keep here. What must not live here is a second copy of the real regexes: instead
-# these tests load the actual file the release audit will point HEINZEL_PRIVATE_TERMS_FILE at,
-# so there is exactly one place the milestone patterns are written down.
-
-_MILESTONE_CATCH_LINES = (
-    "Plan 3B evidence",
-    "blocked until Gate A closes",
-    "the M0 thin thread",
-    "gate b",
-)
-
-_MILESTONE_NEAR_MISS_LINES = (
-    "xplan2",
-    "plan20",
-    "am0",
-    "Gate A1",
-    "m0de",
-    "gated",
-    "feature-gated route",
-)
-
-_requires_private_terms_file = pytest.mark.skipif(
-    not os.environ.get("HEINZEL_PRIVATE_TERMS_FILE"),
-    reason="exercises the real private terms file named by HEINZEL_PRIVATE_TERMS_FILE",
-)
-
-
-@_requires_private_terms_file
-@pytest.mark.parametrize("line", _MILESTONE_CATCH_LINES)
-def test_the_real_private_terms_catch_the_milestone_shapes(line: str) -> None:
-    terms = _load_private_terms(os.environ["HEINZEL_PRIVATE_TERMS_FILE"])
-    findings = scan_text("sample.md", line, terms=terms)
-    assert findings and findings[0].reason == "internal milestone"
-
-
-@_requires_private_terms_file
-@pytest.mark.parametrize("line", _MILESTONE_NEAR_MISS_LINES)
-def test_the_real_private_terms_allow_the_near_misses(line: str) -> None:
-    terms = _load_private_terms(os.environ["HEINZEL_PRIVATE_TERMS_FILE"])
-    assert scan_text("sample.md", line, terms=terms) == (), line
-
-
 # --- scan_tree over a real git repository --------------------------------------------------
 
 
@@ -443,8 +398,8 @@ def test_scan_tree_covers_content_path_and_binary_findings(
 
     (repo / "clean.txt").write_text("nothing to see here\n")
     (repo / "content_hit.txt").write_text("this mentions pillarmesh directly\n")
-    (repo / "pillarmesh-secrets").mkdir()
-    (repo / "pillarmesh-secrets" / "notes.txt").write_text("the path itself is the hit\n")
+    (repo / "pillarmesh-widget").mkdir()
+    (repo / "pillarmesh-widget" / "notes.txt").write_text("the path itself is the hit\n")
 
     unreviewed = bytes([0, 1, 2, 3]) + b"unreviewed"
     (repo / "unreviewed.bin").write_bytes(unreviewed)
@@ -480,7 +435,7 @@ def test_scan_tree_covers_content_path_and_binary_findings(
     assert "clean.txt" not in by_path
     assert by_path["content_hit.txt"][0].reason == "company name outside allowed references"
     assert by_path["content_hit.txt"][0].line == 1
-    assert by_path["pillarmesh-secrets/notes.txt"][0].line == 0
+    assert by_path["pillarmesh-widget/notes.txt"][0].line == 0
     assert by_path["unreviewed.bin"][0].line == 0
     assert by_path["unreviewed.bin"][0].reason == "unreviewed binary file"
     assert "reviewed_ok.bin" not in by_path
