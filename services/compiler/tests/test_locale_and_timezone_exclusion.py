@@ -1,10 +1,10 @@
 """D4 (locale) and D5 (timezone) rejection evidence for PRODUCT-SQL-V2-PROJECT-SUM-001.
 
-The proof note argues that no locale-sensitive function and no timestamp expression can
-appear in an admitted product. The IIR itself can express both -- `ApprovedFunctionName`
-includes the case-conversion functions `lower` and `upper`, `ScalarType` includes
-`timestamp`, and `LiteralScalar` includes `datetime`. The claim therefore rests entirely on
-the restricted project-sum shape predicate, so these tests pin that predicate rather than the
+No locale-sensitive function and no timestamp expression can appear in an admitted
+product. The IIR itself can express both -- `ApprovedFunctionName` includes the
+case-conversion functions `lower` and `upper`, `ScalarType` includes `timestamp`, and
+`LiteralScalar` includes `datetime`. The guarantee therefore rests entirely on the
+restricted project-sum shape predicate, so these tests pin that predicate rather than the
 IIR's vocabulary.
 """
 
