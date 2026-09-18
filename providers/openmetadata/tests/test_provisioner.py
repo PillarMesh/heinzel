@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import stat
 import subprocess
 import tempfile
@@ -11,13 +12,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from threading import Barrier, Event, Thread
-from types import SimpleNamespace
-from typing import IO
+from typing import IO, Literal
 
 import heinzel_provider_openmetadata.provisioner as provisioner_module
 import pytest
 from cryptography.fernet import Fernet
 from heinzel_catalog_control import (
+    CatalogBinding,
     CatalogBindingState,
     CatalogControlService,
     SQLiteCatalogRepository,
@@ -36,6 +37,12 @@ from heinzel_provider_openmetadata import (
     ProviderHealth,
 )
 from heinzel_provider_openmetadata.client import _OpenMetadataCredentials
+from heinzel_provider_openmetadata.provisioner import (
+    OpenMetadataSecretStore,
+    _CatalogAvailabilityDecision,
+    _DiscoveredProviderResource,
+)
+from heinzel_provider_sdk import ComposeResource, ComposeResourceKind
 from pydantic import SecretStr
 
 _FAKE_LINEAGE_IDENTIFIER = (
@@ -99,6 +106,18 @@ def test_restore_step_failure_is_classified_and_sanitized() -> None:
 
     assert captured.value.classification == "transient"
     assert_provider_failure_is_sanitized(captured.value)
+
+
+def _compose_kind(resource_kind: str) -> ComposeResourceKind:
+    """The recorded pairs are plain strings; the SDK resource takes the closed kind."""
+    # Compared one at a time so the checker narrows to the member being returned.
+    if resource_kind == "container":
+        return "container"
+    if resource_kind == "volume":
+        return "volume"
+    if resource_kind == "network":
+        return "network"
+    raise AssertionError(f"unexpected compose resource kind {resource_kind!r}")
 
 
 class RecordingCompose:
@@ -197,20 +216,20 @@ class RecordingCompose:
 
     def planned_resources(
         self, *, project_name: str, environment: Mapping[str, str]
-    ) -> tuple[SimpleNamespace, ...]:
+    ) -> tuple[ComposeResource, ...]:
         return (
-            SimpleNamespace(resource_kind="container", identifier=f"{project_name}-container"),
-            SimpleNamespace(resource_kind="volume", identifier=f"{project_name}-volume"),
-            SimpleNamespace(resource_kind="network", identifier=f"{project_name}-network"),
+            ComposeResource(resource_kind="container", identifier=f"{project_name}-container"),
+            ComposeResource(resource_kind="volume", identifier=f"{project_name}-volume"),
+            ComposeResource(resource_kind="network", identifier=f"{project_name}-network"),
         )
 
     def discover_resources(
         self, *, project_name: str, environment: Mapping[str, str]
-    ) -> tuple[SimpleNamespace, ...]:
+    ) -> tuple[ComposeResource, ...]:
         if self._fail_discovery:
             raise RuntimeError("discovery detail must not cross the provider boundary")
         return tuple(
-            SimpleNamespace(resource_kind=resource_kind, identifier=identifier)
+            ComposeResource(resource_kind=_compose_kind(resource_kind), identifier=identifier)
             for resource_kind, identifier in sorted(
                 resource for resource in self._present_resources if project_name in resource[1]
             )
@@ -264,7 +283,7 @@ class FlakyPlanningCompose(RecordingCompose):
 
     def planned_resources(
         self, *, project_name: str, environment: Mapping[str, str]
-    ) -> tuple[SimpleNamespace, ...]:
+    ) -> tuple[ComposeResource, ...]:
         if not self._failed:
             self._failed = True
             raise self._failure
@@ -293,7 +312,7 @@ class BlockingFirstPlanningCompose(RecordingCompose):
 
     def planned_resources(
         self, *, project_name: str, environment: Mapping[str, str]
-    ) -> tuple[SimpleNamespace, ...]:
+    ) -> tuple[ComposeResource, ...]:
         self._planning_calls += 1
         if self._planning_calls == 1:
             self.first_planning_entered.set()
@@ -452,7 +471,7 @@ class ReadyClient:
     def rotate_admin_password(self, new_password: SecretStr) -> None:
         return None
 
-    def discovered_resources(self) -> tuple[SimpleNamespace, ...]:
+    def discovered_resources(self) -> tuple[_DiscoveredProviderResource, ...]:
         return tuple(self._provider_resources.values())
 
     def delete_recorded_resource(self, *, collection: str, identifier: str) -> None:
@@ -711,8 +730,8 @@ def provisioner_for(
     compose: RecordingCompose,
     client: ReadyClient,
     *,
-    availability_decision=no_supported_catalog,
-    secret_store: object | None = None,
+    availability_decision: _CatalogAvailabilityDecision = no_supported_catalog,
+    secret_store: OpenMetadataSecretStore | None = None,
 ) -> OpenMetadataProvisioner:
     secret_store_type = getattr(provisioner_module, "InMemoryOpenMetadataSecretStore", None)
     assert secret_store_type is not None
@@ -730,7 +749,9 @@ def provisioner_for(
     )
 
 
-def _private_secret_digests(secret_store: object, secret_reference: str) -> frozenset[str]:
+def _private_secret_digests(
+    secret_store: OpenMetadataSecretStore, secret_reference: str
+) -> frozenset[str]:
     secrets_bundle = secret_store.resolve(secret_reference)
     values = (
         secrets_bundle.admin_password,
@@ -746,7 +767,7 @@ def _private_secret_digests(secret_store: object, secret_reference: str) -> froz
 def test_secret_store_account_passwords_meet_openmetadata_policy_with_a_deficient_tail(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(provisioner_module.secrets, "token_urlsafe", lambda _: "a" * 52)
+    monkeypatch.setattr(secrets, "token_urlsafe", lambda _: "a" * 52)
     secret_store = RecordingSecretStore()
 
     _, secrets_bundle = secret_store.create()
@@ -1051,7 +1072,9 @@ def test_compose_credential_startup_failure_is_sanitized_at_the_provider_boundar
     repository._connection.close()
 
 
-def provisioning_binding(repository: SQLiteCatalogRepository, tenant_id: str = "tenant-a"):
+def provisioning_binding(
+    repository: SQLiteCatalogRepository, tenant_id: str = "tenant-a"
+) -> CatalogBinding:
     control = CatalogControlService(repository, clock=lambda: datetime(2026, 8, 19, tzinfo=UTC))
     draft = control.create_draft(tenant_id=tenant_id)
     return control.transition(
@@ -1293,7 +1316,7 @@ def test_compose_controller_observes_the_exact_pinned_image_set(
         compose,
         "discover_resources",
         lambda **_: tuple(
-            SimpleNamespace(resource_kind="container", identifier=f"container-{index}")
+            ComposeResource(resource_kind="container", identifier=f"container-{index}")
             for index, _ in enumerate(images)
         ),
     )
@@ -1321,7 +1344,7 @@ def test_compose_controller_rejects_an_unconfigured_profile_image(
         compose,
         "discover_resources",
         lambda **_: tuple(
-            SimpleNamespace(resource_kind="container", identifier=f"container-{index}")
+            ComposeResource(resource_kind="container", identifier=f"container-{index}")
             for index, _ in enumerate(images)
         ),
     )
@@ -2541,7 +2564,7 @@ def test_restore_reports_search_rebuild_failure_without_driver_details() -> None
 
 @pytest.mark.parametrize("terminal_status", ["failed", "unknown"])
 def test_retire_keeps_failed_and_unknown_provider_cleanup_terminal(
-    terminal_status: str,
+    terminal_status: Literal["failed", "unknown"],
 ) -> None:
     repository = SQLiteCatalogRepository(":memory:")
     binding = provisioning_binding(repository)

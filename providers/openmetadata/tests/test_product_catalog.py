@@ -16,6 +16,7 @@ from heinzel_provider_openmetadata.client import (
     _description_metadata,
     _object_name,
     _OpenMetadataCredentials,
+    _Transport,
 )
 from heinzel_provider_openmetadata.models import CatalogFailureClassification
 from heinzel_provider_sdk import (
@@ -369,6 +370,8 @@ class _NativeTableTransport:
         else:
             domain_name = _object_name("tenant-a", "product-domain")
             product_name = _object_name("tenant-a", _definition().stable_external_key)
+            columns = payload["columns"]
+            assert isinstance(columns, list)
             response.update(
                 {
                     "tableType": payload["tableType"],
@@ -377,7 +380,7 @@ class _NativeTableTransport:
                             **column,
                             "fullyQualifiedName": f"{fqns['tables']}.{column['name']}",
                         }
-                        for column in payload["columns"]
+                        for column in columns
                     ],
                     "databaseSchema": {
                         "id": self._IDS["databaseSchemas"],
@@ -407,7 +410,7 @@ class _NativeTableTransport:
         return response
 
 
-def _client(transport: object) -> OpenMetadataClient:
+def _client(transport: _Transport) -> OpenMetadataClient:
     return OpenMetadataClient(
         settings=OpenMetadataSettings(base_url="http://127.0.0.1:8585"),
         credentials=_OpenMetadataCredentials(

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import traceback
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
+from typing import NoReturn
 
 import pytest
 from heinzel_contract_model import digest
@@ -19,6 +20,7 @@ from heinzel_provider_openmetadata.client import (
     _description_metadata,
     _description_with_metadata,
     _OpenMetadataCredentials,
+    _Transport,
 )
 from httpx import ConnectError, ReadTimeout, Response
 from pydantic import SecretStr, ValidationError
@@ -250,9 +252,12 @@ class _AuthenticatedTransport:
             )
         raise AssertionError(f"unexpected {method} {url}")
 
+    def get(self, url: str, **kwargs: object) -> Response:
+        raise AssertionError(f"unexpected GET {url}")
+
 
 class FailingTransport(_AuthenticatedTransport):
-    def get(self, url: str, **kwargs: object) -> None:
+    def get(self, url: str, **kwargs: object) -> NoReturn:
         raise ConnectError("refused", request=None)
 
 
@@ -1679,7 +1684,13 @@ class SecretAuthenticationFailureTransport:
         raise SecretAuthenticationDriverError(_SENSITIVE_AUTHENTICATION_VALUE)
 
 
-def _response(status_code: int, body: dict[str, object]) -> Response:
+def _json_body(recorded: object) -> Mapping[str, object]:
+    """The recorded request body, asserted to be the JSON object it is read as."""
+    assert isinstance(recorded, Mapping)
+    return recorded
+
+
+def _response(status_code: int, body: Mapping[str, object]) -> Response:
     return Response(status_code, json=body)
 
 
@@ -1696,7 +1707,13 @@ def credentials() -> _OpenMetadataCredentials:
     )
 
 
-def authenticated_client(transport: _AuthenticatedTransport) -> OpenMetadataClient:
+def authenticated_client(transport: _Transport) -> OpenMetadataClient:
+    """Typed with the client's own transport protocol, not this file's base class.
+
+    `_AuthenticatedTransport` is one convenience base among many here; demanding it
+    nominally rejected every double that implements `get` and `request` directly,
+    which is all `OpenMetadataClient` actually requires.
+    """
     return OpenMetadataClient(settings=settings(), credentials=credentials(), transport=transport)
 
 
@@ -3071,7 +3088,10 @@ def test_same_identity_in_two_tenants_keeps_distinct_exact_provider_ids() -> Non
 
 def test_catalog_snapshot_payload_is_deeply_immutable() -> None:
     input_tags = ["validation"]
-    normalized_payload = {"name": "shared", "tags": input_tags}
+    normalized_payload: dict[str, str | tuple[str, ...]] = {
+        "name": "shared",
+        "tags": tuple(input_tags),
+    }
     snapshot = CatalogObjectSnapshot(
         tenant_key="tenant-a",
         stable_identity="glossary_term:tenant-a:shared",
@@ -3082,7 +3102,8 @@ def test_catalog_snapshot_payload_is_deeply_immutable() -> None:
     )
 
     with pytest.raises(TypeError):
-        snapshot.normalized_payload["name"] = "mutated"
+        # The mapping is deliberately immutable; rejecting this write is the assertion.
+        snapshot.normalized_payload["name"] = "mutated"  # type: ignore[index]
 
     input_tags.append("mutated")
 
@@ -3180,9 +3201,10 @@ def test_lineage_acknowledgement_rejects_an_undocumented_204() -> None:
 
 def test_public_settings_reject_credential_fields() -> None:
     with pytest.raises(ValidationError):
+        # The settings model forbids credential fields; rejecting them is the assertion.
         OpenMetadataSettings(
             base_url="http://127.0.0.1:8585",
-            username="admin@open-metadata.org",
+            username="admin@open-metadata.org",  # type: ignore[call-arg]
             password=SecretStr("test-only-password"),
         )
 
@@ -3338,8 +3360,9 @@ def test_classification_is_attached_to_subject_and_lineage_uses_put() -> None:
         for request in transport.requests
         if request[0] == "POST" and request[1].endswith("/glossaryTerms")
     )
-    assert glossary_term[2] == {
-        "name": glossary_term[2]["name"],
+    glossary_term_body = _json_body(glossary_term[2])
+    assert glossary_term_body == {
+        "name": glossary_term_body["name"],
         "displayName": "term",
         "description": _description_with_metadata(
             "term definition",
@@ -3421,17 +3444,17 @@ def test_publication_references_use_governed_descriptions_and_round_trip_readbac
     )
 
     term_payloads = tuple(
-        request[2]
+        _json_body(request[2])
         for request in transport.requests
         if request[0] == "POST" and request[1].endswith("/glossaryTerms")
     )
     classification_payload = next(
-        request[2]
+        _json_body(request[2])
         for request in transport.requests
         if request[0] == "POST" and request[1].endswith("/classifications")
     )
     lineage_payload = next(
-        request[2]
+        _json_body(request[2])
         for request in transport.requests
         if request[0] == "PUT" and request[1].endswith("/lineage")
     )
@@ -3454,15 +3477,17 @@ def test_publication_references_use_governed_descriptions_and_round_trip_readbac
             "subject_ref": source.stable_identity,
         },
     )
-    assert lineage_payload["edge"]["lineageDetails"]["description"] == _description_with_metadata(
+    lineage_edge = _json_body(lineage_payload["edge"])
+    lineage_details = _json_body(lineage_edge["lineageDetails"])
+    assert lineage_details["description"] == _description_with_metadata(
         "validation", {"producer_ref": "producer-a"}
     )
     # OpenMetadata 1.13.3 persists glossary-term entity edges but logs its own
     # "Unsupported Entity Type ... for column lineage" message. Heinzel sends
     # no column-lineage payload, and independently verifies both the exact edge and
     # graph before treating the operation as successful.
-    assert "columnsLineage" not in lineage_payload["edge"]["lineageDetails"]
-    assert "sqlQuery" not in lineage_payload["edge"]["lineageDetails"]
+    assert "columnsLineage" not in lineage_details
+    assert "sqlQuery" not in lineage_details
     source_snapshot = client.get_object(tenant_key="tenant-a", identity=source.stable_identity)
     assert source_snapshot.normalized_payload["provenance_ref"] == "provenance-a"
     assert (

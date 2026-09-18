@@ -13,7 +13,9 @@ from heinzel_provider_openmetadata import (
 )
 from heinzel_provider_openmetadata.models import (
     CatalogFailureClassification,
+    ClassificationPayload,
     GlossaryTermPayload,
+    LineagePayload,
 )
 
 
@@ -21,8 +23,10 @@ class _Intent:
     operation_id = "a" * 64
     semantic_version_digest = "b" * 64
     contract_digest = "c" * 64
-    semantic_identities = ("identity-a", "identity-b")
-    semantic_objects = (
+    # Annotated variadic: inferred as fixed-length tuples, these did not satisfy the
+    # intent protocol the provider publishes against.
+    semantic_identities: tuple[str, ...] = ("identity-a", "identity-b")
+    semantic_objects: tuple[SemanticObject, ...] = (
         SemanticObject(
             object_id="customer",
             name="Customer",
@@ -98,7 +102,9 @@ class _Client:
     def ensure_classification(self, **kwargs: object) -> CatalogObjectRef:
         self.calls.append("classification")
         payload = kwargs["payload"]
-        assert isinstance(payload, object)
+        # `isinstance(payload, object)` was vacuous -- it narrowed nothing and every
+        # field read below was unchecked. Assert the payload the provider sends.
+        assert isinstance(payload, ClassificationPayload)
         return self._record(
             "tenant-a",
             "classification",
@@ -113,7 +119,7 @@ class _Client:
     def ensure_lineage(self, **kwargs: object) -> CatalogObjectRef:
         self.calls.append("lineage")
         payload = kwargs["payload"]
-        assert isinstance(payload, object)
+        assert isinstance(payload, LineagePayload)
         return self._record(
             "tenant-a",
             "lineage",

@@ -22,6 +22,7 @@ COVERED='
 apps/console/server/tests
 packages/execution-graph/tests
 packages/iir/tests
+providers/openmetadata/tests
 services/access-control/tests
 services/compiler/tests
 services/context-exposure/tests
@@ -38,7 +39,6 @@ PENDING='
 packages/contract-model/tests
 packages/provider-sdk/tests
 providers/clickhouse/tests
-providers/openmetadata/tests
 providers/postgresql/tests
 providers/snowflake/tests
 providers/stripe/tests
