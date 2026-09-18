@@ -1,17 +1,17 @@
 // Minification strips the licence banners that react, react-dom, react-router, scheduler, and
 // ajv would otherwise carry in the bundle. This plugin restores that notice out-of-band: it
-// inspects the modules Rolldown actually bundled, resolves each one back to its owning
-// `node_modules` package, and emits the concatenated licence texts as a build artifact. Hand
-// rolled rather than pulled from `rollup-plugin-license`, because that plugin targets Rollup's
-// module-graph APIs and Vite 8 bundles through Rolldown -- pulling it in would add a dependency
-// on faith that its internals still line up, for something this small to write directly.
+// inspects the modules and assets Rolldown actually bundled, resolves each one back to its
+// owning `node_modules` package, and emits the concatenated licence texts as a build artifact.
+// Hand rolled rather than pulled from `rollup-plugin-license`, because that plugin targets
+// Rollup's module-graph APIs and Vite 8 bundles through Rolldown -- pulling it in would add a
+// dependency on faith that its internals still line up, for something this small to write
+// directly.
 import { existsSync, readFileSync } from "node:fs"
-import { join, sep } from "node:path"
-import type { Rollup } from "vite"
+import { posix, resolve } from "node:path"
+import type { Plugin, Rollup } from "vite"
 
 type OutputAsset = Rollup.OutputAsset
 type OutputChunk = Rollup.OutputChunk
-type Plugin = Rollup.Plugin
 
 export interface ThirdPartyPackageMetadata {
   readonly name: string
@@ -19,11 +19,16 @@ export interface ThirdPartyPackageMetadata {
   readonly license: string
 }
 
-export type BundleLike = Record<string, Pick<OutputChunk, "type" | "moduleIds"> | OutputAsset>
+export type BundleLike = Record<
+  string,
+  Pick<OutputChunk, "type" | "moduleIds"> | Pick<OutputAsset, "type" | "originalFileNames">
+>
 
 // Font packages ship their OFL-1.1 notice through a separate, independently pinned and tested
 // mechanism -- see THIRD_PARTY_NOTICES.md and tests/release/test_third_party_notices.py. Listing
-// them again here would assert nothing further and would need its own pin to stay in sync.
+// them again here would assert nothing further and would need its own pin to stay in sync. This
+// is the only place a bundled package is skipped outright; every other package that resolves to
+// a node_modules root is either reported with its licence or reported as missing one.
 const EXCLUDED_PACKAGES = new Set<string>([
   "@fontsource-variable/ibm-plex-sans",
   "@fontsource/ibm-plex-mono",
@@ -44,34 +49,54 @@ const LICENSE_FILENAMES = [
 const OUTPUT_FILE_NAME = "licenses/THIRD_PARTY.txt"
 
 /**
- * The directory of the `node_modules` package that owns a bundled module id, or null when the
- * module id was not loaded from `node_modules` (application source, virtual modules, and so on).
- * Handles scoped packages (`@scope/name`) by keeping both path segments after `node_modules`.
+ * The directory of the `node_modules` package that owns a bundled path (a module id, or an
+ * asset's original file path), or null when the path was not loaded from `node_modules`
+ * (application source, virtual modules, and so on).
+ *
+ * Normalises `\` to `/` and splits on `/` rather than the host `path.sep`, so a path recorded
+ * with Windows separators (as Rolldown's `originalFileNames` can carry, and as a module id can
+ * carry when this plugin runs on Windows) resolves the same way as its POSIX equivalent instead
+ * of silently matching nothing. The returned root is itself `/`-joined for the same reason, and
+ * every other lookup in this module builds on it with `path.posix`, never a bare OS `path.join`.
+ * Handles scoped packages (`@scope/name`) by keeping both path segments after `node_modules`,
+ * and a path with a nested `node_modules` resolves to the innermost package, since that is the
+ * one actually bundled.
  */
-export function resolvePackageRoot(moduleId: string): string | null {
-  const marker = `${sep}node_modules${sep}`
-  const markerIndex = moduleId.lastIndexOf(marker)
-  if (markerIndex === -1) {
+export function resolvePackageRoot(rawPath: string): string | null {
+  const segments = rawPath.replaceAll("\\", "/").split("/")
+  const markerIndex = segments.lastIndexOf("node_modules")
+  if (markerIndex === -1 || markerIndex === segments.length - 1) {
     return null
   }
 
-  const afterMarker = moduleId.slice(markerIndex + marker.length)
-  const segments = afterMarker.split(sep).filter((segment) => segment.length > 0)
-  if (segments.length === 0) {
+  const nameStart = markerIndex + 1
+  const firstNameSegment = segments[nameStart]
+  if (!firstNameSegment) {
+    return null
+  }
+  const nameSegments = firstNameSegment.startsWith("@")
+    ? segments.slice(nameStart, nameStart + 2)
+    : segments.slice(nameStart, nameStart + 1)
+  if (nameSegments.length === 0 || nameSegments.some((segment) => !segment)) {
     return null
   }
 
-  const packageSegments = segments[0]?.startsWith("@") ? segments.slice(0, 2) : segments.slice(0, 1)
-  if (packageSegments.length === 0 || packageSegments.some((segment) => !segment)) {
+  return [...segments.slice(0, nameStart), ...nameSegments].join("/")
+}
+
+/** The npm package name a resolved package root ends with, read back out of the path itself. */
+function packageNameFromRoot(packageRoot: string): string | null {
+  const segments = packageRoot.split("/")
+  const markerIndex = segments.lastIndexOf("node_modules")
+  if (markerIndex === -1 || markerIndex === segments.length - 1) {
     return null
   }
-
-  return moduleId.slice(0, markerIndex + marker.length) + packageSegments.join(sep)
+  return segments.slice(markerIndex + 1).join("/")
 }
 
 /** The package name, version, and licence identifier declared by a package's own `package.json`. */
 export function readPackageMetadata(packageRoot: string): ThirdPartyPackageMetadata | null {
-  const packageJsonPath = join(packageRoot, "package.json")
+  const packageJsonPath = posix.join(packageRoot, "package.json")
   if (!existsSync(packageJsonPath)) {
     return null
   }
@@ -101,7 +126,7 @@ export function readPackageMetadata(packageRoot: string): ThirdPartyPackageMetad
 /** The path to a package's licence file, trying every filename spelling npm packages actually use. */
 export function findLicenseFile(packageRoot: string): string | null {
   for (const filename of LICENSE_FILENAMES) {
-    const candidate = join(packageRoot, filename)
+    const candidate = posix.join(packageRoot, filename)
     if (existsSync(candidate)) {
       return candidate
     }
@@ -110,31 +135,41 @@ export function findLicenseFile(packageRoot: string): string | null {
 }
 
 /**
- * Every distinct `node_modules` package backing a module in the bundle's chunks, keyed by
- * package name, first package root seen wins. Assets (fonts, images, the emitted licence file
- * itself) carry no module ids and are not inspected.
+ * Every distinct `node_modules` package root backing the bundle: a module id in a chunk, or an
+ * asset's `originalFileNames` (fonts, images, and other files pulled in through a CSS `url()`,
+ * which carry no module ids and were previously never inspected) resolved against the project
+ * root. Keyed by package root rather than package name, so two different install locations of
+ * the same package -- and so, in practice, two different versions -- are both kept rather than
+ * one silently shadowing the other.
  */
-export function collectBundledPackageRoots(bundle: BundleLike): Map<string, string> {
-  const roots = new Map<string, string>()
+export function collectBundledPackageRoots(bundle: BundleLike, root: string): Set<string> {
+  const packageRoots = new Set<string>()
+
+  const consider = (rawPath: string): void => {
+    const packageRoot = resolvePackageRoot(rawPath)
+    if (!packageRoot) {
+      return
+    }
+    const name = packageNameFromRoot(packageRoot)
+    if (name && EXCLUDED_PACKAGES.has(name)) {
+      return
+    }
+    packageRoots.add(packageRoot)
+  }
 
   for (const item of Object.values(bundle)) {
-    if (item.type !== "chunk") {
-      continue
-    }
-    for (const moduleId of item.moduleIds) {
-      const packageRoot = resolvePackageRoot(moduleId)
-      if (!packageRoot) {
-        continue
+    if (item.type === "chunk") {
+      for (const moduleId of item.moduleIds) {
+        consider(moduleId)
       }
-      const metadata = readPackageMetadata(packageRoot)
-      if (!metadata || EXCLUDED_PACKAGES.has(metadata.name) || roots.has(metadata.name)) {
-        continue
+    } else if (item.type === "asset") {
+      for (const originalFileName of item.originalFileNames) {
+        consider(resolve(root, originalFileName))
       }
-      roots.set(metadata.name, packageRoot)
     }
   }
 
-  return roots
+  return packageRoots
 }
 
 export interface ThirdPartyLicenseReport {
@@ -143,23 +178,30 @@ export interface ThirdPartyLicenseReport {
 }
 
 /**
- * The concatenated third-party licence text for a bundle, one section per package sorted by
- * name, plus the `name@version` of every package whose owning directory has no licence file.
- * A non-empty `missingLicenseFor` means the caller must fail the build: shipping code without
- * its licence text is not a state to emit output for and move on from.
+ * The concatenated third-party licence text for a bundle, one section per package root sorted
+ * by name (falling back to the root path when a package has no readable name), plus an entry
+ * identifying every package that cannot ship a licence: the package root itself when its
+ * `package.json` is missing or incomplete, or `name@version` when metadata was readable but no
+ * licence file exists. Either case means the caller must fail the build -- shipping code with no
+ * traceable licence, or with metadata too broken to identify, is not a state to emit output for
+ * and move on from.
  */
-export function buildThirdPartyLicenseReport(bundle: BundleLike): ThirdPartyLicenseReport {
-  const roots = collectBundledPackageRoots(bundle)
+export function buildThirdPartyLicenseReport(bundle: BundleLike, root: string): ThirdPartyLicenseReport {
+  const packageRoots = collectBundledPackageRoots(bundle, root)
+  const entries = [...packageRoots].map((packageRoot) => ({
+    packageRoot,
+    metadata: readPackageMetadata(packageRoot),
+  }))
+  entries.sort((a, b) =>
+    (a.metadata?.name ?? a.packageRoot).localeCompare(b.metadata?.name ?? b.packageRoot),
+  )
+
   const sections: string[] = []
   const missingLicenseFor: string[] = []
 
-  for (const name of [...roots.keys()].sort((a, b) => a.localeCompare(b))) {
-    const packageRoot = roots.get(name)
-    if (!packageRoot) {
-      continue
-    }
-    const metadata = readPackageMetadata(packageRoot)
+  for (const { packageRoot, metadata } of entries) {
     if (!metadata) {
+      missingLicenseFor.push(packageRoot)
       continue
     }
     const licenseFile = findLicenseFile(packageRoot)
@@ -180,14 +222,23 @@ export function buildThirdPartyLicenseReport(bundle: BundleLike): ThirdPartyLice
 
 /**
  * Emits `licenses/THIRD_PARTY.txt` into the build output with the licence text of every bundled
- * `node_modules` package, and fails the build if any bundled package has no licence file to
- * ship -- an omission here is a licence-compliance gap, not a warning.
+ * `node_modules` package (from chunks and from assets alike), and fails the build if any bundled
+ * package cannot ship a licence -- an omission here is a licence-compliance gap, not a warning.
+ *
+ * Only the main build is registered (see `vite.config.ts`); a `worker` build has its own,
+ * separate `plugins` array (`build.rollupOptions`/`worker.plugins`), so this plugin must be added
+ * there too if the console ever gains a web worker that bundles third-party code.
  */
 export function thirdPartyLicensesPlugin(): Plugin {
+  let projectRoot = process.cwd()
+
   return {
     name: "heinzel:third-party-licenses",
+    configResolved(config) {
+      projectRoot = config.root
+    },
     generateBundle(_outputOptions, bundle) {
-      const report = buildThirdPartyLicenseReport(bundle)
+      const report = buildThirdPartyLicenseReport(bundle, projectRoot)
 
       if (report.missingLicenseFor.length > 0) {
         this.error(

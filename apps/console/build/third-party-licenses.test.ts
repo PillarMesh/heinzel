@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, sep } from "node:path"
+import { join } from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 
 import {
@@ -25,47 +25,66 @@ afterEach(() => {
 function fakePackage(
   root: string,
   name: string,
-  options: { version?: string; license?: string; licenseText?: string | null } = {},
+  options: {
+    version?: string
+    license?: string
+    licenseText?: string | null
+    packageJson?: Record<string, unknown> | null
+  } = {},
 ): string {
   const packageDir = join(root, "node_modules", ...name.split("/"))
   mkdirSync(packageDir, { recursive: true })
-  writeFileSync(
-    join(packageDir, "package.json"),
-    JSON.stringify({
+  if (options.packageJson !== null) {
+    const packageJson = options.packageJson ?? {
       name,
       version: options.version ?? "1.0.0",
       license: options.license ?? "MIT",
-    }),
-  )
+    }
+    writeFileSync(join(packageDir, "package.json"), JSON.stringify(packageJson))
+  }
   if (options.licenseText !== null) {
     writeFileSync(join(packageDir, "LICENSE"), options.licenseText ?? `${name} licence text`)
   }
   return packageDir
 }
 
+/** A minimal chunk entry for BundleLike, the shape collectBundledPackageRoots reads. */
+function chunk(moduleIds: string[]): BundleLike[string] {
+  return { type: "chunk", moduleIds }
+}
+
+/** A minimal asset entry for BundleLike, the shape collectBundledPackageRoots reads. */
+function asset(originalFileNames: string[]): BundleLike[string] {
+  return { type: "asset", originalFileNames }
+}
+
 describe("resolvePackageRoot", () => {
   test("finds the package directory for a plain package's deep module", () => {
-    const moduleId = `${sep}repo${sep}node_modules${sep}scheduler${sep}cjs${sep}scheduler.js`
+    const moduleId = "/repo/node_modules/scheduler/cjs/scheduler.js"
 
-    expect(resolvePackageRoot(moduleId)).toBe(`${sep}repo${sep}node_modules${sep}scheduler`)
+    expect(resolvePackageRoot(moduleId)).toBe("/repo/node_modules/scheduler")
   })
 
   test("keeps both segments of a scoped package name", () => {
-    const moduleId = `${sep}repo${sep}node_modules${sep}@scope${sep}pkg${sep}index.js`
+    const moduleId = "/repo/node_modules/@scope/pkg/index.js"
 
-    expect(resolvePackageRoot(moduleId)).toBe(`${sep}repo${sep}node_modules${sep}@scope${sep}pkg`)
+    expect(resolvePackageRoot(moduleId)).toBe("/repo/node_modules/@scope/pkg")
   })
 
   test("resolves the innermost package for a nested node_modules install", () => {
-    const moduleId = `${sep}repo${sep}node_modules${sep}outer${sep}node_modules${sep}inner${sep}index.js`
+    const moduleId = "/repo/node_modules/outer/node_modules/inner/index.js"
 
-    expect(resolvePackageRoot(moduleId)).toBe(
-      `${sep}repo${sep}node_modules${sep}outer${sep}node_modules${sep}inner`,
-    )
+    expect(resolvePackageRoot(moduleId)).toBe("/repo/node_modules/outer/node_modules/inner")
   })
 
   test("returns null for application source outside node_modules", () => {
-    expect(resolvePackageRoot(`${sep}repo${sep}web${sep}src${sep}app.tsx`)).toBeNull()
+    expect(resolvePackageRoot("/repo/web/src/app.tsx")).toBeNull()
+  })
+
+  test("resolves a Windows-style backslash path the same as its forward-slash equivalent", () => {
+    const moduleId = "C:\\repo\\node_modules\\@scope\\pkg\\dist\\index.js"
+
+    expect(resolvePackageRoot(moduleId)).toBe("C:/repo/node_modules/@scope/pkg")
   })
 })
 
@@ -90,6 +109,15 @@ describe("readPackageMetadata and findLicenseFile", () => {
     expect(readPackageMetadata(join(workspaceDir, "node_modules", "missing"))).toBeNull()
   })
 
+  test("returns null when package.json has no name or version", () => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
+    const packageDir = fakePackage(workspaceDir, "half-described", {
+      packageJson: { license: "MIT" },
+    })
+
+    expect(readPackageMetadata(packageDir)).toBeNull()
+  })
+
   test("finds a LICENSE spelled with the British suffix", () => {
     workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
     const packageDir = fakePackage(workspaceDir, "brolly", { licenseText: null })
@@ -106,32 +134,89 @@ describe("readPackageMetadata and findLicenseFile", () => {
   })
 })
 
-describe("collectBundledPackageRoots and buildThirdPartyLicenseReport", () => {
-  test("collects one root per package name, deduplicating repeated module ids", () => {
+describe("collectBundledPackageRoots", () => {
+  test("collects one root per package, deduplicating repeated module ids", () => {
     workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
     const reactDir = fakePackage(workspaceDir, "react")
     fakePackage(workspaceDir, "@fontsource/ibm-plex-mono", { license: "OFL-1.1" })
 
     const bundle: BundleLike = {
-      "index.js": {
-        type: "chunk",
-        moduleIds: [
-          join(reactDir, "index.js"),
-          join(reactDir, "cjs", "react.production.js"),
-          join(workspaceDir, "node_modules", "@fontsource", "ibm-plex-mono", "index.css"),
-          join(workspaceDir, "web", "src", "app.tsx"),
-        ],
-      },
-      "font.woff2": { type: "asset", fileName: "font.woff2", source: "" } as BundleLike[string],
+      "index.js": chunk([
+        join(reactDir, "index.js"),
+        join(reactDir, "cjs", "react.production.js"),
+        join(workspaceDir, "node_modules", "@fontsource", "ibm-plex-mono", "index.css"),
+        join(workspaceDir, "web", "src", "app.tsx"),
+      ]),
     }
 
-    const roots = collectBundledPackageRoots(bundle)
+    const roots = collectBundledPackageRoots(bundle, workspaceDir)
 
     // The font package is excluded: its OFL-1.1 notice is pinned and tested separately.
-    expect([...roots.keys()]).toEqual(["react"])
-    expect(roots.get("react")).toBe(reactDir)
+    expect([...roots]).toEqual([reactDir])
   })
 
+  test("keeps two different install locations of the same package name as two roots", () => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
+    const hoistedDir = fakePackage(workspaceDir, "left-pad", { version: "1.0.0" })
+    const nestedDir = join(workspaceDir, "node_modules", "consumer", "node_modules", "left-pad")
+    mkdirSync(nestedDir, { recursive: true })
+    writeFileSync(
+      join(nestedDir, "package.json"),
+      JSON.stringify({ name: "left-pad", version: "2.0.0", license: "MIT" }),
+    )
+    writeFileSync(join(nestedDir, "LICENSE"), "left-pad 2.0.0 licence text")
+
+    const bundle: BundleLike = {
+      "index.js": chunk([join(hoistedDir, "index.js"), join(nestedDir, "index.js")]),
+    }
+
+    const roots = collectBundledPackageRoots(bundle, workspaceDir)
+
+    expect(roots.size).toBe(2)
+    expect(roots.has(hoistedDir)).toBe(true)
+    expect(roots.has(nestedDir)).toBe(true)
+  })
+
+  test("resolves an asset's originalFileNames against the project root and finds its package", () => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
+    const fontDir = fakePackage(workspaceDir, "some-font-package", {
+      version: "3.0.0",
+      license: "OFL-1.1",
+    })
+    const fontFile = join(fontDir, "files", "some-font.woff2")
+    mkdirSync(join(fontDir, "files"), { recursive: true })
+    writeFileSync(fontFile, "binary-ish font bytes")
+
+    const bundle: BundleLike = {
+      "assets/some-font.woff2": asset([fontFile]),
+    }
+
+    const roots = collectBundledPackageRoots(bundle, workspaceDir)
+
+    expect([...roots]).toEqual([fontDir])
+  })
+
+  test("still excludes a font asset whose originalFileNames points into an excluded package", () => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
+    const fontDir = fakePackage(workspaceDir, "@fontsource/ibm-plex-mono", {
+      version: "5.3.0",
+      license: "OFL-1.1",
+    })
+    const fontFile = join(fontDir, "files", "ibm-plex-mono.woff2")
+    mkdirSync(join(fontDir, "files"), { recursive: true })
+    writeFileSync(fontFile, "binary-ish font bytes")
+
+    const bundle: BundleLike = {
+      "assets/ibm-plex-mono.woff2": asset([fontFile]),
+    }
+
+    const roots = collectBundledPackageRoots(bundle, workspaceDir)
+
+    expect(roots.size).toBe(0)
+  })
+})
+
+describe("buildThirdPartyLicenseReport", () => {
   test("builds one sorted section per bundled package with its licence text", () => {
     workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
     const reactDir = fakePackage(workspaceDir, "react", {
@@ -146,13 +231,10 @@ describe("collectBundledPackageRoots and buildThirdPartyLicenseReport", () => {
     })
 
     const bundle: BundleLike = {
-      "index.js": {
-        type: "chunk",
-        moduleIds: [join(ajvDir, "dist", "ajv.js"), join(reactDir, "index.js")],
-      },
+      "index.js": chunk([join(ajvDir, "dist", "ajv.js"), join(reactDir, "index.js")]),
     }
 
-    const report = buildThirdPartyLicenseReport(bundle)
+    const report = buildThirdPartyLicenseReport(bundle, workspaceDir)
 
     expect(report.missingLicenseFor).toEqual([])
     const ajvIndex = report.text.indexOf("ajv@8.20.0")
@@ -164,6 +246,33 @@ describe("collectBundledPackageRoots and buildThirdPartyLicenseReport", () => {
     expect(report.text).toContain("ajv licence body")
   })
 
+  test("reports both install locations of a duplicated package, each with its own version", () => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
+    const hoistedDir = fakePackage(workspaceDir, "left-pad", {
+      version: "1.0.0",
+      licenseText: "left-pad 1.0.0 licence text",
+    })
+    const nestedDir = join(workspaceDir, "node_modules", "consumer", "node_modules", "left-pad")
+    mkdirSync(nestedDir, { recursive: true })
+    writeFileSync(
+      join(nestedDir, "package.json"),
+      JSON.stringify({ name: "left-pad", version: "2.0.0", license: "MIT" }),
+    )
+    writeFileSync(join(nestedDir, "LICENSE"), "left-pad 2.0.0 licence text")
+
+    const bundle: BundleLike = {
+      "index.js": chunk([join(hoistedDir, "index.js"), join(nestedDir, "index.js")]),
+    }
+
+    const report = buildThirdPartyLicenseReport(bundle, workspaceDir)
+
+    expect(report.missingLicenseFor).toEqual([])
+    expect(report.text).toContain("left-pad 1.0.0 licence text")
+    expect(report.text).toContain("left-pad 2.0.0 licence text")
+    expect(report.text.match(/left-pad@1\.0\.0/g)).toHaveLength(1)
+    expect(report.text.match(/left-pad@2\.0\.0/g)).toHaveLength(1)
+  })
+
   test("reports a bundled package with no licence file as missing, rather than dropping it silently", () => {
     workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
     const packageDir = fakePackage(workspaceDir, "no-license-here", {
@@ -171,12 +280,37 @@ describe("collectBundledPackageRoots and buildThirdPartyLicenseReport", () => {
       licenseText: null,
     })
 
-    const bundle: BundleLike = {
-      "index.js": { type: "chunk", moduleIds: [join(packageDir, "index.js")] },
-    }
+    const bundle: BundleLike = { "index.js": chunk([join(packageDir, "index.js")]) }
 
-    const report = buildThirdPartyLicenseReport(bundle)
+    const report = buildThirdPartyLicenseReport(bundle, workspaceDir)
 
     expect(report.missingLicenseFor).toEqual(["no-license-here@2.0.0"])
+  })
+
+  test("reports a bundled package with no package.json as missing, naming the package root", () => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
+    const packageDir = join(workspaceDir, "node_modules", "no-metadata-here")
+    mkdirSync(packageDir, { recursive: true })
+    writeFileSync(join(packageDir, "index.js"), "module.exports = {}")
+
+    const bundle: BundleLike = { "index.js": chunk([join(packageDir, "index.js")]) }
+
+    const report = buildThirdPartyLicenseReport(bundle, workspaceDir)
+
+    expect(report.missingLicenseFor).toEqual([packageDir])
+    expect(report.text).toBe("")
+  })
+
+  test("reports a bundled package with an incomplete package.json as missing, not silently dropped", () => {
+    workspaceDir = mkdtempSync(join(tmpdir(), "third-party-licenses-"))
+    const packageDir = fakePackage(workspaceDir, "half-described", {
+      packageJson: { license: "MIT" },
+    })
+
+    const bundle: BundleLike = { "index.js": chunk([join(packageDir, "index.js")]) }
+
+    const report = buildThirdPartyLicenseReport(bundle, workspaceDir)
+
+    expect(report.missingLicenseFor).toEqual([packageDir])
   })
 })
