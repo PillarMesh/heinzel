@@ -620,8 +620,8 @@ class PolicyPermittedDataProductReader:
 
     Proposals are owned per request, not per tenant: `list_proposals` requires a
     request identifier and there is no tenant-wide listing. The tenant's requests are
-    therefore walked first. An earlier version called `list_proposals(tenant_id)`,
-    which no owning repository accepts, so every data-product read raised.
+    therefore walked first. Passing a tenant identifier to `list_proposals` is not
+    accepted by any owning repository and would make every data-product read raise.
     """
 
     def __init__(

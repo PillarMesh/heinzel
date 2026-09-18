@@ -43,7 +43,7 @@ Preserve future `customer_cloud` and `customer_on_prem` placement modes in which
 - Dedicated warehouse, OpenMetadata, and Superset deployments simplify tenant isolation and retirement but increase cost.
 - The platform must publish a clear shared-responsibility model, restore evidence, and open-format exit path.
 - The repository requires explicit ownership for request management, warehouse control, catalog control, semantic registry, and trigger materialization while reusing the existing compiler, contract, provider, runtime, evidence, knowledge-graph, dbt, and context-exposure boundaries.
-- The PostgreSQL-to-Snowflake snapshot remains in the repository as a proof of compiler, runtime and evidence behavior, but Snowflake is not a managed product destination. The snapshot contract's `evidence_retention` value has since been renamed to `snapshot_30_days` without a change to its `schema_version` of `1`, so snapshot contract records written with the earlier value no longer validate against the current contract model.
+- The PostgreSQL-to-Snowflake snapshot remains in the repository as a proof of compiler, runtime and evidence behavior, but Snowflake is not a managed product destination. The snapshot contract, at `schema_version` `1`, accepts only `snapshot_30_days` as its `evidence_retention` value.
 
 ## Provider inventory
 
