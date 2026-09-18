@@ -43,8 +43,6 @@ Every statement case ran this exact statement, digest `21bf1cf19fae5a92451fd84f5
 fails if the compiler's emitted statement ever differs from it, so this evidence cannot silently
 outlive a change to the emitter.
 
-The guard's error text was renamed after capture; outcomes record only SQLSTATE, so they are unaffected. A live re-capture is pending.
-
 ```sql
 SELECT "revenue_events"."region" AS "region", CAST(pg_catalog.sum(CAST("revenue_events"."revenue" AS NUMERIC(57,9))) AS NUMERIC(57,9)) AS "total_revenue" FROM (SELECT (CASE WHEN pg_catalog.jsonb_typeof("payload" OPERATOR(pg_catalog.->) 'region') OPERATOR(pg_catalog.=) 'string' THEN "payload" OPERATOR(pg_catalog.->>) 'region' ELSE CAST(CAST('heinzel refused a string landing value in generation ' OPERATOR(pg_catalog.||) "generation_id" AS NUMERIC) AS pg_catalog.text) END) COLLATE pg_catalog."C" AS "region", CAST(CASE WHEN pg_catalog.jsonb_typeof("payload" OPERATOR(pg_catalog.->) 'revenue') OPERATOR(pg_catalog.=) 'string' AND "payload" OPERATOR(pg_catalog.->>) 'revenue' OPERATOR(pg_catalog.~) '^-?(0|[1-9][0-9]{0,28})([.][0-9]{1,9})?$' THEN "payload" OPERATOR(pg_catalog.->>) 'revenue' ELSE 'heinzel refused a decimal landing value in generation ' OPERATOR(pg_catalog.||) "generation_id" END AS NUMERIC(38,9)) AS "revenue" FROM "raw"."raw_sales" WHERE "generation_id" OPERATOR(pg_catalog.=) 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS "revenue_events" GROUP BY "revenue_events"."region"
 ```
