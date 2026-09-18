@@ -92,7 +92,7 @@ def test_unresolved_review_returns_to_investigating_before_no_valid_plan() -> No
     assert terminal.state is RequestState.NO_VALID_PLAN
 
 
-def test_request_level_decision_kind_remains_exactly_plan_one_vocabulary() -> None:
+def test_request_decision_kinds_are_exactly_approve_reject_and_request_changes() -> None:
     assert {kind.value for kind in DecisionKind} == {
         "approve",
         "reject",

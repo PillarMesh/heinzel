@@ -54,7 +54,7 @@ def candidate_set_payload() -> dict[str, object]:
     }
 
 
-def test_candidate_set_fields_match_the_addendum_order() -> None:
+def test_candidate_set_fields_are_exact_and_ordered() -> None:
     assert tuple(SemanticCandidateSet.model_fields) == (
         "schema_version",
         "set_id",
