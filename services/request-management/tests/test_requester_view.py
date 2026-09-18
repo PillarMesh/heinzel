@@ -296,7 +296,7 @@ def test_requester_view_suppresses_no_valid_plan_outside_its_terminal_state(
 def test_requester_view_excludes_other_actors_semantic_decisions() -> None:
     fulfillment, requests, repository = service()
     investigating, _ = submit_and_clarify(fulfillment, requests)
-    subject_digest = digest("plan-2-review-subject")
+    subject_digest = digest("semantic-formation-review-subject")
     for actor_id in ("requester-a", "architect-a"):
         requests.record_decision(
             tenant_id="tenant-a",

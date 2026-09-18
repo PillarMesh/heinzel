@@ -311,7 +311,9 @@ class RequestManagementService:
         request = self.get(tenant_id, request_id)
         self._assert_current_revision(request, request_revision)
         if self._repository.has_fulfillment_proposal(tenant_id, request_id):
-            raise ValueError("Plan 2 decision cannot bind a fulfillment proposal revision")
+            raise ValueError(
+                "a semantic formation decision cannot bind a fulfillment proposal revision"
+            )
         try:
             return self._repository.record_decision(
                 tenant_id,

@@ -41,7 +41,7 @@ _REQUESTER_REQUEST_FIELDS = {
 }
 
 # Reviewer-only vocabulary from RequestDetailView and its proposal models. A requester projection
-# that grows any of these has crossed the Plan 3B read boundary this surface depends on.
+# that grows any of these has crossed the request fulfillment read boundary this surface depends on.
 _FORBIDDEN_REQUESTER_FIELDS = {
     "candidate",
     "effective_scope",

@@ -280,7 +280,7 @@ def test_no_proposal_can_be_created_while_request_is_clarifying() -> None:
         )
 
 
-def test_plan_2_decision_cannot_be_recorded_on_a_fulfillment_proposal_revision() -> None:
+def test_semantic_formation_decision_cannot_bind_a_fulfillment_proposal_revision() -> None:
     fulfillment, requests, _ = service()
     investigating, _ = submit_and_clarify(fulfillment, requests)
     fulfillment.propose_answer(
