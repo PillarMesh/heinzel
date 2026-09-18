@@ -16,6 +16,7 @@ apps/console/dist/
 apps/console/test-results/
 apps/console/test-results-governed/
 apps/console/playwright-report/
+apps/console/docs/screenshots/*.png
 .worktrees/
 worktrees/
 output/

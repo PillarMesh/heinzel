@@ -1308,7 +1308,7 @@ def run_warehouse_lifecycle(
             raise
         except BaseException:
             raise WarehouseLifecycleHarnessError(
-                f"Warehouse lifecycle witnessed lifecycle failed for {engine_kind}"
+                f"Witnessed warehouse lifecycle failed for {engine_kind}"
             ) from None
         if capture.result is None or capture.result.engine_kind != engine_kind:
             raise WarehouseLifecycleHarnessError("engine witness returned the wrong engine result")

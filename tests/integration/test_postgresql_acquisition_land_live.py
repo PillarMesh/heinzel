@@ -2,11 +2,10 @@
 
 Other tests prove LAND on its own, against hand-built segments. This journey proves LAND inside
 the composed acquisition checkpoint path on the digest-pinned PostgreSQL 18.6 image: fresh source
-rows are prepared by
-`compose_acquisition_application` under a contract activated through the intent-bound service, and
-`AcquisitionLandingCoordinator` reads the verified batch artifacts, lands each segment through
-`DestinationLandingRuntime` into the raw table, and acknowledges the checkpoint with a consumer
-receipt bound to those LAND receipts.
+rows are prepared by `compose_acquisition_application` under a contract activated through the
+intent-bound service, and `AcquisitionLandingCoordinator` reads the verified batch artifacts, lands
+each segment through `DestinationLandingRuntime` into the raw table, and acknowledges the
+checkpoint with a consumer receipt bound to those LAND receipts.
 
 It proves that the checkpoint does not move while LAND is refused, that one committed LAND is the
 only thing that moves it, that replaying the landed batch writes no rows or receipts and returns

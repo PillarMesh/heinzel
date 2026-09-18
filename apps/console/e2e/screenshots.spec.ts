@@ -3,11 +3,8 @@ import {expect, test, type Page} from "@playwright/test"
 import {expectFixtureBanner, openRequest, resetDemoFixture} from "./demo-fixture"
 
 /**
- * Generates the deterministic demonstration package described in section 12 of the
- * design. Running this file rewrites `docs/screenshots/`.
- *
- * Two of the eight named images cannot be produced: see the `fixme` entries at the
- * end and `docs/screenshots/README.md`.
+ * Captures the console demonstration screens into `docs/screenshots/`. Two screens
+ * cannot be produced: see the `fixme` entries at the end and `docs/screenshots/README.md`.
  */
 
 // See `architect-journey.spec.ts`: the served bundle does not execute under the
@@ -16,8 +13,7 @@ import {expectFixtureBanner, openRequest, resetDemoFixture} from "./demo-fixture
 const SCREENSHOT_DIRECTORY = "docs/screenshots"
 
 // Anything that would tie a published image to this machine, this operator, or a
-// real customer. The images ship in the repository, so the check runs before every
-// capture rather than as a review habit.
+// real customer. The check runs before every capture rather than as a review habit.
 const FORBIDDEN_PATTERNS: readonly RegExp[] = [
   /\/Users\//,
   /\/home\/[a-z]/,
@@ -115,7 +111,7 @@ test("no-valid-plan", async ({page}) => {
 
 test("evidence-drawer-medium", async ({page}) => {
   // The medium viewport is where the evidence drawer stops being a column and
-  // becomes a dialog, which is the behavior section 12 asks to show.
+  // becomes a dialog, which is the behavior this capture shows.
   await page.setViewportSize({width: 1024, height: 768})
   await openRequest(page, "request-access")
   await page.getByRole("button", {name: "Show evidence"}).click()

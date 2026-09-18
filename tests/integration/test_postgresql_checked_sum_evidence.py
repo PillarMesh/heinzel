@@ -1,7 +1,8 @@
 """Live checked SUM evidence for PostgreSQL activation of PRODUCT-SQL-V2-PROJECT-SUM-001.
 
-Activation needs an observation, not an argument: what the pinned PostgreSQL engine actually
-returns for the emitted product statement at each numeric boundary the checked SUM relies on.
+Activation needs an observation, not only the static bound argument: what the pinned PostgreSQL
+engine actually returns for the emitted product statement at each numeric boundary the checked SUM
+relies on.
 
 The live test runs every case against the exact pinned image, through the statement the
 compiler emits, and compares the result with the committed evidence bundle. Setting
