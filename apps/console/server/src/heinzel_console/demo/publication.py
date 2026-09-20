@@ -55,10 +55,11 @@ _AUTHORITY_VALIDITY = timedelta(days=365)
 
 
 def _demo_digest(purpose: str) -> str:
-    """A 64-character hex digest derived from the demonstration's own content.
+    """A 64-character hex digest derived from a purpose label, not from any artifact.
 
-    Digest-shaped fields are derived rather than written as literals so that nothing in the
-    demonstration reads as a real, meaningful digest of a real artifact.
+    These fields name evidence the demonstration does not have: there is no candidate set
+    and no review bundle to hash. Deriving a distinct placeholder per purpose keeps the
+    demonstration from carrying a literal that could be mistaken for a real digest.
     """
     return digest({"heinzel_demo": purpose, "tenant_id": DEMO_TENANT_ID})
 
@@ -195,6 +196,12 @@ def build_demo_publication(stores: DemoStores, *, clock: Callable[[], datetime])
     rather than written to again, so that a second run of the demonstration is a no-op.
     """
     now = clock()
+    if now.tzinfo is None or now.utcoffset() != timedelta(0):
+        # Checked here rather than left to the artifact validators, because the reload path
+        # below constructs no artifact and would otherwise accept any clock at all.
+        raise ValueError("the demonstration clock must return timezone-aware UTC")
+    # `valid_until` is consumed as `FulfillmentAuthorityObservation.valid_until`; that
+    # observation's `maximum_expiry` must cover the same horizon.
     valid_until = now + _AUTHORITY_VALIDITY
     published = stores.publications.list_publications(tenant_id=DEMO_TENANT_ID)
     if published:

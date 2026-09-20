@@ -20,6 +20,7 @@ dependencies = [
   "heinzel-contract-service",
   "heinzel-evidence",
   "heinzel-knowledge-graph",
+  "heinzel-provider-openmetadata",
   "heinzel-provider-sdk",
   "heinzel-request-management",
   "heinzel-runtime",
@@ -43,6 +44,7 @@ heinzel-contract-model = { workspace = true }
 heinzel-contract-service = { workspace = true }
 heinzel-evidence = { workspace = true }
 heinzel-knowledge-graph = { workspace = true }
+heinzel-provider-openmetadata = { workspace = true }
 heinzel-provider-sdk = { workspace = true }
 heinzel-request-management = { workspace = true }
 heinzel-runtime = { workspace = true }
