@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from heinzel_console.demo.collaborators import (
@@ -9,24 +9,37 @@ from heinzel_console.demo.collaborators import (
     DEMO_ARCHITECT_PRINCIPAL_REF,
     DEMO_REQUESTER_ID,
     DEMO_REQUESTER_PRINCIPAL_REF,
+    DemoAnswerCandidateProvider,
     DemoAuthorityResolver,
     DemoRoleResolver,
     build_demo_snapshot_resolver,
     demo_clock,
 )
-from heinzel_console.demo.publication import DEMO_TENANT_ID, build_demo_publication
+from heinzel_console.demo.publication import (
+    DEMO_TENANT_ID,
+    DemoPublication,
+    build_demo_publication,
+)
 from heinzel_console.demo.stores import DemoStores
-from heinzel_request_management import InboxRequest, RequestState, ResolutionFailure
-from heinzel_request_management.models import StakeholderQuestion
+from heinzel_request_management import (
+    FulfillmentGroundingSnapshot,
+    FulfillmentPolicySnapshot,
+    InboxRequest,
+    RequestState,
+    ResolutionFailure,
+)
+from heinzel_request_management.models import DataAccessRequest, StakeholderQuestion
 
 NOW = datetime(2026, 9, 20, 12, tzinfo=UTC)
+# The demonstration's own question, which names exactly one published term.
+DEMO_QUESTION = "What is the daily order count?"
 
 
 def _clock(moment: datetime) -> Callable[[], datetime]:
     return lambda: moment
 
 
-def _question(*, question: str = "How many orders per day?") -> InboxRequest:
+def _question(*, question: str = DEMO_QUESTION) -> InboxRequest:
     return InboxRequest(
         request_id="request-demo-1",
         tenant_id=DEMO_TENANT_ID,
@@ -37,6 +50,34 @@ def _question(*, question: str = "How many orders per day?") -> InboxRequest:
         submitted_at=NOW,
         updated_at=NOW,
     )
+
+
+def _access_request(*, data_product_id: str) -> InboxRequest:
+    return InboxRequest(
+        request_id="request-demo-2",
+        tenant_id=DEMO_TENANT_ID,
+        requester_id=DEMO_REQUESTER_ID,
+        payload=DataAccessRequest(
+            purpose="weekly review",
+            data_product_id=data_product_id,
+            requested_fields=("daily-order-count",),
+            access_mode="dashboard",
+            expires_at=NOW + timedelta(days=1),
+        ),
+        state=RequestState.INVESTIGATING,
+        revision=2,
+        submitted_at=NOW,
+        updated_at=NOW,
+    )
+
+
+def _resolve(
+    stores: DemoStores, published: DemoPublication, request: InboxRequest
+) -> tuple[FulfillmentGroundingSnapshot, FulfillmentPolicySnapshot] | ResolutionFailure:
+    resolver = build_demo_snapshot_resolver(
+        publications=stores.publications, publication=published, clock=_clock(NOW)
+    )
+    return resolver.resolve(tenant_id=DEMO_TENANT_ID, request=request)
 
 
 def test_the_role_resolver_grants_only_the_demonstration_pairs() -> None:
@@ -122,5 +163,71 @@ def test_the_authority_observation_uses_the_demonstration_window(tmp_path: Path)
         assert observation.valid_until == published.valid_until
         assert observation.maximum_expiry is not None
         assert observation.maximum_expiry >= published.valid_until
+    finally:
+        stores.close()
+
+
+def test_a_question_naming_no_published_term_is_refused(tmp_path: Path) -> None:
+    stores = DemoStores(tmp_path / "state")
+    try:
+        published = build_demo_publication(stores, clock=_clock(NOW))
+        resolved = _resolve(
+            stores, published, _question(question="What is the CEO's home address?")
+        )
+        assert isinstance(resolved, ResolutionFailure), (
+            f"a question naming no published term was grounded anyway: {resolved!r}"
+        )
+        assert resolved.reason_codes == ("published_semantic_term_not_found",)
+    finally:
+        stores.close()
+
+
+def test_a_question_naming_two_published_terms_is_refused_as_ambiguous(tmp_path: Path) -> None:
+    stores = DemoStores(tmp_path / "state")
+    try:
+        published = build_demo_publication(stores, clock=_clock(NOW))
+        resolved = _resolve(
+            stores,
+            published,
+            _question(question="Is the daily order count commercial information?"),
+        )
+        assert isinstance(resolved, ResolutionFailure), (
+            f"a question naming two published terms was grounded anyway: {resolved!r}"
+        )
+        assert resolved.reason_codes == ("published_semantic_term_ambiguous",)
+    finally:
+        stores.close()
+
+
+def test_a_data_access_request_for_an_unknown_product_is_refused(tmp_path: Path) -> None:
+    stores = DemoStores(tmp_path / "state")
+    try:
+        published = build_demo_publication(stores, clock=_clock(NOW))
+        resolved = _resolve(stores, published, _access_request(data_product_id="payroll_secrets"))
+        assert isinstance(resolved, ResolutionFailure), (
+            f"an unpublished data product was grounded anyway: {resolved!r}"
+        )
+        assert resolved.reason_codes == ("published_data_product_not_found",)
+    finally:
+        stores.close()
+
+
+def test_the_answer_candidate_restates_the_published_definition(tmp_path: Path) -> None:
+    stores = DemoStores(tmp_path / "state")
+    try:
+        published = build_demo_publication(stores, clock=_clock(NOW))
+        resolved = _resolve(stores, published, _question())
+        assert not isinstance(resolved, ResolutionFailure), (
+            f"the demonstration question was refused: {resolved!r}"
+        )
+        grounding, _policy = resolved
+        draft = DemoAnswerCandidateProvider(publication=published).propose(
+            request=_question(), grounding=grounding
+        )
+        # The demonstration restates the approved definition and never invents a number.
+        assert draft.answer_text == (
+            "Daily order count is confirmed customer orders per calendar day."
+        )
+        assert draft.disclosure_classifications == ()
     finally:
         stores.close()

@@ -10,10 +10,11 @@ Nothing in this package imports from `tests/`, and no test module is executed at
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_model import ArtifactReference, SemanticObject, digest
 from heinzel_request_management import (
     FreshnessDisposition,
     FulfillmentGroundingSnapshot,
@@ -22,6 +23,7 @@ from heinzel_request_management import (
     ResolutionFailure,
     StakeholderAnswerDraft,
 )
+from heinzel_request_management.models import DataAccessRequest, StakeholderQuestion
 from heinzel_semantic_registry import (
     CatalogPublicationRepository,
     FulfillmentAuthorityObservation,
@@ -48,6 +50,49 @@ DEMO_ARCHITECT_ID = "architect-demo"
 DEMO_REQUESTER_ID = "requester-demo"
 DEMO_ARCHITECT_PRINCIPAL_REF = "role:data_engineering_architect"
 DEMO_REQUESTER_PRINCIPAL_REF = f"principal:{DEMO_REQUESTER_ID}"
+
+
+def _words(text: str) -> tuple[str, ...]:
+    # Unicode word characters, with underscore as a separator: "Umsätze" is one word, and
+    # "customer_audit" reads the same as "Customer audit".
+    return tuple(word for word in re.split(r"[\W_]+", text.casefold()) if word)
+
+
+def _semantic_matches(
+    *, semantic_objects: tuple[SemanticObject, ...], request: InboxRequest
+) -> tuple[SemanticObject, ...]:
+    """Every published term the question names as whole words.
+
+    Matching is on word sequences, never substrings, so "invoiced" does not name "Invoice". A
+    term whose words sit wholly inside a longer named term is discarded, so asking about
+    "Daily order count" names that term rather than also naming "Order".
+
+    This is demonstration-grade: a real deployment resolves the question against the governed
+    semantic layer rather than by matching words. It exists because without it the
+    demonstration grounds every question in its one publication and answers all of them.
+    """
+    if not isinstance(request.payload, StakeholderQuestion):
+        return ()
+    question = _words(request.payload.question)
+    spans: list[tuple[int, int, SemanticObject]] = []
+    for semantic_object in semantic_objects:
+        for phrase in {_words(semantic_object.name), _words(semantic_object.object_id)}:
+            if not phrase:
+                continue
+            spans.extend(
+                (start, start + len(phrase), semantic_object)
+                for start in range(len(question) - len(phrase) + 1)
+                if question[start : start + len(phrase)] == phrase
+            )
+    named = {
+        id(semantic_object): semantic_object
+        for start, end, semantic_object in spans
+        if not any(
+            other_start <= start and end <= other_end and (other_end - other_start) > (end - start)
+            for other_start, other_end, _ in spans
+        )
+    }
+    return tuple(named.values())
 
 
 def demo_clock() -> datetime:
@@ -85,11 +130,21 @@ class DemoAuthorityResolver:
     decision point over live entitlements, approvals and classification rules, and the
     validity window is the one that authority itself asserts.
 
-    The window here is the demonstration publication's own, which is deliberately long:
-    the fulfillment adapter refuses on an expired authority, so a window measured in hours
-    would leave a demonstration that has been left running refusing every request with no
-    visible cause. `maximum_expiry` covers the same horizon, because it flows into the
-    expiry of the delivered access grant and a nearer value would truncate it silently.
+    The window here is the demonstration publication's own, which is deliberately long. Once
+    `valid_until` has passed, this resolver can no longer build an observation at all: the
+    model validator rejects a non-positive window, and the adapter turns that into
+    `authority_resolution_failed` — not `entitlement_expired`, so nothing in the refusal
+    says the window is what lapsed. A window measured in hours would therefore leave a
+    demonstration that has been left running refusing every request with no visible cause.
+    Restarting the demonstration re-derives the window from the current clock and clears it.
+
+    `maximum_expiry` covers the same horizon, because it flows into the expiry of the
+    delivered access grant and a nearer value would truncate it silently.
+
+    It refuses, as a value rather than an exception, anything its one publication cannot
+    ground: the grounding is built from the whole publication, so without these branches
+    every question would be answered with the published definition regardless of what it
+    asked.
     """
 
     def __init__(
@@ -114,6 +169,44 @@ class DemoAuthorityResolver:
             tenant_id=tenant_id, operation_id=intent.operation_id
         )
         product = integration_contract.destination_product
+        if isinstance(request.payload, DataAccessRequest):
+            if request.payload.data_product_id != product.product_name:
+                return ResolutionFailure(
+                    reason_codes=("published_data_product_not_found",),
+                    constraint_refs=(),
+                    smallest_changes=("Choose the current governed data product.",),
+                    requester_safe_explanation=(
+                        "The selected data product is not in the current governed catalog."
+                    ),
+                )
+        else:
+            matches = _semantic_matches(semantic_objects=intent.semantic_objects, request=request)
+            if len(matches) > 1:
+                return ResolutionFailure(
+                    reason_codes=("published_semantic_term_ambiguous",),
+                    constraint_refs=(),
+                    smallest_changes=(
+                        "Ask about exactly one term in the workspace's current approved semantic "
+                        "publication.",
+                    ),
+                    requester_safe_explanation=(
+                        "This question names more than one term in the current governed catalog. "
+                        "Ask about one term at a time."
+                    ),
+                )
+            if not matches:
+                return ResolutionFailure(
+                    reason_codes=("published_semantic_term_not_found",),
+                    constraint_refs=(),
+                    smallest_changes=(
+                        "Ask about one term in the workspace's current approved semantic "
+                        "publication.",
+                    ),
+                    requester_safe_explanation=(
+                        "The current governed catalog does not contain one unambiguous term for "
+                        "this question."
+                    ),
+                )
         policy_ref = ArtifactReference(
             artifact_id=f"policy-{integration_contract.contract_id}",
             version=integration_contract.version,
@@ -214,7 +307,16 @@ class DemoAnswerCandidateProvider:
             if reference.artifact_id in self._metrics_by_id
         )
         if not metric_refs:
-            raise ValueError("the request does not ground in one published demonstration metric")
+            # An invariant guard, not a requester-facing refusal: a question this
+            # demonstration cannot ground is already refused by `DemoAuthorityResolver`, so
+            # reaching here means the grounding disagrees with the publication it was built
+            # from. The console reports the failure as a stale revision, whose advice to
+            # reload cannot help, so the message says plainly that this is a composition bug.
+            raise ValueError(
+                "demonstration grounding carries no metric from its own publication; "
+                "the snapshot resolver and the answer provider were built from different "
+                "publications"
+            )
         metric = self._metrics_by_id[metric_refs[0].artifact_id]
         definition = metric.definition
         return StakeholderAnswerDraft(
