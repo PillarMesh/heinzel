@@ -13,8 +13,16 @@ From the repository root:
 docker compose -f deploy/quickstart/compose.yaml up --build
 ```
 
-Then open <http://127.0.0.1:8000>. The first build compiles the console bundle and installs the
-Python environment, so it takes a few minutes; later starts reuse both.
+The first build compiles the console bundle and installs the Python environment, so it takes a
+few minutes; later starts reuse both. When it reports itself healthy, open
+<http://127.0.0.1:8000>.
+
+To publish it somewhere else, set `HEINZEL_PORT`, which moves the published port and the origin
+the console accepts together:
+
+```sh
+HEINZEL_PORT=9000 docker compose -f deploy/quickstart/compose.yaml up --build
+```
 
 ## It has no authentication
 
@@ -26,11 +34,14 @@ The published port is therefore the whole boundary. Compose publishes it on `127
 so it is reachable from this machine and nowhere else. Do not publish it on another interface,
 do not put it behind a tunnel, and do not expose it to a network.
 
-If you change the published port, change `HEINZEL_CONSOLE_ALLOWED_ORIGIN` in `compose.yaml` to
-match. The console accepts a command only from the origin it is configured with, and a mismatch
+The console accepts a command only from the one origin it is configured with, and a mismatch
 serves a console where every page loads and every button is refused `same_origin_required`.
-Spell the origin exactly as a browser sends it: no trailing slash, no path, no uppercase, and no
-default port — a console published on port 80 is `http://127.0.0.1`, not `http://127.0.0.1:80`.
+`HEINZEL_PORT` moves the published port and that origin together, which is why it is the way to
+publish the demonstration elsewhere. Setting `HEINZEL_CONSOLE_ALLOWED_ORIGIN` directly means
+spelling the origin exactly as a browser sends it — no surrounding space, no trailing slash, no
+path, no uppercase, no default port (a console published on port 80 is `http://127.0.0.1`, not
+`http://127.0.0.1:80`) — and the console refuses to start on any other spelling rather than
+adjusting it, naming the spelling to use instead.
 
 ## What it shows
 
@@ -46,9 +57,15 @@ Admission then waits on the requester. A proposal needs two approvals — the ar
 requester's acceptance of the clarified outcome — and until both are recorded the inbox reports
 that admission is unavailable and why. The console cannot act as anyone but the architect, so
 the browser cannot give the requester's acceptance. Sending it means naming the other actor in
-the header the demonstration switches roles with (this needs `curl` and `jq`):
+the header the demonstration switches roles with (this needs `curl` and `jq`).
 
-```sh
+Send it after you have submitted the proposal, and not before: there is no clarified outcome to
+accept until then, so the two fields read from it below are sent as `null` and the console
+refuses the command `422 invalid_request`, naming `expected_revision`. `.data[0]` is the
+requester's first request, which is the seeded one until you create another; after that, select
+by question text instead.
+
+```bash
 BASE=http://127.0.0.1:8000
 AS_REQUESTER='x-heinzel-actor: requester-demo'
 REQUEST=$(curl -fsS -H "$AS_REQUESTER" "$BASE/api/v1/requests/mine" | jq '.data[0]')
@@ -59,7 +76,7 @@ curl -fsS -X POST \
   -H "content-type: application/json" \
   -H "idempotency-key: requester-acceptance" \
   -H "x-csrf-token: $(curl -fsS -H "$AS_REQUESTER" "$BASE/api/v1/session" | jq -r .data.csrf_token)" \
-  -d "$(jq -c '{expected_revision: .revision,
+  -d "$(jq -c '{expected_revision: .clarified_outcome.revision,
                 clarified_outcome_digest: .clarified_outcome.statement_digest,
                 active_role: "requester", decision: "approve"}' <<<"$REQUEST")"
 ```
@@ -88,16 +105,23 @@ the same false promise.
 [docs/status.md](../../docs/status.md) states what Heinzel does today, and how each claim is
 proved.
 
+## Stop it
+
+```sh
+docker compose -f deploy/quickstart/compose.yaml down
+```
+
+The demonstration keeps its state — SQLite stores under `/var/lib/heinzel` — in a named volume,
+which `down` leaves in place. The next start resumes exactly where you left off.
+
 ## Reset it
 
 ```sh
 docker compose -f deploy/quickstart/compose.yaml down -v
 ```
 
-The demonstration keeps its state — SQLite stores under `/var/lib/heinzel` — in a named volume.
-`down -v` removes that volume, so the next start is a fresh demonstration with the seeded
-question waiting again. `down` without `-v` keeps it, and the next start resumes exactly where
-you left off.
+`-v` removes that volume as well, so the next start is a fresh demonstration with the seeded
+question waiting again.
 
 A request that reached a terminal state is not re-seeded: the seed recognises its own question
 whatever state it reached, so `down -v` is the way back to a clean demonstration.

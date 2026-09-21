@@ -29,14 +29,17 @@ dashboards use Apache Superset.
 
 ## Quickstart
 
-To look at the product rather than build it, start the local demonstration with Docker:
+To look at the product rather than build it, start the local demonstration with Docker. The
+compose commands here run from the repository root:
 
-````bash
+```bash
+git clone https://github.com/PillarMesh/heinzel.git
+cd heinzel
 docker compose -f deploy/quickstart/compose.yaml up --build
-````
+```
 
-Then open <http://127.0.0.1:8000>. The first build compiles the console bundle and installs the
-Python environment, so it takes a few minutes. A stakeholder question is waiting in the inbox:
+The first build compiles the console bundle and installs the Python environment, so it takes a
+few minutes. Then open <http://127.0.0.1:8000>. A stakeholder question is waiting in the inbox:
 clarify it, prepare an answer proposal, submit it to the requester and record your approval.
 
 The demonstration carries the governed request path as far as approval, and says so rather than
@@ -44,18 +47,18 @@ implying more. Runs, acquisition receipts and answer delivery are not part of it
 reports them as not delivered rather than showing an empty page. Admission to `execution_ready`
 needs the requester's acceptance too, which the browser cannot give because the demonstration
 console has one actor; [deploy/quickstart/README.md](deploy/quickstart/README.md) says what the
-demonstration shows, where it stops, and how to send that acceptance.
+demonstration shows, where it stops, how to send that acceptance, and how to publish it on
+another port.
 
-It has **no authentication**: anyone who reaches the published port acts as the data architect.
-Compose publishes it on `127.0.0.1` only — keep it there, and do not expose it to a network. If
-you change the published port, change `HEINZEL_CONSOLE_ALLOWED_ORIGIN` in
-`deploy/quickstart/compose.yaml` with it, or every page will load and every command be refused.
+It has **no authentication**: anyone who reaches the published port acts as the data architect,
+which is why compose publishes it on `127.0.0.1` only. Keep it there, and do not expose it to a
+network.
 
 To reset the demonstration, discarding its state:
 
-````bash
+```bash
 docker compose -f deploy/quickstart/compose.yaml down -v
-````
+```
 
 ## Getting started
 
