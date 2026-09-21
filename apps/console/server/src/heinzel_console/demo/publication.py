@@ -37,9 +37,14 @@ from heinzel_semantic_registry.publication import CatalogPublicationReceipt, pub
 
 from .stores import DemoStores
 
-__all__ = ["DEMO_TENANT_ID", "DemoPublication", "build_demo_publication"]
+__all__ = ["DEMO_QUESTION", "DEMO_TENANT_ID", "DemoPublication", "build_demo_publication"]
 
 DEMO_TENANT_ID = "tenant-demo"
+# The question the demonstration console seeds. It lives beside the metric it names because
+# the two must change together: the authority resolver refuses a question that does not name
+# exactly one published term, as whole words, so renaming the metric below without rewording
+# this would make the demonstration refuse its own happy path.
+DEMO_QUESTION = "What is the daily order count?"
 _SEMANTIC_VERSION_ID = "semantic-orders"
 _CONTRACT_ID = "contract-orders"
 _CATALOG_BINDING_ID = "catalog-demo"

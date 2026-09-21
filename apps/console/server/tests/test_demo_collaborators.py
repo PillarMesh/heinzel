@@ -16,6 +16,7 @@ from heinzel_console.demo.collaborators import (
     demo_clock,
 )
 from heinzel_console.demo.publication import (
+    DEMO_QUESTION,
     DEMO_TENANT_ID,
     DemoPublication,
     build_demo_publication,
@@ -31,8 +32,6 @@ from heinzel_request_management import (
 from heinzel_request_management.models import DataAccessRequest, StakeholderQuestion
 
 NOW = datetime(2026, 9, 20, 12, tzinfo=UTC)
-# The demonstration's own question, which names exactly one published term.
-DEMO_QUESTION = "What is the daily order count?"
 
 
 def _clock(moment: datetime) -> Callable[[], datetime]:
@@ -212,7 +211,9 @@ def test_a_data_access_request_for_an_unknown_product_is_refused(tmp_path: Path)
         stores.close()
 
 
-def test_the_answer_candidate_restates_the_published_definition(tmp_path: Path) -> None:
+def test_the_daily_order_count_question_answers_about_the_metric_and_cites_it(
+    tmp_path: Path,
+) -> None:
     stores = DemoStores(tmp_path / "state")
     try:
         published = build_demo_publication(stores, clock=_clock(NOW))
@@ -228,6 +229,65 @@ def test_the_answer_candidate_restates_the_published_definition(tmp_path: Path) 
         assert draft.answer_text == (
             "Daily order count is confirmed customer orders per calendar day."
         )
+        assert [reference.artifact_id for reference in draft.metric_refs] == ["daily-order-count"]
         assert draft.disclosure_classifications == ()
+    finally:
+        stores.close()
+
+
+def _answer(stores: DemoStores, published: DemoPublication, request: InboxRequest) -> str:
+    resolved = _resolve(stores, published, request)
+    assert not isinstance(resolved, ResolutionFailure), (
+        f"the question was refused rather than answered: {resolved!r}"
+    )
+    grounding, _policy = resolved
+    draft = DemoAnswerCandidateProvider(publication=published).propose(
+        request=request, grounding=grounding
+    )
+    return draft.answer_text
+
+
+def test_a_question_naming_the_classification_answers_about_that_term(tmp_path: Path) -> None:
+    stores = DemoStores(tmp_path / "state")
+    try:
+        published = build_demo_publication(stores, clock=_clock(NOW))
+        request = _question(question="Is this commercial?")
+        resolved = _resolve(stores, published, request)
+        assert not isinstance(resolved, ResolutionFailure), (
+            f"the classification question was refused: {resolved!r}"
+        )
+        grounding, _policy = resolved
+        draft = DemoAnswerCandidateProvider(publication=published).propose(
+            request=request, grounding=grounding
+        )
+        assert draft.answer_text == "Commercial is commercially sensitive information."
+        # A classification is not a metric, so citing the publication's one metric here
+        # would attach a number to an answer that never mentions one.
+        assert draft.metric_refs == ()
+    finally:
+        stores.close()
+
+
+def test_a_question_naming_the_entity_answers_about_that_term(tmp_path: Path) -> None:
+    stores = DemoStores(tmp_path / "state")
+    try:
+        published = build_demo_publication(stores, clock=_clock(NOW))
+        assert (
+            _answer(stores, published, _question(question="What is an order?"))
+            == "Order is a confirmed customer order."
+        )
+    finally:
+        stores.close()
+
+
+def test_the_demonstration_question_grounds_and_answers(tmp_path: Path) -> None:
+    """The question the console seeds must name exactly one published term."""
+    stores = DemoStores(tmp_path / "state")
+    try:
+        published = build_demo_publication(stores, clock=_clock(NOW))
+        assert (
+            _answer(stores, published, _question(question=DEMO_QUESTION))
+            == "Daily order count is confirmed customer orders per calendar day."
+        )
     finally:
         stores.close()

@@ -14,7 +14,12 @@ import re
 from collections.abc import Callable
 from datetime import UTC, datetime
 
-from heinzel_contract_model import ArtifactReference, SemanticObject, digest
+from heinzel_contract_model import (
+    ApprovedSemanticVersion,
+    ArtifactReference,
+    SemanticObject,
+    digest,
+)
 from heinzel_request_management import (
     FreshnessDisposition,
     FulfillmentGroundingSnapshot,
@@ -58,6 +63,25 @@ def _words(text: str) -> tuple[str, ...]:
     return tuple(word for word in re.split(r"[\W_]+", text.casefold()) if word)
 
 
+def _published_semantic_objects(
+    semantic_version: ApprovedSemanticVersion,
+) -> tuple[SemanticObject, ...]:
+    """Every term of an approved semantic version, in the order the publication lists them.
+
+    This mirrors what `publication_intent` puts in `CatalogPublicationIntent.semantic_objects`,
+    so that matching against a loaded publication and matching against the version in hand
+    agree on the same set of terms.
+    """
+    return (
+        *semantic_version.entities,
+        *semantic_version.events,
+        *semantic_version.states,
+        *semantic_version.relationships,
+        *semantic_version.metrics,
+        *semantic_version.classifications,
+    )
+
+
 def _semantic_matches(
     *, semantic_objects: tuple[SemanticObject, ...], request: InboxRequest
 ) -> tuple[SemanticObject, ...]:
@@ -66,6 +90,10 @@ def _semantic_matches(
     Matching is on word sequences, never substrings, so "invoiced" does not name "Invoice". A
     term whose words sit wholly inside a longer named term is discarded, so asking about
     "Daily order count" names that term rather than also naming "Order".
+
+    Matching is exact on whole words and does nothing about stemming, plurals or inflection,
+    so "orders", "ordering" and "counts" name nothing at all. A question must use a published
+    term's words as published.
 
     This is demonstration-grade: a real deployment resolves the question against the governed
     semantic layer rather than by matching words. It exists because without it the
@@ -290,39 +318,44 @@ class DemoAnswerCandidateProvider:
     against the warehouse and returns the answer with its evidence. Here the candidate is
     read straight from the approved semantic version, so the demonstration never invents a
     number and never reaches outside its own publication.
+
+    The answer is about the term the question named, resolved by the same matching the
+    authority resolver used. Answering from the publication's one metric instead would tell
+    a requester who asked about the entity or the classification about the metric, and cite
+    a metric reference the answer never used.
     """
 
     def __init__(self, *, publication: DemoPublication) -> None:
-        self._metrics_by_id = {
-            metric.object_id: metric for metric in publication.semantic_version.metrics
-        }
+        self._semantic_objects = _published_semantic_objects(publication.semantic_version)
 
     def propose(
         self, *, request: InboxRequest, grounding: FulfillmentGroundingSnapshot
     ) -> StakeholderAnswerDraft:
-        del request
+        matches = _semantic_matches(semantic_objects=self._semantic_objects, request=request)
+        if len(matches) != 1:
+            # An invariant guard, not a requester-facing refusal: `DemoAuthorityResolver`
+            # already refuses a request that does not name exactly one published term, so
+            # reaching here means this provider and the snapshot resolver disagree about
+            # what was published. The console reports the failure as a stale revision, whose
+            # advice to reload cannot help, so the message names the composition bug.
+            raise ValueError(
+                "demonstration answer provider matched "
+                f"{len(matches)} published terms where its authority resolver admitted one; "
+                "the resolver and the answer provider were built from different publications"
+            )
+        semantic_object = matches[0]
+        definition = semantic_object.definition
+        # Only a metric match cites a metric reference: an entity or a classification
+        # correctly yields none, because the answer restates a definition, not a measure.
         metric_refs = tuple(
             reference
             for reference in grounding.metric_refs
-            if reference.artifact_id in self._metrics_by_id
+            if reference.artifact_id == semantic_object.object_id
         )
-        if not metric_refs:
-            # An invariant guard, not a requester-facing refusal: a question this
-            # demonstration cannot ground is already refused by `DemoAuthorityResolver`, so
-            # reaching here means the grounding disagrees with the publication it was built
-            # from. The console reports the failure as a stale revision, whose advice to
-            # reload cannot help, so the message says plainly that this is a composition bug.
-            raise ValueError(
-                "demonstration grounding carries no metric from its own publication; "
-                "the snapshot resolver and the answer provider were built from different "
-                "publications"
-            )
-        metric = self._metrics_by_id[metric_refs[0].artifact_id]
-        definition = metric.definition
         return StakeholderAnswerDraft(
-            answer_text=f"{metric.name} is {definition[:1].lower()}{definition[1:]}",
+            answer_text=(f"{semantic_object.name} is {definition[:1].lower()}{definition[1:]}"),
             governed_dataset_refs=grounding.governed_dataset_refs,
-            metric_refs=metric_refs[:1],
+            metric_refs=metric_refs,
             as_of=grounding.as_of,
             freshness_disposition=_derive_freshness(grounding),
             material_quality_limitations=(),
