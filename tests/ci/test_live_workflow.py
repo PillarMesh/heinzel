@@ -119,6 +119,17 @@ def test_the_core_postgresql_journeys_are_listed(workflow: dict[str, Any]) -> No
     } <= paths
 
 
+def test_the_quickstart_smoke_test_is_not_a_live_journey(workflow: dict[str, Any]) -> None:
+    command = _step(workflow, "Run live journeys")["run"]
+
+    # The quickstart smoke test carries `live` and `emulator` too, but it builds the published
+    # image and has its own workflow. The selection is an explicit file list, so the exclusion
+    # is simply that no listed path is one of its modules.
+    assert "tests/quickstart" not in command
+    for path in _journey_paths(workflow):
+        assert not path.startswith("tests/quickstart/"), path
+
+
 def test_emulator_marked_journeys_are_selected_and_skips_fail_the_run(
     workflow: dict[str, Any],
 ) -> None:

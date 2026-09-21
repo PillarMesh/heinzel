@@ -33,6 +33,7 @@ services/request-management/tests
 services/semantic-registry/tests
 services/state/tests
 services/warehouse-control/tests
+tests/quickstart
 tests/release
 '
 

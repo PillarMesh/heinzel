@@ -50,6 +50,10 @@ jobs:
       # cluster with host PostgreSQL binaries (initdb), the Superset compose build, OpenMetadata,
       # Snowflake and LocalStack. Several of these files mark their tests `emulator` rather than
       # `live`, so the selection is `live or emulator`; `-m live` alone would deselect them.
+      #
+      # `tests/quickstart` is deliberately absent: it builds the published image and has its
+      # own workflow. The selection is an explicit file list rather than a directory, so
+      # leaving it unlisted is the whole exclusion -- no `--ignore` is needed.
       - name: Run live journeys
         env:
           HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE: "1"
