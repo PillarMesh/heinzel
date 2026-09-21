@@ -10,3 +10,8 @@
 .hypothesis
 **/dist
 **/test-results
+# The suites are the rest of the bulk, and nothing the image runs reaches them: the console
+# server is installed from its own package, and the browser journeys under
+# `apps/console/e2e*` are driven from a checkout, never from this image.
+**/tests
+apps/console/e2e*

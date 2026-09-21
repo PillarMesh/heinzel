@@ -18,10 +18,13 @@ COPY apps/console ./apps/console
 RUN cd apps/console && npm run build
 
 FROM python:3.13.5-slim-bookworm@sha256:4c2cf9917bd1cbacc5e9b07320025bdb7cdf2df7b0ceaccb55e9dd7e30987419 AS runtime
-COPY --from=ghcr.io/astral-sh/uv:0.9.7@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142 /uv /usr/local/bin/uv
-# `copy` because the cache and the environment are on different layers, and bytecode up front
-# so the first request does not pay for it. Downloads are off so the interpreter is the one
-# this image pins above, rather than whichever build a download happens to fetch.
+# `copy` because uv installs a package by hard-linking it out of its own cache, and a hard
+# link cannot cross a filesystem boundary. Whether the cache and `/src/.venv` sit on one
+# filesystem depends on how the build is run rather than on anything written here — a cache
+# mount, a bind, another storage driver — and where they do not, uv warns and falls back to
+# copying anyway. Naming the mode makes it the same either way. Bytecode up front so the
+# first request does not pay for it. Downloads are off so the interpreter is the one this
+# image pins above, rather than whichever build a download happens to fetch.
 ENV UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1 UV_PYTHON_DOWNLOADS=never
 WORKDIR /src
 COPY pyproject.toml uv.lock ./
@@ -32,7 +35,11 @@ COPY apps ./apps
 COPY packages ./packages
 COPY providers ./providers
 COPY services ./services
-RUN uv sync --locked --no-dev --package heinzel-console \
+# uv is a build tool, not a runtime one: mounted for the length of this instruction rather
+# than copied in, so the 43 MB binary that installs the environment is not carried by every
+# container that runs it.
+RUN --mount=from=ghcr.io/astral-sh/uv:0.9.7@sha256:ba4857bf2a068e9bc0e64eed8563b065908a4cd6bfb66b531a9c424c8e25e142,source=/uv,target=/usr/local/bin/uv \
+  uv sync --locked --no-dev --package heinzel-console \
   && rm -rf /root/.cache/uv
 # The bundle comes only from the web stage above; the host's own `dist` is excluded from the
 # build context, so nothing here can serve a stale local build.
@@ -44,8 +51,12 @@ USER heinzel
 # under `--container`: a command whose `Origin` header differs is refused `same_origin_required`,
 # which reads as a console where every page loads and every button fails. This default matches
 # `-p 127.0.0.1:8000:8000`. Publishing on any other host or port means overriding it with the
-# origin the browser sends exactly: no trailing slash, no uppercase, and no default port
-# (a console published on port 80 is `http://127.0.0.1`, not `http://127.0.0.1:80`).
+# origin the browser sends, spelled exactly as the browser spells it: no surrounding space,
+# no trailing slash or path, no uppercase, no default port (a console published on port 80 is
+# `http://127.0.0.1`, not `http://127.0.0.1:80`), and an address written the one way a browser
+# writes it (`http://127.0.0.1`, not `http://127.1`; `http://[2001:db8::1]`, not
+# `http://[2001:db8:0:0:0:0:0:1]`). Any other spelling is refused at startup rather than
+# adjusted, and the refusal names the spelling to use instead.
 ENV PATH=/src/.venv/bin:$PATH \
     HEINZEL_CONSOLE_ALLOWED_ORIGIN=http://127.0.0.1:8000 \
     HEINZEL_CONSOLE_DIST=/srv/console/dist
