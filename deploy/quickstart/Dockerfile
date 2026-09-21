@@ -3,7 +3,10 @@
 # as the architect. Publish it on loopback only (`-p 127.0.0.1:8000:8000`).
 #
 # Build it from the repository root:
-#   docker build -f deploy/quickstart/Dockerfile -t heinzel-quickstart .
+#   docker build -f deploy/quickstart/Dockerfile -t quickstart-console .
+#
+# That tag is the one `compose.yaml` beside this file builds under, derived from its project
+# and service names, so a build either way leaves one image rather than two under two names.
 #
 # Every base image is pinned by digest as well as by tag, so a rebuilt tag cannot change what
 # this installs. The Node version matches apps/console/.node-version and the Python version

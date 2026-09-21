@@ -74,6 +74,9 @@ read when a browser opened on another port has every command refused `same_origi
 `HEINZEL_CONSOLE_DIST` when it is omitted. `--no-seed` starts with an empty inbox instead of the
 demonstration's own question.
 
+[`deploy/quickstart/`](../../deploy/quickstart/README.md) packages this command as one container,
+with the bundle already compiled, the state directory mounted and the origin already set.
+
 ## Governed local UI testing
 
 For separate requester and architect browser sessions backed by the owning services

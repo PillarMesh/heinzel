@@ -24,6 +24,9 @@ the console accepts together:
 HEINZEL_PORT=9000 docker compose -f deploy/quickstart/compose.yaml up --build
 ```
 
+A start that fails with `bind: address already in use` means something else holds port 8000;
+set `HEINZEL_PORT` to a free port and open the console there instead.
+
 ## It has no authentication
 
 Anyone who reaches the published port acts as the data architect. There is no login, no
@@ -125,3 +128,7 @@ question waiting again.
 
 A request that reached a terminal state is not re-seeded: the seed recognises its own question
 whatever state it reached, so `down -v` is the way back to a clean demonstration.
+
+Reset it the same way after updating the repository. The volume keeps whatever the previous
+version wrote, and a newer image is not obliged to read it, so a demonstration that behaves
+oddly after a rebuild is one to start again from an empty volume.
