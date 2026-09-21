@@ -1,0 +1,12 @@
+# Keep the Docker build context to the sources the image builds from. Local
+# environments are both the bulk of the context and a correctness hazard: a copied
+# host `node_modules` overwrites the one the image installed.
+.venv
+**/node_modules
+.git
+.mypy_cache
+.pytest_cache
+.ruff_cache
+.hypothesis
+**/dist
+**/test-results
