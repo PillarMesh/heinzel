@@ -134,6 +134,31 @@ def require_loopback(host: str) -> str:
     return host
 
 
+def _unspellable_reason(origin: str) -> str:
+    """Why no browser sends `origin` in any spelling, in words an operator can act on.
+
+    Only ever reached for a value `canonical_browser_origin` has already refused, so this
+    explains that decision and never makes one: the most a branch here that falls behind it
+    can do is name the wrong defect of a value that is refused either way.
+    """
+    scheme, separator, authority = origin.partition("://")
+    if not separator:
+        return "it does not begin with http:// or https://"
+    if scheme.lower() not in _BROWSER_SCHEMES:
+        return "its scheme is neither http nor https"
+    if not authority:
+        return "it names no host"
+    if not origin.isascii():
+        return (
+            "its host is not ASCII, and a browser sends such a name in its punycode form, "
+            "which begins xn--"
+        )
+    return (
+        "its host carries a character no hostname has, is an address literal that is no "
+        "address, or carries a port no browser sends"
+    )
+
+
 def _require_browser_origin(origin: str, *, source: str) -> str:
     """Refuse an origin no browser would send, rather than one the gate can never match.
 
@@ -158,11 +183,18 @@ def _require_browser_origin(origin: str, *, source: str) -> str:
     # address the operator chose, and without the spelling to use the refusal cannot be acted
     # on. A value carrying a credential is refused above, before this is built.
     expected = canonical_browser_origin(origin, schemes=_BROWSER_SCHEMES)
+    if expected is None:
+        # No browser spelling of this value exists, so there is none to name. The five
+        # defects below are all correctable, and listing them for a value that has none of
+        # them tells the operator to correct what is already correct.
+        raise ValueError(
+            f"{source} must be an origin a browser can send, for example "
+            f"http://127.0.0.1:8000, but {_unspellable_reason(origin)}"
+        )
     if expected != origin:
-        detail = f", for example {expected}" if expected else ", for example http://127.0.0.1:8000"
         raise ValueError(
             f"{source} must be exactly the origin the browser sends, with no trailing slash, "
-            f"path, surrounding space, uppercase, or default port{detail}"
+            f"path, surrounding space, uppercase, or default port, for example {expected}"
         )
     return origin
 

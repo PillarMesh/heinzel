@@ -21,6 +21,7 @@ from heinzel_console.contracts import (
 )
 from heinzel_console.fixture_backend import FixtureConsoleBackend
 from heinzel_console.fixture_data import build_fixture_seed
+from heinzel_console.routes import canonical_browser_origin, normalized_https_origin
 from starlette.testclient import TestClient
 
 
@@ -818,6 +819,65 @@ def test_authorized_external_link_rejects_origin_confusion_without_reflecting_ta
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "unsafe_link_response"
     assert location not in response.text
+
+
+def test_an_underscore_in_a_managed_link_host_is_configured_and_matched() -> None:
+    """A Docker Compose service is routinely named with one, and the byte is legal in a DNS
+    label, so a hostname alphabet that left it out refused a configuration that used to
+    start."""
+
+    class ManagedLinkBackend(FixtureConsoleBackend):
+        def authorize_link(self, context: TrustedActorContext, link_ref: str) -> AuthorizedLink:
+            return AuthorizedLink(location="https://bi_tool.example.test/superset/dashboard/7/")
+
+    with _client(
+        backend=ManagedLinkBackend(),
+        managed_link_origin="https://bi_tool.example.test",
+    ) as client:
+        response = client.get("/api/v1/links/link-dashboard-revenue", follow_redirects=False)
+
+    assert response.status_code == 307
+    assert response.headers["location"] == "https://bi_tool.example.test/superset/dashboard/7/"
+
+
+@pytest.mark.parametrize(
+    ("value", "origin"),
+    (
+        ("https://bi.example.test/private-canary", "https://bi.example.test"),
+        ("https://bi.example.test?a=1", "https://bi.example.test"),
+        ("https://bi.example.test#f", "https://bi.example.test"),
+        ("https://bi.example.test:8443/x", "https://bi.example.test:8443"),
+    ),
+)
+def test_a_path_query_or_fragment_is_discarded_rather_than_refused(value: str, origin: str) -> None:
+    """The managed link check hands this function the whole link URL and compares the
+    result to the configured origin, so honouring a docstring that said these were refused
+    would make every managed link fail `unsafe_link_response`."""
+    assert normalized_https_origin(value) == origin
+
+
+@pytest.mark.parametrize(
+    "value",
+    (
+        "https://bi.example.test:",
+        "http://bi.example.test",
+        "https://operator:hunter2@bi.example.test",
+        "https://bi.example.test:99999999",
+        "https://127.1",
+        "https://",
+    ),
+)
+def test_an_origin_no_browser_sends_is_no_managed_link_origin(value: str) -> None:
+    """An empty port reads as no port at all to `urlsplit`, so only the authority's own
+    text keeps `https://host:` from being accepted as a configured origin it can never
+    match."""
+    assert normalized_https_origin(value) is None
+
+
+def test_a_scheme_the_origin_reader_does_not_know_is_refused_rather_than_raised() -> None:
+    """`schemes` is part of the published signature, and a caller naming a third scheme
+    once reached a `KeyError` from the table of default ports instead of a refusal."""
+    assert canonical_browser_origin("ftp://x.test", schemes=frozenset({"ftp"})) is None
 
 
 def test_authorized_external_link_fails_closed_without_a_configured_origin() -> None:

@@ -61,11 +61,14 @@ address is `0.0.0.0`, which no browser sends, and the reader opens the published
 the bound one. A container given neither setting refuses to start rather than serve a console
 that renders every page and refuses every command. Give the origin exactly as the browser sends
 it — no trailing slash, path, surrounding space, uppercase, or default port, because a browser
-leaves `:80` and `:443` out of the header it sends — for example `http://127.0.0.1:8731`, or
-`http://127.0.0.1` for a console published on port 80; any other spelling is refused rather than
-silently adjusted, and the refusal names the spelling to use instead. The
-accepted origin is printed at startup, and that line is the one to read when a browser opened on
-another port has every command refused `same_origin_required`.
+leaves `:80` and `:443` out of the header it sends, and writes an address literal one way — for
+example `http://127.0.0.1:8731`, or `http://127.0.0.1` for a console published on port 80. Any
+other spelling is refused rather than silently adjusted: where the value differs only in one of
+those correctable ways the refusal names the spelling to use instead, and where no browser sends
+the value in any spelling — a credential, a scheme other than `http` or `https`, no host, a
+non-ASCII name a browser would send as punycode, or a port no browser sends — the refusal says
+which of those it is. The accepted origin is printed at startup, and that line is the one to
+read when a browser opened on another port has every command refused `same_origin_required`.
 
 `--dist` serves a compiled bundle alongside the API from this one origin, and follows
 `HEINZEL_CONSOLE_DIST` when it is omitted. `--no-seed` starts with an empty inbox instead of the

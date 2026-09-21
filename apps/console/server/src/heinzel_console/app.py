@@ -143,14 +143,22 @@ def create_app(
     if configured_managed_link_origin is not None:
         selected_managed_link_origin = normalized_https_origin(configured_managed_link_origin)
         if selected_managed_link_origin is None:
-            raise ValueError("managed link origin must be an HTTPS origin")
+            # Not only a scheme other than HTTPS: a credential, a missing or unspellable
+            # host, and a port no browser sends are refused here too, and naming only the
+            # scheme sends the operator to correct the one part that is already right.
+            raise ValueError(
+                "managed link origin must be the HTTPS origin a browser sends, "
+                "for example https://bi.example.test"
+            )
         parsed_managed_link_origin = urlsplit(configured_managed_link_origin)
         if (
             parsed_managed_link_origin.path not in ("", "/")
             or "?" in configured_managed_link_origin
             or "#" in configured_managed_link_origin
         ):
-            raise ValueError("managed link origin must be an HTTPS origin")
+            # `normalized_https_origin` discards these rather than refusing them, so a
+            # configured origin that carries one reaches here having been accepted.
+            raise ValueError("managed link origin must carry no path, query or fragment")
     selected_backend = backend or FixtureConsoleBackend()
     dependencies = RouteDependencies(
         backend=selected_backend,

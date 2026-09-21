@@ -590,6 +590,12 @@ _ACCEPTED_ORIGINS = [
     "http://xn--r8jz45g.test:8000",
     f"http://{'a' * 300}.test:8000",
     "http://example.test.:8000",
+    # An underscore is a legal byte in a DNS label and is how a Docker Compose service is
+    # usually named, so a console published beside one is configured with exactly this.
+    "http://my_service:8731",
+    # `ipaddress` spells this address with a dotted quad and a browser spells it in hextets,
+    # so canonicalizing it would refuse the spelling the browser actually sends.
+    "http://[::ffff:7f00:1]:8000",
 ]
 
 
@@ -636,6 +642,69 @@ def test_an_origin_whose_port_no_browser_would_send_is_refused(
     with caplog.at_level(logging.ERROR, logger=cli.__name__):
         assert cli.main(["serve", "--state-dir", str(tmp_path), "--origin", unusable]) == 2
     assert "origin" in caplog.text
+
+
+@pytest.mark.parametrize(
+    "unusable",
+    [
+        "http://0177.0.0.1:8000",
+        "http://2130706433:8000",
+        "http://127.1:8000",
+        "http://127.0.0.01:8000",
+        "http://0x7f.0.0.1:8000",
+        "http://[2001:db8:0:0:0:0:0:1]:8000",
+        "http://[0:0:0:0:0:0:0:1]:8000",
+    ],
+)
+def test_an_address_spelled_the_way_no_browser_spells_it_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+    unusable: str,
+) -> None:
+    """A browser resolves each of these and sends one spelling of the address it found.
+
+    `http://127.1` reaches the gate as `http://127.0.0.1` and `http://[0:0:0:0:0:0:0:1]` as
+    `http://[::1]`, so a console configured with the spelling above renders every page and
+    refuses every command.
+    """
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--origin", unusable]) == 2
+    assert "origin" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("unusable", "reason"),
+    [
+        ("127.0.0.1:8000", "does not begin with http:// or https://"),
+        ("ftp://127.0.0.1:8000", "scheme is neither http nor https"),
+        ("http://", "names no host"),
+        ("http://h\u00e9llo.test:8000", "punycode"),
+        ("http://127.0.0.1:80o0", "port no browser sends"),
+        ("http://127.0.0.1%3a8000", "character no hostname has"),
+    ],
+)
+def test_an_origin_with_no_browser_spelling_at_all_is_told_why(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+    unusable: str,
+    reason: str,
+) -> None:
+    """None of these has a spelling to name, and none has a trailing slash, a path, a
+    space, an uppercase letter or a default port either.
+
+    The list of those five correctable defects is all the refusal used to give, so an
+    operator was told to correct the one part of the value that was already correct.
+    """
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--origin", unusable]) == 2
+    assert reason in caplog.text
+    assert "no trailing slash" not in caplog.text
 
 
 def test_a_default_port_is_reported_with_the_spelling_the_browser_would_send(

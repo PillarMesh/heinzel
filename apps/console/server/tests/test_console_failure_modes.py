@@ -91,12 +91,22 @@ def test_managed_link_origin_is_normalized_from_explicit_configuration(
         "https://bi.example.test#fragment",
         "https://bi.example.test#",
         "https://bi.example.test:bad",
+        "https://bi.example.test:",
         "https:\\bi.example.test",
     ),
 )
 def test_invalid_managed_link_origin_configuration_is_rejected(origin: str) -> None:
     with pytest.raises(ValueError, match="managed link origin"):
         create_app(managed_link_origin=origin)
+
+
+def test_a_managed_link_origin_is_refused_for_the_defect_it_actually_has() -> None:
+    """One message served both refusals and named only the scheme, so an origin refused
+    for its path or its port was told to correct the one part that was already HTTPS."""
+    with pytest.raises(ValueError, match="no path, query or fragment"):
+        create_app(managed_link_origin="https://bi.example.test/path")
+    with pytest.raises(ValueError, match="HTTPS origin a browser sends"):
+        create_app(managed_link_origin="https://bi.example.test:")
 
 
 def test_a_malformed_persisted_artifact_is_not_reported_as_a_stale_revision() -> None:
