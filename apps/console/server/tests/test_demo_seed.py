@@ -11,7 +11,8 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-import httpx
+# `TestClient` subclasses `httpx2.Client`, so the responses it returns are httpx2's.
+import httpx2
 import pytest
 from heinzel_console.demo import DemoConsole, build_demo_app
 from heinzel_console.demo.collaborators import DEMO_ARCHITECT_ID, DEMO_REQUESTER_ID
@@ -42,7 +43,7 @@ def _post(
     *,
     key: str,
     actor: str = DEMO_ARCHITECT_ID,
-) -> httpx.Response:
+) -> httpx2.Response:
     headers = {DEMO_ACTOR_HEADER: actor}
     session = client.get("/api/v1/session", headers=headers)
     return client.post(

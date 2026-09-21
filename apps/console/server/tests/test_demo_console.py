@@ -12,7 +12,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-import httpx
+# `TestClient` subclasses `httpx2.Client`, so the responses it returns are httpx2's.
+import httpx2
 import pytest
 from heinzel_console.demo import DEMO_ACTOR_HEADER, DemoConsole
 from heinzel_console.demo.collaborators import DEMO_ARCHITECT_ID, DEMO_REQUESTER_ID
@@ -34,10 +35,10 @@ class _Console:
         self.console = console
         self.client = TestClient(console.build_app(origin=ORIGIN))
 
-    def get(self, path: str, *, actor: str) -> httpx.Response:
+    def get(self, path: str, *, actor: str) -> httpx2.Response:
         return self.client.get(path, headers={DEMO_ACTOR_HEADER: actor})
 
-    def post(self, path: str, body: dict[str, Any], *, key: str, actor: str) -> httpx.Response:
+    def post(self, path: str, body: dict[str, Any], *, key: str, actor: str) -> httpx2.Response:
         headers = {DEMO_ACTOR_HEADER: actor}
         session = self.client.get("/api/v1/session", headers=headers)
         return self.client.post(
@@ -75,7 +76,7 @@ class _Console:
         request_id: str = created.json()["data"]["request_id"]
         return request_id
 
-    def clarify(self, request_id: str, *, key: str) -> httpx.Response:
+    def clarify(self, request_id: str, *, key: str) -> httpx2.Response:
         return self.post(
             f"/api/v1/inbox/{request_id}/clarification",
             {
@@ -91,7 +92,7 @@ class _Console:
 
     def prepare_proposal(
         self, request_id: str, *, expected_revision: int, key: str
-    ) -> httpx.Response:
+    ) -> httpx2.Response:
         return self.post(
             f"/api/v1/inbox/{request_id}/proposal",
             {"expected_revision": expected_revision, "active_role": "data_architect"},
