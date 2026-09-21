@@ -9,12 +9,18 @@ the build.
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path, PurePosixPath
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 
-_REQUIRED_PATTERNS = frozenset({".venv", "**/node_modules", ".git", ".mypy_cache"})
+# The two shapes `_excludes` reasons about: one path segment, optionally at any depth.
+# Anything else -- a separator, a wildcard, a character class, a negation -- is a
+# pattern this file cannot judge, and an allowlist refuses it rather than ignoring it.
+_SUPPORTED_SHAPE = re.compile(r"(?:\*\*/)?[^*?\[\]!/]+\Z")
 
 
 def _ignore_patterns(text: str) -> frozenset[str]:
@@ -35,19 +41,22 @@ def _excludes(pattern: str, path: PurePosixPath) -> bool:
 
 
 def _tracked_paths() -> tuple[PurePosixPath, ...]:
-    listing = subprocess.run(
-        ("git", "ls-files", "-z"),
-        cwd=ROOT,
-        capture_output=True,
-        check=True,
-        text=True,
-    ).stdout
+    try:
+        listing = subprocess.run(
+            ("git", "ls-files", "-z"),
+            cwd=ROOT,
+            capture_output=True,
+            check=True,
+            text=True,
+        ).stdout
+    except subprocess.CalledProcessError:  # a source tarball has no tracked-file list
+        pytest.skip("not a git checkout")
     return tuple(PurePosixPath(entry) for entry in listing.split("\0") if entry)
 
 
 def test_the_build_context_excludes_local_environments() -> None:
     patterns = _ignore_patterns((ROOT / ".dockerignore").read_text(encoding="utf-8"))
-    assert patterns >= _REQUIRED_PATTERNS
+    assert patterns >= {".venv", "**/node_modules", ".git", ".mypy_cache"}
 
 
 def test_the_build_context_keeps_every_file_the_repository_tracks() -> None:
@@ -58,11 +67,7 @@ def test_the_build_context_keeps_every_file_the_repository_tracks() -> None:
     would lose it from the build with no error at all.
     """
     patterns = _ignore_patterns((ROOT / ".dockerignore").read_text(encoding="utf-8"))
-    unsupported = [
-        pattern
-        for pattern in patterns
-        if pattern.startswith(("!", "#")) or "*" in pattern.removeprefix("**/")
-    ]
+    unsupported = [pattern for pattern in patterns if not _SUPPORTED_SHAPE.fullmatch(pattern)]
     assert not unsupported, f"pattern shapes this test cannot reason about: {unsupported}"
 
     excluded = {
