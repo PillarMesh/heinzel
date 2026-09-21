@@ -158,6 +158,15 @@ class DemoConsole:
                 self._stores.close()
             raise
 
+    @property
+    def requests(self) -> RequestManagementService:
+        """The request service this console reads and writes requests through.
+
+        The demonstration's seed submits its question through this, so that the request is
+        the owning service's own transaction rather than console state.
+        """
+        return self._requests
+
     def build_app(self, *, origin: str, dist: Path | None = None) -> Starlette:
         """The console application, serving this backend at `origin`."""
         return create_app(
