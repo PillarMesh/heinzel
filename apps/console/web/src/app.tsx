@@ -53,6 +53,27 @@ type BootstrapState =
   | {readonly kind: "ready"; readonly value: ReadyBootstrap}
   | {readonly error: unknown; readonly kind: "failed"}
 
+// A deployment that wires no warehouse-control read interface answers `/setup` with
+// `capability_not_delivered`: the projection is absent, not broken. That is the state
+// `setupEnvelope: undefined` already describes, and every consumer of it - the landing
+// route, the `/setup` route, the review workbench route, the provenance and identity
+// checks in `ConsoleRoutes` - already handles the absence. So the bootstrap continues
+// without it instead of taking the whole console down. This is the only setup failure
+// treated that way: any other code, and any other error, still fails the bootstrap, so
+// a deployment whose `/setup` is genuinely broken keeps saying so.
+async function readSetupProjection(
+  client: ConsoleBootstrapClient,
+): Promise<ConsoleEnvelopeSetupView | undefined> {
+  try {
+    return await client.getSetup()
+  } catch (error: unknown) {
+    if (error instanceof ConsoleApiError && error.code === "capability_not_delivered") {
+      return undefined
+    }
+    throw error
+  }
+}
+
 function retryLabel(error: ConsoleApiError | null): string | undefined {
   if (error?.recoveryAction === "reload") {
     return "Reload workspace"
@@ -81,7 +102,9 @@ export function App({client}: AppProps) {
         // makes the workspace active, including process-package versioning. Keep that
         // projection available to architects instead of making /setup unreachable.
         const needsSetup = sessionEnvelope.data.active_role === "data_architect"
-        const setupEnvelope = needsSetup ? await selectedClient.getSetup() : undefined
+        const setupEnvelope = needsSetup
+          ? await readSetupProjection(selectedClient)
+          : undefined
         if (active) {
           setState({
             kind: "ready",

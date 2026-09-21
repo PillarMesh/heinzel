@@ -159,7 +159,8 @@ afterEach(() => {
 
 describe("selectLandingRoute", () => {
   test.each([
-    ["setup", undefined, "/setup"],
+    ["setup", setup, "/setup"],
+    ["setup", undefined, "/inbox"],
     ["pending_activation", setup, "/reviews/review-activation"],
     ["active", undefined, "/inbox"],
     ["unavailable", undefined, "/recovery"],
@@ -194,10 +195,12 @@ function renderRoutes(path: string, state: WorkspaceView["state"] = "active") {
 }
 
 describe("ConsoleRoutes", () => {
-  test("fails closed rather than redirecting /setup to itself", async () => {
-    // `selectLandingRoute` maps the `setup` state back to `/setup`, so redirecting
-    // an absent envelope to the landing route made this route navigate to itself.
-    // Rendering that combination used to hang the suite instead of failing it.
+  test("carries a workspace whose setup projection is not delivered", async () => {
+    // A deployment that wires no warehouse control answers `/setup` with
+    // `capability_not_delivered` while the workspace still reports `setup`. Landing
+    // on the stage list the server will not serve stated a mismatch that did not
+    // happen, and redirecting it back to its own landing route did not terminate.
+    // The governed surfaces that do not depend on the warehouse binding carry it.
     render(
       <MemoryRouter initialEntries={["/setup"]}>
         <ConsoleRoutes
@@ -209,9 +212,8 @@ describe("ConsoleRoutes", () => {
       </MemoryRouter>,
     )
 
-    await waitFor(() =>
-      expect(screen.getByRole("heading", {name: "Workspace projections do not match"})).toBeVisible(),
-    )
+    await waitFor(() => expect(screen.getByRole("region", {name: "Decision queue"})).toBeVisible())
+    expect(screen.queryByText("Workspace projections do not match")).toBeNull()
   })
 
   test("sends a finished setup back to the workspace instead of a recovery boundary", async () => {
@@ -417,6 +419,62 @@ test("App loads the setup projection for a workspace still in setup", async () =
 
   expect(await screen.findByRole("heading", {name: "Activation approval"})).toBeVisible()
   expect(getSetup).toHaveBeenCalledTimes(1)
+})
+
+function setupNotDelivered(): ConsoleApiError {
+  return new ConsoleApiError(503, {
+    meta: {correlation_id: "correlation-setup-absent", data_provenance: "demo_fixture"},
+    error: {
+      code: "capability_not_delivered",
+      safe_message: "This capability is not delivered in governed-local mode.",
+      recovery_action: "none",
+      field: null,
+    },
+  })
+}
+
+test("App renders the console where the deployment delivers no setup projection", async () => {
+  const getSetup = vi.fn(async () => {
+    throw setupNotDelivered()
+  })
+  const client: ConsoleBootstrapClient = {
+    ...setupClient,
+    getSession: vi.fn(async () => sessionEnvelope),
+    getWorkspace: vi.fn(async () => workspaceEnvelope("active")),
+    ...featureClientStubs(),
+    getSetup,
+  }
+
+  render(<App client={client} />)
+
+  expect(await screen.findByRole("navigation", {name: "Product"})).toBeVisible()
+  expect(screen.getByRole("link", {name: "Inbox"})).toBeVisible()
+  expect(getSetup).toHaveBeenCalledTimes(1)
+})
+
+test("App fails the bootstrap on any setup failure other than an undelivered capability", async () => {
+  const client: ConsoleBootstrapClient = {
+    ...setupClient,
+    getSession: vi.fn(async () => sessionEnvelope),
+    getWorkspace: vi.fn(async () => workspaceEnvelope("setup")),
+    ...featureClientStubs(),
+    getSetup: vi.fn(async () => {
+      throw new ConsoleApiError(503, {
+        meta: {correlation_id: "correlation-setup-degraded", data_provenance: "demo_fixture"},
+        error: {
+          code: "service_unavailable",
+          safe_message: "A governing service is temporarily unavailable.",
+          recovery_action: "retry",
+          field: null,
+        },
+      })
+    }),
+  }
+
+  render(<App client={client} />)
+
+  expect(await screen.findByRole("button", {name: "Try again"})).toBeVisible()
+  expect(screen.queryByRole("navigation", {name: "Product"})).not.toBeInTheDocument()
 })
 
 test("App keeps an architect's unfinished setup reachable after the workspace activates", async () => {

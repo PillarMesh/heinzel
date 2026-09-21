@@ -185,9 +185,10 @@ export function ConsoleRoutes({
               // ordinary -- a bookmark, a back button, a reload -- and the recovery
               // boundary would state a mismatch that did not happen.
               //
-              // Unless the landing route is this route. `selectLandingRoute` maps the
-              // `setup` state back to `/setup`, and redirecting a route to itself does
-              // not terminate, so that combination fails closed instead.
+              // Unless the landing route is this route, because redirecting a route to
+              // itself does not terminate. `selectLandingRoute` sends a workspace with
+              // no setup projection elsewhere, so this fails closed on a combination it
+              // should never be handed rather than looping if one ever arrives.
               landingRoute === "/setup" ? (
                 <RecoveryPage kind="projection" />
               ) : (
