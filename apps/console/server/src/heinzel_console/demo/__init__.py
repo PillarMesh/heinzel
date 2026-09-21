@@ -13,9 +13,8 @@ from pathlib import Path
 from starlette.applications import Starlette
 
 from .console import DEMO_ACTOR_HEADER, DemoConsole
-from .seed import seed_demo_request
 
-__all__ = ["DEMO_ACTOR_HEADER", "DemoConsole", "build_demo_app", "seed_demo_request"]
+__all__ = ["DEMO_ACTOR_HEADER", "DemoConsole", "build_demo_app"]
 
 
 def build_demo_app(

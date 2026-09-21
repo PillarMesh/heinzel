@@ -54,6 +54,11 @@ def _demonstration_question_is_present(requests: RequestManagementService) -> bo
     the purpose and the question are all text a person reads, and `delegated_agent` asserts
     that an agent acted for the requester, which is not true here and must not be claimed.
     So the seeded request is recognised by its own requester and its exact question text.
+
+    The match is on the question, not on the state it reached, so a seeded request driven
+    to a terminal state — rejected, no valid plan, cancelled or failed — still matches, and
+    a later restart leaves that dead request in place rather than seeding a live one. The
+    way out is to discard the state directory, which `docker compose down -v` does.
     """
     return any(
         request.requester_id == DEMO_REQUESTER_ID
