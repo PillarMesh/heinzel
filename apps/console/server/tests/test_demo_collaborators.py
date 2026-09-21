@@ -28,6 +28,7 @@ from heinzel_request_management import (
     InboxRequest,
     RequestState,
     ResolutionFailure,
+    StakeholderAnswerDraft,
 )
 from heinzel_request_management.models import DataAccessRequest, StakeholderQuestion
 
@@ -235,16 +236,17 @@ def test_the_daily_order_count_question_answers_about_the_metric_and_cites_it(
         stores.close()
 
 
-def _answer(stores: DemoStores, published: DemoPublication, request: InboxRequest) -> str:
+def _answer(
+    stores: DemoStores, published: DemoPublication, request: InboxRequest
+) -> StakeholderAnswerDraft:
     resolved = _resolve(stores, published, request)
     assert not isinstance(resolved, ResolutionFailure), (
         f"the question was refused rather than answered: {resolved!r}"
     )
     grounding, _policy = resolved
-    draft = DemoAnswerCandidateProvider(publication=published).propose(
+    return DemoAnswerCandidateProvider(publication=published).propose(
         request=request, grounding=grounding
     )
-    return draft.answer_text
 
 
 def test_a_question_naming_the_classification_answers_about_that_term(tmp_path: Path) -> None:
@@ -272,10 +274,11 @@ def test_a_question_naming_the_entity_answers_about_that_term(tmp_path: Path) ->
     stores = DemoStores(tmp_path / "state")
     try:
         published = build_demo_publication(stores, clock=_clock(NOW))
-        assert (
-            _answer(stores, published, _question(question="What is an order?"))
-            == "Order is a confirmed customer order."
-        )
+        draft = _answer(stores, published, _question(question="What is an order?"))
+        assert draft.answer_text == "Order is a confirmed customer order."
+        # An entity is not a metric: without the filter this cites the publication's one
+        # metric, and asserting only the text would pass blind.
+        assert draft.metric_refs == ()
     finally:
         stores.close()
 
@@ -285,9 +288,8 @@ def test_the_demonstration_question_grounds_and_answers(tmp_path: Path) -> None:
     stores = DemoStores(tmp_path / "state")
     try:
         published = build_demo_publication(stores, clock=_clock(NOW))
-        assert (
-            _answer(stores, published, _question(question=DEMO_QUESTION))
-            == "Daily order count is confirmed customer orders per calendar day."
+        assert _answer(stores, published, _question(question=DEMO_QUESTION)).answer_text == (
+            "Daily order count is confirmed customer orders per calendar day."
         )
     finally:
         stores.close()

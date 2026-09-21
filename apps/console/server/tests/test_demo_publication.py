@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from heinzel_console.demo.collaborators import _published_semantic_objects
 from heinzel_console.demo.publication import build_demo_publication
 from heinzel_console.demo.stores import DemoStores
 
@@ -57,5 +58,24 @@ def test_a_clock_without_a_utc_offset_is_refused(tmp_path: Path) -> None:
         with pytest.raises(ValueError, match="timezone-aware UTC"):
             build_demo_publication(stores, clock=_clock(naive))
         assert stores.publications.list_publications(tenant_id=TENANT) == ()
+    finally:
+        stores.close()
+
+
+def test_the_published_term_mirror_matches_the_publication_intent(tmp_path: Path) -> None:
+    """`_published_semantic_objects` must list exactly what the intent publishes.
+
+    The two are matched by hand, so a change to `publication_intent` for a kind this
+    demonstration does not currently publish — events, states, relationships — would stay
+    invisible until someone extended the publication, and would then surface as an
+    unanswerable 409 rather than as anything legible.
+    """
+    stores = DemoStores(tmp_path / "state")
+    try:
+        published = build_demo_publication(stores, clock=_clock(datetime(2026, 1, 1, tzinfo=UTC)))
+        intent, _receipt, _references = stores.publications.load_publication(
+            tenant_id=TENANT, publication_id=published.receipt.publication_id
+        )
+        assert _published_semantic_objects(published.semantic_version) == intent.semantic_objects
     finally:
         stores.close()
