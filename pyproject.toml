@@ -5,6 +5,12 @@ requires-python = "==3.13.*"
 
 [dependency-groups]
 dev = [
+  # Starlette's `TestClient` is built on this and prefers it over httpx at
+  # runtime, but starlette declares it only under an extra the workspace does not
+  # request. The console's suite imports it directly, and undeclared it reached
+  # the environment only as a transitive dependency of `mcp`, by way of packages
+  # the console itself does not depend on.
+  "httpx2>=2.10,<3",
   "hypothesis>=6.138,<7",
   "mypy>=1.17,<2",
   "mutmut>=3.3,<4",

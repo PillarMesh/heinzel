@@ -1179,6 +1179,7 @@ source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
+    { name = "httpx2" },
     { name = "hypothesis" },
     { name = "mutmut" },
     { name = "mypy" },
@@ -1192,6 +1193,7 @@ dev = [
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "httpx2", specifier = ">=2.10,<3" },
     { name = "hypothesis", specifier = ">=6.138,<7" },
     { name = "mutmut", specifier = ">=3.3,<4" },
     { name = "mypy", specifier = ">=1.17,<2" },
