@@ -12,14 +12,16 @@ import logging
 import os
 import signal
 import sys
-from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from types import FrameType
 from typing import Never
-from urllib.parse import urlsplit
 
 from .demo import build_demo_app
+from .routes import canonical_browser_origin
+
+type _SignalHandler = Callable[[int, FrameType | None], object] | int | signal.Handlers | None
 
 __all__ = [
     "announce_accepted_origin",
@@ -48,6 +50,10 @@ _LOWEST_PORT = 1
 _HIGHEST_PORT = 65535
 
 _BROWSER_SCHEMES = frozenset({"http", "https"})
+
+# Every signal that means "stop": `docker stop` sends SIGTERM, a Compose `stop_signal:` may
+# name another, and a closing terminal sends SIGHUP. Each must leave the stores released.
+_TERMINATION_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT)
 
 _ORIGIN_VARIABLE = "HEINZEL_CONSOLE_ALLOWED_ORIGIN"
 _DIST_VARIABLE = "HEINZEL_CONSOLE_DIST"
@@ -132,35 +138,31 @@ def _require_browser_origin(origin: str, *, source: str) -> str:
     """Refuse an origin no browser would send, rather than one the gate can never match.
 
     The gate compares the `Origin` header to this value literally, so a trailing slash, a
-    path, an uppercase host, or surrounding whitespace each serve a console whose every page
-    renders and whose every command is refused `same_origin_required`. Normalizing quietly
-    would accept an origin nobody asked for, so the spelling a browser actually sends is
-    required, and anything else is named and refused.
+    path, an uppercase host, surrounding whitespace, or the scheme's default port spelled
+    out each serve a console whose every page renders and whose every command is refused
+    `same_origin_required`. Normalizing quietly would accept an origin nobody asked for, so
+    the spelling a browser actually sends is required, and anything else is named and
+    refused - by the one function that decides this for the whole package, so the command
+    and the routes cannot disagree about what a browser sends.
     """
     if not origin.strip():
         raise ValueError(f"{source} was given no value: omit it or set {_ORIGIN_VARIABLE}")
-    parsed = urlsplit(origin)
-    # The userinfo of a URL is a credential, and must never be repeated here or in a log.
-    if "@" in parsed.netloc:
+    # The userinfo of a URL is a credential and must never be repeated here or in a log.
+    # Checked before the value is parsed: `urlsplit` raises for some hosts, and the
+    # `ValueError` it raises carries the whole authority, credential included, into `main`.
+    if "@" in origin:
         raise ValueError(
             f"{source} must be a bare origin such as http://127.0.0.1:8000, carrying no credentials"
         )
-    # `urlsplit` keeps surrounding space inside the authority, where it would compare equal to
-    # the expected spelling below, so it is refused here instead.
-    spaced = any(character.isspace() for character in origin)
     # Derived from the value given rather than the value itself: an origin is a network
     # address the operator chose, and without the spelling to use the refusal cannot be acted
     # on. A value carrying a credential is refused above, before this is built.
-    expected = (
-        f"{parsed.scheme}://{parsed.netloc.lower()}"
-        if not spaced and parsed.scheme in _BROWSER_SCHEMES and parsed.hostname
-        else None
-    )
+    expected = canonical_browser_origin(origin, schemes=_BROWSER_SCHEMES)
     if expected != origin:
         detail = f", for example {expected}" if expected else ", for example http://127.0.0.1:8000"
         raise ValueError(
             f"{source} must be exactly the origin the browser sends, with no trailing slash, "
-            f"path, surrounding space, or uppercase{detail}"
+            f"path, surrounding space, uppercase, or default port{detail}"
         )
     return origin
 
@@ -188,7 +190,13 @@ def resolve_origin(*, origin: str | None, container: bool, port: int) -> str:
             f"send: give --origin or set {_ORIGIN_VARIABLE}, for example "
             "http://127.0.0.1:8000"
         )
-    return f"http://{_LOOPBACK_HOST}:{port}"
+    # Through the same function the given values go through: `--port 80` is served on the
+    # loopback host, and the browser then sends `http://127.0.0.1`, with no port at all.
+    derived = canonical_browser_origin(f"http://{_LOOPBACK_HOST}:{port}", schemes=_BROWSER_SCHEMES)
+    if derived is None:
+        # Unreachable: the host is a literal and the port is validated by `_port_number`.
+        raise ValueError(f"the origin of a console on port {port} could not be derived")
+    return derived
 
 
 def require_bundle(*, dist: Path | None, configured: str | None) -> Path | None:
@@ -234,32 +242,53 @@ def announce_accepted_origin(*, origin: str) -> None:
     )
 
 
+def _ignore_termination() -> None:
+    """Hold every termination signal off the clean-up, whatever started it."""
+    for number in _TERMINATION_SIGNALS:
+        with suppress(ValueError):
+            # Not the main thread, so the disposition is not this command's to change.
+            signal.signal(number, signal.SIG_IGN)
+
+
 @contextmanager
 def _termination_raises_system_exit() -> Iterator[None]:
-    """Make SIGTERM leave the build and the server as an exception, so the stores are released.
+    """Make a termination signal leave the build and the server as an exception, so the
+    stores are released.
 
     uvicorn restores the handlers it replaced and then re-raises the signal it caught. With
     SIGTERM's default disposition that kills the process inside `uvicorn.run`, and the
     clean-up below it never runs — which is precisely how a container is stopped. A stop that
     lands while the demonstration is still being seeded ends the same way, so this covers the
     whole lifetime rather than the server alone.
+
+    SIGHUP and SIGQUIT are covered too: `docker stop` sends SIGTERM, but a Compose
+    `stop_signal:` names whichever signal it likes, and a terminal that closes on a bare
+    `heinzel-console serve` sends SIGHUP.
     """
 
     def _terminate(signal_number: int, frame: FrameType | None) -> Never:
-        # A second SIGTERM must not abort the clean-up the first one started.
-        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        # A second signal must not abort the clean-up the first one started.
+        _ignore_termination()
         raise SystemExit(128 + signal_number)
 
+    previous: list[tuple[int, _SignalHandler]] = []
     try:
-        previous = signal.signal(signal.SIGTERM, _terminate)
+        for number in _TERMINATION_SIGNALS:
+            previous.append((number, signal.signal(number, _terminate)))
     except ValueError:
         # Not the main thread, so the disposition is not this command's to change.
+        _restore(previous)
         yield
         return
     try:
         yield
     finally:
-        signal.signal(signal.SIGTERM, previous)
+        _restore(previous)
+
+
+def _restore(handlers: list[tuple[int, _SignalHandler]]) -> None:
+    for number, handler in reversed(handlers):
+        signal.signal(number, handler)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -269,8 +298,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     import uvicorn
 
-    # Installed before anything is opened and restored after everything is released, so no
-    # window of this command's lifetime ends with the state directory still held.
+    # Installed before anything is opened and restored after everything is released, so a
+    # stop that lands anywhere between those two points still releases the state directory.
+    # SIGKILL cannot be handled at all, and SIGINT during the clean-up still interrupts it.
     with _termination_raises_system_exit():
         try:
             if not arguments.container:
@@ -302,8 +332,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             announce_accepted_origin(origin=origin)
             uvicorn.run(app, host=host, port=arguments.port)
         except OSError as unavailable:
-            # A port already in use is the likeliest failure of all, and a traceback out of
-            # `bind()` reads as a crash rather than as a port to change.
+            # Not the port already being in use: uvicorn catches `EADDRINUSE` itself, reports
+            # it as `[Errno 48]` and exits the process with 3, which is neither of the codes
+            # this module returns and never reaches here. Documenting 3 as this command's own
+            # would claim a code it does not choose and uvicorn could change. This covers the
+            # bind failures uvicorn re-raises instead, where a traceback out of `bind()` reads
+            # as a crash rather than as a port to change.
             _LOGGER.error(
                 "the console could not serve on port %d: %s",
                 arguments.port,
@@ -311,5 +345,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             return _UNAVAILABLE
         finally:
+            # Held off for the whole clean-up, not only once a signal has started one:
+            # uvicorn also returns on SIGINT, on its own exit and on an exception, and a
+            # SIGTERM landing then would abort `close()` half-way. The context manager's
+            # own `finally` restores the previous handlers after this.
+            _ignore_termination()
             close()
     return 0

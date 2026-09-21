@@ -577,3 +577,194 @@ def test_a_bundle_named_by_the_environment_reaches_the_console(
     console, _ = _served(monkeypatch)
     assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 0
     assert console.built[0][1]["dist"] == dist
+
+
+_ACCEPTED_ORIGINS = [
+    "http://127.0.0.1:8000",
+    "http://127.0.0.1",
+    "http://localhost",
+    "http://0.0.0.0:8000",
+    "http://[::1]:8000",
+    "http://[2001:db8::1]:8000",
+    "https://example.test",
+    "http://xn--r8jz45g.test:8000",
+    f"http://{'a' * 300}.test:8000",
+    "http://example.test.:8000",
+]
+
+
+@pytest.mark.parametrize("usable", _ACCEPTED_ORIGINS)
+def test_every_origin_a_browser_really_sends_is_accepted_unchanged(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, usable: str
+) -> None:
+    """A false refusal stops the quickstart as dead as a false acceptance.
+
+    `0.0.0.0` is a bind address the gate can never match on a Mac, and a browser on Linux
+    does send it; an IPv6 literal, a punycode name, a trailing-dot name and a 300-character
+    name are each what some browser puts in the header, so none may be refused.
+    """
+    console, _ = _served(monkeypatch)
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed", "--origin", usable]) == 0
+    assert console.built[0][1]["origin"] == usable
+
+
+@pytest.mark.parametrize(
+    "unusable",
+    [
+        "http://127.0.0.1:80",
+        "https://example.test:443",
+        "http://127.0.0.1:",
+        "http://127.0.0.1:-1",
+        "http://127.0.0.1:99999999",
+        "http://127.0.0.1:80o0",
+    ],
+)
+def test_an_origin_whose_port_no_browser_would_send_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+    unusable: str,
+) -> None:
+    """A browser leaves out the default port of the scheme (RFC 6454 section 6.1).
+
+    `--origin "http://127.0.0.1:$PORT"` with `PORT` unset produces the empty one, and an
+    operator who published `-p 80:8000` writes `:80`. Both serve a console that renders
+    every page and refuses every command.
+    """
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--origin", unusable]) == 2
+    assert "origin" in caplog.text
+
+
+def test_a_default_port_is_reported_with_the_spelling_the_browser_would_send(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+) -> None:
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert (
+            cli.main(["serve", "--state-dir", str(tmp_path), "--origin", "http://127.0.0.1:80"])
+            == 2
+        )
+    assert "for example http://127.0.0.1" in caplog.text
+    assert "http://127.0.0.1:80" not in caplog.text
+
+
+def test_the_derived_loopback_origin_leaves_out_the_default_port(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`--port 80` is served on the loopback host, and the browser sends no port at all."""
+    console, _ = _served(monkeypatch)
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed", "--port", "80"]) == 0
+    assert console.built[0][1]["origin"] == "http://127.0.0.1"
+
+
+@pytest.mark.parametrize(
+    "unprintable",
+    [
+        "http://127.0.0.1\x00",
+        "http://127.0.0.1​:8000",
+        "http://127.0.0.1\xad:8000",
+        "http://127.0.0.1:8000\\",
+        "http://127.0.0.1%3a8000",
+        "http://h\u00e9llo.test:8000",
+    ],
+)
+def test_an_origin_carrying_characters_no_host_has_is_refused_before_it_is_logged(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+    unprintable: str,
+) -> None:
+    """The accepted origin is echoed to the startup log, so a NUL, a zero-width space, a
+    percent escape or a name a browser would send as punycode must never reach it."""
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--origin", unprintable]) == 2
+    assert unprintable not in caplog.text
+
+
+def test_an_origin_whose_host_cannot_be_parsed_never_repeats_its_credential(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+) -> None:
+    """`urlsplit` raises for a host that NFKC normalization changes, and the `ValueError`
+    it raises carries the whole authority - the credential with it - into the log."""
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert (
+            cli.main(
+                [
+                    "serve",
+                    "--state-dir",
+                    str(tmp_path),
+                    "--origin",
+                    "http://operator:hunter2@exa\uff0fmple.test:8000",
+                ]
+            )
+            == 2
+        )
+    assert "hunter2" not in caplog.text
+    assert "operator" not in caplog.text
+    assert "credentials" in caplog.text
+
+
+@pytest.mark.parametrize("stopping", [signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT])
+def test_the_stores_are_closed_however_the_container_is_stopped(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stopping: signal.Signals
+) -> None:
+    """`docker stop` sends SIGTERM, a Compose `stop_signal:` names whichever it likes, and
+    a terminal that closes on a bare `heinzel-console serve` sends SIGHUP."""
+
+    def _stopped(*arguments: object, **keywords: object) -> None:
+        # An unhandled signal here would end the test session rather than fail this test.
+        assert signal.getsignal(stopping) is not signal.SIG_DFL
+        signal.raise_signal(stopping)
+
+    console = _serving(monkeypatch, _stopped)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"])
+    assert stopped.value.code == 128 + stopping
+    assert console.closed == 1
+
+
+@pytest.mark.parametrize("stopping", [signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT])
+def test_a_termination_during_an_ordinary_clean_up_never_aborts_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stopping: signal.Signals
+) -> None:
+    """The clean-up is also reached when the server returns for its own reasons - SIGINT,
+    its own exit, an exception - and the first stop to land then must not abort it."""
+    released: list[str] = []
+
+    def _close() -> None:
+        if signal.getsignal(stopping) is signal.SIG_DFL:
+            # Raising it here would kill the test session instead of failing this test.
+            released.append("unprotected")
+            return
+        signal.raise_signal(stopping)
+        released.append("closed")
+
+    def _build(state_dir: Path, **keywords: object) -> tuple[Starlette, Callable[[], None]]:
+        return Starlette(), _close
+
+    monkeypatch.setattr(cli, "build_demo_app", _build)
+    monkeypatch.setattr("uvicorn.run", lambda app, **keywords: None)
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 0
+    assert released == ["closed"]
+
+
+@pytest.mark.parametrize("stopping", [signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT])
+def test_every_previous_termination_handler_is_restored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, stopping: signal.Signals
+) -> None:
+    before = signal.getsignal(stopping)
+    _served(monkeypatch)
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 0
+    assert signal.getsignal(stopping) is before

@@ -3,6 +3,7 @@ from __future__ import annotations
 import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
+from string import ascii_lowercase, digits
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, TypeAdapter
@@ -16,6 +17,12 @@ from ..contracts import ApiMeta, DataProvenance
 from ..errors import ConsoleInvalidRequest, ConsoleUnauthenticated
 
 type ContextProvider = Callable[[Request], TrustedActorContext | None]
+
+# The default port of each scheme a browser names an origin with, which it then leaves out.
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+_HTTPS_ONLY = frozenset({"https"})
+# Letters and digits for a name, `-` and `.` for its labels, `:` for an IPv6 literal.
+_HOSTNAME_CHARACTERS = frozenset(ascii_lowercase + digits + "-.:")
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,29 +39,50 @@ class RouteDependencies:
         return "demo_fixture" if self.backend.fixture_mode else "governed_local"
 
 
-def normalized_https_origin(value: str) -> str | None:
-    if "\\" in value or any(character.isspace() for character in value):
+def canonical_browser_origin(value: str, *, schemes: frozenset[str]) -> str | None:
+    """The origin a browser would send for `value`, or `None` when no browser sends one.
+
+    One implementation serves every same-origin decision in this package: the managed link
+    origin below, and the origin the `heinzel-console` command accepts commands from. Both
+    are compared to an `Origin` header literally, so both must agree on the spelling a
+    browser produces - notably that the default port of the scheme is left out (RFC 6454
+    section 6.1), so `http://host:80` and `https://host:443` are named without it.
+
+    A credential, a path, a query, a fragment, a backslash, whitespace, or a character
+    outside a hostname's ASCII alphabet has no browser spelling at all, and is refused
+    rather than adjusted into one.
+    """
+    if "\\" in value or not value.isascii() or not value.isprintable():
+        return None
+    if any(character.isspace() for character in value):
         return None
     try:
         parsed = urlsplit(value)
+        # Raises for a port that is empty, negative, out of range or not a number - none of
+        # which the authority's own text reveals when it is compared as written.
         port = parsed.port
     except ValueError:
         return None
     if (
-        parsed.scheme != "https"
+        parsed.scheme not in schemes
         or parsed.hostname is None
         or parsed.username is not None
         or parsed.password is not None
     ):
         return None
-    hostname = parsed.hostname
-    if not hostname.isascii():
+    hostname = parsed.hostname.lower()
+    # A percent escape, a NUL or anything else outside this alphabet is not a host a browser
+    # resolves, and a caller may repeat what is returned here in a log.
+    if not hostname or set(hostname) - _HOSTNAME_CHARACTERS:
         return None
-    hostname = hostname.lower()
     if ":" in hostname:
         hostname = f"[{hostname}]"
-    port_suffix = "" if port in (None, 443) else f":{port}"
-    return f"https://{hostname}{port_suffix}"
+    port_suffix = "" if port in (None, _DEFAULT_PORTS[parsed.scheme]) else f":{port}"
+    return f"{parsed.scheme}://{hostname}{port_suffix}"
+
+
+def normalized_https_origin(value: str) -> str | None:
+    return canonical_browser_origin(value, schemes=_HTTPS_ONLY)
 
 
 def correlation_id(request: Request) -> str:
@@ -133,6 +161,7 @@ __all__ = [
     "ContextProvider",
     "RouteDependencies",
     "build_routes",
+    "canonical_browser_origin",
     "correlation_id",
     "envelope_response",
     "normalized_https_origin",

@@ -789,6 +789,10 @@ def test_authorized_external_link_requires_the_exact_configured_https_origin() -
         "https:\\bi.example.test\\private-canary",
         "https://bi.example.test/private-canary#fragment",
         "https://bi.example.test/private-canary#",
+        # These normalize to the configured origin, so only a check on the whole value keeps
+        # a control character or a non-ASCII byte out of the `Location` header.
+        "https://bi.example.test/private-canary\x00",
+        "https://bi.example.test/private-canary/é",
     ),
 )
 def test_authorized_external_link_rejects_origin_confusion_without_reflecting_target(
