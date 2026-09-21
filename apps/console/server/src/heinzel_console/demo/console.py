@@ -47,6 +47,7 @@ from .collaborators import (
     demo_clock,
 )
 from .publication import DEMO_TENANT_ID, build_demo_publication
+from .seed import seed_demo_request
 from .stores import DemoStores
 
 __all__ = ["DEMO_ACTOR_HEADER", "DemoConsole"]
@@ -158,14 +159,15 @@ class DemoConsole:
                 self._stores.close()
             raise
 
-    @property
-    def requests(self) -> RequestManagementService:
-        """The request service this console reads and writes requests through.
+    def seed_demonstration_request(self) -> None:
+        """Leave the demonstration's own question waiting, if it is not already there.
 
-        The demonstration's seed submits its question through this, so that the request is
-        the owning service's own transaction rather than console state.
+        The request service itself stays private. Exposing it would let any holder of a
+        console drive requests directly, past the session, origin, CSRF and actor checks
+        the HTTP surface enforces. This is the one write the demonstration needs before a
+        browser connects, so it is the only one the console offers.
         """
-        return self._requests
+        seed_demo_request(self._requests)
 
     def build_app(self, *, origin: str, dist: Path | None = None) -> Starlette:
         """The console application, serving this backend at `origin`."""

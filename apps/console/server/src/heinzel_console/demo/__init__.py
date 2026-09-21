@@ -7,6 +7,7 @@ and the data it holds is illustrative.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import suppress
 from pathlib import Path
 
 from starlette.applications import Starlette
@@ -28,8 +29,10 @@ def build_demo_app(
     console = DemoConsole(state_dir)
     try:
         if seed:
-            seed_demo_request(console)
+            console.seed_demonstration_request()
         return console.build_app(origin=origin, dist=dist), console.close
     except BaseException:
-        console.close()
+        # Best-effort clean-up: a failure to close must not replace the failure to build.
+        with suppress(Exception):
+            console.close()
         raise
