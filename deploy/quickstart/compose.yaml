@@ -1,0 +1,33 @@
+# The local demonstration decided in ADR-0009. It packages the demonstration backend, not a
+# deployment: the console has no authentication, so anyone who reaches the published port acts
+# as the architect. Start it from the repository root:
+#
+#   docker compose -f deploy/quickstart/compose.yaml up --build
+#
+# See the README beside this file for what the demonstration shows and where it stops.
+
+services:
+  console:
+    build:
+      context: ../..
+      dockerfile: deploy/quickstart/Dockerfile
+    # Loopback only. This is the whole network boundary of an unauthenticated console, so the
+    # host part is not decoration: `8000:8000` would publish it on every interface.
+    ports:
+      - "127.0.0.1:8000:8000"
+    # The origin the browser sends, which the server cannot derive from the `0.0.0.0` it binds
+    # inside the container. It must agree with the published port above: a command whose
+    # `Origin` header differs is refused `same_origin_required`, which reads as a console where
+    # every page loads and every button fails. Change the two together, and spell the origin as
+    # the browser sends it — no trailing slash, no uppercase, and no default port.
+    environment:
+      HEINZEL_CONSOLE_ALLOWED_ORIGIN: http://127.0.0.1:8000
+    # The demonstration's state directory and its SQLite stores. `docker compose down` keeps it
+    # and the demonstration resumes; `docker compose down -v` removes it and the next start is a
+    # fresh demonstration.
+    volumes:
+      - heinzel-state:/var/lib/heinzel
+    restart: unless-stopped
+
+volumes:
+  heinzel-state:

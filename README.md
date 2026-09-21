@@ -27,6 +27,36 @@ overnight.
 Warehouse engines: PostgreSQL today; ClickHouse partially. Catalog publication uses OpenMetadata and
 dashboards use Apache Superset.
 
+## Quickstart
+
+To look at the product rather than build it, start the local demonstration with Docker:
+
+````bash
+docker compose -f deploy/quickstart/compose.yaml up --build
+````
+
+Then open <http://127.0.0.1:8000>. The first build compiles the console bundle and installs the
+Python environment, so it takes a few minutes. A stakeholder question is waiting in the inbox:
+clarify it, prepare an answer proposal, submit it to the requester and record your approval.
+
+The demonstration carries the governed request path as far as approval, and says so rather than
+implying more. Runs, acquisition receipts and answer delivery are not part of it, and the console
+reports them as not delivered rather than showing an empty page. Admission to `execution_ready`
+needs the requester's acceptance too, which the browser cannot give because the demonstration
+console has one actor; [deploy/quickstart/README.md](deploy/quickstart/README.md) says what the
+demonstration shows, where it stops, and how to send that acceptance.
+
+It has **no authentication**: anyone who reaches the published port acts as the data architect.
+Compose publishes it on `127.0.0.1` only — keep it there, and do not expose it to a network. If
+you change the published port, change `HEINZEL_CONSOLE_ALLOWED_ORIGIN` in
+`deploy/quickstart/compose.yaml` with it, or every page will load and every command be refused.
+
+To reset the demonstration, discarding its state:
+
+````bash
+docker compose -f deploy/quickstart/compose.yaml down -v
+````
+
 ## Getting started
 
 You need Python 3.13 and [uv](https://docs.astral.sh/uv/).
@@ -40,8 +70,6 @@ uv run pytest -m "not live" -q
 
 The offline suite needs no network, Docker or credentials. The console in `apps/console` has its
 own [README](apps/console/README.md).
-
-A Docker Compose quickstart is planned.
 
 ## Live tests
 
