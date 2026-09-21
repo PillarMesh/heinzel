@@ -17,12 +17,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import FrameType
 from typing import Never
+from urllib.parse import urlsplit
 
 from .demo import build_demo_app
 
 __all__ = [
+    "announce_accepted_origin",
     "main",
     "parse_arguments",
+    "require_bundle",
     "require_loopback",
     "resolve_origin",
     "warn_when_unauthenticated",
@@ -30,15 +33,21 @@ __all__ = [
 
 _LOGGER = logging.getLogger(__name__)
 
-# The hosts an unauthenticated console may bind. Shared shape with the governed acceptance
-# harness, which refuses the same way for the same reason.
+# The hosts an unauthenticated console may bind.
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1"})
 
 _LOOPBACK_HOST = "127.0.0.1"
-# Only reachable behind `--container`. IPv4 is deliberate: the quickstart publishes an IPv4
-# port (`127.0.0.1:8000:8000`) onto Docker's IPv4 bridge network.
+# Only reachable behind `--container`. IPv4 is deliberate: a container image is meant to
+# publish an IPv4 port (`127.0.0.1:8000:8000`) onto Docker's IPv4 bridge network.
 _EVERY_INTERFACE = "0.0.0.0"
 _DEFAULT_PORT = 8000
+
+# The range a TCP port number can occupy. Zero is excluded along with out-of-range values:
+# it would leave the kernel to choose the port, which no configured origin could then name.
+_LOWEST_PORT = 1
+_HIGHEST_PORT = 65535
+
+_BROWSER_SCHEMES = frozenset({"http", "https"})
 
 _ORIGIN_VARIABLE = "HEINZEL_CONSOLE_ALLOWED_ORIGIN"
 _DIST_VARIABLE = "HEINZEL_CONSOLE_DIST"
@@ -56,6 +65,18 @@ class PrivateArgumentParser(argparse.ArgumentParser):
         self.exit(2, "heinzel-console: error: command arguments are invalid\n")
 
 
+def _port_number(text: str) -> int:
+    """A port a socket can actually carry, so an impossible one never reaches `bind()`.
+
+    Out of range, the value reaches `bind()` inside uvicorn and ends the command in an
+    `OverflowError` traceback rather than the message argparse gives every other rejection.
+    """
+    port = int(text)
+    if not _LOWEST_PORT <= port <= _HIGHEST_PORT:
+        raise ValueError("a port must be between 1 and 65535")
+    return port
+
+
 def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
     """Parse `argv`, resolving `--container` into the host to bind.
 
@@ -66,7 +87,7 @@ def parse_arguments(argv: Sequence[str]) -> argparse.Namespace:
     commands = root.add_subparsers(required=True, metavar="command")
     serve = commands.add_parser("serve", help="Serve the demonstration console", allow_abbrev=False)
     serve.add_argument("--state-dir", required=True, type=Path, dest="state_dir")
-    serve.add_argument("--port", default=_DEFAULT_PORT, type=int)
+    serve.add_argument("--port", default=_DEFAULT_PORT, type=_port_number)
     serve.add_argument(
         "--dist", type=Path, help="Compiled console bundle to serve alongside the API"
     )
@@ -107,6 +128,43 @@ def require_loopback(host: str) -> str:
     return host
 
 
+def _require_browser_origin(origin: str, *, source: str) -> str:
+    """Refuse an origin no browser would send, rather than one the gate can never match.
+
+    The gate compares the `Origin` header to this value literally, so a trailing slash, a
+    path, an uppercase host, or surrounding whitespace each serve a console whose every page
+    renders and whose every command is refused `same_origin_required`. Normalizing quietly
+    would accept an origin nobody asked for, so the spelling a browser actually sends is
+    required, and anything else is named and refused.
+    """
+    if not origin.strip():
+        raise ValueError(f"{source} was given no value: omit it or set {_ORIGIN_VARIABLE}")
+    parsed = urlsplit(origin)
+    # The userinfo of a URL is a credential, and must never be repeated here or in a log.
+    if "@" in parsed.netloc:
+        raise ValueError(
+            f"{source} must be a bare origin such as http://127.0.0.1:8000, carrying no credentials"
+        )
+    # `urlsplit` keeps surrounding space inside the authority, where it would compare equal to
+    # the expected spelling below, so it is refused here instead.
+    spaced = any(character.isspace() for character in origin)
+    # Derived from the value given rather than the value itself: an origin is a network
+    # address the operator chose, and without the spelling to use the refusal cannot be acted
+    # on. A value carrying a credential is refused above, before this is built.
+    expected = (
+        f"{parsed.scheme}://{parsed.netloc.lower()}"
+        if not spaced and parsed.scheme in _BROWSER_SCHEMES and parsed.hostname
+        else None
+    )
+    if expected != origin:
+        detail = f", for example {expected}" if expected else ", for example http://127.0.0.1:8000"
+        raise ValueError(
+            f"{source} must be exactly the origin the browser sends, with no trailing slash, "
+            f"path, surrounding space, or uppercase{detail}"
+        )
+    return origin
+
+
 def resolve_origin(*, origin: str | None, container: bool, port: int) -> str:
     """The origin the browser will send, which is never the address the server binds.
 
@@ -117,10 +175,13 @@ def resolve_origin(*, origin: str | None, container: bool, port: int) -> str:
     nothing to derive it from and the command refuses to start.
     """
     if origin is not None:
-        return origin
+        # An empty value is a mistake, not an omission: `--origin "$VARIABLE"` with the
+        # variable unset would otherwise be returned verbatim, and `create_app` falls back
+        # from it to a default origin, bypassing the refusal below.
+        return _require_browser_origin(origin, source="--origin")
     configured = os.environ.get(_ORIGIN_VARIABLE)
     if configured:
-        return configured
+        return _require_browser_origin(configured, source=_ORIGIN_VARIABLE)
     if container:
         raise ValueError(
             "a console bound to every interface cannot derive the origin the browser will "
@@ -130,13 +191,22 @@ def resolve_origin(*, origin: str | None, container: bool, port: int) -> str:
     return f"http://{_LOOPBACK_HOST}:{port}"
 
 
-def require_bundle(dist: Path | None) -> Path | None:
-    """Refuse a bundle path that holds no bundle, rather than serving a blank page."""
-    if dist is not None and not dist.is_dir():
+def require_bundle(*, dist: Path | None, configured: str | None) -> Path | None:
+    """Resolve the compiled bundle from `--dist` or the environment, refusing a path that
+    holds no bundle rather than serving a blank page.
+
+    Both settings are resolved here so that one code path validates them and the refusal can
+    name the two places the path could have come from. `create_app` reads the variable too,
+    but reports only that a dist directory does not exist, naming neither setting.
+    """
+    selected = dist
+    if selected is None and configured and configured.strip():
+        selected = Path(configured)
+    if selected is not None and not selected.is_dir():
         raise ValueError(
             f"the compiled console bundle named by --dist or {_DIST_VARIABLE} is not a directory"
         )
-    return dist
+    return selected
 
 
 def warn_when_unauthenticated(*, host: str) -> None:
@@ -148,16 +218,36 @@ def warn_when_unauthenticated(*, host: str) -> None:
     )
 
 
+def announce_accepted_origin(*, origin: str) -> None:
+    """Name the one origin whose commands are accepted.
+
+    A browser opened anywhere else is refused `same_origin_required`, which names neither the
+    expected nor the received origin, and the startup log otherwise holds only the bind
+    address. A published port that differs from the configured origin then reads as a product
+    whose every button is broken, with nothing pointing at the setting that fixes it.
+    """
+    _LOGGER.warning(
+        "commands are accepted only from %s: a browser opened on any other origin renders "
+        "every page and has every command refused, so set %s to the origin it will use",
+        origin,
+        _ORIGIN_VARIABLE,
+    )
+
+
 @contextmanager
 def _termination_raises_system_exit() -> Iterator[None]:
-    """Make SIGTERM leave `uvicorn.run` as an exception, so the state directory is released.
+    """Make SIGTERM leave the build and the server as an exception, so the stores are released.
 
     uvicorn restores the handlers it replaced and then re-raises the signal it caught. With
     SIGTERM's default disposition that kills the process inside `uvicorn.run`, and the
-    clean-up below it never runs — which is precisely how a container is stopped.
+    clean-up below it never runs — which is precisely how a container is stopped. A stop that
+    lands while the demonstration is still being seeded ends the same way, so this covers the
+    whole lifetime rather than the server alone.
     """
 
     def _terminate(signal_number: int, frame: FrameType | None) -> Never:
+        # A second SIGTERM must not abort the clean-up the first one started.
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
         raise SystemExit(128 + signal_number)
 
     try:
@@ -175,34 +265,51 @@ def _termination_raises_system_exit() -> Iterator[None]:
 def main(argv: Sequence[str] | None = None) -> int:
     arguments = parse_arguments(sys.argv[1:] if argv is None else argv)
     host: str = arguments.host
-    if not arguments.container:
-        # Unreachable while `parse_arguments` is the only writer of `host`; it guards the
-        # edit that adds a `--host` option.
-        require_loopback(host)
     warn_when_unauthenticated(host=host)
 
     import uvicorn
 
-    try:
-        origin = resolve_origin(
-            origin=arguments.origin, container=arguments.container, port=arguments.port
-        )
-        dist = require_bundle(arguments.dist)
-        app, close = build_demo_app(
-            arguments.state_dir, seed=not arguments.no_seed, origin=origin, dist=dist
-        )
-    except ValueError as invalid:
-        _LOGGER.error("the console cannot be configured: %s", invalid)
-        return _INVALID_CONFIGURATION
-    except OSError as refused:
-        # The path is left out deliberately: this command never echoes what it was given.
-        _LOGGER.error(
-            "the console's state directory could not be opened: %s", refused.strerror or refused
-        )
-        return _UNAVAILABLE
-    try:
-        with _termination_raises_system_exit():
+    # Installed before anything is opened and restored after everything is released, so no
+    # window of this command's lifetime ends with the state directory still held.
+    with _termination_raises_system_exit():
+        try:
+            if not arguments.container:
+                # Unreachable while `parse_arguments` is the only writer of `host`; it guards
+                # the edit that adds a `--host` option.
+                require_loopback(host)
+            origin = resolve_origin(
+                origin=arguments.origin, container=arguments.container, port=arguments.port
+            )
+            dist = require_bundle(dist=arguments.dist, configured=os.environ.get(_DIST_VARIABLE))
+            app, close = build_demo_app(
+                arguments.state_dir, seed=not arguments.no_seed, origin=origin, dist=dist
+            )
+        except ValueError as invalid:
+            _LOGGER.error("the console cannot be configured: %s", invalid)
+            return _INVALID_CONFIGURATION
+        except OSError as refused:
+            _LOGGER.error(
+                "the console's state directory could not be opened: %s%s",
+                # `strerror` is absent on an `OSError` raised by hand, and formatting the
+                # exception itself would print whatever its message happens to carry.
+                refused.strerror or type(refused).__name__,
+                # The operator typed this path, and two candidate directories are otherwise
+                # guesswork. It is not an argument echoed back by the parser.
+                f" ({refused.filename})" if refused.filename else "",
+            )
+            return _UNAVAILABLE
+        try:
+            announce_accepted_origin(origin=origin)
             uvicorn.run(app, host=host, port=arguments.port)
-    finally:
-        close()
+        except OSError as unavailable:
+            # A port already in use is the likeliest failure of all, and a traceback out of
+            # `bind()` reads as a crash rather than as a port to change.
+            _LOGGER.error(
+                "the console could not serve on port %d: %s",
+                arguments.port,
+                unavailable.strerror or type(unavailable).__name__,
+            )
+            return _UNAVAILABLE
+        finally:
+            close()
     return 0

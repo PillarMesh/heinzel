@@ -2,13 +2,17 @@
 
 The command serves a console that has no authentication, so the tests that matter here are
 the ones about where it may bind, which origin the browser must use, and whether it releases
-the state directory however the server exits. No test binds a port.
+the state directory however the server exits. Only the test that proves an unavailable port
+is reported rather than raised binds one.
 """
 
 from __future__ import annotations
 
+import errno
 import logging
+import os
 import signal
+import socket
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -18,12 +22,14 @@ from heinzel_console import cli
 from starlette.applications import Starlette
 
 _ORIGIN_VARIABLE = "HEINZEL_CONSOLE_ALLOWED_ORIGIN"
+_DIST_VARIABLE = "HEINZEL_CONSOLE_DIST"
 
 
 @pytest.fixture(autouse=True)
 def _no_configured_origin(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Keep the environment's own origin out of every test that does not set one."""
     monkeypatch.delenv(_ORIGIN_VARIABLE, raising=False)
+    monkeypatch.delenv(_DIST_VARIABLE, raising=False)
     yield
 
 
@@ -154,6 +160,9 @@ def test_the_stores_are_closed_when_the_container_is_stopped(
     """SIGTERM is how a container stops, and uvicorn re-raises it once its own handler is gone."""
 
     def _terminated(*arguments: object, **keywords: object) -> None:
+        # Raising SIGTERM with its default disposition still in place would kill the test
+        # session outright, so an unhandled signal must fail this test rather than end it.
+        assert signal.getsignal(signal.SIGTERM) is not signal.SIG_DFL
         signal.raise_signal(signal.SIGTERM)
 
     console = _serving(monkeypatch, _terminated)
@@ -261,8 +270,10 @@ def test_a_container_without_a_browser_origin_refuses_to_start(
 def test_a_state_directory_that_cannot_be_opened_is_reported_without_a_traceback(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, tmp_path: Path
 ) -> None:
+    """The operator typed this path, and two candidate directories are otherwise guesswork."""
+
     def _refuse(*arguments: object, **keywords: object) -> tuple[Starlette, Callable[[], None]]:
-        raise PermissionError(13, "Permission denied", str(tmp_path / "private-token-dir"))
+        raise PermissionError(13, "Permission denied", str(tmp_path / "state-directory"))
 
     monkeypatch.setattr(cli, "build_demo_app", _refuse)
     monkeypatch.setattr("uvicorn.run", _unreachable_builder)
@@ -270,6 +281,24 @@ def test_a_state_directory_that_cannot_be_opened_is_reported_without_a_traceback
         assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 1
     assert "state directory" in caplog.text
     assert "Permission denied" in caplog.text
+    assert str(tmp_path / "state-directory") in caplog.text
+    assert caplog.records[-1].exc_info is None
+
+
+def test_a_state_directory_failure_without_a_message_never_formats_the_exception(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    """`strerror` is `None` for an `OSError` raised by hand, and the fallback must not
+    format an exception whose only argument is a sentence naming a path."""
+
+    def _refuse(*arguments: object, **keywords: object) -> tuple[Starlette, Callable[[], None]]:
+        raise OSError("could not open /tmp/private-token-dir/requests.sqlite3")
+
+    monkeypatch.setattr(cli, "build_demo_app", _refuse)
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 1
+    assert "OSError" in caplog.text
     assert "private-token-dir" not in caplog.text
 
 
@@ -312,3 +341,239 @@ def test_main_reads_the_process_arguments_when_it_is_given_none(
     monkeypatch.setattr(sys, "argv", ["heinzel-console", "serve", "--state-dir", str(tmp_path)])
     assert cli.main() == 0
     assert console.built[0][0] == tmp_path
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_an_origin_given_no_value_is_refused_instead_of_falling_back(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+    blank: str,
+) -> None:
+    """`--origin "$HEINZEL_CONSOLE_ALLOWED_ORIGIN"` with the variable unset reaches here.
+
+    An empty value returned verbatim leaves `create_app` to fall back to its own default
+    origin, which bypasses the refusal above and serves a console that renders every page
+    and refuses every command.
+    """
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert (
+            cli.main(["serve", "--state-dir", str(tmp_path), "--container", "--origin", blank]) == 2
+        )
+    assert "--origin" in caplog.text
+    assert _ORIGIN_VARIABLE in caplog.text
+
+
+@pytest.mark.parametrize(
+    "unusable",
+    [
+        "127.0.0.1:8000",
+        "http://127.0.0.1:8000/",
+        "http://127.0.0.1:8000/console",
+        "http://127.0.0.1:8000?opened=1",
+        "http://127.0.0.1:8000#top",
+        "HTTP://127.0.0.1:8000",
+        "http://LOCALHOST:8000",
+        " http://127.0.0.1:8000",
+        "http://127.0.0.1:8000 ",
+        "ftp://127.0.0.1:8000",
+        "http://",
+    ],
+)
+def test_an_origin_no_browser_would_ever_send_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+    unusable: str,
+) -> None:
+    """The gate compares the `Origin` header literally, so any other spelling refuses
+    every command while every page still renders."""
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--origin", unusable]) == 2
+    assert "origin" in caplog.text
+
+
+def test_an_unusable_origin_is_reported_with_the_spelling_the_browser_would_send(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+) -> None:
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--origin", "HTTP://X:8000/"]) == 2
+    assert "http://x:8000" in caplog.text
+
+
+def test_an_origin_carrying_credentials_is_refused_without_repeating_them(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+) -> None:
+    """No browser sends userinfo in an `Origin`, and a password must never reach a log."""
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert (
+            cli.main(
+                [
+                    "serve",
+                    "--state-dir",
+                    str(tmp_path),
+                    "--origin",
+                    "http://operator:hunter2@127.0.0.1:8000",
+                ]
+            )
+            == 2
+        )
+    assert "hunter2" not in caplog.text
+    assert "operator" not in caplog.text
+
+
+def test_the_configured_origin_is_held_to_the_shape_the_option_is_held_to(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+) -> None:
+    """The two inputs reach the same gate, so they cannot disagree about what is usable."""
+    monkeypatch.setenv(_ORIGIN_VARIABLE, "http://127.0.0.1:8000/")
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--container"]) == 2
+    assert "origin" in caplog.text
+
+
+def test_the_accepted_origin_is_logged_where_a_port_mismatch_can_be_read(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    """A browser opened on another port is refused `same_origin_required`, which names
+    neither origin, so the one the console accepts has to be readable at startup."""
+    _served(monkeypatch)
+    with caplog.at_level(logging.WARNING, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed", "--port", "9111"]) == 0
+    assert "http://127.0.0.1:9111" in caplog.text
+    assert "refused" in caplog.text
+
+
+def test_a_second_termination_never_aborts_the_clean_up_the_first_one_began(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A container runtime that is not obeyed quickly enough sends SIGTERM again."""
+    released: list[str] = []
+
+    def _close() -> None:
+        if signal.getsignal(signal.SIGTERM) is signal.SIG_DFL:
+            # Raising it here would kill the test session instead of failing this test.
+            released.append("unprotected")
+            return
+        signal.raise_signal(signal.SIGTERM)
+        released.append("closed")
+
+    def _build(state_dir: Path, **keywords: object) -> tuple[Starlette, Callable[[], None]]:
+        return Starlette(), _close
+
+    def _terminated(*arguments: object, **keywords: object) -> None:
+        assert signal.getsignal(signal.SIGTERM) is not signal.SIG_DFL
+        signal.raise_signal(signal.SIGTERM)
+
+    monkeypatch.setattr(cli, "build_demo_app", _build)
+    monkeypatch.setattr("uvicorn.run", _terminated)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"])
+    assert stopped.value.code == 143
+    assert released == ["closed"]
+
+
+def test_the_stores_are_released_when_termination_arrives_before_the_server_starts(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Seeding a demonstration takes long enough for a stop to land inside the build."""
+    released: list[str] = []
+
+    def _build(state_dir: Path, **keywords: object) -> tuple[Starlette, Callable[[], None]]:
+        if signal.getsignal(signal.SIGTERM) is signal.SIG_DFL:
+            raise RuntimeError("termination was unhandled while the console was being built")
+        try:
+            signal.raise_signal(signal.SIGTERM)
+            raise AssertionError("termination must leave the build as an exception")
+        except BaseException:
+            # `build_demo_app` closes whatever it opened before re-raising.
+            released.append("closed")
+            raise
+
+    monkeypatch.setattr(cli, "build_demo_app", _build)
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with pytest.raises(SystemExit) as stopped:
+        cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"])
+    assert stopped.value.code == 143
+    assert released == ["closed"]
+
+
+@pytest.mark.parametrize("outside", ["0", "-1", "65536", "99999999", "eight"])
+def test_a_port_no_socket_can_carry_is_refused_before_anything_is_created(
+    outside: str,
+) -> None:
+    """A port outside the range reached `bind()` as an `OverflowError` traceback."""
+    with pytest.raises(SystemExit) as failure:
+        cli.parse_arguments(["serve", "--state-dir", "/tmp/state", "--port", outside])
+    assert failure.value.code == 2
+
+
+def test_a_server_that_cannot_bind_is_reported_rather_than_raised(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, tmp_path: Path
+) -> None:
+    """A traceback out of `bind()` reads as a crashed product rather than a port to change.
+
+    The error is a genuine one from the kernel, raised by binding a port this test holds.
+    uvicorn catches that particular failure itself and exits 3 after reporting it; this
+    covers the bind failures it leaves to its caller.
+    """
+    with socket.socket() as held:
+        held.bind(("127.0.0.1", 0))
+        held.listen()
+        taken = held.getsockname()[1]
+
+        def _bind(application: object, *, host: str, port: int) -> None:
+            with socket.socket() as second:
+                second.bind((host, port))
+
+        console = _serving(monkeypatch, _bind)
+        with caplog.at_level(logging.ERROR, logger=cli.__name__):
+            exit_code = cli.main(
+                ["serve", "--state-dir", str(tmp_path), "--no-seed", "--port", str(taken)]
+            )
+    assert exit_code == 1
+    assert console.closed == 1
+    assert os.strerror(errno.EADDRINUSE) in caplog.text
+    assert caplog.records[-1].exc_info is None
+
+
+def test_a_bundle_named_only_by_the_environment_is_validated_by_the_same_path(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    tmp_path: Path,
+    _no_server: None,
+) -> None:
+    """`create_app` reads the variable too, and reports it naming neither setting."""
+    monkeypatch.setenv(_DIST_VARIABLE, str(tmp_path / "absent"))
+    monkeypatch.setattr("uvicorn.run", _unreachable_builder)
+    with caplog.at_level(logging.ERROR, logger=cli.__name__):
+        assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 2
+    assert _DIST_VARIABLE in caplog.text
+    assert "--dist" in caplog.text
+
+
+def test_a_bundle_named_by_the_environment_reaches_the_console(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    dist = tmp_path / "dist"
+    dist.mkdir()
+    monkeypatch.setenv(_DIST_VARIABLE, str(dist))
+    console, _ = _served(monkeypatch)
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 0
+    assert console.built[0][1]["dist"] == dist

@@ -40,6 +40,35 @@ npm run demo
 The demonstration is fixture-backed. Every route carries a persistent `Demo scenario - no managed
 effects` banner, and no command in it produces a managed effect.
 
+## The `heinzel-console` command
+
+`heinzel-console serve` runs a demonstration against a state directory that persists between
+runs, without Node.js:
+
+```sh
+uv run heinzel-console serve --state-dir ./console-state
+uv run heinzel-console serve --state-dir ./console-state --port 8731 --dist apps/console/dist
+```
+
+It has no authentication: whoever reaches it acts as the data architect. It therefore binds
+`127.0.0.1` and refuses any other host. `--container` binds every interface instead, and is
+meant only for a container image whose published port is the network boundary.
+
+Because it has no authentication, a command is accepted only from the one origin the console is
+configured with, given by `--origin` or `HEINZEL_CONSOLE_ALLOWED_ORIGIN`. That origin is the one
+the browser will use, which is not the address the server binds: under `--container` the bind
+address is `0.0.0.0`, which no browser sends, and the reader opens the published port rather than
+the bound one. A container given neither setting refuses to start rather than serve a console
+that renders every page and refuses every command. Give the origin exactly as the browser sends
+it — no trailing slash, path, surrounding space, or uppercase — for example
+`http://127.0.0.1:8731`; any other spelling is refused rather than silently adjusted. The
+accepted origin is printed at startup, and that line is the one to read when a browser opened on
+another port has every command refused `same_origin_required`.
+
+`--dist` serves a compiled bundle alongside the API from this one origin, and follows
+`HEINZEL_CONSOLE_DIST` when it is omitted. `--no-seed` starts with an empty inbox instead of the
+demonstration's own question.
+
 ## Governed local UI testing
 
 For separate requester and architect browser sessions backed by the owning services
