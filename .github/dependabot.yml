@@ -29,20 +29,26 @@ updates:
       actions-minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
-  # Emulator images. The PostgreSQL and ClickHouse engine digests are also pinned in the provider
-  # settings, the compiler, recorded evidence and the warehouse lifecycle workflow; a bump here
-  # must update every pin together, or the live journeys and evidence checks will disagree.
+  # Emulator and quickstart images. The PostgreSQL and ClickHouse engine digests are also pinned
+  # in the provider settings, the compiler, recorded evidence and the warehouse lifecycle
+  # workflow; a bump here must update every pin together, or the live journeys and evidence
+  # checks will disagree. The same holds for the quickstart image: its Node and Python base
+  # images are pinned again in `apps/console/.node-version` and `.python-version`, which the
+  # quickstart contract test requires to match.
   # Every bump is grouped whatever its size, because the images are reviewed together.
   - package-ecosystem: docker
-    directories: [/tests/emulators/superset]
+    directories:
+      - /deploy/quickstart
+      - /tests/emulators/superset
     schedule:
       interval: weekly
     open-pull-requests-limit: 2
     groups:
-      emulator-images:
+      dockerfile-images:
         patterns: ["*"]
   - package-ecosystem: docker-compose
     directories:
+      - /deploy/quickstart
       - /tests/emulators/localstack-snowflake
       - /tests/emulators/openmetadata
       - /tests/emulators/superset
@@ -52,5 +58,5 @@ updates:
       interval: weekly
     open-pull-requests-limit: 2
     groups:
-      emulator-compose-images:
+      compose-images:
         patterns: ["*"]

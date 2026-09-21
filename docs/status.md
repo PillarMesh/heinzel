@@ -37,6 +37,7 @@ runs it whenever a change touches it.
 | Operations and recovery | Partial | Incidents are listed, and the console admits retry, cancel and reconcile actions. No test yet raises an incident from a real failure and recovers it. | Offline |
 | Context graph and impact | Partial | Impact analysis across seven subject kinds. | Offline |
 | Agent interface (MCP) | Partial | Eight governed context tools. The production application cannot start yet: no authority adapters are implemented. | Offline |
+| Demonstration console | Partial | One container serves the governed request path from submission to approval: the seeded question is clarified, an answer proposal is prepared, submitted, accepted and approved, and admission reaches `execution_ready`. It is a demonstration, not a deployment: no authentication, no warehouse, and demo-grade collaborators. Runs and answer delivery are not part of it: runs and acquisition receipts answer `503 capability_not_delivered` to the architect, and a request's result answers `503` to the requester it belongs to. Data access requests are refused at intake for a separate reason — grant application, expiry and revocation are not delivered. See the [quickstart](../deploy/quickstart/README.md). | Offline and live (opt-in quickstart smoke test) |
 | End-to-end PostgreSQL journey | Not yet | One request reaching a published data product end to end. | — |
 | ClickHouse parity | Not yet | Warehouse lifecycle, destination, access and statement conformance work on ClickHouse; acquisition and the full journey do not. | — |
 

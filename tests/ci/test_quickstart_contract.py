@@ -263,3 +263,24 @@ def test_the_python_version_matches_the_repository() -> None:
         DOCKERFILE.read_text(encoding="utf-8"),
         re.MULTILINE,
     ), f"the Dockerfile does not run on python {pinned}"
+
+
+def test_dependabot_watches_the_quickstart_images() -> None:
+    """An unwatched directory pins images that no update ever reaches.
+
+    Both ecosystems are asserted separately: the quickstart has a `Dockerfile` and a
+    `compose.yaml`, each pinning images the other does not, so watching one directory
+    under one ecosystem would leave the other's pins frozen.
+    """
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text(encoding="utf-8"))
+    for ecosystem in ("docker", "docker-compose"):
+        watched = {
+            directory
+            for update in config["updates"]
+            if update["package-ecosystem"] == ecosystem
+            for directory in update["directories"]
+        }
+        assert "/deploy/quickstart" in watched, (
+            f"the {ecosystem} updates watch {sorted(watched)}, so the quickstart's own "
+            "pins are never offered an update"
+        )
