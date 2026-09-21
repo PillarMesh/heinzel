@@ -268,9 +268,11 @@ def test_the_python_version_matches_the_repository() -> None:
 def test_dependabot_watches_the_quickstart_images() -> None:
     """An unwatched directory pins images that no update ever reaches.
 
-    Both ecosystems are asserted separately: the quickstart has a `Dockerfile` and a
-    `compose.yaml`, each pinning images the other does not, so watching one directory
-    under one ecosystem would leave the other's pins frozen.
+    The `docker` entry carries the work: the Dockerfile pins the Node, Python and uv
+    images by digest. The `docker-compose` entry is pre-emptive and currently watches
+    nothing, because `compose.yaml` builds the image rather than naming one -- it is
+    held so that an `image:` added there is watched from the moment it appears, rather
+    than pinning a digest no update reaches.
     """
     config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text(encoding="utf-8"))
     for ecosystem in ("docker", "docker-compose"):

@@ -21,9 +21,12 @@ WORKFLOW_PATH = ROOT / ".github/workflows/quickstart.yml"
 
 _SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 
-# What the image is built from, read off the Dockerfile's own `COPY` lines. A path
-# triggering the workflow has to cover each of these, or a change can alter the image
-# with nothing rebuilding it.
+# The image inputs this workflow is required to watch. This is a chosen subset, not the
+# Dockerfile's `COPY` lines. The Dockerfile copies five paths; `packages`, `providers`
+# and `services` are deliberately absent here, so a change confined to those three
+# alters the image with this workflow not running -- an accepted gap, not an oversight.
+# Every path that is listed has to trigger the workflow, which is what the test below
+# checks; adding one here without adding it to the workflow fails that test.
 _IMAGE_INPUTS = ("pyproject.toml", "uv.lock", "apps/console")
 
 
@@ -68,8 +71,12 @@ def test_the_workflow_runs_on_its_own_paths_and_on_demand(workflow: dict[str, An
     }
 
 
-def test_every_path_the_image_is_built_from_triggers_a_rebuild(workflow: dict[str, Any]) -> None:
-    """A build input outside the trigger list changes the image with nothing rebuilding it."""
+def test_every_watched_image_input_triggers_a_rebuild(workflow: dict[str, Any]) -> None:
+    """A watched build input outside the trigger list changes the image silently.
+
+    Watched means `_IMAGE_INPUTS` above, which is a subset of what the Dockerfile
+    copies; the comment there names the three build inputs left unwatched and why.
+    """
     paths = _triggers(workflow)["pull_request"]["paths"]
     prefixes = tuple(path.removesuffix("/**") for path in paths)
 
