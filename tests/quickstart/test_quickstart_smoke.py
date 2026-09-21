@@ -10,9 +10,11 @@ from __future__ import annotations
 import http.client
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
+import urllib.error
 import urllib.request
 import uuid
 from pathlib import Path
@@ -28,6 +30,12 @@ BASE_URL = "http://127.0.0.1:8000"
 # The demonstration's architect. An unknown or absent actor resolves to the architect
 # too, so naming the real one is what keeps this test honest about the header.
 ARCHITECT = "architect-demo"
+
+# The console's bootstrap and the client it reads through. Both are read at run time
+# rather than summarised here, so that a change to either is picked up instead of
+# leaving this test asserting a list that has moved on.
+APP_ENTRY = ROOT / "apps/console/web/src/app.tsx"
+API_CLIENT = ROOT / "apps/console/web/src/api/client.ts"
 
 _RUN = os.environ.get("HEINZEL_RUN_QUICKSTART") == "1"
 
@@ -116,6 +124,75 @@ def _seeded_request_id() -> str:
     request_id = items[0]["request_id"]
     assert isinstance(request_id, str)
     return request_id
+
+
+def _get(path: str, actor: str | None = None) -> tuple[int, bytes]:
+    """Fetch `path` and report the status the browser would see, error or not."""
+    headers = {} if actor is None else {"x-heinzel-actor": actor}
+    request = urllib.request.Request(f"{BASE_URL}{path}", headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return response.status, response.read()
+    except urllib.error.HTTPError as error:
+        return error.code, error.read()
+
+
+def _bootstrap_reads() -> dict[str, str]:
+    """The reads the console issues before it can render anything.
+
+    Derived, not listed: every `client.getX()` named in `app.tsx` is a call the
+    bootstrap makes, and `client.ts` holds the path each one requests. Moving a read
+    into or out of the bootstrap changes what this returns, so the test follows the
+    bootstrap rather than a copy of it that can go stale.
+    """
+    called = dict.fromkeys(re.findall(r"\.\s*(get[A-Z]\w*)\s*\(", APP_ENTRY.read_text()))
+    assert called, "no console client reads found in app.tsx"
+    client = API_CLIENT.read_text()
+    reads: dict[str, str] = {}
+    for name in called:
+        located = re.search(
+            rf"\b{name}\([^)]*\):[^{{]*\{{\s*return this\.#request\(\s*\"([^\"]+)\"",
+            client,
+        )
+        assert located is not None, f"no request path for {name} in client.ts"
+        reads[name] = located.group(1)
+    return reads
+
+
+def _tolerated_bootstrap_error_codes() -> frozenset[str]:
+    """The error codes `app.tsx` continues past instead of failing the bootstrap.
+
+    A bootstrap read that answers anything else takes the whole console down to the
+    recovery boundary, whatever the rest of the demonstration serves. Read out of
+    `app.tsx` for the same reason as the read list above.
+    """
+    return frozenset(re.findall(r"\.code\s*===\s*\"([^\"]+)\"", APP_ENTRY.read_text()))
+
+
+@requires_quickstart
+def test_the_quickstart_serves_a_console_the_browser_can_start() -> None:
+    _compose("up", "--build", "-d")
+    try:
+        _wait_for_health()
+
+        status, document = _get("/")
+        assert status == 200, status
+        markup = document.decode("utf-8")
+        assets = re.findall(r"(?:src|href)=\"(/assets/[^\"]+)\"", markup)
+        assert assets, markup
+        for asset in assets:
+            asset_status, _ = _get(asset)
+            assert asset_status == 200, (asset, asset_status)
+
+        tolerated = _tolerated_bootstrap_error_codes()
+        for name, path in _bootstrap_reads().items():
+            read_status, body = _get(path, actor=ARCHITECT)
+            if read_status == 200:
+                continue
+            code = json.loads(body).get("error", {}).get("code")
+            assert code in tolerated, (name, path, read_status, code)
+    finally:
+        _compose("down", "-v")
 
 
 @requires_quickstart
