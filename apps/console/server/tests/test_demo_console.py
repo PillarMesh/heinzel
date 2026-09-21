@@ -30,9 +30,9 @@ UNGROUNDED_QUESTION = "What is the CEO's home address?"
 class _Console:
     """One demonstration console and a client that speaks to it as a browser would."""
 
-    def __init__(self, state_dir: Path) -> None:
-        self.console = DemoConsole(state_dir)
-        self.client = TestClient(self.console.build_app(origin=ORIGIN))
+    def __init__(self, console: DemoConsole) -> None:
+        self.console = console
+        self.client = TestClient(console.build_app(origin=ORIGIN))
 
     def get(self, path: str, *, actor: str) -> httpx.Response:
         return self.client.get(path, headers={DEMO_ACTOR_HEADER: actor})
@@ -99,17 +99,12 @@ class _Console:
             actor=DEMO_ARCHITECT_ID,
         )
 
-    def close(self) -> None:
-        self.console.close()
-
 
 @pytest.fixture
 def console(tmp_path: Path) -> Iterator[_Console]:
-    harness = _Console(tmp_path / "state")
-    try:
-        yield harness
-    finally:
-        harness.close()
+    """One console per test, closed through the context manager a caller would use."""
+    with DemoConsole(tmp_path / "state") as demo_console:
+        yield _Console(demo_console)
 
 
 def test_the_seeded_question_travels_the_whole_journey_to_execution_ready(
