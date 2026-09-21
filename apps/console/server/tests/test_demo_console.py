@@ -8,17 +8,18 @@ uses, with the same origin, CSRF and idempotency rules every command is held to.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
-from heinzel_console.demo import DemoConsole
+from heinzel_console.demo import DEMO_ACTOR_HEADER, DemoConsole
 from heinzel_console.demo.collaborators import DEMO_ARCHITECT_ID, DEMO_REQUESTER_ID
-from heinzel_console.demo.console import DEMO_ACTOR_HEADER
 from heinzel_console.demo.publication import DEMO_QUESTION
 from heinzel_contract_model import digest
 from heinzel_request_management import RequestIntakeContent
-from heinzel_request_management.models import StakeholderQuestion
+from heinzel_request_management.models import DataAccessRequest, StakeholderQuestion
 from starlette.testclient import TestClient
 
 ORIGIN = "http://127.0.0.1:8000"
@@ -33,10 +34,10 @@ class _Console:
         self.console = DemoConsole(state_dir)
         self.client = TestClient(self.console.build_app(origin=ORIGIN))
 
-    def get(self, path: str, *, actor: str) -> Any:
+    def get(self, path: str, *, actor: str) -> httpx.Response:
         return self.client.get(path, headers={DEMO_ACTOR_HEADER: actor})
 
-    def post(self, path: str, body: dict[str, Any], *, key: str, actor: str) -> Any:
+    def post(self, path: str, body: dict[str, Any], *, key: str, actor: str) -> httpx.Response:
         headers = {DEMO_ACTOR_HEADER: actor}
         session = self.client.get("/api/v1/session", headers=headers)
         return self.client.post(
@@ -74,7 +75,7 @@ class _Console:
         request_id: str = created.json()["data"]["request_id"]
         return request_id
 
-    def clarify(self, request_id: str, *, key: str) -> Any:
+    def clarify(self, request_id: str, *, key: str) -> httpx.Response:
         return self.post(
             f"/api/v1/inbox/{request_id}/clarification",
             {
@@ -88,7 +89,9 @@ class _Console:
             actor=DEMO_ARCHITECT_ID,
         )
 
-    def prepare_proposal(self, request_id: str, *, expected_revision: int, key: str) -> Any:
+    def prepare_proposal(
+        self, request_id: str, *, expected_revision: int, key: str
+    ) -> httpx.Response:
         return self.post(
             f"/api/v1/inbox/{request_id}/proposal",
             {"expected_revision": expected_revision, "active_role": "data_architect"},
@@ -113,7 +116,7 @@ def test_the_seeded_question_travels_the_whole_journey_to_execution_ready(
     console: _Console,
 ) -> None:
     request_id = console.submit_question(DEMO_QUESTION, key="journey-intake")
-    assert console.console.requests_awaiting_approval() == (request_id,)
+    assert console.console.inbox_request_ids() == (request_id,)
 
     clarified = console.clarify(request_id, key="journey-clarify")
     assert clarified.status_code == 200, clarified.text
@@ -211,6 +214,16 @@ def test_the_capabilities_outside_the_demonstration_answer_not_delivered(
 def test_the_console_is_healthy_and_the_architect_inbox_is_reachable(console: _Console) -> None:
     assert console.client.get("/healthz").status_code == 200
 
+    # The actor directory is what turns an identifier into a name a person reads; without
+    # it the session would name the actor by its raw identifier or not at all.
+    for actor, display_name in (
+        (DEMO_ARCHITECT_ID, "Data engineering architect"),
+        (DEMO_REQUESTER_ID, "Requester"),
+    ):
+        session = console.get("/api/v1/session", actor=actor)
+        assert session.status_code == 200, session.text
+        assert session.json()["data"]["actor"]["display_name"] == display_name
+
     inbox = console.get("/api/v1/inbox", actor=DEMO_ARCHITECT_ID)
     assert inbox.status_code == 200, inbox.text
     assert inbox.json()["data"]["items"] == []
@@ -218,7 +231,52 @@ def test_the_console_is_healthy_and_the_architect_inbox_is_reachable(console: _C
     request_id = console.submit_question(DEMO_QUESTION, key="inbox-intake")
     listed = console.get("/api/v1/inbox", actor=DEMO_ARCHITECT_ID).json()["data"]["items"]
     assert [item["request_id"] for item in listed] == [request_id]
-    assert console.console.requests_awaiting_approval() == (request_id,)
+    assert console.console.inbox_request_ids() == (request_id,)
+
+
+def test_a_data_access_request_is_refused_at_intake_rather_than_accepted(
+    console: _Console,
+) -> None:
+    """Intake fails closed, matching the capability card the same console renders.
+
+    Grant application, expiry and revocation are not delivered here, so the workspace card
+    reports data access as not delivered. Accepting the request anyway would take a
+    requester through intake and clarification only to fail at preparation with advice that
+    cannot help, and would leave nothing in the inbox that any action can move.
+    """
+    expires_at = datetime.now(UTC) + timedelta(days=7)
+    payload = DataAccessRequest(
+        purpose=PURPOSE,
+        data_product_id="orders_daily",
+        requested_fields=("order_id",),
+        access_mode="query",
+        expires_at=expires_at,
+    )
+    created = console.post(
+        "/api/v1/requests",
+        {
+            "expected_revision": 1,
+            "request_digest": digest(
+                RequestIntakeContent(title="Access to orders", payload=payload)
+            ),
+            "active_role": "requester",
+            "title": "Access to orders",
+            "request": {
+                "kind": "data_access",
+                "purpose": PURPOSE,
+                "data_product_ref": "orders_daily",
+                "requested_fields": ["order_id"],
+                "access_mode": "query",
+                "expires_at": expires_at.isoformat(),
+            },
+        },
+        key="access-intake",
+        actor=DEMO_REQUESTER_ID,
+    )
+    assert created.status_code == 503, created.text
+    assert created.json()["error"]["code"] == "capability_not_delivered"
+    # Nothing was persisted, so no architect is left holding a request they cannot progress.
+    assert console.console.inbox_request_ids() == ()
 
 
 def test_a_question_naming_no_published_term_is_refused_rather_than_answered(

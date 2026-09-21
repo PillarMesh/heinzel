@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from contextlib import suppress
 from pathlib import Path
+from types import TracebackType
 
 from heinzel_request_management import (
     FulfillmentReadService,
@@ -141,6 +142,12 @@ class DemoConsole:
                 fulfillment=self._fulfillment_reads,
                 fulfillment_commands=self._fulfillment,
                 fulfillment_preparation_commands=self._fulfillment,
+                # The demonstration delivers no grant application, expiry or revocation, so
+                # its own workspace card reports data access as not delivered. Intake must
+                # fail closed to match it: accepted, such a request clears intake and
+                # clarification and is then refused at preparation with advice to reload
+                # that cannot help, leaving a request in the inbox no action can move.
+                data_access_intake_available=False,
                 actors=actors,
                 principals=principals,
                 clock=demo_clock,
@@ -160,13 +167,28 @@ class DemoConsole:
             dist_directory=dist,
         )
 
-    def requests_awaiting_approval(self) -> tuple[str, ...]:
-        """The request identifiers the architect's inbox would show, in inbox order."""
+    def inbox_request_ids(self) -> tuple[str, ...]:
+        """Every request identifier the architect's inbox shows, in inbox order.
+
+        The inbox holds a request from intake onwards, whatever its state, so this is the
+        whole inbox rather than only what is waiting on a decision.
+        """
         return tuple(item.request_id for item in self.backend.get_inbox(_ARCHITECT_CONTEXT).items)
 
     def close(self) -> None:
         """Close every store this console opened."""
         self._stores.close()
+
+    def __enter__(self) -> DemoConsole:
+        return self
+
+    def __exit__(
+        self,
+        exception_type: type[BaseException] | None,
+        exception: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
 
 
 def _actor_context(request: Request) -> TrustedActorContext:

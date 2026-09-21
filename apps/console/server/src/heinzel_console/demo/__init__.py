@@ -6,6 +6,6 @@ and the data it holds is illustrative.
 
 from __future__ import annotations
 
-from .console import DemoConsole
+from .console import DEMO_ACTOR_HEADER, DemoConsole
 
-__all__ = ["DemoConsole"]
+__all__ = ["DEMO_ACTOR_HEADER", "DemoConsole"]
