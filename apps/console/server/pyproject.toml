@@ -36,6 +36,9 @@ dependencies = [
 Repository = "https://github.com/PillarMesh/heinzel"
 Issues = "https://github.com/PillarMesh/heinzel/issues"
 
+[project.scripts]
+heinzel-console = "heinzel_console.cli:main"
+
 [tool.uv.sources]
 heinzel-access-control = { workspace = true }
 heinzel-bi-control = { workspace = true }
