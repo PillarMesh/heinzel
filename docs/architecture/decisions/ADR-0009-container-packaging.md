@@ -19,8 +19,8 @@ thing the quickstart packages.
 ## Decision
 
 - `deploy/quickstart/` holds a Dockerfile and a compose file for a local demonstration. They are
-  the only contents of `deploy/`; this decision lifts the hold on that directory for the
-  quickstart and for nothing else.
+  the only deployment material `deploy/` carries, alongside its README; this decision lifts the
+  hold on that directory for the quickstart and for nothing else.
 - The image is built from source by the person running it. It is never pushed to a registry and
   no published tag is offered.
 - The quickstart packages the demonstration backend, not a deployment. It is a way to look at the
@@ -53,13 +53,16 @@ thing the quickstart packages.
   more. A question travels intake, clarification, proposal preparation and submission, the
   requester's acceptance, the architect's review and admission, and reaches execution ready. It
   stops there: `GET /api/v1/runs`, `GET /api/v1/acquisition-receipts` and
-  `GET /api/v1/requests/{request_id}/result` answer `503 capability_not_delivered`, naming the
-  dependency they lack, because the demonstration deliberately carries no acquisition harness and
-  no answer runtime. An empty list would read as a working capability with nothing in it. Data
-  access requests are refused at intake for the same reason, rather than accepted into an inbox
-  no action could move.
-- Because the image is built from source and never distributed, it carries no third-party licence
-  notices for the Python dependencies it installs. Publishing it to a registry would distribute
-  those dependencies and create that obligation, which this decision does not discharge.
-  Publishing a Heinzel image is a separate decision, and it must settle the notice file before any
-  tag is pushed.
+  `GET /api/v1/requests/{request_id}/result` answer `503 capability_not_delivered`, each to the
+  actor entitled to ask, naming the dependency they lack, because the demonstration deliberately
+  carries no acquisition harness and no answer runtime. An empty list would read as a working
+  capability with nothing in it. Data access requests are refused at intake on the same principle,
+  because grant application, expiry and revocation are not delivered either — rather than accepted
+  into an inbox no action could move.
+- The project never distributes this image — each person builds it from source — so no third-party
+  notice obligation for the Python dependencies it installs arises here. (The console bundle it
+  serves ships its own JavaScript and font notices already, as
+  [THIRD_PARTY_NOTICES.md](../../../THIRD_PARTY_NOTICES.md) records.) Publishing it to a registry
+  would distribute those dependencies and create that obligation, which this decision does not
+  discharge. Publishing a Heinzel image is a separate decision, and it must settle the notice file
+  before any tag is pushed.

@@ -207,6 +207,26 @@ def test_the_capabilities_outside_the_demonstration_answer_not_delivered(
     assert response.json()["error"]["code"] == "capability_not_delivered"
 
 
+def test_the_result_of_an_admitted_request_answers_not_delivered_to_its_requester(
+    console: _Console,
+) -> None:
+    """The third absent capability says so to the one actor entitled to ask for it.
+
+    The result page is requester-scoped, so this refusal is only reachable as the requester
+    who owns the request; the architect is answered `404 not_found` because the resource is
+    not theirs to read, which says nothing about whether answer delivery is delivered.
+    """
+    request_id = console.submit_question(DEMO_QUESTION, key="result-intake")
+
+    refused = console.get(f"/api/v1/requests/{request_id}/result", actor=DEMO_REQUESTER_ID)
+    assert refused.status_code == 503, refused.text
+    assert refused.json()["error"]["code"] == "capability_not_delivered"
+
+    unscoped = console.get(f"/api/v1/requests/{request_id}/result", actor=DEMO_ARCHITECT_ID)
+    assert unscoped.status_code == 404, unscoped.text
+    assert unscoped.json()["error"]["code"] == "not_found"
+
+
 def test_the_console_is_healthy_and_the_architect_inbox_is_reachable(console: _Console) -> None:
     assert console.client.get("/healthz").status_code == 200
 
