@@ -3327,7 +3327,16 @@ class GovernedConsoleBackend:
         warehouse = next(
             (item for item in capabilities if item.capability_id == "warehouse-binding"), None
         )
-        if warehouse is not None and warehouse.state == "ready":
+        if warehouse is None:
+            return "setup"
+        if warehouse.state == "ready":
+            return "active"
+        if warehouse.state == "not_delivered":
+            # `setup` routes the console to `/setup`, and `get_setup` refuses without a
+            # warehouse binding reader. A deployment that does not deliver the binding has no
+            # setup work to offer, so reporting `setup` would name a surface that answers 503.
+            # The capability list still carries the absence and its dependency, so summarising
+            # the workspace as active hides nothing.
             return "active"
         return "setup"
 

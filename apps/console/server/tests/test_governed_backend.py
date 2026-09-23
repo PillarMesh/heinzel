@@ -817,6 +817,26 @@ def test_workspace_manifest_states_the_unwired_capabilities_as_not_delivered(
     )
 
 
+def test_an_undelivered_warehouse_binding_is_not_reported_as_setup_work(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A workspace state must never name a surface the server refuses to serve.
+
+    `setup` sends the console to `/setup`, and `get_setup` raises `capability_not_delivered`
+    without a warehouse binding reader. Reporting `setup` for a deployment that delivers no
+    warehouse binding therefore routes the reader to a page that answers 503. The capability
+    list still carries the absence, so nothing is hidden by summarising the workspace as
+    active.
+    """
+    _forbid_fixture_data(monkeypatch)
+
+    workspace = _backend().get_workspace(_architect_context())
+    states = {capability.capability_id: capability.state for capability in workspace.capabilities}
+
+    assert states["warehouse-binding"] == "not_delivered"
+    assert workspace.state == "active"
+
+
 def test_repository_failure_degrades_the_capability_rather_than_serving_fixture_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
