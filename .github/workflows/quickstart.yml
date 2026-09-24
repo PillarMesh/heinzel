@@ -14,6 +14,24 @@ on:
       - "uv.lock"
       - ".dockerignore"
       - ".github/workflows/quickstart.yml"
+  # The image also installs every workspace member it copies -- `apps`, `packages`,
+  # `providers`, `services` -- so a change to one of those alters the image. Watching
+  # them on pull requests would rebuild for most of the repository, which is what the
+  # narrow list above avoids. Watching them here instead means such a change is caught
+  # once it reaches the default branch rather than not at all.
+  push:
+    branches: [main]
+    paths:
+      - "deploy/quickstart/**"
+      - "apps/**"
+      - "packages/**"
+      - "providers/**"
+      - "services/**"
+      - "tests/quickstart/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".dockerignore"
+      - ".github/workflows/quickstart.yml"
   workflow_dispatch:
 
 permissions:

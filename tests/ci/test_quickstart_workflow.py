@@ -21,13 +21,23 @@ WORKFLOW_PATH = ROOT / ".github/workflows/quickstart.yml"
 
 _SHA_PIN = re.compile(r"^[^@\s]+@[0-9a-f]{40}$")
 
-# The image inputs this workflow is required to watch. This is a chosen subset, not the
-# Dockerfile's `COPY` lines. The Dockerfile copies five paths; `packages`, `providers`
-# and `services` are deliberately absent here, so a change confined to those three
-# alters the image with this workflow not running -- an accepted gap, not an oversight.
-# Every path that is listed has to trigger the workflow, which is what the test below
-# checks; adding one here without adding it to the workflow fails that test.
-_IMAGE_INPUTS = ("pyproject.toml", "uv.lock", "apps/console")
+DOCKERFILE_PATH = ROOT / "deploy/quickstart/Dockerfile"
+
+
+def _image_inputs() -> frozenset[str]:
+    """Every path the Dockerfile copies, read off its own `COPY` lines.
+
+    Derived rather than listed, so a new `COPY` cannot quietly escape the trigger
+    check. `--from=` copies are excluded: they take their source from an earlier
+    build stage, not from the repository.
+    """
+    sources: set[str] = set()
+    for line in DOCKERFILE_PATH.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("COPY ") or "--from=" in line:
+            continue
+        arguments = line.split()[1:]
+        sources.update(arguments[:-1])
+    return frozenset(sources)
 
 
 @pytest.fixture(scope="module")
@@ -59,7 +69,9 @@ def _step(workflow: dict[str, Any], name: str) -> dict[str, Any]:
 def test_the_workflow_runs_on_its_own_paths_and_on_demand(workflow: dict[str, Any]) -> None:
     triggers = _triggers(workflow)
 
-    assert set(triggers) == {"pull_request", "workflow_dispatch"}
+    assert set(triggers) == {"pull_request", "push", "workflow_dispatch"}
+    # Kept narrow on purpose: a pull request touching a workspace member rebuilds
+    # nothing, because the image build is too slow to run on most of them.
     assert set(triggers["pull_request"]["paths"]) == {
         "deploy/quickstart/**",
         "apps/console/**",
@@ -69,27 +81,40 @@ def test_the_workflow_runs_on_its_own_paths_and_on_demand(workflow: dict[str, An
         ".dockerignore",
         ".github/workflows/quickstart.yml",
     }
+    # The push trigger carries the wide set, so a workspace member that reaches the
+    # default branch is still built. Only `main`, or every push to a pull request
+    # branch would run the build a second time.
+    assert triggers["push"]["branches"] == ["main"]
 
 
-def test_every_watched_image_input_triggers_a_rebuild(workflow: dict[str, Any]) -> None:
-    """A watched build input outside the trigger list changes the image silently.
+def test_every_image_input_triggers_a_rebuild(workflow: dict[str, Any]) -> None:
+    """A build input outside the trigger list changes the image silently.
 
-    Watched means `_IMAGE_INPUTS` above, which is a subset of what the Dockerfile
-    copies; the comment there names the three build inputs left unwatched and why.
+    Checked against the push trigger, which carries the wide set. The pull-request
+    trigger is deliberately narrower, so this says a change is caught by the time it
+    reaches the default branch, not that it is caught before it merges.
     """
-    paths = _triggers(workflow)["pull_request"]["paths"]
+    paths = _triggers(workflow)["push"]["paths"]
     prefixes = tuple(path.removesuffix("/**") for path in paths)
 
-    for build_input in _IMAGE_INPUTS:
+    for build_input in sorted(_image_inputs()):
         assert any(
             build_input == prefix or build_input.startswith(f"{prefix}/") for prefix in prefixes
         ), f"{build_input} is copied into the image but triggers no rebuild"
 
 
+def test_the_image_inputs_are_actually_read_from_the_dockerfile() -> None:
+    """Guard the derivation itself: an empty parse would make the test above vacuous."""
+    inputs = _image_inputs()
+    assert {"apps", "packages", "providers", "services", "pyproject.toml", "uv.lock"} <= inputs
+    assert not any(source.startswith("/") for source in inputs), inputs
+
+
 def test_every_trigger_path_names_something_that_exists(workflow: dict[str, Any]) -> None:
     """A misspelled path silently never matches, and the smoke test never runs again."""
-    for path in _triggers(workflow)["pull_request"]["paths"]:
-        assert (ROOT / path.removesuffix("/**")).exists(), path
+    for event in ("pull_request", "push"):
+        for path in _triggers(workflow)[event]["paths"]:
+            assert (ROOT / path.removesuffix("/**")).exists(), f"{event}: {path}"
 
 
 def test_the_token_is_read_only_and_no_secret_is_referenced(workflow: dict[str, Any]) -> None:
