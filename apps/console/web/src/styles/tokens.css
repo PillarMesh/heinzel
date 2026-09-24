@@ -1,0 +1,116 @@
+@import "./fonts.css";
+
+/*
+ * Evidence Ledger tokens.
+ *
+ * The visual direction: deep navy shell, quiet work surfaces, one blue that means
+ * *action*, and semantic colour reserved for lifecycle meaning. Colour never carries status alone.
+ *
+ * Type was previously `Avenir Next Condensed` over `Avenir Next`, which exists only
+ * on macOS. Everywhere else it fell through to `Arial Narrow`, so the product had a
+ * different voice per machine and the screenshot suite's "deterministic fonts" claim
+ * held only on the author's laptop. Both families are now bundled.
+ */
+
+:root {
+  color-scheme: light;
+
+  /* Shell and surfaces. */
+  --color-navy: #0d1b2f;
+  --color-navy-raised: #16294480;
+  --color-navy-line: #24405f;
+  --color-navy-text: #a9c2e0;
+  --color-surface: #f4f6f9;
+  --color-white: #ffffff;
+  --color-ink: #131c2b;
+  --color-ink-muted: #4d5c72;
+
+  /* One accent, reserved for action. */
+  --color-primary: #1d4ed8;
+  --color-primary-strong: #1a43ba;
+  --color-primary-wash: #eaf0fe;
+  --color-primary-line: #c4d3f8;
+
+  /* Semantic, reserved for lifecycle meaning. */
+  --color-ready: #12603d;
+  --color-ready-surface: #dff3e6;
+  --color-ready-line: #9cd4b4;
+  --color-attention: #7a4a09;
+  --color-attention-surface: #fdf2d5;
+  --color-attention-line: #e3bd6b;
+  --color-danger: #991b1b;
+  --color-danger-surface: #fdeaea;
+  --color-danger-line: #eaa9a9;
+  --color-neutral: #44536a;
+  --color-neutral-surface: #e8ecf2;
+  --color-neutral-line: #c3ccd9;
+  --color-line: #dbe1ea;
+  --color-line-strong: #c2cbd8;
+
+  /* Type. `wght` is a variable axis, so weights are continuous. */
+  --font-body:
+    "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-body);
+  --font-utility: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+  /* A fourth-major scale, rounded to whole pixels at the 16px root. */
+  --text-3xs: 0.6875rem;
+  --text-2xs: 0.75rem;
+  --text-xs: 0.8125rem;
+  --text-sm: 0.875rem;
+  --text-base: 0.9375rem;
+  --text-md: 1rem;
+  --text-lg: 1.125rem;
+  --text-xl: 1.375rem;
+  --text-2xl: 1.75rem;
+  --text-3xl: 2.125rem;
+
+  --leading-tight: 1.15;
+  --leading-snug: 1.35;
+  --leading-normal: 1.55;
+  --leading-relaxed: 1.65;
+
+  /* Tracking tightens as size grows, the way a drawn face expects. */
+  --tracking-display: -0.021em;
+  --tracking-title: -0.014em;
+  --tracking-body: -0.003em;
+  --tracking-eyebrow: 0.09em;
+  --tracking-caps: 0.055em;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 680;
+
+  /* Spacing, on a 4px grid. */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-pill: 999px;
+
+  /*
+   * Shadows stay tight and cool. A governed console should read as printed rather
+   * than floating, so elevation is carried by a hairline first and a shadow second.
+   */
+  --shadow-raised: 0 1px 2px rgb(15 27 47 / 6%), 0 1px 1px rgb(15 27 47 / 4%);
+  --shadow-lifted: 0 6px 16px -6px rgb(15 27 47 / 18%), 0 2px 4px rgb(15 27 47 / 6%);
+  --shadow-focus: 0 0 0 3px var(--color-white), 0 0 0 5px var(--color-primary);
+
+  --transition-fast: 120ms cubic-bezier(0.2, 0, 0.13, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --transition-fast: 1ms;
+  }
+}

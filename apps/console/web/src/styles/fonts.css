@@ -1,0 +1,39 @@
+/*
+ * Self-hosted, latin subset only.
+ *
+ * The server sends `default-src 'self'`, so a remote font would not load at all.
+ * These face declarations point at the two woff2 files the bundler copies into the
+ * build rather than importing Fontsource's own stylesheets, which declare every
+ * script and would pull nine subsets into `dist/` to render an English console.
+ *
+ * IBM Plex is licensed under the SIL Open Font License 1.1. It is drawn for
+ * engineering interfaces and its mono is metrically related to its sans, which is
+ * what this console needs: identifiers and digests sit inside prose constantly, and
+ * they should look deliberate rather than pasted in.
+ */
+
+@font-face {
+  font-display: swap;
+  font-family: "IBM Plex Sans Variable";
+  font-stretch: normal;
+  font-style: normal;
+  font-weight: 100 700;
+  src: url("@fontsource-variable/ibm-plex-sans/files/ibm-plex-sans-latin-wght-normal.woff2")
+    format("woff2-variations");
+}
+
+@font-face {
+  font-display: swap;
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2") format("woff2");
+}
+
+@font-face {
+  font-display: swap;
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 600;
+  src: url("@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2") format("woff2");
+}

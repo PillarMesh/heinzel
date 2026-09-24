@@ -1,0 +1,44 @@
+[project]
+name = "heinzel-authoring-mcp"
+version = "0.1.0"
+requires-python = "==3.13.*"
+description = "Authoring command line and MCP server."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: POSIX",
+]
+dependencies = [
+  "mcp>=2,<3",
+  "heinzel-contract-model",
+  "heinzel-contract-service",
+  "heinzel-evidence",
+  "heinzel-execution-graph",
+  "heinzel-provider-postgresql",
+  "heinzel-provider-snowflake",
+  "heinzel-runtime",
+  "pydantic-settings>=2.10,<3",
+]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
+
+[project.scripts]
+heinzel-authoring = "heinzel_authoring_mcp.cli:main"
+heinzel-mcp = "heinzel_authoring_mcp.mcp_server:main"
+
+[tool.uv.sources]
+heinzel-contract-model = { workspace = true }
+heinzel-contract-service = { workspace = true }
+heinzel-evidence = { workspace = true }
+heinzel-execution-graph = { workspace = true }
+heinzel-provider-postgresql = { workspace = true }
+heinzel-provider-snowflake = { workspace = true }
+heinzel-runtime = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

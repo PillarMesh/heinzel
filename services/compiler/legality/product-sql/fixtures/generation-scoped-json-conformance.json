@@ -1,0 +1,673 @@
+{
+ "schema_version": "1",
+ "rule_id": "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE",
+ "candidate_only": true,
+ "selected_generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "other_generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+ "statements": {
+  "postgresql": "SELECT \"revenue_events\".\"region\" AS \"region\", CAST(pg_catalog.sum(CAST(\"revenue_events\".\"revenue\" AS NUMERIC(57,9))) AS NUMERIC(57,9)) AS \"total_revenue\" FROM (SELECT (CASE WHEN pg_catalog.jsonb_typeof(\"payload\" OPERATOR(pg_catalog.->) 'region') OPERATOR(pg_catalog.=) 'string' THEN \"payload\" OPERATOR(pg_catalog.->>) 'region' ELSE CAST(CAST('heinzel refused a string landing value in generation ' OPERATOR(pg_catalog.||) \"generation_id\" AS NUMERIC) AS pg_catalog.text) END) COLLATE pg_catalog.\"C\" AS \"region\", CAST(CASE WHEN pg_catalog.jsonb_typeof(\"payload\" OPERATOR(pg_catalog.->) 'revenue') OPERATOR(pg_catalog.=) 'string' AND \"payload\" OPERATOR(pg_catalog.->>) 'revenue' OPERATOR(pg_catalog.~) '^-?(0|[1-9][0-9]{0,28})([.][0-9]{1,9})?$' THEN \"payload\" OPERATOR(pg_catalog.->>) 'revenue' ELSE 'heinzel refused a decimal landing value in generation ' OPERATOR(pg_catalog.||) \"generation_id\" END AS NUMERIC(38,9)) AS \"revenue\" FROM \"raw\".\"raw_sales\" WHERE \"generation_id\" OPERATOR(pg_catalog.=) 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS \"revenue_events\" GROUP BY \"revenue_events\".\"region\"",
+  "clickhouse": "SELECT \"revenue_events\".\"region\" AS \"region\", CAST(sum(CAST(\"revenue_events\".\"revenue\" AS Decimal(57, 9))) AS Decimal(57, 9)) AS \"total_revenue\" FROM (SELECT JSONExtractString(\"payload\", 'region') AS \"region\", CAST(JSONExtractString(\"payload\", 'revenue') AS Decimal(38, 9)) AS \"revenue\" FROM \"raw\".\"raw_sales\" WHERE \"generation_id\" = 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS \"revenue_events\" GROUP BY \"revenue_events\".\"region\""
+ },
+ "cases": [
+  {
+   "case_id": "valid_rows",
+   "dimensions": [
+    "D1",
+    "D7",
+    "D8"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"east\",\"revenue\":\"10.250000000\"}"
+    },
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"east\",\"revenue\":\"2.750000000\"}"
+    },
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"west\",\"revenue\":\"-1.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "east",
+       "13.000000000"
+      ],
+      [
+       "west",
+       "-1.000000000"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "east",
+       "13.000000000"
+      ],
+      [
+       "west",
+       "-1.000000000"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "missing_group",
+   "dimensions": [
+    "D1"
+   ],
+   "business_outcome": "invalid_input",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"revenue\":\"1.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "statement_rejected"
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "",
+       "1.000000000"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "null_group",
+   "dimensions": [
+    "D1"
+   ],
+   "business_outcome": "invalid_input",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":null,\"revenue\":\"1.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "statement_rejected"
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "",
+       "1.000000000"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "missing_measure",
+   "dimensions": [
+    "D1"
+   ],
+   "business_outcome": "invalid_input",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"east\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "statement_rejected"
+    },
+    "clickhouse": {
+     "classification": "statement_rejected"
+    }
+   }
+  },
+  {
+   "case_id": "null_measure",
+   "dimensions": [
+    "D1"
+   ],
+   "business_outcome": "invalid_input",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"east\",\"revenue\":null}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "statement_rejected"
+    },
+    "clickhouse": {
+     "classification": "statement_rejected"
+    }
+   }
+  },
+  {
+   "case_id": "malformed_decimal",
+   "dimensions": [
+    "D7"
+   ],
+   "business_outcome": "invalid_input",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"east\",\"revenue\":\"not-a-decimal\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "statement_rejected"
+    },
+    "clickhouse": {
+     "classification": "statement_rejected"
+    }
+   }
+  },
+  {
+   "case_id": "wrong_type_decimal",
+   "dimensions": [
+    "D7"
+   ],
+   "business_outcome": "invalid_input",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"east\",\"revenue\":12.5}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "statement_rejected"
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "east",
+       "12.500000000"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "wrong_generation_excluded",
+   "dimensions": [
+    "D8"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"east\",\"revenue\":\"1.000000000\"}"
+    },
+    {
+     "generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "payload": "{\"region\":\"east\",\"revenue\":\"999.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "east",
+       "1.000000000"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "east",
+       "1.000000000"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "empty_selected_generation",
+   "dimensions": [
+    "D8"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+     "payload": "{\"region\":\"east\",\"revenue\":\"999.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": []
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": []
+    }
+   }
+  },
+  {
+   "case_id": "decimal_zero",
+   "dimensions": [
+    "D2"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"zero\",\"revenue\":\"0.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "zero",
+       "0.000000000"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "zero",
+       "0.000000000"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "decimal_negative",
+   "dimensions": [
+    "D2"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"negative\",\"revenue\":\"-42.125000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "negative",
+       "-42.125000000"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "negative",
+       "-42.125000000"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "decimal_scale_nine",
+   "dimensions": [
+    "D2"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"fraction\",\"revenue\":\"0.123456789\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "fraction",
+       "0.123456789"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "fraction",
+       "0.123456789"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "decimal_max_positive",
+   "dimensions": [
+    "D2"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"maximum\",\"revenue\":\"99999999999999999999999999999.999999999\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "maximum",
+       "99999999999999999999999999999.999999999"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "maximum",
+       "99999999999999999999999999999.999999999"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "decimal_max_negative",
+   "dimensions": [
+    "D2"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"minimum\",\"revenue\":\"-99999999999999999999999999999.999999999\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "minimum",
+       "-99999999999999999999999999999.999999999"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "minimum",
+       "-99999999999999999999999999999.999999999"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "decimal_outside_precision",
+   "dimensions": [
+    "D2"
+   ],
+   "business_outcome": "invalid_input",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"overflow\",\"revenue\":\"100000000000000000000000000000.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "statement_rejected"
+    },
+    "clickhouse": {
+     "classification": "statement_rejected"
+    }
+   }
+  },
+  {
+   "case_id": "decimal_excess_scale",
+   "dimensions": [
+    "D2"
+   ],
+   "business_outcome": "provider_specific_rounding",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"rounding\",\"revenue\":\"1.1234567895\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "statement_rejected"
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "rounding",
+       "1.123456789"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "decimal_safe_multirow_sum",
+   "dimensions": [
+    "D2"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"large-sum\",\"revenue\":\"99999999999999999999999999999.999999999\"}"
+    },
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"large-sum\",\"revenue\":\"99999999999999999999999999999.999999999\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "large-sum",
+       "199999999999999999999999999999.999999998"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "large-sum",
+       "199999999999999999999999999999.999999998"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "case_variant_groups",
+   "dimensions": [
+    "D3"
+   ],
+   "business_outcome": "equivalent_row_set",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"Alpha\",\"revenue\":\"1.000000000\"}"
+    },
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"alpha\",\"revenue\":\"2.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "Alpha",
+       "1.000000000"
+      ],
+      [
+       "alpha",
+       "2.000000000"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "Alpha",
+       "1.000000000"
+      ],
+      [
+       "alpha",
+       "2.000000000"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "unicode_composed_decomposed_groups",
+   "dimensions": [
+    "D3"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"\u00e9\",\"revenue\":\"1.000000000\"}"
+    },
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"e\u0301\",\"revenue\":\"2.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "e\u0301",
+       "2.000000000"
+      ],
+      [
+       "\u00e9",
+       "1.000000000"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "e\u0301",
+       "2.000000000"
+      ],
+      [
+       "\u00e9",
+       "1.000000000"
+      ]
+     ]
+    }
+   }
+  },
+  {
+   "case_id": "trailing_space_groups",
+   "dimensions": [
+    "D3"
+   ],
+   "business_outcome": "equivalent_rows",
+   "admissible": false,
+   "rows": [
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"alpha\",\"revenue\":\"1.000000000\"}"
+    },
+    {
+     "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "payload": "{\"region\":\"alpha \",\"revenue\":\"2.000000000\"}"
+    }
+   ],
+   "expected": {
+    "postgresql": {
+     "classification": "rows",
+     "rows": [
+      [
+       "alpha",
+       "1.000000000"
+      ],
+      [
+       "alpha ",
+       "2.000000000"
+      ]
+     ]
+    },
+    "clickhouse": {
+     "classification": "rows",
+     "rows": [
+      [
+       "alpha",
+       "1.000000000"
+      ],
+      [
+       "alpha ",
+       "2.000000000"
+      ]
+     ]
+    }
+   }
+  }
+ ]
+}

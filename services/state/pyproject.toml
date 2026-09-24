@@ -1,0 +1,45 @@
+[project]
+name = "heinzel-state"
+version = "0.1.0"
+requires-python = "==3.13.*"
+description = "Run lifecycle, leases, checkpoints and incidents."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: POSIX",
+]
+dependencies = [
+  "heinzel-contract-model",
+  "heinzel-provider-sdk",
+  "pydantic>=2.11,<3",
+]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
+
+[tool.uv.sources]
+heinzel-contract-model = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.mutmut]
+source_paths = ["src/heinzel_state"]
+only_mutate = [
+  "src/heinzel_state/artifacts.py",
+  "src/heinzel_state/crypto.py",
+  "src/heinzel_state/recovery_service.py",
+  "src/heinzel_state/repository.py",
+]
+also_copy = ["tests"]
+pytest_add_cli_args_test_selection = [
+  "tests/test_artifacts.py",
+  "tests/test_crypto.py",
+  "tests/test_recovery_service.py",
+  "tests/test_repository.py",
+]

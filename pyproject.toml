@@ -1,0 +1,118 @@
+[project]
+name = "heinzel-workspace"
+version = "0.1.0"
+requires-python = "==3.13.*"
+
+[dependency-groups]
+dev = [
+  # Starlette's `TestClient` is built on this and prefers it over httpx at
+  # runtime, but starlette declares it only under an extra the workspace does not
+  # request. The console's suite imports it directly, and undeclared it reached
+  # the environment only as a transitive dependency of `mcp`, by way of packages
+  # the console itself does not depend on.
+  "httpx2>=2.10,<3",
+  "hypothesis>=6.138,<7",
+  "mypy>=1.17,<2",
+  "mutmut>=3.3,<4",
+  "pytest>=8.4,<9",
+  "pytest-cov>=6.2,<7",
+  # The workflow contract tests assert the CI gate's structure. Parsing the
+  # workflow is the only way to check it; there is no stdlib YAML reader, and a
+  # regex over the file would pass on a gate whose job graph had changed.
+  "pyyaml>=6.0,<7",
+  "ruff>=0.12,<1",
+]
+
+[tool.uv.workspace]
+members = [
+  "apps/console/server",
+  "packages/contract-model",
+  "packages/execution-graph",
+  "packages/iir",
+  "packages/provider-sdk",
+  "providers/openmetadata",
+  "providers/clickhouse",
+  "providers/postgresql",
+  "providers/snowflake",
+  "providers/stripe",
+  "providers/superset",
+  "services/access-control",
+  "services/authoring-mcp",
+  "services/bi-control",
+  "services/catalog-control",
+  "services/connection-broker",
+  "services/context-exposure",
+  "services/compiler",
+  "services/contract",
+  "services/dbt-adapter",
+  "services/evidence",
+  "services/knowledge-graph",
+  "services/request-management",
+  "services/runtime",
+  "services/semantic-registry",
+  "services/state",
+  "services/trigger",
+  "services/warehouse-control",
+]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers --import-mode=importlib"
+testpaths = ["apps", "packages", "providers", "services", "tests"]
+markers = [
+  "emulator: runs against a local engine or service emulator, usually a pinned Docker image the test starts; opt-in by switch",
+  "live: requires real service credentials, an explicitly started emulator or a Docker-hosted engine; opt-in",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "RUF", "SIM"]
+
+[tool.mypy]
+python_version = "3.13"
+strict = true
+packages = [
+  "heinzel_console",
+  "heinzel_contract_model",
+  "heinzel_execution_graph",
+  "heinzel_iir",
+  "heinzel_provider_sdk",
+  "heinzel_provider_openmetadata",
+  "heinzel_provider_clickhouse",
+  "heinzel_provider_postgresql",
+  "heinzel_provider_snowflake",
+  "heinzel_provider_stripe",
+  "heinzel_provider_superset",
+  "heinzel_access_control",
+  "heinzel_authoring_mcp",
+  "heinzel_bi_control",
+  "heinzel_catalog_control",
+  "heinzel_connection_broker",
+  "heinzel_context_exposure",
+  "heinzel_compiler",
+  "heinzel_contract_service",
+  "heinzel_dbt_adapter",
+  "heinzel_evidence",
+  "heinzel_knowledge_graph",
+  "heinzel_request_management",
+  "heinzel_runtime",
+  "heinzel_semantic_registry",
+  "heinzel_state",
+  "heinzel_trigger",
+  "heinzel_warehouse_control",
+  "tests.acceptance.console_postgresql_engine",
+  "tests.acceptance.semantic_formation_orchestration",
+  "tests.acceptance.warehouse_lifecycle_fault_matrix",
+  "tests.acceptance.warehouse_lifecycle_orchestration",
+  "tests.acceptance.run_console_governed",
+  "tests.acceptance.run_snapshot",
+  "tests.acceptance.run_semantic_formation",
+  "tests.acceptance.run_warehouse_lifecycle",
+  "tests.acceptance.run_request_fulfillment",
+  "tests.acceptance.run_source_acquisition",
+  "tests.ci.run_warehouse_lifecycle_witness",
+  "tests.conformance.source_acquisition",
+  "tests.conformance.warehouse_lifecycle",
+]

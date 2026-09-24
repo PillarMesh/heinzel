@@ -1,0 +1,51 @@
+# Secret scanning configuration for gitleaks (https://github.com/gitleaks/gitleaks).
+#
+# The default rules apply unchanged. Each allowlist below names one rule, the exact files, and
+# the exact synthetic values that rule mistakes for a secret, so a real credential added to the
+# same file is still reported. Read the flagged line before adding an entry here; never allowlist
+# a value you have not confirmed is fake.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Idempotency keys in console request tests are fixed request identifiers, not secrets."
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = [
+  '''(?:^|/)apps/console/web/src/api/client\.test\.ts$''',
+  '''(?:^|/)tests/end-to-end/test_console_governed_journey\.py$''',
+  '''(?:^|/)tests/acceptance/test_run_console_governed\.py$''',
+]
+regexes = [
+  '''^idempotency-(?:acquisition|incident)-0001$''',
+  '''^(?:conversation|clarified-outcome|approve-asserted-constraints)-1$''',
+]
+
+[[allowlists]]
+description = "Base64 of the stand-ins 'test-only-admin-password' and 'test-only-rotated-password'."
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(?:^|/)providers/openmetadata/tests/test_client\.py$''']
+regexes = [
+  '''^dGVzdC1vbmx5LWFkbWluLXBhc3N3b3Jk$''',
+  '''^dGVzdC1vbmx5LXJvdGF0ZWQtcGFzc3dvcmQ=$''',
+]
+
+[[allowlists]]
+description = "A type annotation, `signing_key: Ed25519PrivateKey`, not a key value."
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(?:^|/)tests/acceptance/console_native_answer_fixture\.py$''']
+regexes = ['''^Ed25519PrivateKey$''']
+
+[[allowlists]]
+# The rule matches from the first fixture's PEM header to the second fixture's header, so the
+# allowlisted value is exactly that span of two adjacent test cases, and nothing longer.
+description = "The evidence scanner's own fixtures: PEM headers followed by 'not-a-real-key'."
+targetRules = ["private-key"]
+condition = "AND"
+paths = ['''(?:^|/)services/evidence/tests/test_scanner\.py$''']
+regexes = [
+  '''\A-----BEGIN PRIVATE KEY-----\\nnot-a-real-key",\s+ScanInput\(\),\s+"private_key_marker",\s+\),\s+\(\s+b"-----BEGIN ENCRYPTED PRIVATE KEY-----\z''',
+]

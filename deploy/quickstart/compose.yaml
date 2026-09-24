@@ -1,0 +1,45 @@
+# The local demonstration decided in ADR-0009. It packages the demonstration backend, not a
+# deployment: the console has no authentication, so anyone who reaches the published port acts
+# as the architect. Start it from the repository root:
+#
+#   docker compose -f deploy/quickstart/compose.yaml up --build
+#
+# Publish it somewhere else by setting one variable, which moves the published port and the
+# origin the console accepts together:
+#
+#   HEINZEL_PORT=9000 docker compose -f deploy/quickstart/compose.yaml up --build
+#
+# See the README beside this file for what the demonstration shows and where it stops.
+
+services:
+  console:
+    build:
+      context: ../..
+      dockerfile: deploy/quickstart/Dockerfile
+    # Loopback only. This is the whole network boundary of an unauthenticated console, so the
+    # host part is not decoration: `8000:8000` would publish it on every interface.
+    ports:
+      - "127.0.0.1:${HEINZEL_PORT:-8000}:8000"
+    # The origin the browser sends, which the server cannot derive from the `0.0.0.0` it binds
+    # inside the container. It has to agree with the published port above, because a command
+    # whose `Origin` header differs is refused `same_origin_required`, which reads as a console
+    # where every page loads and every button fails. Both read the same variable so that they
+    # cannot be moved apart. Spell any replacement as the browser sends it: no surrounding
+    # space, no trailing slash, no uppercase, and no default port — `HEINZEL_PORT=80` is not
+    # served, because the browser would then send `http://127.0.0.1` and this names a port.
+    environment:
+      HEINZEL_CONSOLE_ALLOWED_ORIGIN: "http://127.0.0.1:${HEINZEL_PORT:-8000}"
+    # The demonstration's state directory and its SQLite stores. `docker compose down` keeps it
+    # and the demonstration resumes; `docker compose down -v` removes it and the next start is a
+    # fresh demonstration.
+    volumes:
+      - heinzel-state:/var/lib/heinzel
+    # No `restart:` on purpose, deviating from the quickstart design's `unless-stopped`. This is
+    # a foreground `up --build` demonstration, and a restart policy turns a configuration the
+    # console refuses — a misspelled origin, say — into a container Docker restarts in a loop:
+    # `docker inspect` reports it running, the one actionable error line repeats and scrolls
+    # away, and the reader is left with a console that serves nothing. The named volume above,
+    # not a restart policy, is what carries recorded work across a stop.
+
+volumes:
+  heinzel-state:

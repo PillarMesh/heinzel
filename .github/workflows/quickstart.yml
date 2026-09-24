@@ -1,0 +1,93 @@
+name: Quickstart
+
+# The smoke test builds the published image and starts it twice, so this runs only when
+# something the image is built from changes, rather than on every pull request. The
+# contract tests beside it need no Docker and run in the offline suite every time.
+on:
+  pull_request:
+    paths:
+      - "deploy/quickstart/**"
+      - "apps/console/**"
+      - "tests/quickstart/**"
+      # The image installs the locked workspace, so a dependency change rebuilds it.
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".dockerignore"
+      - ".github/workflows/quickstart.yml"
+  # The image also installs every workspace member it copies -- `apps`, `packages`,
+  # `providers`, `services` -- so a change to one of those alters the image. Watching
+  # them on pull requests would rebuild for most of the repository, which is what the
+  # narrow list above avoids. Watching them here instead means such a change is caught
+  # once it reaches the default branch rather than not at all.
+  push:
+    branches: [main]
+    paths:
+      - "deploy/quickstart/**"
+      - "apps/**"
+      - "packages/**"
+      - "providers/**"
+      - "services/**"
+      - "tests/quickstart/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".dockerignore"
+      - ".github/workflows/quickstart.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Supersede an outdated pull request run, but let a dispatched run finish so its
+  # evidence is not discarded.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quickstart:
+    runs-on: ubuntu-latest
+    # The image builds the console bundle and the locked Python environment from scratch,
+    # and the suite then starts the container several times over.
+    timeout-minutes: 45
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          # The pull request head commit, not the ephemeral merge commit: the image under
+          # test must be the one this branch builds.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: 3.13.5
+          enable-cache: true
+      - name: Sync locked workspace
+        run: uv sync --locked --all-packages
+      # The suite builds the image itself, through `docker compose up --build`, so that what
+      # CI exercises is the command the README tells a reader to run.
+      - name: Smoke test the quickstart
+        env:
+          HEINZEL_RUN_QUICKSTART: "1"
+        run: >-
+          uv run pytest tests/quickstart -q -m "live or emulator" -p no:randomly -rs
+          --junitxml="$RUNNER_TEMP/quickstart-smoke.xml"
+      # A skipped smoke test is a gap, not a pass. The suite skips itself when
+      # HEINZEL_RUN_QUICKSTART is unset or Docker is absent, and pytest then exits 0 having
+      # built nothing, which would report a passing quickstart that never ran.
+      - name: Require every smoke test to have run
+        run: |
+          python3 - "$RUNNER_TEMP/quickstart-smoke.xml" <<'EOF'
+          import sys
+          import xml.etree.ElementTree as ElementTree
+
+          suite = ElementTree.parse(sys.argv[1]).getroot().find("testsuite")
+          tests = int(suite.get("tests", "0"))
+          skipped = int(suite.get("skipped", "0"))
+          print(f"{tests} selected, {skipped} skipped")
+          sys.exit(0 if tests > 0 and skipped == 0 else 1)
+          EOF
+      # The suite tears its own containers down; this removes what a killed run left behind.
+      - name: Exact teardown
+        if: always()
+        run: docker compose -f deploy/quickstart/compose.yaml down -v --remove-orphans

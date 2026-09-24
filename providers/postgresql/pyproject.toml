@@ -1,0 +1,38 @@
+[project]
+name = "heinzel-provider-postgresql"
+version = "0.1.0"
+requires-python = "==3.13.*"
+description = "PostgreSQL source, warehouse, LAND and materialization provider."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: POSIX",
+]
+dependencies = [
+  "heinzel-dbt-adapter",
+  "heinzel-contract-model",
+  "heinzel-provider-sdk",
+  "heinzel-runtime",
+  "heinzel-semantic-registry",
+  "heinzel-warehouse-control",
+  "psycopg[binary]>=3.2,<4",
+  "pydantic>=2.11,<3",
+]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
+
+[tool.uv.sources]
+heinzel-dbt-adapter = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-runtime = { workspace = true }
+heinzel-semantic-registry = { workspace = true }
+heinzel-warehouse-control = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

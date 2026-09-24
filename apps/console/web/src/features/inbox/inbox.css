@@ -1,0 +1,442 @@
+.decision-workspace {
+  display: grid;
+  gap: clamp(1rem, 2.5vw, 2rem);
+  grid-template-columns: minmax(16rem, 0.9fr) minmax(0, 2fr) minmax(15rem, 1fr);
+}
+
+.decision-workspace--medium,
+.decision-workspace--narrow {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.decision-queue,
+.decision-detail,
+.decision-queue,
+.decision-detail,
+.evidence-region {
+  container: decision-pane / inline-size;
+}
+
+.evidence-region {
+  background: var(--color-white);
+  border: 1px solid var(--color-line);
+  padding: clamp(1rem, 2vw, 1.5rem);
+}
+
+.decision-detail:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+
+.decision-queue h2,
+.evidence-region h2 {
+  font-size: 1.15rem;
+  margin: 0 0 1rem;
+}
+
+.decision-queue__filters {
+  display: grid;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.decision-queue__filters label {
+  display: grid;
+  gap: 0.3rem;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.decision-queue__filters select {
+  border: 1px solid var(--color-line);
+  padding: 0.45rem;
+}
+
+.decision-queue__items {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.decision-queue__item {
+  border: 1px solid var(--color-line);
+  border-left: 4px solid var(--color-neutral);
+  cursor: pointer;
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.75rem;
+}
+
+.decision-queue__item--high,
+.decision-queue__item--critical {
+  border-left-color: var(--color-danger);
+}
+
+.decision-queue__item--medium {
+  border-left-color: var(--color-attention);
+}
+
+.decision-queue__item[aria-selected="true"] {
+  background: var(--color-neutral-surface);
+  border-left-color: var(--color-primary);
+}
+
+.decision-queue__meta,
+.decision-queue__purpose,
+.decision-queue__deadline {
+  color: var(--color-neutral);
+  font-size: var(--text-xs);
+}
+
+.decision-queue__blocked,
+.decision-detail__blocked {
+  background: var(--color-attention-surface);
+  color: var(--color-attention);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  padding: 0.35rem 0.5rem;
+}
+
+.decision-detail__facts,
+.proposal-review__facts,
+.evidence-content__facts {
+  display: grid;
+  gap: 0.6rem;
+  margin: 0 0 1.25rem;
+}
+
+/*
+ * Stacked by default, two columns only where the pane is wide enough to hold them.
+ *
+ * A fixed `minmax(9rem, 0.5fr)` label column reserved nine rems inside the evidence
+ * pane, which is about thirteen wide, so every value wrapped to roughly one word per
+ * line: "0 material quality limitation(s) were cited." became a vertical column of
+ * fragments. The pane is a container, so the row asks the pane, not the viewport.
+ */
+.decision-detail__facts div,
+.proposal-review__facts div,
+.evidence-content__facts div,
+.catalog-evidence dl div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+@container decision-pane (min-width: 26rem) {
+  .decision-detail__facts div,
+  .proposal-review__facts div,
+  .evidence-content__facts div,
+  .catalog-evidence dl div {
+    align-items: baseline;
+    column-gap: var(--space-4);
+    grid-template-columns: minmax(7rem, 0.4fr) minmax(0, 1fr);
+  }
+}
+
+.decision-detail__facts dt,
+.proposal-review__facts dt,
+.evidence-content__facts dt,
+.catalog-evidence dt {
+  color: var(--color-ink-muted);
+  font-family: var(--font-utility);
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.decision-detail__facts dd,
+.proposal-review__facts dd,
+.evidence-content__facts dd,
+.catalog-evidence dd {
+  margin: 0;
+}
+
+.decision-detail__comment,
+.conversation-panel__compose {
+  display: grid;
+  gap: 0.35rem;
+  margin: 1rem 0;
+}
+
+.decision-detail__comment textarea,
+.conversation-panel__compose textarea {
+  border: 1px solid var(--color-line);
+  font: inherit;
+  min-height: 5rem;
+  padding: 0.5rem;
+}
+
+.decision-detail__digest {
+  align-items: start;
+  display: grid;
+  gap: 0.5rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  overflow-wrap: anywhere;
+}
+
+.decision-detail__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.decision-detail__actions button {
+  border: 1px solid var(--color-line);
+  cursor: pointer;
+  padding: 0.75rem 1rem;
+}
+
+.decision-detail__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.access-lifecycle {
+  border-block: 1px solid var(--color-line);
+  display: grid;
+  gap: 0.75rem;
+  margin-block: var(--space-5);
+  padding-block: var(--space-5);
+}
+
+.access-lifecycle__revocation {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.access-lifecycle__revocation textarea {
+  border: 1px solid var(--color-line);
+  font: inherit;
+  padding: 0.6rem;
+}
+
+.product-intent-review {
+  border-block: 1px solid var(--color-line);
+  display: grid;
+  gap: var(--space-4);
+  margin-block: var(--space-5);
+  padding-block: var(--space-5);
+}
+
+.product-intent-review__heading {
+  align-items: start;
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+}
+
+.product-intent-review__heading h3,
+.product-intent-review__heading p,
+.product-intent-review__section h4,
+.product-intent-review__unresolved h4 {
+  margin: 0;
+}
+
+.product-intent-review__heading p {
+  color: var(--color-ink-muted);
+  margin-top: var(--space-2);
+  max-width: 64ch;
+}
+
+.product-intent-review__heading > span {
+  border: 1px solid var(--color-line);
+  flex: 0 0 auto;
+  font-size: var(--text-xs);
+  padding: 0.35rem 0.55rem;
+}
+
+.product-intent-review__heading .product-intent-review__approved {
+  border-color: var(--color-ready);
+  color: var(--color-ready);
+}
+
+.product-intent-review__sources {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: var(--space-2) 0 0;
+  padding: 0;
+}
+
+.product-intent-review__sources li {
+  align-items: baseline;
+  border-left: 3px solid var(--color-primary);
+  display: grid;
+  gap: var(--space-2);
+  grid-template-columns: minmax(9rem, 0.7fr) minmax(0, 1.5fr) auto;
+  padding: 0.45rem 0.65rem;
+}
+
+.product-intent-review__sources li > span {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+}
+
+.product-intent-review__sources .source-authorized {
+  color: var(--color-ready);
+}
+
+.product-intent-review__sources .source-unresolved,
+.product-intent-review__unresolved {
+  color: var(--color-attention);
+}
+
+.product-intent-review__facts {
+  display: grid;
+  gap: var(--space-2) var(--space-5);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 0;
+}
+
+.product-intent-review__facts div {
+  border-top: 1px solid var(--color-line);
+  padding-top: var(--space-2);
+}
+
+.product-intent-review__facts dt {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.product-intent-review__facts dd {
+  margin: var(--space-1) 0 0;
+  overflow-wrap: anywhere;
+}
+
+.product-intent-review__unresolved {
+  background: var(--color-attention-surface);
+  padding: var(--space-3);
+}
+
+.product-intent-review__unresolved ul {
+  margin-bottom: 0;
+}
+
+@container decision-pane (max-width: 32rem) {
+  .product-intent-review__heading {
+    display: grid;
+  }
+
+  .product-intent-review__heading > span {
+    justify-self: start;
+  }
+
+  .product-intent-review__sources li,
+  .product-intent-review__facts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.authority-list,
+.lifecycle-timeline,
+.conversation-panel__messages {
+  display: grid;
+  gap: 0.5rem;
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.authority-list li,
+.lifecycle-timeline li,
+.conversation-message {
+  border-left: 3px solid var(--color-line);
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.4rem 0.6rem;
+}
+
+.authority-list__state--false {
+  color: var(--color-attention);
+  font-weight: var(--weight-semibold);
+}
+
+.authority-list__state--true {
+  color: var(--color-ready);
+  font-weight: var(--weight-semibold);
+}
+
+.conversation-message--heinzel {
+  border-left-color: var(--color-primary);
+}
+
+.conversation-message--requester {
+  border-left-color: var(--color-neutral);
+}
+
+.conversation-message--data_architect {
+  border-left-color: var(--color-ready);
+}
+
+.conversation-message__kind {
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.conversation-message p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.dashboard-preview__image {
+  border: 1px solid var(--color-line);
+  display: block;
+  height: auto;
+  max-width: 100%;
+}
+
+.inbox-unavailable {
+  background: var(--color-danger-surface);
+  color: var(--color-danger);
+  padding: 0.5rem 0.75rem;
+}
+
+.inbox-notice {
+  background: var(--color-neutral-surface);
+  padding: 0.5rem 0.75rem;
+}
+
+.inbox-empty,
+.inbox-loading {
+  color: var(--color-neutral);
+  font-size: var(--text-sm);
+}
+
+.evidence-drawer {
+  background: var(--color-white);
+  border: 1px solid var(--color-primary);
+  margin-top: 0.75rem;
+  padding: 1rem;
+}
+
+.evidence-drawer:focus-visible {
+  box-shadow: var(--shadow-focus);
+}
+
+.evidence-region--drawer > button {
+  border: 1px solid var(--color-line);
+  cursor: pointer;
+  padding: 0.6rem 0.9rem;
+}
+
+.decision-workspace code {
+  font-family: var(--font-utility);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .evidence-drawer,
+  .decision-queue__item {
+    transition: none;
+  }
+}
+
+.artifact-reference {
+  overflow-wrap: anywhere;
+}

@@ -1,0 +1,74 @@
+name: Offline assurance
+
+on:
+  pull_request:
+  # Pushes to a pull request branch already run through `pull_request`. Without this
+  # filter every such push started a second, identical offline run.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  # Supersede an outdated pull request run, but let a main-branch run finish so its
+  # evidence is not discarded.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          # The DCO check walks every commit in the pull request, and refuses a shallow clone.
+          fetch-depth: 0
+          persist-credentials: false
+      # Dependabot cannot sign off, so its pull requests are exempt. The exemption needs both the
+      # pull request author and the triggering actor to be Dependabot: the author alone would
+      # also exempt a person's commits pushed onto a Dependabot branch, and the actor alone would
+      # exempt any pull request Dependabot can be made to trigger, such as by a rebase request.
+      - name: Check DCO sign-off
+        if: >-
+          github.event_name == 'pull_request' &&
+          !(github.event.pull_request.user.login == 'dependabot[bot]' &&
+          github.actor == 'dependabot[bot]')
+        env:
+          # The pull request head, not github.sha: that is GitHub's unsigned test-merge commit.
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 tests/ci/check_dco.py "$BASE_SHA" "$HEAD_SHA"
+      # The committed tree only, exported so nothing untracked or ignored is scanned. The image is
+      # pinned by digest (gitleaks v8.30.1); gitleaks-action needs a licence key for organisations.
+      - name: Scan the tree for secrets
+        run: |
+          set -euo pipefail
+          tree="$RUNNER_TEMP/gitleaks-tree"
+          mkdir "$tree"
+          git archive HEAD | tar -x -C "$tree"
+          docker run --rm --network none -v "$tree:/repo:ro" \
+            ghcr.io/gitleaks/gitleaks@sha256:c00b6bd0aeb3071cbcb79009cb16a60dd9e0a7c60e2be9ab65d25e6bc8abbb7f \
+            dir /repo --config /repo/.gitleaks.toml --no-banner --redact
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: 3.13.5
+          enable-cache: true
+      - name: Sync locked workspace
+        run: uv sync --locked --all-packages
+      - name: Lint
+        run: uv run ruff check .
+      - name: Check formatting
+        run: uv run ruff format --check .
+      - name: Type check
+        run: uv run mypy
+      - name: Type check test directories
+        run: ./tests/type-check/check.sh
+      - name: Run offline tests
+        run: uv run pytest -m "not live"
+      - name: Validate repository boundaries
+        run: ./tests/repository-structure/test.sh

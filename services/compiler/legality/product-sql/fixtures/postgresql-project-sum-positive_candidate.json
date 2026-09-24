@@ -1,0 +1,143 @@
+{
+  "case_kind": "positive_candidate",
+  "engine": "postgresql",
+  "evaluated_at": "2026-09-15T12:10:00+00:00",
+  "expected_engine_build_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "expected_engine_image_digest": "33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935",
+  "expected_failed_preconditions": [
+    10,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18
+  ],
+  "expected_relation_namespace": "raw",
+  "expected_relation_ref": "relation-revenue-events-v1",
+  "expected_statement": "SELECT \"revenue_events\".\"region\" AS \"region\", CAST(SUM(CAST(\"revenue_events\".\"revenue\" AS NUMERIC(57,9))) AS NUMERIC(57,9)) AS \"total_revenue\" FROM \"raw\".\"revenue_events\" AS \"revenue_events\" GROUP BY \"revenue_events\".\"region\"",
+  "expected_tenant_id": "tenant-fixture",
+  "expected_warehouse_binding_id": "postgresql-warehouse-fixture",
+  "expected_warehouse_binding_revision": 1,
+  "fixture_schema": "1",
+  "product_iir": {
+    "freshness_seconds": 3600,
+    "grain": [
+      {
+        "column_name": "region",
+        "kind": "column",
+        "relation_alias": "revenue_events"
+      }
+    ],
+    "operations": [
+      {
+        "expressions": [
+          {
+            "expression": {
+              "column_name": "region",
+              "kind": "column",
+              "relation_alias": "revenue_events"
+            },
+            "output_name": "region"
+          },
+          {
+            "expression": {
+              "column_name": "revenue",
+              "kind": "column",
+              "relation_alias": "revenue_events"
+            },
+            "output_name": "revenue"
+          }
+        ],
+        "kind": "project"
+      },
+      {
+        "group_by": [
+          {
+            "column_name": "region",
+            "kind": "column",
+            "relation_alias": "revenue_events"
+          }
+        ],
+        "kind": "aggregate",
+        "measures": [
+          {
+            "argument": {
+              "column_name": "revenue",
+              "kind": "column",
+              "relation_alias": "revenue_events"
+            },
+            "function": "sum",
+            "output_name": "total_revenue"
+          }
+        ]
+      }
+    ],
+    "product_ref": "revenue_by_region",
+    "schema_version": "2",
+    "source": {
+      "alias": "revenue_events",
+      "columns": [
+        {
+          "name": "region",
+          "nullable": false,
+          "value_type": "string"
+        },
+        {
+          "name": "revenue",
+          "nullable": false,
+          "value_type": "decimal"
+        }
+      ],
+      "relation_name": "revenue_events",
+      "relation_namespace": "raw"
+    }
+  },
+  "provider_observation": {
+    "columns": [
+      {
+        "collation": "C",
+        "decimal_precision": null,
+        "decimal_scale": null,
+        "encoding": "UTF8",
+        "logical_type": "string",
+        "name": "region",
+        "nullable": false,
+        "physical_type": "TEXT"
+      },
+      {
+        "collation": null,
+        "decimal_precision": 38,
+        "decimal_scale": 9,
+        "encoding": null,
+        "logical_type": "decimal",
+        "name": "revenue",
+        "nullable": false,
+        "physical_type": "NUMERIC(38,9)"
+      }
+    ],
+    "engine": "postgresql",
+    "engine_build_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "engine_image_digest": "33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935",
+    "engine_version": "18.6",
+    "observation_id": "postgresql-product-sql-observation-fixture-1",
+    "observed_at": "2026-09-15T12:00:00Z",
+    "relation_name": "revenue_events",
+    "relation_namespace": "raw",
+    "relation_ref": "relation-revenue-events-v1",
+    "schema_version": "1",
+    "sum_semantics": {
+      "accumulator_physical_type": "INTERNAL",
+      "empty_group_behavior": "no_row",
+      "input_physical_type": "NUMERIC(38,9)",
+      "null_input_behavior": "exclude",
+      "overflow_behavior": "promote",
+      "result_physical_type": "NUMERIC"
+    },
+    "tenant_id": "tenant-fixture",
+    "warehouse_binding_id": "postgresql-warehouse-fixture",
+    "warehouse_binding_revision": 1
+  },
+  "provider_observation_digest": "ee55e6225267de7ea1dddb0a7efa0aad04a75599832c44f5ec2c378eb76394ce",
+  "rule_id": "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE"
+}

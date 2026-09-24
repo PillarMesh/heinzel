@@ -1,0 +1,36 @@
+[project]
+name = "heinzel-provider-clickhouse"
+version = "0.1.0"
+requires-python = "==3.13.*"
+description = "ClickHouse warehouse, LAND and product SQL provider."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: POSIX",
+]
+dependencies = [
+  "httpx>=0.28,<1",
+  "heinzel-contract-model",
+  "heinzel-dbt-adapter",
+  "heinzel-provider-sdk",
+  "heinzel-runtime",
+  "heinzel-warehouse-control",
+  "pydantic>=2.11,<3",
+]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
+
+[tool.uv.sources]
+heinzel-contract-model = { workspace = true }
+heinzel-dbt-adapter = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-runtime = { workspace = true }
+heinzel-warehouse-control = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

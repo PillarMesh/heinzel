@@ -1,0 +1,37 @@
+<clickhouse>
+    <logger>
+        <level>information</level>
+        <console>true</console>
+    </logger>
+    <https_port>8443</https_port>
+    <http_port remove="1" />
+    <tcp_port remove="1" />
+    <listen_host>0.0.0.0</listen_host>
+    <openSSL>
+        <server>
+            <certificateFile>/var/lib/clickhouse/heinzel-tls/server.crt</certificateFile>
+            <privateKeyFile>/var/lib/clickhouse/heinzel-tls/server.key</privateKeyFile>
+            <caConfig>/var/lib/clickhouse/heinzel-tls/ca.crt</caConfig>
+            <verificationMode>strict</verificationMode>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <cacheSessions>true</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </server>
+    </openSSL>
+    <storage_configuration>
+        <disks>
+            <backups>
+                <type>local</type>
+                <path>/var/lib/clickhouse/backups/</path>
+            </backups>
+        </disks>
+    </storage_configuration>
+    <backups>
+        <allowed_disk>backups</allowed_disk>
+        <allowed_path>/var/lib/clickhouse/backups/</allowed_path>
+    </backups>
+</clickhouse>

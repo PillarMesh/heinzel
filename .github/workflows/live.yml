@@ -1,0 +1,92 @@
+name: Live journeys
+
+# Nightly, on demand, and when a maintainer applies the `run-live` label to a pull request. The
+# journeys start pinned engine images in Docker and read no repository secret.
+#
+# There is deliberately no `synchronize` trigger: a new push to a pull request, possibly from a
+# fork, runs only after a maintainer has reviewed it and removed and re-applied `run-live`.
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  live:
+    # Adding some other label to a pull request starts nothing.
+    if: >-
+      github.event_name != 'pull_request' ||
+      github.event.label.name == 'run-live'
+    # Job-level, so a run skipped by the condition above never enters the group: at workflow
+    # level, adding some other label would cancel the live run in progress. Re-applying the
+    # label supersedes the outdated run; a scheduled or dispatched run is left to finish so its
+    # evidence is not discarded.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.ref }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    # About 35 minutes of journeys when measured locally, plus image pulls.
+    timeout-minutes: 90
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          # The pull request head commit, not the ephemeral merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: 3.13.5
+          enable-cache: true
+      - name: Sync locked workspace
+        run: uv sync --locked --all-packages
+      # Only journeys that need nothing but Docker and the locked workspace (dbt included).
+      # Not listed, because the runner does not provide what they need: tests that start a
+      # cluster with host PostgreSQL binaries (initdb), the Superset compose build, OpenMetadata,
+      # Snowflake and LocalStack. Several of these files mark their tests `emulator` rather than
+      # `live`, so the selection is `live or emulator`; `-m live` alone would deselect them.
+      #
+      # `tests/quickstart` is deliberately absent: it builds the published image and has its
+      # own workflow. The selection is an explicit file list rather than a directory, so
+      # leaving it unlisted is the whole exclusion -- no `--ignore` is needed.
+      - name: Run live journeys
+        env:
+          HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE: "1"
+          HEINZEL_RUN_ACCESS_EMULATORS: "1"
+          HEINZEL_RUN_DESTINATION_EMULATORS: "1"
+        run: >-
+          uv run pytest -m "live or emulator" -q -p no:randomly -rs
+          --junitxml="$RUNNER_TEMP/live-journeys.xml"
+          tests/integration/test_postgresql_checked_sum_evidence.py
+          tests/integration/test_postgresql_compiled_product_journey_live.py
+          tests/integration/test_postgresql_composed_acquisition_live.py
+          tests/integration/test_postgresql_acquisition_land_live.py
+          tests/integration/test_postgresql_leased_run_resume_live.py
+          tests/integration/test_postgresql_rejected_credentials_live.py
+          tests/integration/test_generation_scoped_product_sql_conformance.py
+          tests/integration/test_warehouse_access_provider_live.py
+          tests/integration/test_postgresql_warehouse_live.py
+          tests/integration/test_clickhouse_warehouse_live.py
+          providers/postgresql/tests/test_destination_live.py
+          providers/postgresql/tests/test_product_sql_observation_live.py
+          providers/clickhouse/tests/test_destination_live.py
+          providers/clickhouse/tests/test_publication_conformance_live.py
+          services/dbt-adapter/tests/test_clickhouse_subprocess_live.py
+      # A skipped journey is a gap, not a pass: a missing switch or tool must fail the run.
+      - name: Require every selected journey to have run
+        run: |
+          python3 - "$RUNNER_TEMP/live-journeys.xml" <<'EOF'
+          import sys
+          import xml.etree.ElementTree as ElementTree
+
+          suite = ElementTree.parse(sys.argv[1]).getroot().find("testsuite")
+          tests = int(suite.get("tests", "0"))
+          skipped = int(suite.get("skipped", "0"))
+          print(f"{tests} selected, {skipped} skipped")
+          sys.exit(0 if tests > 0 and skipped == 0 else 1)
+          EOF

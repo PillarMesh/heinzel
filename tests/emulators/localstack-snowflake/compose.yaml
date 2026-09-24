@@ -1,0 +1,24 @@
+services:
+  snowflake:
+    image: localstack/snowflake:2026.06.0
+    environment:
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:?LOCALSTACK_AUTH_TOKEN is required}
+      SF_DEFAULT_PASSWORD: test
+      SF_DEFAULT_USER: test
+    ports:
+      - "127.0.0.1:4566:4566"
+    volumes:
+      - snowflake-state:/var/lib/localstack
+      - type: bind
+        source: ./init/10-snapshot.sf.sql
+        target: /etc/localstack/init/ready.d/10-snapshot.sf.sql
+        read_only: true
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-d", "{}", "http://localhost:4566/session"]
+      interval: 2s
+      timeout: 2s
+      retries: 60
+      start_period: 10s
+
+volumes:
+  snowflake-state:

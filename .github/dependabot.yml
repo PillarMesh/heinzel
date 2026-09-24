@@ -1,0 +1,83 @@
+# Minor and patch updates arrive as one grouped pull request per ecosystem each week; a major
+# update still gets its own pull request, because it needs its own review.
+version: 2
+updates:
+  - package-ecosystem: uv
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      python-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+  - package-ecosystem: npm
+    directory: /apps/console
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      console-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+  # Emulator and quickstart images. The PostgreSQL and ClickHouse engine digests are also pinned
+  # in the provider settings, the compiler, recorded evidence and the warehouse lifecycle
+  # workflow; a bump here must update every pin together, or the live journeys and evidence
+  # checks will disagree. The same holds for the quickstart image: its Node and Python base
+  # images are pinned again in `apps/console/.node-version` and `.python-version`, which the
+  # quickstart contract test requires to match.
+  # Every bump is grouped whatever its size, because the images are reviewed together.
+  - package-ecosystem: docker
+    directories:
+      - /deploy/quickstart
+      - /tests/emulators/superset
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      dockerfile-images:
+        patterns: ["*"]
+    # Dependabot edits the Dockerfile alone. Its Node and Python versions are pinned again
+    # in `apps/console/.node-version` and `.python-version`, which the quickstart contract
+    # tests require to match, so a version bump raised here would arrive with those tests
+    # already failing and would need a hand-written follow-up every week. Those two move
+    # deliberately instead, every pin at once.
+    #
+    # This suppresses version updates only. A digest refresh -- the same version rebuilt,
+    # which is how a base image ships a security fix -- leaves the version text untouched,
+    # keeps the pins in agreement, and still arrives. `uv` is deliberately absent: it is
+    # pinned in one place, so Dependabot can complete that bump on its own.
+    ignore:
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+          - version-update:semver-patch
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+          - version-update:semver-patch
+  - package-ecosystem: docker-compose
+    directories:
+      - /deploy/quickstart
+      - /tests/emulators/localstack-snowflake
+      - /tests/emulators/openmetadata
+      - /tests/emulators/superset
+      - /tests/emulators/warehouses/clickhouse
+      - /tests/emulators/warehouses/postgresql
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 2
+    groups:
+      compose-images:
+        patterns: ["*"]

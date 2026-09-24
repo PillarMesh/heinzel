@@ -1,0 +1,35 @@
+[project]
+name = "heinzel-contract-service"
+version = "0.1.0"
+requires-python = "==3.13.*"
+description = "Contract lifecycle, process packages and activation."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: POSIX",
+]
+dependencies = [
+  "heinzel-compiler",
+  "heinzel-contract-model",
+  "heinzel-evidence",
+  "heinzel-execution-graph",
+  "heinzel-provider-sdk",
+  "pydantic>=2.11,<3",
+]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
+
+[tool.uv.sources]
+heinzel-compiler = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-evidence = { workspace = true }
+heinzel-execution-graph = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

@@ -1,0 +1,36 @@
+[project]
+name = "heinzel-bi-control"
+version = "0.1.0"
+requires-python = "==3.13.*"
+description = "Governed dashboard contracts and publication."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: POSIX",
+]
+dependencies = [
+  "cryptography>=45,<47",
+  "heinzel-contract-model",
+  "heinzel-provider-sdk",
+  "heinzel-request-management",
+  "heinzel-runtime",
+  "heinzel-semantic-registry",
+  "pydantic>=2.11,<3",
+]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
+
+[tool.uv.sources]
+heinzel-contract-model = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-request-management = { workspace = true }
+heinzel-runtime = { workspace = true }
+heinzel-semantic-registry = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

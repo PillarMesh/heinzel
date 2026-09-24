@@ -1,0 +1,147 @@
+import base64
+from urllib.parse import quote
+
+import pytest
+from heinzel_evidence import ScanInput, scan_bytes
+
+
+@pytest.mark.parametrize(
+    ("variant", "rule_id"),
+    [
+        (lambda value: value, "credential_canary_exact"),
+        (
+            lambda value: base64.b64encode(value.encode("utf-8")).decode("ascii"),
+            "credential_canary_base64",
+        ),
+        (lambda value: quote(value, safe=""), "credential_canary_url_encoded"),
+    ],
+)
+def test_scanner_finds_canary_forms_without_echoing_source_value(
+    variant: object, rule_id: str
+) -> None:
+    canary = "scan-secret:p@ss/word"
+    encoded = variant(canary)  # type: ignore[operator]
+
+    findings = scan_bytes(
+        "trace/events.json",
+        f"prefix:{encoded}:suffix".encode(),
+        ScanInput(credential_canaries=(canary,)),
+    )
+
+    assert [finding.rule_id for finding in findings] == [rule_id]
+    assert findings[0].byte_offset == len("prefix:")
+    assert canary not in repr(findings)
+
+
+@pytest.mark.parametrize(
+    ("payload", "scan_input", "rule_id"),
+    [
+        (b'"order_id":984201', ScanInput(acceptance_keys=(984201,)), "acceptance_key_exact"),
+        (
+            b'"customer_ref":"customer-sensitive-17"',
+            ScanInput(row_value_canaries=("customer-sensitive-17",)),
+            "row_value_canary_exact",
+        ),
+        (
+            b'"path":"/Users/operator/private/segment.csv"',
+            ScanInput(local_path_prefixes=("/Users/operator/private",)),
+            "local_path_prefix_exact",
+        ),
+        (b'"path":"file:///tmp/private/segment.csv"', ScanInput(), "file_uri"),
+        (
+            b'"dsn":"postgresql://runtime:password@db.invalid/orders"',
+            ScanInput(),
+            "connection_string",
+        ),
+        (
+            b"-----BEGIN PRIVATE KEY-----\nnot-a-real-key",
+            ScanInput(),
+            "private_key_marker",
+        ),
+        (
+            b"-----BEGIN ENCRYPTED PRIVATE KEY-----\nnot-a-real-key",
+            ScanInput(),
+            "private_key_marker",
+        ),
+    ],
+)
+def test_scanner_fails_closed_for_private_material(
+    payload: bytes, scan_input: ScanInput, rule_id: str
+) -> None:
+    findings = scan_bytes("payload.json", payload, scan_input)
+
+    assert rule_id in {finding.rule_id for finding in findings}
+
+
+def test_scanner_ignores_a_hexadecimal_needle_that_only_extends_a_longer_run() -> None:
+    # The exact bytes of a CI failure: the acceptance key inside a trace event digest.
+    payload = b'"event_digest":"bc0e311491045fa3297ffdbb12a620db71f0cb38984201acd6392b736d56e"'
+
+    findings = scan_bytes("trace/events.json", payload, ScanInput(acceptance_keys=(984201,)))
+
+    assert findings == ()
+
+
+def test_scanner_reports_a_hexadecimal_needle_that_stands_alone() -> None:
+    payload = b'{"acceptance":984201,"digest":"cb38984201acd6"}'
+
+    findings = scan_bytes("payload.json", payload, ScanInput(acceptance_keys=(984201,)))
+
+    assert [(item.rule_id, item.byte_offset) for item in findings] == [
+        ("acceptance_key_exact", payload.index(b"984201"))
+    ]
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [b'{"value":"abc984201"}', b'{"value":"984201abc"}'],
+    ids=["hexadecimal-before", "hexadecimal-after"],
+)
+def test_scanner_gives_up_a_hexadecimal_needle_abutting_hexadecimal_on_either_side(
+    payload: bytes,
+) -> None:
+    # The deliberate cost of the rule above, and why one side is enough rather than both: a needle
+    # landing at the start or the end of a digest has a delimiter on its other side, so requiring
+    # both sides would leave those collisions in place. The exporter writes canonical JSON, where
+    # a leaked key is a number or a string value and so is delimited on both sides.
+
+    findings = scan_bytes("payload.json", payload, ScanInput(acceptance_keys=(984201,)))
+
+    assert findings == ()
+
+
+def test_scanner_still_reports_a_non_hexadecimal_canary_surrounded_by_hexadecimal() -> None:
+    payload = b'{"value":"deadbeefsecretcafe"}'
+
+    findings = scan_bytes("payload.json", payload, ScanInput(credential_canaries=("secret",)))
+
+    assert [(item.rule_id, item.byte_offset) for item in findings] == [
+        ("credential_canary_exact", payload.index(b"secret"))
+    ]
+
+
+def test_scanner_reports_all_offsets_without_returning_matched_bytes() -> None:
+    findings = scan_bytes(
+        "payload.json",
+        b"safe secret safe secret",
+        ScanInput(credential_canaries=("secret",)),
+    )
+
+    assert [(item.rule_id, item.byte_offset) for item in findings] == [
+        ("credential_canary_exact", 5),
+        ("credential_canary_exact", 17),
+    ]
+    assert all(not hasattr(item, "matched_value") for item in findings)
+
+
+def test_scanner_cannot_echo_canary_through_caller_controlled_path() -> None:
+    canary = "caller-controlled-sensitive-value"
+
+    findings = scan_bytes(
+        canary,
+        canary.encode("utf-8"),
+        ScanInput(credential_canaries=(canary,)),
+    )
+
+    assert findings
+    assert canary not in repr(findings)

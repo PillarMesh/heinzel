@@ -1,0 +1,60 @@
+[project]
+name = "heinzel-console"
+version = "0.1.0"
+requires-python = "==3.13.*"
+description = "Governed web console server for Heinzel."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: POSIX",
+]
+dependencies = [
+  # Governed-local projections call the owning services' public read interfaces.
+  # The console never opens another component's database.
+  "heinzel-access-control",
+  "heinzel-bi-control",
+  "heinzel-catalog-control",
+  "heinzel-contract-model",
+  "heinzel-contract-service",
+  "heinzel-evidence",
+  "heinzel-knowledge-graph",
+  "heinzel-provider-openmetadata",
+  "heinzel-provider-sdk",
+  "heinzel-request-management",
+  "heinzel-runtime",
+  "heinzel-semantic-registry",
+  "heinzel-state",
+  "heinzel-warehouse-control",
+  "pydantic>=2.11,<3",
+  "starlette>=1.6,<2",
+  "uvicorn>=0.52,<1",
+]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
+
+[project.scripts]
+heinzel-console = "heinzel_console.cli:main"
+
+[tool.uv.sources]
+heinzel-access-control = { workspace = true }
+heinzel-bi-control = { workspace = true }
+heinzel-catalog-control = { workspace = true }
+heinzel-contract-model = { workspace = true }
+heinzel-contract-service = { workspace = true }
+heinzel-evidence = { workspace = true }
+heinzel-knowledge-graph = { workspace = true }
+heinzel-provider-openmetadata = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+heinzel-request-management = { workspace = true }
+heinzel-runtime = { workspace = true }
+heinzel-semantic-registry = { workspace = true }
+heinzel-state = { workspace = true }
+heinzel-warehouse-control = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

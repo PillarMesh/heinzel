@@ -1,0 +1,81 @@
+{
+  "constructs": [
+    "direct_column_project",
+    "explicit_single_decimal_sum_group"
+  ],
+  "decimal_sum_bound": {
+    "input_precision": 38,
+    "input_scale": 9,
+    "maximum_contributing_rows": 9223372036854775807,
+    "output_precision": 57,
+    "output_scale": 9
+  },
+  "engine_profiles": {
+    "clickhouse": {
+      "checked_input_cast": "Decimal(57, 9)",
+      "checked_output_cast": "Decimal(57, 9)",
+      "checked_sum_accumulator": "Decimal(76, 9)",
+      "checked_sum_result": "Decimal(76, 9)",
+      "engine_image_digest": "7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0",
+      "engine_version": "25.8.32.4",
+      "observed_sum_accumulator": "Decimal(38, 9)",
+      "observed_sum_overflow": "wrap",
+      "observed_sum_result": "Decimal(38, 9)",
+      "outer_cast_enforces_magnitude": false,
+      "required_decimal_input": "Decimal(38, 9)",
+      "required_string_collation": "binary",
+      "required_string_encoding": "UTF-8"
+    },
+    "postgresql": {
+      "canonical_decimal_pattern": "^-?(0|[1-9][0-9]{0,28})([.][0-9]{1,9})?$",
+      "checked_input_cast": "NUMERIC(57,9)",
+      "checked_output_cast": "NUMERIC(57,9)",
+      "checked_sum_result": "NUMERIC",
+      "engine_image_digest": "33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935",
+      "engine_version": "18.6",
+      "group_collation": "C",
+      "landing_decode_guard": "json_string_required_and_canonical_decimal",
+      "landing_generation_column_type": "TEXT",
+      "landing_payload_column_type": "JSONB",
+      "observed_sum_accumulator": "INTERNAL",
+      "observed_sum_overflow": "promote",
+      "observed_sum_result": "NUMERIC",
+      "outer_cast_enforces_magnitude": true,
+      "required_decimal_input": "NUMERIC(38,9)",
+      "required_string_collation": "C",
+      "required_string_encoding": "UTF8"
+    }
+  },
+  "excluded_constructs": [
+    "filter",
+    "join",
+    "deduplicate",
+    "arithmetic",
+    "case",
+    "function",
+    "multiple_measures"
+  ],
+  "gate_preconditions": {
+    "authoritative_generation_addressing": 13,
+    "authority_bound_cardinality": 14,
+    "independent_review": 18,
+    "live_checked_sum_review": 17,
+    "provider_owned_provenance": 16,
+    "runtime_result_magnitude_enforcement": 15
+  },
+  "observation_schema_version": "1",
+  "physical_source_requirements": {
+    "authoritative_generation_count": 1,
+    "generation_identifier_format": "sha256",
+    "landing_receipt_digest_required": true,
+    "status": "candidate_implemented_not_admitted"
+  },
+  "review_status": "changes_requested",
+  "rule_id": "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE",
+  "rule_version": 1,
+  "unsatisfied_gates": [
+    "runtime_result_magnitude_enforcement",
+    "live_checked_sum_review",
+    "independent_review"
+  ]
+}

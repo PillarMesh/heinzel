@@ -1,0 +1,56 @@
+.result-page {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.result-hero,
+.result-provenance,
+.technical-details,
+.result-empty {
+  border: 1px solid var(--border-subtle, #d8d7d2);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+}
+
+.result-hero__answer {
+  font-size: 1.2rem;
+  line-height: 1.55;
+  max-width: 70ch;
+}
+
+.result-hero__context {
+  color: var(--text-muted, #595a55);
+}
+
+.result-table-frame {
+  overflow-x: auto;
+}
+
+.result-table {
+  border-collapse: collapse;
+  min-width: 100%;
+}
+
+.result-table th,
+.result-table td {
+  border-bottom: 1px solid var(--border-subtle, #d8d7d2);
+  padding: 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.result-table__operation {
+  display: block;
+  font-size: 0.75rem;
+  margin-top: 0.4rem;
+}
+
+.result-provenance nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.technical-details dd {
+  overflow-wrap: anywhere;
+}

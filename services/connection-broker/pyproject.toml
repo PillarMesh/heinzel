@@ -1,0 +1,41 @@
+[project]
+name = "heinzel-connection-broker"
+version = "0.1.0"
+requires-python = "==3.13.*"
+description = "Source connection bindings and credential handles."
+readme = "README.md"
+license = "Apache-2.0"
+authors = [{ name = "PillarMesh", email = "karthik@pillarmesh.com" }]
+classifiers = [
+  "Programming Language :: Python :: 3.13",
+  "Operating System :: POSIX",
+]
+dependencies = [
+  "heinzel-contract-model",
+  "heinzel-provider-sdk",
+  "pydantic>=2.11,<3",
+]
+
+[project.urls]
+Repository = "https://github.com/PillarMesh/heinzel"
+Issues = "https://github.com/PillarMesh/heinzel/issues"
+
+[tool.uv.sources]
+heinzel-contract-model = { workspace = true }
+heinzel-provider-sdk = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.mutmut]
+source_paths = ["src/heinzel_connection_broker"]
+only_mutate = [
+  "src/heinzel_connection_broker/repository.py",
+  "src/heinzel_connection_broker/service.py",
+]
+also_copy = ["tests"]
+pytest_add_cli_args_test_selection = [
+  "tests/test_repository.py",
+  "tests/test_service.py",
+]

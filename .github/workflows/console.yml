@@ -1,0 +1,163 @@
+name: Console
+
+# The gate job is always present so it can be a required check. A workflow-level
+# `paths` filter would leave the required check pending forever on a pull request
+# that does not match it.
+on:
+  pull_request:
+  # Pushes to a pull request branch already run through `pull_request`. Without
+  # this filter every such push would start a second, identical browser run.
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      affected: ${{ steps.detect.outputs.affected }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          # The pull request head commit, not the ephemeral merge commit.
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+      - name: Detect console changes
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          if test "$EVENT_NAME" = workflow_dispatch; then
+            echo 'affected=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if test "$EVENT_NAME" = pull_request; then
+            if ! git fetch --no-tags origin "$BASE_REF"; then
+              echo 'affected=true' >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            range="origin/$BASE_REF...HEAD"
+          elif test -n "$BEFORE" && test "$BEFORE" != 0000000000000000000000000000000000000000 \
+            && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range="$BEFORE...HEAD"
+          else
+            # An unknown range cannot prove the change is unrelated.
+            echo 'affected=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed_paths="$RUNNER_TEMP/console-changed-paths"
+          if ! git diff --no-renames --name-only -z "$range" > "$changed_paths"; then
+            echo 'affected=true' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          affected=false
+          while true; do
+            changed_path=''
+            if IFS= read -r -d '' changed_path; then
+              case "$changed_path" in
+                ''|*$'\n'*|*$'\r'*) affected=true ;;
+                apps/console/*) affected=true ;;
+                pyproject.toml|uv.lock|.python-version) affected=true ;;
+                tests/ci/test_console_workflow.py) affected=true ;;
+                .github/workflows/console.yml) affected=true ;;
+              esac
+            elif test -n "$changed_path"; then
+              # A non-NUL-terminated record is not trustworthy path evidence.
+              affected=true
+              break
+            else
+              break
+            fi
+          done < "$changed_paths"
+          echo "affected=$affected" >> "$GITHUB_OUTPUT"
+
+  console:
+    needs: changes
+    if: needs.changes.outputs.affected == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: apps/console
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: apps/console/.node-version
+          cache: npm
+          cache-dependency-path: apps/console/package-lock.json
+      # The browser suite serves the built application from the real Starlette
+      # origin, which it starts with `uv run uvicorn`, so the Python toolchain is
+      # part of the browser gate rather than an unrelated concern.
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          python-version: 3.13.5
+          enable-cache: true
+      - name: Sync locked workspace
+        working-directory: .
+        run: uv sync --locked --all-packages
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Type check
+        run: npm run typecheck
+      - name: Check generated contract drift
+        run: npm run check:contracts
+      - name: Run browser unit tests
+        run: npm run test -- --run
+      - name: Build the production bundle
+        run: npm run build
+      - name: Install the pinned browser
+        run: npx playwright install --with-deps chromium
+      - name: Run browser acceptance
+        run: npm run test:e2e
+      - name: Upload browser artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: console-browser-artifacts
+          path: |
+            apps/console/test-results
+            apps/console/playwright-report
+          if-no-files-found: ignore
+
+  gate:
+    needs: [changes, console]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require a decided detector and a matching console result
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          AFFECTED: ${{ needs.changes.outputs.affected }}
+          CONSOLE_RESULT: ${{ needs.console.result }}
+        run: |
+          set -euo pipefail
+          # An undecided detector is a failed gate, never a passed one: an empty
+          # AFFECTED would otherwise read as "unrelated change" and let a console
+          # change merge without the browser suite.
+          test "$CHANGES_RESULT" = success || exit 1
+          case "$AFFECTED" in
+            true)  test "$CONSOLE_RESULT" = success ;;
+            false) test "$CONSOLE_RESULT" = skipped ;;
+            *)     exit 1 ;;
+          esac

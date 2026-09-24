@@ -1,0 +1,810 @@
+{
+  "schema_version": "1",
+  "rule_id": "PRODUCT-SQL-V2-PROJECT-SUM-001-CANDIDATE",
+  "activation_scope": "postgresql",
+  "cross_engine_equivalence_claimed": false,
+  "engine": {
+    "engine": "postgresql",
+    "engine_version": "18.6",
+    "engine_image": "postgres:18.6-bookworm",
+    "engine_image_digest": "33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935",
+    "engine_build_digest": "2be1a2fe4ea12e75c75dbab4979762d277528c463413849c36f330c08d6454e0",
+    "database_encoding": "UTF8",
+    "sum_semantics": {
+      "input_physical_type": "NUMERIC(38,9)",
+      "accumulator_physical_type": "INTERNAL",
+      "result_physical_type": "NUMERIC",
+      "overflow_behavior": "promote",
+      "null_input_behavior": "exclude",
+      "empty_group_behavior": "no_row"
+    }
+  },
+  "statement_digest": "21bf1cf19fae5a92451fd84f5e8c7812cbf6a58bbe617e2aa282367a79a9eebe",
+  "statement": "SELECT \"revenue_events\".\"region\" AS \"region\", CAST(pg_catalog.sum(CAST(\"revenue_events\".\"revenue\" AS NUMERIC(57,9))) AS NUMERIC(57,9)) AS \"total_revenue\" FROM (SELECT (CASE WHEN pg_catalog.jsonb_typeof(\"payload\" OPERATOR(pg_catalog.->) 'region') OPERATOR(pg_catalog.=) 'string' THEN \"payload\" OPERATOR(pg_catalog.->>) 'region' ELSE CAST(CAST('heinzel refused a string landing value in generation ' OPERATOR(pg_catalog.||) \"generation_id\" AS NUMERIC) AS pg_catalog.text) END) COLLATE pg_catalog.\"C\" AS \"region\", CAST(CASE WHEN pg_catalog.jsonb_typeof(\"payload\" OPERATOR(pg_catalog.->) 'revenue') OPERATOR(pg_catalog.=) 'string' AND \"payload\" OPERATOR(pg_catalog.->>) 'revenue' OPERATOR(pg_catalog.~) '^-?(0|[1-9][0-9]{0,28})([.][0-9]{1,9})?$' THEN \"payload\" OPERATOR(pg_catalog.->>) 'revenue' ELSE 'heinzel refused a decimal landing value in generation ' OPERATOR(pg_catalog.||) \"generation_id\" END AS NUMERIC(38,9)) AS \"revenue\" FROM \"raw\".\"raw_sales\" WHERE \"generation_id\" OPERATOR(pg_catalog.=) 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') AS \"revenue_events\" GROUP BY \"revenue_events\".\"region\"",
+  "output_shape": {
+    "measure_column_type": "numeric(57,9)",
+    "group_column_type": "text",
+    "group_column_collation": "C"
+  },
+  "cases": [
+    {
+      "case_id": "zero",
+      "kind": "statement",
+      "claim": "a zero input sums to exactly zero",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"0\"}"
+        }
+      ],
+      "input_digest": "8ca5abbfc5302425fd40fded957aee670fadeee33c5c5cf049dcfbc0baba3763",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "0.000000000"
+          ]
+        ]
+      },
+      "result_digest": "c869ae1bbaaf442abd46df2f14bfe039393178ac343abcf288c2c0c630f20160"
+    },
+    {
+      "case_id": "negative",
+      "kind": "statement",
+      "claim": "a negative input is preserved with its sign",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"-42.125000000\"}"
+        }
+      ],
+      "input_digest": "bbf18362b29384fd12670a9f7cbcb6866b047224a62a1c02e92250a7f6378b24",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "-42.125000000"
+          ]
+        ]
+      },
+      "result_digest": "ac78bfbcd7d7d145cde23644625423293ecb13c436d2ab169f6c8bcd2e6b4579"
+    },
+    {
+      "case_id": "exact_scale_nine",
+      "kind": "statement",
+      "claim": "nine fractional digits survive the widening cast unchanged",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"0.123456789\"}"
+        }
+      ],
+      "input_digest": "36eb212ba7acedb57a2ee87af841ee2b3fd5bd707b805ea19187bf148bbc7af9",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "0.123456789"
+          ]
+        ]
+      },
+      "result_digest": "cdd914f9ebd333cb1c588fce0e29449e78f19df35285a5d913ca4b1895b5e326"
+    },
+    {
+      "case_id": "maximum_positive_input",
+      "kind": "statement",
+      "claim": "the largest Decimal(38,9) input is accepted and summed exactly",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"99999999999999999999999999999.999999999\"}"
+        }
+      ],
+      "input_digest": "9c404b04480f2ef144641167e2366d9b5648800dc1dbf7314aad468911f3320f",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "99999999999999999999999999999.999999999"
+          ]
+        ]
+      },
+      "result_digest": "b0b8096d0341854d31570e27de731172209e1fd854da8221b069dc4477a08eb5"
+    },
+    {
+      "case_id": "maximum_negative_input",
+      "kind": "statement",
+      "claim": "the smallest Decimal(38,9) input is accepted and summed exactly",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"-99999999999999999999999999999.999999999\"}"
+        }
+      ],
+      "input_digest": "0d1b1f33bde25e3eb450c7b86ec9bcfa79ccf269e05f8fe1c9bcb9c3151b7a8f",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "-99999999999999999999999999999.999999999"
+          ]
+        ]
+      },
+      "result_digest": "3d596fb286d994a5f9c4d010ce0d71a8a5ba6916fc03c9d11675fa0667543ba6"
+    },
+    {
+      "case_id": "safe_two_row_maximum_sum",
+      "kind": "statement",
+      "claim": "two maximum inputs sum past Decimal(38,9) and fit the widened Decimal(57,9) result",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"99999999999999999999999999999.999999999\"}"
+        },
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"99999999999999999999999999999.999999999\"}"
+        }
+      ],
+      "input_digest": "86ee2bf0f2ae4f11173fc648a464abe4a2ac0cbe08ce1b956c51b0aba13189ab",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "199999999999999999999999999999.999999998"
+          ]
+        ]
+      },
+      "result_digest": "14a6c4e96b1e34df0e6b58ebfeac4c986839c6370a3505014f9daa716ad20ee5"
+    },
+    {
+      "case_id": "safe_two_row_minimum_sum",
+      "kind": "statement",
+      "claim": "two minimum inputs sum past Decimal(38,9) and fit the widened Decimal(57,9) result",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"-99999999999999999999999999999.999999999\"}"
+        },
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"-99999999999999999999999999999.999999999\"}"
+        }
+      ],
+      "input_digest": "c14031f72e904228325b697e95283116a4334876959367d016a86b654fbf60b4",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "-199999999999999999999999999999.999999998"
+          ]
+        ]
+      },
+      "result_digest": "c19b75cff3e9ba1b7a06827ac16107e262dfea1553031a312c79863eff1af655"
+    },
+    {
+      "case_id": "input_at_exclusive_upper_bound",
+      "kind": "statement",
+      "claim": "an input of 10^29 exceeds Decimal(38,9) and the statement is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"100000000000000000000000000000\"}"
+        }
+      ],
+      "input_digest": "2428c13d860d81ba193c29ea1bdf62551236d592607473a589804d486df02d6b",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "input_at_exclusive_lower_bound",
+      "kind": "statement",
+      "claim": "an input of -10^29 exceeds Decimal(38,9) and the statement is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"-100000000000000000000000000000\"}"
+        }
+      ],
+      "input_digest": "537d46ce294d1795173dd74b6de15f483cfd62d4dd147c94a8d2ce094817ef53",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "empty_group",
+      "kind": "statement",
+      "claim": "a selected generation with no rows yields no group, not a zero-valued group",
+      "input": [
+        {
+          "generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "payload": "{\"region\": \"g\", \"revenue\": \"999\"}"
+        }
+      ],
+      "input_digest": "bbb39ccedeef904893110d2b1a924f08e65a091193228c8b64cdedcd84b37955",
+      "observed": {
+        "classification": "rows",
+        "rows": []
+      },
+      "result_digest": "57926c1b92cc429770621ac16cc2f3967a2a406f6ab8b654b603148deb470922"
+    },
+    {
+      "case_id": "excluded_generation",
+      "kind": "statement",
+      "claim": "rows from another generation never contribute to the selected generation's sum",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"1\"}"
+        },
+        {
+          "generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "payload": "{\"region\": \"g\", \"revenue\": \"999\"}"
+        }
+      ],
+      "input_digest": "e829767cc8ff89e4d22be572e82dd83aeaa1614b42138495aae7441c34db4e7d",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "1.000000000"
+          ]
+        ]
+      },
+      "result_digest": "34811dcef1714644dadfc58974a24e6aab0c20358fc7814d2850b55a61826c09"
+    },
+    {
+      "case_id": "invalid_rows_in_another_generation_do_not_refuse",
+      "kind": "statement",
+      "claim": "a malformed row outside the selected generation neither contributes nor refuses",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"1\"}"
+        },
+        {
+          "generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "payload": "{\"region\": null, \"revenue\": \"NaN\"}"
+        }
+      ],
+      "input_digest": "13428fbbaa711db1f7682fd1e5ed241a2957b4bdb495bebefeb04e10d386fc63",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "1.000000000"
+          ]
+        ]
+      },
+      "result_digest": "34811dcef1714644dadfc58974a24e6aab0c20358fc7814d2850b55a61826c09"
+    },
+    {
+      "case_id": "nan_measure",
+      "kind": "statement",
+      "claim": "NaN is refused before any cast",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"NaN\"}"
+        }
+      ],
+      "input_digest": "1f4a8092e83c5ae8bbeb83fda43b2835eafabf3bdea1f04292b099b348f78a0f",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "infinity_measure",
+      "kind": "statement",
+      "claim": "Infinity is refused before any cast",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"Infinity\"}"
+        }
+      ],
+      "input_digest": "1931c5530262af4fe1948e1676e4148423e508b65fec920ba4a90b531a41ba7e",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "hex_measure",
+      "kind": "statement",
+      "claim": "a hex literal PostgreSQL would read as 16 is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"0x10\"}"
+        }
+      ],
+      "input_digest": "a9da3e771b4f71f391f5b40bb381fe7f05896c326c67f5433fb0a28c31b49d2f",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "underscore_measure",
+      "kind": "statement",
+      "claim": "an underscore-grouped number is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"1_000\"}"
+        }
+      ],
+      "input_digest": "ce255d69e16d12a99b6113b538f3b13f3fd85537dd30b0c119a24e4a73311ca8",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "exponent_measure",
+      "kind": "statement",
+      "claim": "exponent notation is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"1e3\"}"
+        }
+      ],
+      "input_digest": "7170682317f00b562c9c884b8c20d790079a5e91edf620a239f8c59d635dc809",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "whitespace_measure",
+      "kind": "statement",
+      "claim": "surrounding whitespace is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \" 7 \"}"
+        }
+      ],
+      "input_digest": "bbe55b9a0219fad319b9588d6fab8f5f1a21ea658d262014f8a12336e1dcb48c",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "plus_sign_measure",
+      "kind": "statement",
+      "claim": "a leading plus sign is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"+5\"}"
+        }
+      ],
+      "input_digest": "c3690bf552f42854028f226017af72e70878d6c2ec519204d4d1779f06b1eace",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "leading_zero_measure",
+      "kind": "statement",
+      "claim": "a leading zero is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"007\"}"
+        }
+      ],
+      "input_digest": "fc91fff34b317f9e57fef01fffbc8c619275d3897bb88bce53de582a6a84f290",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "excess_scale_measure",
+      "kind": "statement",
+      "claim": "a tenth fractional digit is refused instead of being rounded",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"1.1234567895\"}"
+        }
+      ],
+      "input_digest": "05bf62bc3b27c98f92813c5a72f73b5009e3d99c818c394fffe6f12e4305ef31",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "json_number_measure",
+      "kind": "statement",
+      "claim": "a JSON number is refused instead of coerced",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": 12.5}"
+        }
+      ],
+      "input_digest": "876b9a0797310ce17c94841eb5d6f40f67e9c96907a2d01613991fbbad79624b",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "null_measure",
+      "kind": "statement",
+      "claim": "a JSON null measure is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": null}"
+        }
+      ],
+      "input_digest": "a313086ef5f2b1b8e0fe80ade7de97032f0e1b9a45066d1cfbb7b8d47f62d8d5",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "missing_measure",
+      "kind": "statement",
+      "claim": "a missing measure key is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\"}"
+        }
+      ],
+      "input_digest": "89ef7808f0c22fcf93fa247ca9909d0fc4330eed92f61d361a23d2d6d67d7443",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "null_group",
+      "kind": "statement",
+      "claim": "a JSON null group key is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": null, \"revenue\": \"1\"}"
+        }
+      ],
+      "input_digest": "318bc2a1c3e87bf8e5c2127fb0b3f8aec1e71cd231784bad0bf3b9b75da37928",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "missing_group",
+      "kind": "statement",
+      "claim": "a missing group key is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"revenue\": \"1\"}"
+        }
+      ],
+      "input_digest": "994482ebc60ef9955086a0d3f94830cf0d5ca868aae789878d3710b701cffdc1",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "non_string_group",
+      "kind": "statement",
+      "claim": "a JSON number group key is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": 1, \"revenue\": \"1\"}"
+        }
+      ],
+      "input_digest": "06d11b02b2c80f05848e9b62574bb9d72c5d77696fe0a9c91921f70aee0f7242",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "trailing_newline_measure",
+      "kind": "statement",
+      "claim": "a trailing newline is refused; PostgreSQL's regex end anchor does not skip it",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"1\\n\"}"
+        }
+      ],
+      "input_digest": "07e3e8e93a618622cb0f81f877c2f22dc79bf4e8f5d52fcfe473ecb6b22fbf8a",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "arabic_indic_digit_measure",
+      "kind": "statement",
+      "claim": "a non-ASCII decimal digit is refused; the pattern's digit range is ASCII only",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"\\u0663\"}"
+        }
+      ],
+      "input_digest": "c9deb1a6e2066ebd504b152b4b8a6527946aa75760aaab63edb2c24c3824bfb0",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "fullwidth_digit_measure",
+      "kind": "statement",
+      "claim": "a fullwidth digit is refused",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"\\uff11\"}"
+        }
+      ],
+      "input_digest": "c4775e34238158a09e2bdac4f750f9bfdcd1730cf59a088a749a46fdc098ea87",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "binary_collation_groups",
+      "kind": "statement",
+      "claim": "case variants are distinct groups ordered bytewise under the C collation",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"b\", \"revenue\": \"1\"}"
+        },
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"A\", \"revenue\": \"1\"}"
+        },
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"a\", \"revenue\": \"1\"}"
+        },
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"B\", \"revenue\": \"1\"}"
+        }
+      ],
+      "input_digest": "94cc24776dcd3913686be775518205695ea792f410e52131507329085c5a5585",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "A",
+            "1.000000000"
+          ],
+          [
+            "B",
+            "1.000000000"
+          ],
+          [
+            "a",
+            "1.000000000"
+          ],
+          [
+            "b",
+            "1.000000000"
+          ]
+        ]
+      },
+      "result_digest": "a31462c4758d2b85de27e6fc97c829bbadba004bb6ee67561823ce10e89f375c"
+    },
+    {
+      "case_id": "shadowed_search_path_valid_rows",
+      "kind": "shadowed_statement",
+      "claim": "a hostile search_path does not change the result for valid rows",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"east\", \"revenue\": \"10.25\"}"
+        },
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"east\", \"revenue\": \"2.75\"}"
+        }
+      ],
+      "input_digest": "5552d4a3fef574115846aecb0201bfd68e835c2d3c479679fdf47d4a1a00ff24",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "east",
+            "13.000000000"
+          ]
+        ]
+      },
+      "result_digest": "1fb38c373ef3412d1a6175733a8e09daf279dc6717588d25c2e5cc7c0b2ee02a"
+    },
+    {
+      "case_id": "shadowed_search_path_hex_measure",
+      "kind": "shadowed_statement",
+      "claim": "a hostile search_path cannot make the guard accept a hex literal",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"0x10\"}"
+        }
+      ],
+      "input_digest": "a9da3e771b4f71f391f5b40bb381fe7f05896c326c67f5433fb0a28c31b49d2f",
+      "observed": {
+        "classification": "statement_rejected",
+        "sqlstate": "22P02"
+      },
+      "result_digest": "293d899cea25173167ca40fee88a28a7b0536b711c06b6aba9f6e479e70768f3"
+    },
+    {
+      "case_id": "shadowed_search_path_other_generation",
+      "kind": "shadowed_statement",
+      "claim": "a hostile search_path cannot widen the generation filter",
+      "input": [
+        {
+          "generation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "payload": "{\"region\": \"g\", \"revenue\": \"1\"}"
+        },
+        {
+          "generation_id": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "payload": "{\"region\": \"g\", \"revenue\": \"999\"}"
+        }
+      ],
+      "input_digest": "e829767cc8ff89e4d22be572e82dd83aeaa1614b42138495aae7441c34db4e7d",
+      "observed": {
+        "classification": "rows",
+        "rows": [
+          [
+            "g",
+            "1.000000000"
+          ]
+        ]
+      },
+      "result_digest": "34811dcef1714644dadfc58974a24e6aab0c20358fc7814d2850b55a61826c09"
+    },
+    {
+      "case_id": "result_cast_at_maximum",
+      "kind": "result_cast_probe",
+      "claim": "the largest Decimal(57,9) value is accepted by the result cast",
+      "input": "999999999999999999999999999999999999999999999999.999999999",
+      "input_digest": "1b7654e44fdeb6ed7a71cd35523a56d083f98c88b5ddad97e7b9706648eae7f2",
+      "observed": {
+        "classification": "accepted",
+        "value": "999999999999999999999999999999999999999999999999.999999999"
+      },
+      "result_digest": "26f15306cade5db752b8ec8c5867699e56d3007337f9f87019c61ca88ea76b9f"
+    },
+    {
+      "case_id": "result_cast_at_minimum",
+      "kind": "result_cast_probe",
+      "claim": "the smallest Decimal(57,9) value is accepted by the result cast",
+      "input": "-999999999999999999999999999999999999999999999999.999999999",
+      "input_digest": "961b0179eb8266d8a88e9b3bfda00d77fc75655a9263d232e2f8f7798e48d86a",
+      "observed": {
+        "classification": "accepted",
+        "value": "-999999999999999999999999999999999999999999999999.999999999"
+      },
+      "result_digest": "c9d86e82a0a05f8d2cebc7c278f2eba346b2d4de6c12654da247abed375e7780"
+    },
+    {
+      "case_id": "result_cast_at_exclusive_upper_bound",
+      "kind": "result_cast_probe",
+      "claim": "10^48 overflows the Decimal(57,9) result cast and is refused",
+      "input": "1000000000000000000000000000000000000000000000000",
+      "input_digest": "ca30c1e1a1366bda10c374996d18c16eac7ab70d7e9bb965feb813b448a6aebc",
+      "observed": {
+        "classification": "cast_rejected",
+        "sqlstate": "22003"
+      },
+      "result_digest": "b3d59dc68c907a8b62f5af4a85fc225d2175edb3177de0b1169ba95d89ebc62c"
+    },
+    {
+      "case_id": "result_cast_at_exclusive_lower_bound",
+      "kind": "result_cast_probe",
+      "claim": "-10^48 overflows the Decimal(57,9) result cast and is refused",
+      "input": "-1000000000000000000000000000000000000000000000000",
+      "input_digest": "a5d5da2091fcc135e75c08fb06c17b65392173cacf377d942fdd733807ff6070",
+      "observed": {
+        "classification": "cast_rejected",
+        "sqlstate": "22003"
+      },
+      "result_digest": "b3d59dc68c907a8b62f5af4a85fc225d2175edb3177de0b1169ba95d89ebc62c"
+    },
+    {
+      "case_id": "result_cast_of_nan",
+      "kind": "result_cast_probe",
+      "claim": "the result cast alone accepts NaN, so NaN must be refused before it",
+      "input": "NaN",
+      "input_digest": "8832c23fc14920027a721e7d09588179b6e4e010531653677eb5717873a17988",
+      "observed": {
+        "classification": "accepted",
+        "value": "NaN"
+      },
+      "result_digest": "6f12123f2f3a22ea811d36d6834b1dfab44dda6cce41bf9b7165bfaff48e2b5b"
+    },
+    {
+      "case_id": "runtime_magnitude_accepts_maximum",
+      "kind": "runtime_magnitude_probe",
+      "claim": "the largest Decimal(57,9) value is not a runtime magnitude violation",
+      "input": "999999999999999999999999999999999999999999999999.999999999",
+      "input_digest": "1b7654e44fdeb6ed7a71cd35523a56d083f98c88b5ddad97e7b9706648eae7f2",
+      "observed": {
+        "classification": "within_bound"
+      },
+      "result_digest": "6b82185560616cdeb8b1030d3633e4e3f68fc27a129aa2959a399d3d4669810a"
+    },
+    {
+      "case_id": "runtime_magnitude_flags_exclusive_bound",
+      "kind": "runtime_magnitude_probe",
+      "claim": "10^48 is a runtime magnitude violation",
+      "input": "1000000000000000000000000000000000000000000000000",
+      "input_digest": "ca30c1e1a1366bda10c374996d18c16eac7ab70d7e9bb965feb813b448a6aebc",
+      "observed": {
+        "classification": "violation"
+      },
+      "result_digest": "4f62b3c19e805db961908cc4d88201e872e38021020bf08a8abb0c4b624b4761"
+    },
+    {
+      "case_id": "runtime_magnitude_flags_nan",
+      "kind": "runtime_magnitude_probe",
+      "claim": "NaN is a runtime magnitude violation, because PostgreSQL orders NaN above every number",
+      "input": "NaN",
+      "input_digest": "8832c23fc14920027a721e7d09588179b6e4e010531653677eb5717873a17988",
+      "observed": {
+        "classification": "violation"
+      },
+      "result_digest": "4f62b3c19e805db961908cc4d88201e872e38021020bf08a8abb0c4b624b4761"
+    }
+  ]
+}
