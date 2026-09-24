@@ -46,6 +46,27 @@ updates:
     groups:
       dockerfile-images:
         patterns: ["*"]
+    # Dependabot edits the Dockerfile alone. Its Node and Python versions are pinned again
+    # in `apps/console/.node-version` and `.python-version`, which the quickstart contract
+    # tests require to match, so a version bump raised here would arrive with those tests
+    # already failing and would need a hand-written follow-up every week. Those two move
+    # deliberately instead, every pin at once.
+    #
+    # This suppresses version updates only. A digest refresh -- the same version rebuilt,
+    # which is how a base image ships a security fix -- leaves the version text untouched,
+    # keeps the pins in agreement, and still arrives. `uv` is deliberately absent: it is
+    # pinned in one place, so Dependabot can complete that bump on its own.
+    ignore:
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+          - version-update:semver-patch
+      - dependency-name: python
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
+          - version-update:semver-patch
   - package-ecosystem: docker-compose
     directories:
       - /deploy/quickstart

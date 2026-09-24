@@ -286,3 +286,51 @@ def test_dependabot_watches_the_quickstart_images() -> None:
             f"the {ecosystem} updates watch {sorted(watched)}, so the quickstart's own "
             "pins are never offered an update"
         )
+
+
+_UNCOMPLETABLE = frozenset(
+    {
+        "version-update:semver-major",
+        "version-update:semver-minor",
+        "version-update:semver-patch",
+    }
+)
+
+
+def test_dependabot_does_not_offer_a_base_image_bump_it_cannot_complete() -> None:
+    """A version bump Dependabot cannot finish arrives as a red pull request, every week.
+
+    The Dockerfile's Node and Python versions are pinned again in
+    `apps/console/.node-version` and `.python-version`, and the two tests above require
+    the three to agree. Dependabot edits the Dockerfile alone, so a version bump it
+    raises fails those tests until someone edits the other pin by hand. Those bumps are
+    therefore made deliberately, moving every pin together.
+
+    Digest refreshes are a different thing and are wanted: the same version rebuilt is
+    how a base image ships a security fix, and it leaves the version text untouched, so
+    it keeps the pins in agreement. These entries suppress version updates only.
+
+    `uv` is deliberately absent: its version is pinned in one place, so Dependabot can
+    complete that bump on its own.
+    """
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text(encoding="utf-8"))
+    docker = [update for update in config["updates"] if update["package-ecosystem"] == "docker"]
+    assert len(docker) == 1, "the docker ecosystem should be configured once"
+
+    ignored = {
+        entry["dependency-name"]: set(entry["update-types"]) for entry in docker[0]["ignore"]
+    }
+
+    for image in ("node", "python"):
+        assert image in ignored, (
+            f"{image} is pinned in the Dockerfile and again in a version file, so an "
+            "unignored version bump arrives with the contract tests already failing"
+        )
+        assert ignored[image] >= _UNCOMPLETABLE, (
+            f"{image} ignores {sorted(ignored[image])}, which lets some version bump "
+            "through; Dependabot cannot update the matching version file"
+        )
+
+    assert "ghcr.io/astral-sh/uv" not in ignored, (
+        "uv is pinned in one place only, so its version updates should still arrive"
+    )
