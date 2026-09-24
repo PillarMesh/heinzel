@@ -1,6 +1,6 @@
 services:
   snowflake:
-    image: localstack/snowflake:2026.06.0
+    image: localstack/snowflake:2026.8.0
     environment:
       LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:?LOCALSTACK_AUTH_TOKEN is required}
       SF_DEFAULT_PASSWORD: test
