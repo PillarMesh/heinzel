@@ -188,7 +188,7 @@ def test_contract_activation_and_retirement_are_tenant_qualified_and_revisioned(
     invalidator = AuthorityInvalidator()
     lifecycle = SQLiteAcquisitionContractLifecycleRepository(":memory:")
     contract_service = ContractService(
-        store=SQLiteStore.open(":memory:"),
+        store=SQLiteStore.open(Path(":memory:")),
         signer=GraphSigner.generate("snapshot-key"),
         source_resolver=lambda _handle: Provider(source_observation),
         destination_resolver=lambda _handle: Provider(destination_observation),
@@ -216,7 +216,7 @@ def test_contract_retirement_fails_closed_when_authority_cannot_be_invalidated()
     invalidator = AuthorityInvalidator()
     lifecycle = SQLiteAcquisitionContractLifecycleRepository(":memory:")
     contract_service = ContractService(
-        store=SQLiteStore.open(":memory:"),
+        store=SQLiteStore.open(Path(":memory:")),
         signer=GraphSigner.generate("snapshot-key"),
         source_resolver=lambda _handle: Provider(source_observation),
         destination_resolver=lambda _handle: Provider(destination_observation),
@@ -245,7 +245,7 @@ def test_unknown_cross_tenant_inactive_and_stale_retirement_have_no_authority_ef
     invalidator = AuthorityInvalidator()
     lifecycle = SQLiteAcquisitionContractLifecycleRepository(":memory:")
     contract_service = ContractService(
-        store=SQLiteStore.open(":memory:"),
+        store=SQLiteStore.open(Path(":memory:")),
         signer=GraphSigner.generate("snapshot-key"),
         source_resolver=lambda _handle: Provider(source_observation),
         destination_resolver=lambda _handle: Provider(destination_observation),

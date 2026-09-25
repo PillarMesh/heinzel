@@ -29,6 +29,7 @@ services/access-control/tests
 services/authoring-mcp/tests
 services/compiler/tests
 services/context-exposure/tests
+services/contract/tests
 services/dbt-adapter/tests
 services/evidence/tests
 services/request-management/tests
@@ -52,7 +53,6 @@ providers/stripe/tests
 providers/superset/tests
 services/catalog-control/tests
 services/connection-broker/tests
-services/contract/tests
 services/knowledge-graph/tests
 services/runtime/tests
 tests/acceptance

@@ -300,7 +300,9 @@ def test_formation_never_readies_fabricated_or_cross_tenant_references() -> None
 
 def test_formation_requires_a_governed_reference_loader() -> None:
     with pytest.raises(TypeError):
-        IntegrationContractFormationService()
+        # Omitting the loader is the point of the test: formation must never fall back
+        # to an implicit, ungoverned reference source.
+        IntegrationContractFormationService()  # type: ignore[call-arg]
 
 
 def test_formation_returns_an_attributable_no_valid_plan_for_stale_authority() -> None:
