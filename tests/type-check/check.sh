@@ -43,6 +43,7 @@ services/state/tests
 services/bi-control/tests
 services/trigger/tests
 services/warehouse-control/tests
+tests/conformance
 tests/quickstart
 tests/release
 '
@@ -57,7 +58,6 @@ services/knowledge-graph/tests
 services/runtime/tests
 tests/acceptance
 tests/ci
-tests/conformance
 tests/emulators
 tests/end-to-end
 tests/fault-injection
