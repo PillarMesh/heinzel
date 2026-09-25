@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -210,7 +210,7 @@ def complete_store(tmp_path: Path) -> tuple[SQLiteStore, GraphVerifier, ScanInpu
         NOW,
     )
     store.set_acceptance_key(run.run_id, 984201)
-    lifecycle = (
+    lifecycle: tuple[tuple[str, dict[str, object]], ...] = (
         ("draft_created", {"contract_digest": digest(contract)}),
         (
             "verification_completed",
@@ -1045,7 +1045,7 @@ def test_atomic_rename_is_the_exporters_final_filesystem_operation(
         renamed = True
         return result
 
-    def reject_post_rename_read(path: Path, pattern: str):
+    def reject_post_rename_read(path: Path, pattern: str) -> Iterator[Path]:
         if renamed:
             raise AssertionError("filesystem accessed after atomic rename")
         return original_rglob(path, pattern)

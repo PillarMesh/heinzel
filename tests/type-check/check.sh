@@ -29,6 +29,7 @@ services/access-control/tests
 services/compiler/tests
 services/context-exposure/tests
 services/dbt-adapter/tests
+services/evidence/tests
 services/request-management/tests
 services/semantic-registry/tests
 services/state/tests
@@ -52,7 +53,6 @@ services/authoring-mcp/tests
 services/catalog-control/tests
 services/connection-broker/tests
 services/contract/tests
-services/evidence/tests
 services/knowledge-graph/tests
 services/runtime/tests
 tests/acceptance
