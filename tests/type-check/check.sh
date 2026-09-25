@@ -38,6 +38,7 @@ services/context-exposure/tests
 services/contract/tests
 services/dbt-adapter/tests
 services/evidence/tests
+services/knowledge-graph/tests
 services/request-management/tests
 services/semantic-registry/tests
 services/state/tests
@@ -55,7 +56,6 @@ tests/release
 # promotion rather than guess. Only the first field is read as a directory.
 PENDING='
 providers/postgresql/tests 72
-services/knowledge-graph/tests 7
 services/runtime/tests 63
 tests/acceptance 30
 tests/ci 24
