@@ -30,6 +30,7 @@ providers/snowflake/tests
 services/access-control/tests
 services/authoring-mcp/tests
 services/compiler/tests
+services/connection-broker/tests
 services/context-exposure/tests
 services/contract/tests
 services/dbt-adapter/tests
@@ -52,7 +53,6 @@ providers/postgresql/tests
 providers/stripe/tests
 providers/superset/tests
 services/catalog-control/tests
-services/connection-broker/tests
 services/knowledge-graph/tests
 services/runtime/tests
 tests/acceptance
