@@ -32,6 +32,8 @@ services/dbt-adapter/tests
 services/request-management/tests
 services/semantic-registry/tests
 services/state/tests
+services/bi-control/tests
+services/trigger/tests
 services/warehouse-control/tests
 tests/quickstart
 tests/release
@@ -47,14 +49,12 @@ providers/snowflake/tests
 providers/stripe/tests
 providers/superset/tests
 services/authoring-mcp/tests
-services/bi-control/tests
 services/catalog-control/tests
 services/connection-broker/tests
 services/contract/tests
 services/evidence/tests
 services/knowledge-graph/tests
 services/runtime/tests
-services/trigger/tests
 tests/acceptance
 tests/ci
 tests/conformance
