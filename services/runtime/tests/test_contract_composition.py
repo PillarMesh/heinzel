@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import TypedDict, Unpack
 
 import pytest
 from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
@@ -18,6 +19,8 @@ from heinzel_provider_sdk.acquisition_protocols import (
 from heinzel_runtime import (
     AcquisitionContractError,
     AcquisitionDeclaredActivation,
+    ActivatedAcquisitionContract,
+    ContractActivationLifecycle,
     compose_activated_acquisition_contract,
 )
 
@@ -131,15 +134,28 @@ def _declared(**changes: object) -> AcquisitionDeclaredActivation:
     return AcquisitionDeclaredActivation.model_validate(values)
 
 
-def _compose(**changes: object) -> object:
-    values: dict[str, object] = {
-        "lifecycle": _Lifecycle(),
-        "binding": _binding(),
-        "observation": _observation(),
-        "declared": _declared(),
-    }
-    values.update(changes)
-    return compose_activated_acquisition_contract(**values)  # type: ignore[arg-type]
+class _CompositionChanges(TypedDict, total=False):
+    """The four sources a composition test may substitute, each at its own type.
+
+    `**changes: object` typed every override as object, which forced a
+    `# type: ignore[arg-type]` on the splat and left `_compose` returning object --
+    so every assertion below read an attribute mypy could not see.
+    """
+
+    lifecycle: ContractActivationLifecycle
+    binding: SourceConnectionBinding
+    observation: AcquisitionSourceObservation
+    declared: AcquisitionDeclaredActivation
+
+
+def _compose(**changes: Unpack[_CompositionChanges]) -> ActivatedAcquisitionContract:
+    lifecycle: ContractActivationLifecycle = changes.get("lifecycle", _Lifecycle())
+    return compose_activated_acquisition_contract(
+        lifecycle=lifecycle,
+        binding=changes.get("binding", _binding()),
+        observation=changes.get("observation", _observation()),
+        declared=changes.get("declared", _declared()),
+    )
 
 
 def test_a_contract_is_composed_from_what_each_owning_service_asserts() -> None:
@@ -221,7 +237,7 @@ def test_a_retired_contract_composes_as_inactive() -> None:
         ({"observation": _observation(capabilities=("teleport",))}, "modes"),
     ),
 )
-def test_sources_that_disagree_refuse_to_compose(changes: dict[str, object], reason: str) -> None:
+def test_sources_that_disagree_refuse_to_compose(changes: _CompositionChanges, reason: str) -> None:
     """Composition asserts nothing it cannot source, so a disagreement is refused.
 
     Every one of these would otherwise produce a contract that reads as authority

@@ -740,7 +740,7 @@ def test_a_routing_cannot_be_mutated_after_it_is_stated() -> None:
     routing = _routing()
 
     with pytest.raises(ValidationError):
-        routing.routes[0].table_ref = "raw_elsewhere"  # type: ignore[misc]
+        routing.routes[0].table_ref = "raw_elsewhere"
     assert {route.table_ref for route in routing.routes} == {"raw_accounts", "raw_orders"}
 
 

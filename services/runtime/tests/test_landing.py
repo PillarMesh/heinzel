@@ -2,13 +2,18 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import Literal, TypedDict
 
 import pytest
 from heinzel_contract_model import digest
 from heinzel_provider_sdk import (
     CommitObservation,
+    DestinationProviderKind,
+    IdempotencyKey,
     LandReceipt,
     ProviderError,
+    RawGenerationTarget,
+    StagedSegment,
     raw_generation_key,
 )
 from heinzel_provider_sdk.destination_conformance import destination_segment, destination_target
@@ -18,11 +23,19 @@ _NOW = datetime(2026, 9, 11, 12, tzinfo=UTC)
 
 
 class _Provider:
-    def __init__(self, *, observation: str = "committed") -> None:
+    provider_kind: DestinationProviderKind = "postgresql"
+
+    def __init__(self, *, observation: Literal["committed", "not_found"] = "committed") -> None:
         self.observation = observation
         self.land_count = 0
 
-    async def land(self, *, segment: object, target: object, idempotency_key: str) -> LandReceipt:
+    async def land(
+        self,
+        *,
+        segment: StagedSegment,
+        target: RawGenerationTarget,
+        idempotency_key: IdempotencyKey,
+    ) -> LandReceipt:
         self.land_count += 1
         assert hasattr(segment, "segment_digest")
         assert hasattr(target, "tenant_id")
@@ -55,6 +68,27 @@ class _Provider:
             receipt_digest=digest(receipt) if self.observation == "committed" else None,
             observed_at=_NOW,
         )
+
+
+class _LandArguments(TypedDict):
+    """Exactly `LandingRunner.land`'s keywords, so `**arguments` stays checked.
+
+    Several tests call `land` twice with one argument set to prove replay. As a
+    plain dict literal the set collapsed to `dict[str, object]` and every splat
+    went unchecked, so a renamed or added parameter would have type checked here
+    and failed only when the test ran.
+    """
+
+    segment: StagedSegment
+    target: RawGenerationTarget
+    idempotency_key: IdempotencyKey
+    batch_id: str
+    batch_manifest_digest: str
+    candidate_checkpoint_digest: str
+    prior_checkpoint_revision: int
+    contract_digest: str
+    source_binding_ref: str
+    consumer_ref: str
 
 
 def test_landing_acknowledges_only_after_exact_commit_proof() -> None:
@@ -121,7 +155,7 @@ def test_generation_ledger_replay_does_not_call_provider_twice() -> None:
         ledger=GenerationLedger.in_memory(),
         clock=lambda: _NOW,
     )
-    arguments = {
+    arguments: _LandArguments = {
         "segment": destination_segment(),
         "target": destination_target(),
         "idempotency_key": "b" * 64,
@@ -150,7 +184,7 @@ def test_generation_ledger_replay_returns_the_exact_acknowledgement() -> None:
         ledger=GenerationLedger.in_memory(),
         clock=lambda: _NOW + timedelta(minutes=1),
     )
-    arguments = {
+    arguments: _LandArguments = {
         "segment": destination_segment(),
         "target": destination_target(),
         "idempotency_key": "b" * 64,
@@ -175,7 +209,7 @@ def test_generation_ledger_rejects_changed_checkpoint_authority_on_replay() -> N
         ledger=GenerationLedger.in_memory(),
         clock=lambda: _NOW,
     )
-    arguments = {
+    arguments: _LandArguments = {
         "segment": destination_segment(),
         "target": destination_target(),
         "idempotency_key": "b" * 64,
@@ -190,7 +224,8 @@ def test_generation_ledger_rejects_changed_checkpoint_authority_on_replay() -> N
     asyncio.run(runner.land(**arguments))
 
     with pytest.raises(ProviderError, match="checkpoint authority mismatch"):
-        asyncio.run(runner.land(**{**arguments, "batch_id": "9" * 64}))
+        changed: _LandArguments = {**arguments, "batch_id": "9" * 64}
+        asyncio.run(runner.land(**changed))
 
 
 @pytest.mark.parametrize(
@@ -216,7 +251,7 @@ def test_landing_replay_recovers_from_every_durable_boundary(
         clock=lambda: _NOW,
         fault_hook=fail_once,
     )
-    arguments = {
+    arguments: _LandArguments = {
         "segment": destination_segment(),
         "target": destination_target(),
         "idempotency_key": "b" * 64,
