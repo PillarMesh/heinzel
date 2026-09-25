@@ -18,9 +18,8 @@ from heinzel_contract_model import (
 )
 from heinzel_contract_service import IntegrationContractFormationService
 
-# Relative because pytest imports these modules under their full dotted path;
-# unresolvable to mypy, which checks this directory as unpackaged top-level modules.
-from .test_formation_governance import (  # type: ignore[import-not-found]
+# Relative because pytest imports these modules under their full dotted path.
+from .test_formation_governance import (
     _Loader,
     _semantic_version,
 )
