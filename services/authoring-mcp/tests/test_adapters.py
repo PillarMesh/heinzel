@@ -7,9 +7,19 @@ from typing import Any
 from heinzel_authoring_mcp.cli import run_cli
 from heinzel_authoring_mcp.mcp_server import build_server
 from heinzel_authoring_mcp.settings import AppSettings
+from heinzel_evidence import PackageMetadata, ScanInput
+from pydantic import SecretStr
 
 
 class FakeApplication:
+    """Stand in for the whole `CliApplication` protocol, not the part these tests use.
+
+    `run_cli` dispatches every subcommand through this one object, so a double that
+    implements only the reached branches is more permissive than the component it
+    replaces. The evidence operations these tests never drive therefore refuse to
+    answer rather than being omitted.
+    """
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
 
@@ -42,6 +52,18 @@ class FakeApplication:
     def get_trace(self, run_id: str) -> list[dict[str, object]]:
         self.calls.append(("get_trace", (run_id,)))
         return [{"run_id": run_id, "event_type": "terminal_success"}]
+
+    def export_evidence(
+        self,
+        run_id: str,
+        package_dir: Path,
+        metadata: PackageMetadata,
+        scan_input: ScanInput,
+    ) -> dict[str, object]:
+        raise AssertionError("export_evidence is not exercised by these tests")
+
+    def verify_evidence(self, package_dir: Path, scan_input: ScanInput) -> dict[str, object]:
+        raise AssertionError("verify_evidence is not exercised by these tests")
 
 
 def test_cli_delegates_structured_operations_and_emits_json(tmp_path: Path) -> None:
@@ -77,14 +99,14 @@ def test_settings_repr_and_validation_never_expose_credentials(tmp_path: Path) -
         state_path=tmp_path / "state.db",
         output_dir=tmp_path / "output",
         signing_key_id="key-1",
-        signing_private_key_b64="private-canary",
-        postgres_dsn="postgres-canary",
+        signing_private_key_b64=SecretStr("private-canary"),
+        postgres_dsn=SecretStr("postgres-canary"),
         postgres_connection_handle="pg-snapshot",
         postgres_schema="snapshot_source",
         postgres_table="orders",
         snowflake_account="account",
         snowflake_user="user",
-        snowflake_password="snowflake-canary",
+        snowflake_password=SecretStr("snowflake-canary"),
         snowflake_role="ROLE",
         snowflake_warehouse="WAREHOUSE",
         snowflake_database="DATABASE",

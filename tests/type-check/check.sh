@@ -26,6 +26,7 @@ packages/provider-sdk/tests
 providers/clickhouse/tests
 providers/openmetadata/tests
 services/access-control/tests
+services/authoring-mcp/tests
 services/compiler/tests
 services/context-exposure/tests
 services/dbt-adapter/tests
@@ -49,7 +50,6 @@ providers/postgresql/tests
 providers/snowflake/tests
 providers/stripe/tests
 providers/superset/tests
-services/authoring-mcp/tests
 services/catalog-control/tests
 services/connection-broker/tests
 services/contract/tests
