@@ -48,20 +48,20 @@ tests/quickstart
 tests/release
 '
 
-# Known uncovered, with the error count measured at the time of listing. These are
-# debt, not exemptions -- the count is here so a reader can size the next promotion
-# rather than guess.
+# Known uncovered, each followed by the error count measured at the time of listing.
+# These are debt, not exemptions -- the count is here so a reader can size the next
+# promotion rather than guess. Only the first field is read as a directory.
 PENDING='
-providers/postgresql/tests
-services/catalog-control/tests
-services/knowledge-graph/tests
-services/runtime/tests
-tests/acceptance
-tests/ci
-tests/emulators
-tests/end-to-end
-tests/fault-injection
-tests/integration
+providers/postgresql/tests 72
+services/catalog-control/tests 6
+services/knowledge-graph/tests 7
+services/runtime/tests 63
+tests/acceptance 30
+tests/ci 24
+tests/emulators 7
+tests/end-to-end 7
+tests/fault-injection 5
+tests/integration 23
 '
 
 is_listed() {
