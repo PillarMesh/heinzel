@@ -13,6 +13,7 @@ import snowflake.connector.errors
 from heinzel_contract_model import canonical_bytes, digest
 from heinzel_provider_sdk import OrderRow, ProviderError, SegmentManifest
 from heinzel_provider_snowflake import SnowflakeProvider, SnowflakeSettings
+from pydantic import SecretStr
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
@@ -121,7 +122,7 @@ def settings() -> SnowflakeSettings:
     return SnowflakeSettings(
         account="account",
         user="runtime_user",
-        password="secret-canary",
+        password=SecretStr("secret-canary"),
         role="HEINZEL_SNAPSHOT_RUNTIME",
         warehouse="HEINZEL_SNAPSHOT_WH",
         database="HEINZEL_SNAPSHOT",
