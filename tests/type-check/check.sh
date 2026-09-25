@@ -31,6 +31,7 @@ providers/stripe/tests
 providers/superset/tests
 services/access-control/tests
 services/authoring-mcp/tests
+services/catalog-control/tests
 services/compiler/tests
 services/connection-broker/tests
 services/context-exposure/tests
@@ -54,7 +55,6 @@ tests/release
 # promotion rather than guess. Only the first field is read as a directory.
 PENDING='
 providers/postgresql/tests 72
-services/catalog-control/tests 6
 services/knowledge-graph/tests 7
 services/runtime/tests 63
 tests/acceptance 30
