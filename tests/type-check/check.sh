@@ -20,6 +20,7 @@ status=0
 # errors are fixed; that promotion is the unit of work, one directory per change.
 COVERED='
 apps/console/server/tests
+packages/contract-model/tests
 packages/execution-graph/tests
 packages/iir/tests
 packages/provider-sdk/tests
@@ -47,7 +48,6 @@ tests/release
 # debt, not exemptions -- the count is here so a reader can size the next promotion
 # rather than guess.
 PENDING='
-packages/contract-model/tests
 providers/postgresql/tests
 providers/stripe/tests
 providers/superset/tests
