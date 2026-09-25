@@ -44,6 +44,7 @@ services/bi-control/tests
 services/trigger/tests
 services/warehouse-control/tests
 tests/conformance
+tests/fault-injection
 tests/quickstart
 tests/release
 '
@@ -60,7 +61,6 @@ tests/acceptance 30
 tests/ci 24
 tests/emulators 7
 tests/end-to-end 7
-tests/fault-injection 5
 tests/integration 23
 '
 

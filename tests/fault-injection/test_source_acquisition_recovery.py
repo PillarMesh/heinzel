@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import io
+import tempfile
 import threading
 from collections.abc import Callable
 from decimal import Decimal
 from pathlib import Path
 from typing import BinaryIO
 
-import heinzel_runtime.acquisition as acquisition_module
 import pytest
 from heinzel_connection_broker import SourceConnectionBindingState
 from heinzel_evidence import AcquisitionEvidenceReceipt
@@ -258,7 +258,7 @@ def test_temporary_file_cleanup_failure_never_replaces_primary_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        acquisition_module.tempfile,
+        tempfile,
         "TemporaryFile",
         lambda *, mode: _CloseFailingBytesIO(),
     )

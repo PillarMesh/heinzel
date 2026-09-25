@@ -86,7 +86,7 @@ def test_restart_after_commit_attempt_resolves_same_batch_without_blind_write(
     manifest_digest = digest(manifest)
     store.save_artifact("segment_manifest", manifest_digest, canonical_bytes(manifest))
     checkpoint = "created"
-    for next_checkpoint, event_type, attributes in (
+    steps: tuple[tuple[str, str, dict[str, object]], ...] = (
         ("graph_verified", "graph_verified", {"graph_digest": signed.graph_digest}),
         ("drift_revalidated", "drift_revalidated", {"drift_probe_digest": "1" * 64}),
         ("snapshot_opened", "snapshot_opened", {"source_boundary_digest": "7" * 64}),
@@ -97,7 +97,8 @@ def test_restart_after_commit_attempt_resolves_same_batch_without_blind_write(
         ),
         ("manifest_created", "manifest_created", {"manifest_digest": manifest_digest}),
         ("commit_attempted", "commit_attempted", {"batch_id": batch_id}),
-    ):
+    )
+    for next_checkpoint, event_type, attributes in steps:
         store.advance_checkpoint_with_event(
             "run-1",
             expected_checkpoint=checkpoint,
@@ -311,7 +312,7 @@ def test_v1_manifest_cannot_resume_under_privacy_safe_runtime(tmp_path: Path) ->
     manifest_digest = digest(legacy_manifest)
     store.save_artifact("segment_manifest", manifest_digest, manifest_payload)
     checkpoint = "created"
-    for next_checkpoint, event_type, attributes in (
+    steps: tuple[tuple[str, str, dict[str, object]], ...] = (
         ("graph_verified", "graph_verified", {"graph_digest": signed.graph_digest}),
         ("drift_revalidated", "drift_revalidated", {"drift_probe_digest": "1" * 64}),
         ("snapshot_opened", "snapshot_opened", {"source_boundary_digest": "7" * 64}),
@@ -320,7 +321,8 @@ def test_v1_manifest_cannot_resume_under_privacy_safe_runtime(tmp_path: Path) ->
             "extraction_completed",
             {"manifest_digest": manifest_digest, "row_count": 1},
         ),
-    ):
+    )
+    for next_checkpoint, event_type, attributes in steps:
         store.advance_checkpoint_with_event(
             "run-1",
             expected_checkpoint=checkpoint,
