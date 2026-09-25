@@ -46,6 +46,7 @@ services/bi-control/tests
 services/trigger/tests
 services/warehouse-control/tests
 tests/conformance
+tests/acceptance
 tests/ci
 tests/emulators
 tests/end-to-end
@@ -60,7 +61,6 @@ tests/release
 PENDING='
 providers/postgresql/tests 72
 services/runtime/tests 63
-tests/acceptance 30
 tests/integration 23
 '
 
