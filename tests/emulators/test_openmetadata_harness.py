@@ -4,8 +4,10 @@ import json
 import os
 import secrets
 import subprocess
+import time
 from pathlib import Path
 
+import httpx
 import pytest
 from heinzel_provider_openmetadata import UPSTREAM_IMAGES
 
@@ -306,12 +308,12 @@ def test_readiness_accepts_the_openmetadata_terminal_text_response(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ticks = iter((0.0, 0.0, 1.0))
-    monkeypatch.setattr(wait_ready.time, "monotonic", lambda: next(ticks))
-    monkeypatch.setattr(wait_ready.time, "sleep", lambda _: None)
+    monkeypatch.setattr(time, "monotonic", lambda: next(ticks))
+    monkeypatch.setattr(time, "sleep", lambda _: None)
     monkeypatch.setattr(
-        wait_ready.httpx,
+        httpx,
         "get",
-        lambda *args, **kwargs: wait_ready.httpx.Response(200, text="OK"),
+        lambda *args, **kwargs: httpx.Response(200, text="OK"),
     )
 
     assert wait_ready.main(["--url", "http://127.0.0.1:8585", "--timeout-seconds", "0.5"]) == 0

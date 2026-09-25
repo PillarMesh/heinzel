@@ -8,6 +8,7 @@ from typing import Any, Literal
 import snowflake.connector
 from heinzel_provider_sdk import ProviderObservation
 from heinzel_provider_snowflake import SnowflakeProvider, SnowflakeSettings
+from pydantic import SecretStr
 
 type KeyConstraint = Literal["primary_key", "unique", "none"]
 
@@ -30,7 +31,7 @@ def localstack_settings() -> SnowflakeSettings:
     return SnowflakeSettings(
         account="test",
         user="test",
-        password="test",
+        password=SecretStr("test"),
         role="test",
         warehouse="HEINZEL_SNAPSHOT_WH",
         database="HEINZEL_SNAPSHOT",
