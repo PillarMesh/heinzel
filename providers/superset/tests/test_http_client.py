@@ -22,6 +22,18 @@ class _Resource:
     payload: dict[str, object]
 
 
+def _as_list(value: object) -> list[object]:
+    """Narrow a payload member the fake API stores as `object` to the list it is."""
+    assert isinstance(value, list), value
+    return value
+
+
+def _as_mapping(value: object) -> Mapping[str, object]:
+    """Narrow a recorded request body from `object` to the mapping it is."""
+    assert isinstance(value, Mapping), value
+    return value
+
+
 class _SupersetApi:
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, Mapping[str, str], object | None]] = []
@@ -93,7 +105,7 @@ class _SupersetApi:
             charts = [
                 self._wire("chart", chart)
                 for chart in self.resources["chart"]
-                if dashboard_id in chart.payload.get("dashboards", [])
+                if dashboard_id in _as_list(chart.payload.get("dashboards", []))
             ]
             return SupersetHttpResponse(status_code=200, payload={"result": charts})
         if method == "GET":
@@ -291,9 +303,9 @@ def test_http_composition_sets_dataset_metadata_after_native_creation() -> None:
         if path.startswith("/api/v1/dataset/") and method in {"POST", "PUT"}
     ]
     assert dataset_calls[0][0] == "POST"
-    assert "description" not in dataset_calls[0][1]
+    assert "description" not in _as_mapping(dataset_calls[0][1])
     assert dataset_calls[1][0] == "PUT"
-    assert "description" in dataset_calls[1][1]
+    assert "description" in _as_mapping(dataset_calls[1][1])
 
 
 def test_http_composition_accepts_superset_write_data_metadata() -> None:

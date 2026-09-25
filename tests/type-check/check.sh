@@ -27,6 +27,7 @@ packages/provider-sdk/tests
 providers/clickhouse/tests
 providers/openmetadata/tests
 providers/snowflake/tests
+providers/superset/tests
 services/access-control/tests
 services/authoring-mcp/tests
 services/compiler/tests
@@ -51,7 +52,6 @@ tests/release
 PENDING='
 providers/postgresql/tests
 providers/stripe/tests
-providers/superset/tests
 services/catalog-control/tests
 services/knowledge-graph/tests
 services/runtime/tests
