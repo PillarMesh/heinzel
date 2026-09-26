@@ -26,6 +26,7 @@ packages/iir/tests
 packages/provider-sdk/tests
 providers/clickhouse/tests
 providers/openmetadata/tests
+providers/postgresql/tests
 providers/snowflake/tests
 providers/stripe/tests
 providers/superset/tests
@@ -60,7 +61,6 @@ tests/release
 # These are debt, not exemptions -- the count is here so a reader can size the next
 # promotion rather than guess. Only the first field is read as a directory.
 PENDING='
-providers/postgresql/tests 72
 tests/integration 23
 '
 

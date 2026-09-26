@@ -5,6 +5,8 @@ from typing import Any
 import pytest
 from heinzel_contract_model import canonical_bytes, digest
 from heinzel_provider_postgresql import PostgresProvider, PostgresSettings, normalize_columns
+from heinzel_provider_postgresql.provider import ColumnMetadata
+from pydantic import SecretStr
 
 _COLUMNS = [
     ("order_id", "bigint", "int8", "NO", None, None, None),
@@ -91,7 +93,7 @@ NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
 
 def test_postgres_columns_normalize_to_fixed_semantic_types() -> None:
-    rows = [
+    rows: list[ColumnMetadata] = [
         ("order_id", "bigint", "int8", "NO", None, None),
         ("customer_ref", "character varying", "varchar", "NO", None, None, 65_535),
         ("amount", "numeric", "numeric", "NO", 18, 2),
@@ -119,7 +121,7 @@ def test_observation_age_fixture_is_timezone_aware() -> None:
 def test_observe_uses_bound_metadata_values_and_redacts_database_name() -> None:
     connection = FakeConnection()
     settings = PostgresSettings(
-        dsn="postgresql://secret@host/fixture_db",
+        dsn=SecretStr("postgresql://secret@host/fixture_db"),
         connection_handle="source-account",
         schema_name='fixture"schema',
         table_name="orders",
@@ -180,7 +182,7 @@ def test_observe_reports_actual_key_constraint_and_stable_order(
     connection.cursor = metadata_cursor  # type: ignore[method-assign]
     provider = PostgresProvider(
         PostgresSettings(
-            dsn="postgresql://ignored",
+            dsn=SecretStr("postgresql://ignored"),
             connection_handle="source-account",
             schema_name="fixture",
             table_name="orders",
@@ -202,7 +204,7 @@ def test_observe_reports_non_read_only_or_unknown_access(read_only: bool | None)
     connection.read_only = read_only
     provider = PostgresProvider(
         PostgresSettings(
-            dsn="postgresql://ignored",
+            dsn=SecretStr("postgresql://ignored"),
             connection_handle="source-account",
             schema_name="fixture",
             table_name="orders",
@@ -220,7 +222,7 @@ def test_snapshot_is_read_only_repeatable_and_ordered_by_quoted_key() -> None:
     connection = FakeConnection()
     provider = PostgresProvider(
         PostgresSettings(
-            dsn="postgresql://ignored",
+            dsn=SecretStr("postgresql://ignored"),
             connection_handle="source-account",
             schema_name="fixture-schema",
             table_name="order-table",
@@ -249,7 +251,7 @@ def test_empty_snapshot_hashes_an_ordered_pair_of_null_bounds() -> None:
     connection = FakeConnection()
     provider = PostgresProvider(
         PostgresSettings(
-            dsn="postgresql://ignored",
+            dsn=SecretStr("postgresql://ignored"),
             connection_handle="source-account",
             schema_name="fixture",
             table_name="orders",
@@ -285,7 +287,7 @@ def test_abandoned_snapshot_rolls_back_and_cannot_claim_a_closed_boundary() -> N
     connection = FakeConnection()
     provider = PostgresProvider(
         PostgresSettings(
-            dsn="postgresql://ignored",
+            dsn=SecretStr("postgresql://ignored"),
             connection_handle="source-account",
             schema_name="fixture",
             table_name="orders",

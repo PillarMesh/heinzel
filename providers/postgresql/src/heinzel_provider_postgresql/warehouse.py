@@ -20,8 +20,8 @@ from heinzel_contract_model import digest
 from heinzel_provider_sdk import (
     BackupStreamIntegrityError,
     BackupStreamObservation,
+    ComposeBoundary,
     ComposeCommandError,
-    DockerComposeProcess,
     decrypt_backup_stream,
     encrypt_backup_stream,
 )
@@ -221,7 +221,7 @@ def _select_restore_stream_failure(
 
 
 class _RestoreLoopbackTunnel:
-    def __init__(self, *, compose: DockerComposeProcess, project_name: str) -> None:
+    def __init__(self, *, compose: ComposeBoundary, project_name: str) -> None:
         self._compose = compose
         self._project_name = project_name
         self._listener: socket.socket | None = None
@@ -492,7 +492,7 @@ class PostgreSQLBackupCommandBoundary:
         self,
         *,
         settings: PostgreSQLWarehouseSettings,
-        compose: DockerComposeProcess,
+        compose: ComposeBoundary,
         resource_recorder: WarehouseResourceRecorder,
         secrets: WarehouseBackupCommandSecretCapability,
         retirement: WarehouseBackupRetirementCapability,
@@ -1438,7 +1438,7 @@ class PostgreSQLWarehouseProvider:
         self,
         *,
         settings: PostgreSQLWarehouseSettings,
-        compose: DockerComposeProcess,
+        compose: ComposeBoundary,
         resource_recorder: WarehouseResourceRecorder,
         administration_secret: WarehouseOperationSecretCapability,
         ingestion_runtime_secret: WarehouseOperationSecretCapability,
@@ -2892,7 +2892,7 @@ def _connection_target(
 
 
 def _observe_restore_isolation(
-    compose: DockerComposeProcess,
+    compose: ComposeBoundary,
     *,
     primary: _PostgreSQLWarehouseIdentity,
     restore: _PostgreSQLRestoreIdentity,
@@ -2970,7 +2970,7 @@ def _observe_restore_isolation(
 
 
 def _observe_restore_route_denial(
-    compose: DockerComposeProcess,
+    compose: ComposeBoundary,
     *,
     primary: _PostgreSQLWarehouseIdentity,
     restore: _PostgreSQLRestoreIdentity,
@@ -3030,7 +3030,7 @@ def _observe_restore_route_denial(
 
 
 def _verify_compose_resources(
-    compose: DockerComposeProcess,
+    compose: ComposeBoundary,
     *,
     project_name: str,
     container_name: str,
@@ -3095,7 +3095,7 @@ def _verify_compose_resources(
 
 
 def _verify_compose_resources_absent(
-    compose: DockerComposeProcess,
+    compose: ComposeBoundary,
     *,
     project_name: str,
     container_name: str,
@@ -3122,7 +3122,7 @@ def _verify_compose_resources_absent(
 
 
 def _remove_exact_restore_resources(
-    compose: DockerComposeProcess,
+    compose: ComposeBoundary,
     *,
     resources: tuple[PrivateWarehouseResource, ...],
     environment: Mapping[str, str],

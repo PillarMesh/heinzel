@@ -189,7 +189,7 @@ def test_prefer_continues_in_plaintext_only_when_the_server_declines_tls(
     client, server = socket.socketpair()
     server.sendall(b"N" + _startup_rejection("28P01"))
     monkeypatch.setattr(
-        warehouse_protocol.socket,
+        socket,
         "create_connection",
         lambda *_args, **_kwargs: client,
     )
@@ -216,7 +216,7 @@ def test_prefer_never_sends_the_credential_over_unverified_tls(
     client, server = socket.socketpair()
     server.sendall(b"S")
     monkeypatch.setattr(
-        warehouse_protocol.socket,
+        socket,
         "create_connection",
         lambda *_args, **_kwargs: client,
     )
@@ -252,7 +252,7 @@ def test_verify_full_rejects_half_configured_client_certificate_material(
 ) -> None:
     client, server = socket.socketpair()
     monkeypatch.setattr(
-        warehouse_protocol.socket,
+        socket,
         "create_connection",
         lambda *_args, **_kwargs: client,
     )

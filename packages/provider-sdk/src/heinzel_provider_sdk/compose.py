@@ -7,7 +7,7 @@ import select
 import subprocess
 import time
 from collections.abc import Buffer, Iterator, Mapping
-from contextlib import contextmanager, suppress
+from contextlib import AbstractContextManager, contextmanager, suppress
 from dataclasses import dataclass
 from ipaddress import AddressValueError, IPv4Address, IPv4Network
 from pathlib import Path
@@ -154,6 +154,90 @@ def _start_subprocess(
     stderr: int,
 ) -> ComposeProcess:
     return subprocess.Popen(command, env=env, stdin=stdin, stdout=stdout, stderr=stderr)
+
+
+class ComposeBoundary(Protocol):
+    """The Docker Compose surface a provider depends on, stated structurally.
+
+    `DockerComposeProcess` is the only implementation that talks to Docker, and it
+    satisfies this as it stands. Consumers annotate against this instead of the
+    concrete class so a test can substitute its own compose: a provider's failure
+    paths -- a container that never starts, a network left attached, a stream that
+    dies mid-restore -- are reachable only by standing in for compose, and a
+    concrete class can only be stood in for by a subclass of itself.
+
+    Declaring the whole surface in one Protocol, rather than one per caller, keeps
+    compose a single named collaborator. The cost is that a stand-in must cover all
+    of it; providers' tests do that with a base double that raises on everything and
+    override only the calls under test.
+    """
+
+    def up(self, *, project_name: str, environment: Mapping[str, str]) -> None: ...
+
+    def stop(self, *, project_name: str, environment: Mapping[str, str]) -> None: ...
+
+    def start(self, *, project_name: str, environment: Mapping[str, str]) -> None: ...
+
+    def down(self, *, project_name: str, environment: Mapping[str, str]) -> None: ...
+
+    def exec(
+        self,
+        *,
+        project_name: str,
+        arguments: tuple[str, ...],
+        environment: Mapping[str, str],
+        input_bytes: bytes | None = None,
+        nonzero_classification: ComposeErrorClassification = "rejected",
+    ) -> bytes: ...
+
+    def exec_stream(
+        self,
+        *,
+        project_name: str,
+        arguments: tuple[str, ...],
+        environment: Mapping[str, str],
+        stdin: IO[bytes] | None = None,
+    ) -> AbstractContextManager[IO[bytes]]: ...
+
+    def discover_resources(
+        self, *, project_name: str, environment: Mapping[str, str]
+    ) -> tuple[ComposeResource, ...]: ...
+
+    def remove_resource(
+        self,
+        *,
+        resource_kind: ComposeResourceKind,
+        identifier: str,
+        environment: Mapping[str, str],
+    ) -> None: ...
+
+    def resource_is_absent(
+        self,
+        *,
+        resource_kind: ComposeResourceKind,
+        identifier: str,
+        environment: Mapping[str, str],
+    ) -> bool | None: ...
+
+    def inspect_container_image(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> str | None: ...
+
+    def inspect_container_running(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None: ...
+
+    def inspect_container_has_published_ports(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None: ...
+
+    def inspect_container_networks(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> tuple[str, ...] | None: ...
+
+    def inspect_network_internal(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None: ...
 
 
 class DockerComposeProcess:

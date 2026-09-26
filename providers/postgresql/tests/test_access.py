@@ -15,6 +15,7 @@ from heinzel_provider_sdk import (
     AccessEffectProviderError,
     run_access_provider_conformance,
 )
+from psycopg import sql
 from pydantic import SecretStr, ValidationError
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
@@ -80,6 +81,9 @@ class _Connection:
     def execute(self, statement: object) -> None:
         if self.execute_failure is not None:
             raise self.execute_failure
+        # _PostgreSQLAccessConnection.execute takes `object`, so the double receives
+        # one; every caller composes SQL, and recording it means saying so.
+        assert isinstance(statement, sql.Composable), statement
         self.statements.append(statement.as_string())
 
     def commit(self) -> None:

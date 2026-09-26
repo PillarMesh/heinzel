@@ -77,6 +77,7 @@ from .catalog import (
 from .compose import (
     MAX_COMPOSE_OUTPUT_BYTES,
     CommandRunner,
+    ComposeBoundary,
     ComposeCommandError,
     ComposeErrorClassification,
     ComposeProcess,
@@ -184,6 +185,7 @@ __all__ = [
     "CommitObservation",
     "CommitReceipt",
     "CompletedAcquisition",
+    "ComposeBoundary",
     "ComposeCommandError",
     "ComposeErrorClassification",
     "ComposeProcess",
