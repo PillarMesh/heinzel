@@ -16,6 +16,15 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 CONFIG="$ROOT/tests/type-check/mypy.ini"
 status=0
 
+# `explicit_package_bases` resolves a module name against the working directory, so this
+# gate has to name one. Run from `services/` instead, the root is not a base at all and
+# the run reports 162 errors that do not exist; add the root to MYPYPATH and the working
+# directory competes with it, so `services/runtime/tests/test_acquisition.py` resolves
+# as both `runtime.tests.test_acquisition` and `services.runtime.tests.test_acquisition`
+# and the run stops. Every path below is already absolute; this makes the naming
+# cwd-independent too.
+cd -- "$ROOT" || exit 1
+
 # Directories that must type check. Move a directory here from PENDING once its
 # errors are fixed; that promotion is the unit of work, one directory per change.
 COVERED='
@@ -68,8 +77,22 @@ tests/release
 PENDING='
 '
 
+# Each line is a directory optionally followed by a note, so read the first field and
+# drop the rest. Word-splitting the lists whole would make a trailing error count a
+# listed entry in its own right, and a line promoted verbatim into COVERED would then
+# be reported as a missing directory named after its count.
+directories() {
+    printf '%s\n' "$1" | while read -r directory _; do
+        [ -n "$directory" ] || continue
+        printf '%s\n' "$directory"
+    done
+}
+
+COVERED_DIRECTORIES=$(directories "$COVERED")
+PENDING_DIRECTORIES=$(directories "$PENDING")
+
 is_listed() {
-    for listed in $COVERED $PENDING; do
+    for listed in $COVERED_DIRECTORIES $PENDING_DIRECTORIES; do
         [ "$listed" = "$1" ] && return 0
     done
     return 1
@@ -95,7 +118,7 @@ for directory in $discovered; do
     fi
 done
 
-for directory in $COVERED; do
+for directory in $COVERED_DIRECTORIES; do
     if [ ! -d "$ROOT/$directory" ]; then
         printf 'MISSING: covered directory does not exist: %s\n' "$directory" >&2
         status=1
