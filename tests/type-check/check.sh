@@ -32,6 +32,7 @@ providers/stripe/tests
 providers/superset/tests
 services/access-control/tests
 services/authoring-mcp/tests
+services/bi-control/tests
 services/catalog-control/tests
 services/compiler/tests
 services/connection-broker/tests
@@ -44,24 +45,27 @@ services/request-management/tests
 services/runtime/tests
 services/semantic-registry/tests
 services/state/tests
-services/bi-control/tests
 services/trigger/tests
 services/warehouse-control/tests
-tests/conformance
 tests/acceptance
 tests/ci
+tests/conformance
 tests/emulators
 tests/end-to-end
 tests/fault-injection
+tests/integration
 tests/quickstart
 tests/release
 '
 
-# Known uncovered, each followed by the error count measured at the time of listing.
-# These are debt, not exemptions -- the count is here so a reader can size the next
-# promotion rather than guess. Only the first field is read as a directory.
+# Known uncovered, each followed by the error count measured at the time of listing,
+# so a reader can size the next promotion rather than guess. Only the first field is
+# read as a directory.
+#
+# Empty: every test directory in the repository is covered. A directory added here is
+# debt, not an exemption -- list it with its count, and take it off this list in the
+# change that brings the count to zero.
 PENDING='
-tests/integration 23
 '
 
 is_listed() {

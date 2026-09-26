@@ -3,6 +3,7 @@ from collections.abc import Callable
 
 import pytest
 from heinzel_provider_postgresql import PostgresProvider, PostgresSettings
+from pydantic import SecretStr
 
 
 @pytest.mark.live
@@ -14,7 +15,7 @@ def test_dedicated_postgres_account_supports_observe_and_snapshot(
         pytest.skip("HEINZEL_TEST_POSTGRES_DSN is not configured")
     provider = PostgresProvider(
         PostgresSettings(
-            dsn=dsn,
+            dsn=SecretStr(dsn),
             connection_handle="live-postgresql",
             schema_name=os.getenv("HEINZEL_TEST_POSTGRES_SCHEMA", "heinzel_snapshot"),
             table_name=os.getenv("HEINZEL_TEST_POSTGRES_TABLE", "orders"),

@@ -10,6 +10,7 @@ import pytest
 from heinzel_contract_model import digest
 from heinzel_provider_sdk import OrderRow, SourceBoundary
 from heinzel_provider_snowflake import SnowflakeProvider, SnowflakeSettings, encode_segment
+from pydantic import SecretStr
 
 from tests.acceptance.resource_ledger import (
     PrivateResourceLedger,
@@ -42,7 +43,7 @@ def test_dedicated_snowflake_account_commits_and_verifies_fresh_row(
     settings = SnowflakeSettings(
         account=os.environ[_REQUIRED[0]],
         user=os.environ[_REQUIRED[1]],
-        password=os.environ[_REQUIRED[2]],
+        password=SecretStr(os.environ[_REQUIRED[2]]),
         role=os.environ[_REQUIRED[3]],
         warehouse=os.environ[_REQUIRED[4]],
         database=os.environ[_REQUIRED[5]],
