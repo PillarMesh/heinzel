@@ -7,6 +7,7 @@ import pytest
 from heinzel_catalog_control import (
     CatalogBinding,
     CatalogBindingState,
+    CatalogConnection,
     CatalogControlService,
     CatalogPersistenceError,
     CatalogValidationEvidence,
@@ -18,15 +19,14 @@ NOW = datetime(2026, 8, 19, 12, tzinfo=UTC)
 LATER = datetime(2026, 8, 20, 12, tzinfo=UTC)
 
 
-# These stand in for the repository's private sqlite3.Connection, which the
-# repository uses only for execute, commit and close. They implement that much and
-# no more, so assigning one to `repository._connection` needs
-# `# type: ignore[assignment]` at each injection site: the substitution is
-# deliberate and the narrower interface is the point of the fault.
+# These stand in for the repository's connection, which it declares as the
+# CatalogConnection protocol: execute, commit, rollback and close. They implement
+# that surface, so the gate checks them against it -- dropping a method or changing
+# one's signature fails here rather than at the fault they are injected for.
 class FaultingConnection:
     def __init__(
         self,
-        connection: sqlite3.Connection,
+        connection: CatalogConnection,
         *,
         fail_rollback: bool = False,
     ) -> None:
@@ -45,6 +45,9 @@ class FaultingConnection:
         if self._fail_rollback:
             raise sqlite3.OperationalError("catalog rollback failed")
         self._connection.rollback()
+
+    def close(self) -> None:
+        self._connection.close()
 
 
 class IntegrityFailingConnection(FaultingConnection):
@@ -258,9 +261,7 @@ def test_transition_translates_an_injected_sqlite_operational_error() -> None:
     repository = SQLiteCatalogRepository(":memory:")
     control = CatalogControlService(repository, clock=lambda: NOW)
     binding = control.create_draft(tenant_id="tenant-a")
-    repository._connection = FaultingConnection(  # type: ignore[assignment]
-        repository._connection
-    )
+    repository._connection = FaultingConnection(repository._connection)
 
     with pytest.raises(CatalogPersistenceError) as captured:
         control.transition(
@@ -280,9 +281,7 @@ def test_rollback_failure_cannot_replace_the_original_storage_error() -> None:
     repository = SQLiteCatalogRepository(":memory:")
     control = CatalogControlService(repository, clock=lambda: NOW)
     binding = control.create_draft(tenant_id="tenant-a")
-    repository._connection = FaultingConnection(  # type: ignore[assignment]
-        repository._connection, fail_rollback=True
-    )
+    repository._connection = FaultingConnection(repository._connection, fail_rollback=True)
 
     with pytest.raises(CatalogPersistenceError) as captured:
         control.transition(
@@ -315,9 +314,7 @@ def test_record_validation_translates_unrelated_sqlite_integrity_error() -> None
     repository = SQLiteCatalogRepository(":memory:")
     control = CatalogControlService(repository, clock=lambda: NOW)
     binding = advance_to_validating(control)
-    repository._connection = IntegrityFailingConnection(  # type: ignore[assignment]
-        repository._connection
-    )
+    repository._connection = IntegrityFailingConnection(repository._connection)
 
     with pytest.raises(CatalogPersistenceError) as captured:
         control.record_validation(
