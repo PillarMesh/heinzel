@@ -639,7 +639,7 @@ class _TwoCrashRestoreCompose(_ComposeDouble):
         return False
 
 
-class _RestoreIsolationCompose(_ComposeDouble):
+class _RestoreIsolationCompose:
     def __init__(
         self,
         *,
@@ -796,7 +796,7 @@ class _RetirementCompose(_ComposeDouble):
         raise AssertionError("a retained or absent resource must not be removed")
 
 
-class _ExactRestoreCleanupCompose(_ComposeDouble):
+class _ExactRestoreCleanupCompose:
     def __init__(self) -> None:
         self.removals: list[tuple[str, str]] = []
 
@@ -4491,7 +4491,7 @@ def test_rejected_compose_effect_remains_ambiguous_for_reconciliation() -> None:
 
 
 def test_ambiguous_exact_network_inspection_cannot_prove_restore_absence() -> None:
-    class _AmbiguousNetworkCompose(_ComposeDouble):
+    class _AmbiguousNetworkCompose:
         def resource_is_absent(self, *, resource_kind: str, **_kwargs: object) -> bool | None:
             return None if resource_kind == "network" else True
 
@@ -4527,7 +4527,7 @@ def test_ambiguous_exact_network_inspection_cannot_complete_restore_cleanup() ->
         retention_deadline=operation.started_at + timedelta(hours=1),
     )
 
-    class _AmbiguousNetworkCompose(_ComposeDouble):
+    class _AmbiguousNetworkCompose:
         def resource_is_absent(self, *, resource_kind: str, **_kwargs: object) -> bool | None:
             return None if resource_kind == "network" else True
 
