@@ -16,7 +16,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW_DIRECTORY = ROOT / ".github" / "workflows"
-_CHECKOUT_PIN = "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803"
+_CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 _CHECKOUT_LINE = re.compile(r"uses:\s*actions/checkout@\S+(?P<comment>.*)$")
 
 
@@ -51,7 +51,7 @@ def test_every_checkout_pin_names_the_same_release(path: Path) -> None:
     for line in path.read_text(encoding="utf-8").splitlines():
         match = _CHECKOUT_LINE.search(line)
         if match:
-            assert match.group("comment").strip() == "# v6.1.0", f"{path.name}: {line.strip()}"
+            assert match.group("comment").strip() == "# v7.0.1", f"{path.name}: {line.strip()}"
 
 
 def test_the_workflows_check_out_the_repository_at_all() -> None:
