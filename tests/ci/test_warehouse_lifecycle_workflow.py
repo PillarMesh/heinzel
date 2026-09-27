@@ -737,10 +737,10 @@ def test_successful_witness_strictly_validates_and_uploads_only_public_evidence(
         "uv run python -m tests.acceptance.run_warehouse_lifecycle validate-evidence"
     )
     assert evidence_upload["uses"] == (
-        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
     )
     assert cost_upload["uses"] == (
-        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02"
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
     )
     assert str(evidence_upload["if"]).strip() == "always()"
     assert evidence_upload["with"] == {
@@ -829,12 +829,12 @@ def test_live_job_uses_the_repository_pinned_toolchain_actions(workflow: dict[st
     all_steps = tuple(step for job in workflow["jobs"].values() for step in job.get("steps", ()))
     uses = [str(step.get("uses", "")) for step in all_steps]
     assert uses.count("actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803") == 2
-    assert uses.count("actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02") == 2
+    assert uses.count("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a") == 2
     assert "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9" in uses, (
         "setup-uv must stay pinned to the repository's reviewed commit"
     )
     workflow_source = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0" in workflow_source
     assert (
-        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4" in workflow_source
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1" in workflow_source
     )
