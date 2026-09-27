@@ -41,7 +41,7 @@ pytestmark = [
 def _land_store(dsn: str) -> PostgreSQLLandStore:
     return PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn=dsn,
+            dsn=SecretStr(dsn),
             raw_schema_name="raw",
             ledger_schema_name="land_control",
             ledger_table_name="land_receipts",

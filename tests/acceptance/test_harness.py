@@ -337,7 +337,7 @@ class FakeCli:
         *,
         stdin: str | None = None,
         environment: Mapping[str, str] | None = None,
-    ) -> dict[str, Any]:
+    ) -> object:
         child_environment = dict(environment or {})
         self.invocations.append((arguments, stdin, child_environment))
         command = arguments[0]
@@ -1532,7 +1532,7 @@ def test_base_exception_persists_pessimistic_resource_ledger(tmp_path: Path) -> 
 
     providers = FakeProviders([])
 
-    def ambiguous_insert(_row: object) -> None:
+    def ambiguous_insert(row: object) -> None:
         providers.fixture_exists = True
         raise StopNow()
 

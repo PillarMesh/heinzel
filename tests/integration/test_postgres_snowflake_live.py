@@ -54,7 +54,12 @@ def test_new_postgres_row_reaches_real_snowflake_visibility(
     missing = tuple(name for name in _APP_VARIABLES if not os.getenv(name))
     if missing:
         pytest.skip("full dedicated account settings are not configured: " + ", ".join(missing))
-    settings = AppSettings(state_path=tmp_path / "state.db", output_dir=tmp_path / "output")
+    # Every other field comes from the HEINZEL_ environment the skip above
+    # requires, which mypy cannot see; the service's own entry points carry
+    # this same suppression.
+    settings = AppSettings(  # type: ignore[call-arg]
+        state_path=tmp_path / "state.db", output_dir=tmp_path / "output"
+    )
     checked_snowflake = SnowflakeSettings(
         account=settings.snowflake_account,
         user=settings.snowflake_user,
@@ -119,7 +124,9 @@ def test_new_postgres_row_reaches_real_snowflake_visibility(
     try:
         with snowflake_connection.cursor() as cursor:
             cursor.execute(f"SELECT count(*) FROM {target} WHERE order_id = %s", (acceptance_key,))
-            assert cursor.fetchone()[0] == 0
+            absent_row = cursor.fetchone()
+            assert absent_row is not None
+            assert absent_row[0] == 0
     finally:
         snowflake_connection.close()
 

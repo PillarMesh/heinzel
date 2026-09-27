@@ -182,12 +182,36 @@ class CatalogPersistenceError(RuntimeError):
         super().__init__(f"catalog persistence failed during {operation}")
 
 
+class CatalogConnection(Protocol):
+    """The SQLite surface this repository uses: four calls, and nothing else.
+
+    Declared structurally rather than as `sqlite3.Connection` because both parties
+    that supply one need it. The composer supplies a real connection it owns, since
+    only it can decide the thread lifecycle. A test supplies a stand-in that fails on
+    demand, because the repository's error translation -- an operational error mid
+    transaction, a failing rollback, an integrity violation -- is reachable no other
+    way; a concrete class can only be stood in for by a subclass of itself.
+
+    `sqlite3.Connection` satisfies this as it stands. Keeping it to what the
+    repository actually calls means a stand-in implements four methods instead of
+    imitating a driver, and the gate checks that it implements them faithfully.
+    """
+
+    def execute(self, sql: str, parameters: tuple[object, ...] = (), /) -> sqlite3.Cursor: ...
+
+    def commit(self) -> None: ...
+
+    def rollback(self) -> None: ...
+
+    def close(self) -> None: ...
+
+
 class SQLiteCatalogRepository:
     def __init__(
         self,
         database_path: str | None = None,
         *,
-        connection: sqlite3.Connection | None = None,
+        connection: CatalogConnection | None = None,
     ) -> None:
         """Open a database, or borrow a connection the composer already owns.
 
@@ -205,7 +229,7 @@ class SQLiteCatalogRepository:
             if connection is None:
                 assert database_path is not None
                 connection = sqlite3.connect(database_path)
-            self._connection = connection
+            self._connection: CatalogConnection = connection
             self._connection.execute("PRAGMA foreign_keys = ON")
             self._connection.execute(
                 "CREATE TABLE IF NOT EXISTS catalog_sequences ("
@@ -726,7 +750,7 @@ def _binding_id(tenant_id: str, sequence: int) -> str:
 
 
 @contextmanager
-def _transaction(connection: sqlite3.Connection) -> Iterator[None]:
+def _transaction(connection: CatalogConnection) -> Iterator[None]:
     try:
         connection.execute("BEGIN IMMEDIATE")
         yield

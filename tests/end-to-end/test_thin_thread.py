@@ -1,4 +1,5 @@
 import csv
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
@@ -20,6 +21,25 @@ from heinzel_provider_sdk import (
 )
 from heinzel_provider_snowflake import encode_segment
 from heinzel_runtime import Runtime
+
+
+def _payload(value: object) -> Mapping[str, object]:
+    """Narrow an AuthoringApplication result, declared `object`, to the mapping it is."""
+    assert isinstance(value, Mapping), value
+    return value
+
+
+def _events(value: object) -> Sequence[Mapping[str, object]]:
+    """Narrow a trace, declared `object`, to the sequence of events it is."""
+    assert isinstance(value, list), value
+    return [_payload(event) for event in value]
+
+
+def _text(value: object) -> str:
+    """Narrow a payload member, declared `object`, to the identifier string it is."""
+    assert isinstance(value, str), value
+    return value
+
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
@@ -240,8 +260,8 @@ def test_fresh_row_reaches_terminal_visibility_and_reconstructable_trace(tmp_pat
         clock=lambda: NOW,
     )
     application = AuthoringApplication(contracts, runtime)
-    created = application.create_draft(contract_payload())
-    verified = application.verify("contract-001", 1)
+    created = _payload(application.create_draft(contract_payload()))
+    verified = _payload(application.verify("contract-001", 1))
     acceptance_key = 7
     assert acceptance_key not in destination.rows
     source.rows.append(
@@ -255,24 +275,28 @@ def test_fresh_row_reaches_terminal_visibility_and_reconstructable_trace(tmp_pat
         )
     )
 
-    run = application.activate(
-        created["contract_digest"],
-        verified["summary_digest"],
-        acceptance_key,  # type: ignore[index]
+    run = _payload(
+        application.activate(
+            _text(created["contract_digest"]),
+            _text(verified["summary_digest"]),
+            acceptance_key,
+        )
     )
-    repeated = application.activate(
-        created["contract_digest"],
-        verified["summary_digest"],
-        acceptance_key,  # type: ignore[index]
+    repeated = _payload(
+        application.activate(
+            _text(created["contract_digest"]),
+            _text(verified["summary_digest"]),
+            acceptance_key,
+        )
     )
 
-    assert run["state"] == "succeeded"  # type: ignore[index]
-    assert repeated["run_id"] == run["run_id"]  # type: ignore[index]
+    assert run["state"] == "succeeded"
+    assert repeated["run_id"] == run["run_id"]
     assert destination.rows[acceptance_key].customer_ref == "fresh-customer-7"
     assert destination.mutations == 1
-    trace = application.get_trace(run["run_id"])  # type: ignore[index]
-    assert trace[-1]["event_type"] == "terminal_success"  # type: ignore[index]
-    assert store.verify_chain(run["run_id"])  # type: ignore[index]
+    trace = _events(application.get_trace(_text(run["run_id"])))
+    assert trace[-1]["event_type"] == "terminal_success"
+    assert store.verify_chain(_text(run["run_id"]))
 
 
 def test_no_valid_plan_reads_no_rows_and_mutates_nothing(tmp_path: Path) -> None:

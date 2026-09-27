@@ -7,7 +7,7 @@ import select
 import subprocess
 import time
 from collections.abc import Buffer, Iterator, Mapping
-from contextlib import contextmanager, suppress
+from contextlib import AbstractContextManager, contextmanager, suppress
 from dataclasses import dataclass
 from ipaddress import AddressValueError, IPv4Address, IPv4Network
 from pathlib import Path
@@ -154,6 +154,183 @@ def _start_subprocess(
     stderr: int,
 ) -> ComposeProcess:
     return subprocess.Popen(command, env=env, stdin=stdin, stdout=stdout, stderr=stderr)
+
+
+# The compose surface, split by role rather than declared as one interface.
+#
+# A consumer annotates the role it actually calls, so a stand-in implements that much
+# and no more: `_RestoreLoopbackTunnel` streams and never inspects anything, and the
+# module functions that verify cleanup probe resources without running commands.
+# Declaring it whole instead made every stand-in owe all fourteen methods, including
+# `down`, which no consumer in this repository calls.
+#
+# `DockerComposeProcess` is the only implementation that talks to Docker and satisfies
+# every role. The roles exist because a concrete class can only be stood in for by a
+# subclass of itself, and a provider's compose failure paths -- a container that never
+# starts, a network left attached, a stream that dies mid-restore -- are reachable
+# only by standing in for compose.
+
+
+class ComposeCommand(Protocol):
+    """Run one command to completion and return its output."""
+
+    def exec(
+        self,
+        *,
+        project_name: str,
+        arguments: tuple[str, ...],
+        environment: Mapping[str, str],
+        input_bytes: bytes | None = None,
+        nonzero_classification: ComposeErrorClassification = "rejected",
+    ) -> bytes: ...
+
+
+class ComposeStream(Protocol):
+    """Run one command and borrow its stdout while it runs."""
+
+    def exec_stream(
+        self,
+        *,
+        project_name: str,
+        arguments: tuple[str, ...],
+        environment: Mapping[str, str],
+        stdin: IO[bytes] | None = None,
+    ) -> AbstractContextManager[IO[bytes]]: ...
+
+
+class ComposeLifecycle(Protocol):
+    """Move a project between running and stopped."""
+
+    def up(self, *, project_name: str, environment: Mapping[str, str]) -> None: ...
+
+    def stop(self, *, project_name: str, environment: Mapping[str, str]) -> None: ...
+
+    def start(self, *, project_name: str, environment: Mapping[str, str]) -> None: ...
+
+    def down(self, *, project_name: str, environment: Mapping[str, str]) -> None: ...
+
+
+class ComposeResourceProbe(Protocol):
+    """Confirm whether one resource is gone. None when Docker cannot say."""
+
+    def resource_is_absent(
+        self,
+        *,
+        resource_kind: ComposeResourceKind,
+        identifier: str,
+        environment: Mapping[str, str],
+    ) -> bool | None: ...
+
+
+class ComposeResourceRemoval(ComposeResourceProbe, Protocol):
+    """Remove one resource and confirm it went. Removing without confirming is not a
+    capability any caller wants, so this extends the probe rather than standing alone."""
+
+    def remove_resource(
+        self,
+        *,
+        resource_kind: ComposeResourceKind,
+        identifier: str,
+        environment: Mapping[str, str],
+    ) -> None: ...
+
+
+class ComposeResources(ComposeResourceRemoval, Protocol):
+    """Enumerate a project's resources, as well as removing and probing them."""
+
+    def discover_resources(
+        self, *, project_name: str, environment: Mapping[str, str]
+    ) -> tuple[ComposeResource, ...]: ...
+
+
+# Every inspection returns None when the resource is absent, so a caller distinguishes
+# "absent" from an answer about a resource that exists. They are split three ways
+# because callers ask three different questions: whether a container is up, where it is
+# attached, and what it was built from.
+
+
+class ComposeContainerState(Protocol):
+    """Whether one container is running."""
+
+    def inspect_container_running(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None: ...
+
+
+class ComposeNetworkPlacement(Protocol):
+    """Which networks a container is attached to, and whether a network is internal."""
+
+    def inspect_container_networks(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> tuple[str, ...] | None: ...
+
+    def inspect_network_internal(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None: ...
+
+
+class ComposeContainerProvenance(Protocol):
+    """What a container was built from and whether it publishes ports."""
+
+    def inspect_container_image(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> str | None: ...
+
+    def inspect_container_has_published_ports(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None: ...
+
+
+class ComposeInspection(
+    ComposeContainerState, ComposeNetworkPlacement, ComposeContainerProvenance, Protocol
+):
+    """Every inspection Docker is asked for."""
+
+
+# The composites below are the roles callers actually need. They are unions of the
+# roles above rather than new methods, and each exists because a caller reaches that
+# far -- often transitively, by handing compose to a helper. Splitting the surface made
+# those chains visible: `_observe_restore_isolation` looks like a pure probe until you
+# notice it delegates to `_observe_restore_route_denial`, which runs a command.
+
+
+class ComposeIsolationProbe(
+    ComposeCommand, ComposeResourceProbe, ComposeContainerState, ComposeNetworkPlacement, Protocol
+):
+    """Establishing that a restore container is isolated: where it is attached, whether
+    it is up, whether its resources are gone, and one command to prove a route denied."""
+
+
+class ComposeResourceVerification(
+    ComposeCommand,
+    ComposeResourceProbe,
+    ComposeContainerState,
+    ComposeContainerProvenance,
+    Protocol,
+):
+    """Verifying a project's resources are the expected ones, which also runs a command
+    against them. Does not enumerate or remove: verification only reads."""
+
+
+class ComposeProjectControl(
+    ComposeLifecycle, ComposeResources, ComposeIsolationProbe, ComposeResourceVerification, Protocol
+):
+    """Driving a project's lifecycle and everything it owns."""
+
+
+class ComposeBackupControl(
+    ComposeStream, ComposeResources, ComposeIsolationProbe, ComposeResourceVerification, Protocol
+):
+    """Streaming a backup or restore, and verifying the resources around it."""
+
+
+class ComposeBoundary(ComposeStream, ComposeProjectControl, Protocol):
+    """Every compose role at once.
+
+    `DockerComposeProcess` is checked against this, so a role that drifts from the
+    implementation fails here rather than at whichever consumer happens to call it.
+    A consumer should annotate the narrower role it uses instead.
+    """
 
 
 class DockerComposeProcess:

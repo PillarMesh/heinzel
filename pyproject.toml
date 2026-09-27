@@ -21,6 +21,9 @@ dev = [
   # regex over the file would pass on a gate whose job graph had changed.
   "pyyaml>=6.0,<7",
   "ruff>=0.12,<1",
+  # pyyaml ships no inline types, so the workflow contract test is unreadable to
+  # mypy without these stubs.
+  "types-pyyaml>=6.0,<7",
 ]
 
 [tool.uv.workspace]

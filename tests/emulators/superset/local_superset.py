@@ -144,7 +144,11 @@ class LocalSuperset:
         output = self._warehouse_query(
             "SELECT region, revenue FROM analytics.orders_current ORDER BY region"
         )
-        return tuple(tuple(line.split("|", maxsplit=1)) for line in output.splitlines())
+        rows: list[tuple[str, str]] = []
+        for line in output.splitlines():
+            region, revenue = line.split("|", maxsplit=1)
+            rows.append((region, revenue))
+        return tuple(rows)
 
     def reader_is_least_privilege(self) -> bool:
         output = self._warehouse_query(

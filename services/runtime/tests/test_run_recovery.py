@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from heinzel_provider_sdk import ProviderError
@@ -299,7 +300,21 @@ def test_a_stage_failure_found_after_lease_loss_still_carries_the_failure(tmp_pa
 
 
 class _ConflictingCompletions(RunService):
-    def complete(self, **kwargs: object) -> RunAttemptCompletion:  # type: ignore[override]
+    # Mirrors RunService.complete rather than swallowing it in **kwargs: the override
+    # is only substitutable if it accepts the same keywords, and the `# type: ignore`
+    # that stood here silenced nothing -- **kwargs is already wider.
+    def complete(
+        self,
+        *,
+        tenant_id: str,
+        run_id: str,
+        attempt_number: int,
+        epoch: int,
+        worker_id: str,
+        outcome: Literal["succeeded", "failed"],
+        durable_boundary_ref: str,
+        failure_classification: Literal["transient", "permanent"] | None = None,
+    ) -> RunAttemptCompletion:
         raise ValueError("run completion conflicts with recorded outcome")
 
 
@@ -374,7 +389,9 @@ def test_an_unavailable_renewal_does_not_permanently_fail_a_live_attempt(tmp_pat
     runs, run_id = _runs(tmp_path, clock)
 
     class _RenewalUnavailable(RunService):
-        def extend_lease(self, **kwargs: object) -> RunAttemptLeaseExtension:  # type: ignore[override]
+        def extend_lease(
+            self, *, tenant_id: str, claim: RunAttemptClaim, lease_seconds: int
+        ) -> RunAttemptLeaseExtension:
             raise OSError("state store unavailable")
 
     unavailable = _RenewalUnavailable(SQLiteRunRepository(tmp_path / "runs.sqlite3"), clock=clock)

@@ -7,22 +7,26 @@ import pytest
 from heinzel_catalog_control import (
     CatalogBinding,
     CatalogBindingState,
+    CatalogConnection,
     CatalogControlService,
     CatalogPersistenceError,
     CatalogValidationEvidence,
     SQLiteCatalogRepository,
 )
-from heinzel_catalog_control import repository as repository_module
 from pydantic import ValidationError
 
 NOW = datetime(2026, 8, 19, 12, tzinfo=UTC)
 LATER = datetime(2026, 8, 20, 12, tzinfo=UTC)
 
 
+# These stand in for the repository's connection, which it declares as the
+# CatalogConnection protocol: execute, commit, rollback and close. They implement
+# that surface, so the gate checks them against it -- dropping a method or changing
+# one's signature fails here rather than at the fault they are injected for.
 class FaultingConnection:
     def __init__(
         self,
-        connection: sqlite3.Connection,
+        connection: CatalogConnection,
         *,
         fail_rollback: bool = False,
     ) -> None:
@@ -41,6 +45,9 @@ class FaultingConnection:
         if self._fail_rollback:
             raise sqlite3.OperationalError("catalog rollback failed")
         self._connection.rollback()
+
+    def close(self) -> None:
+        self._connection.close()
 
 
 class IntegrityFailingConnection(FaultingConnection):
@@ -294,7 +301,7 @@ def test_repository_initialization_translates_sqlite_operational_error(
     def fail_connect(database_path: str) -> sqlite3.Connection:
         raise sqlite3.OperationalError(f"cannot open {database_path}")
 
-    monkeypatch.setattr(repository_module.sqlite3, "connect", fail_connect)
+    monkeypatch.setattr(sqlite3, "connect", fail_connect)
 
     with pytest.raises(CatalogPersistenceError) as captured:
         SQLiteCatalogRepository("unavailable.db")

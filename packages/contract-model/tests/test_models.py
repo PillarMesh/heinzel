@@ -45,9 +45,10 @@ def test_contract_accepts_only_fixed_snapshot_shape() -> None:
 
 def test_contract_rejects_additional_projection() -> None:
     data = contract_data()
-    projection = list(data["projection"])  # type: ignore[arg-type]
-    projection.append(ProjectionField(source="extra", destination="extra").model_dump())
-    data["projection"] = projection
+    fixed = data["projection"]
+    assert isinstance(fixed, list)
+    extra = ProjectionField(source="extra", destination="extra").model_dump()
+    data["projection"] = [*fixed, extra]
 
     with pytest.raises(ValidationError, match="fixed snapshot projection"):
         IntegrationContract.model_validate(data)

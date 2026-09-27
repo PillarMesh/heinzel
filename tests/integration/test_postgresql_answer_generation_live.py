@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from typing import cast
 
 import psycopg
 import pytest
@@ -16,6 +17,7 @@ from heinzel_provider_postgresql import (
     PostgreSQLAnswerQueryProvider,
     PostgreSQLAnswerQuerySettings,
 )
+from heinzel_provider_postgresql.answer_query import _PostgreSQLQueryConnection
 from heinzel_provider_sdk import ProviderError
 from heinzel_runtime import AnswerQueryPlan, ReadOnlyAnswerQuery
 from psycopg import sql
@@ -107,11 +109,14 @@ def test_fresh_postgresql_generation_guard_denies_mutable_or_stale_authority() -
                 password=privileged_password,
             )
 
-            def connect_after_role_switch(_dsn: str) -> psycopg.Connection[tuple[object, ...]]:
+            def connect_after_role_switch(_dsn: str) -> _PostgreSQLQueryConnection:
                 connection = psycopg.connect(privileged_dsn, autocommit=True)
                 connection.execute("SET ROLE answer_runtime").close()
                 connection.autocommit = False
-                return connection
+                # psycopg's Connection does not structurally satisfy the provider's
+                # protocol -- its execute and cursor signatures differ -- which is why
+                # the provider itself casts psycopg.connect for its default seam.
+                return cast(_PostgreSQLQueryConnection, connection)
 
             switched_provider = PostgreSQLAnswerQueryProvider(
                 settings=PostgreSQLAnswerQuerySettings(dsn=SecretStr(privileged_dsn)),

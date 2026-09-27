@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -50,7 +51,5 @@ def test_supplying_both_a_path_and_a_connection_is_refused(tmp_path: Path) -> No
         connection.close()
 
 
-def _now():
-    from datetime import UTC, datetime
-
+def _now() -> datetime:
     return datetime(2026, 9, 3, 12, tzinfo=UTC)

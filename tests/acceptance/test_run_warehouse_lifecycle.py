@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import subprocess
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
@@ -488,14 +489,14 @@ def test_fault_matrix_cleanup_cancellation_is_recovered_from_the_exact_private_l
 ) -> None:
     config = _config(private_parent)
     matrix_root = config.state_path / "offline-control-plane-fault-matrix"
-    original_rmtree = run_warehouse_lifecycle_module.shutil.rmtree
+    original_rmtree = shutil.rmtree
 
     def cancelled_cleanup(path: Path) -> None:
         if Path(path) == matrix_root:
             raise KeyboardInterrupt
         original_rmtree(path)
 
-    monkeypatch.setattr(run_warehouse_lifecycle_module.shutil, "rmtree", cancelled_cleanup)
+    monkeypatch.setattr(shutil, "rmtree", cancelled_cleanup)
 
     with pytest.raises(KeyboardInterrupt):
         run_warehouse_lifecycle(config, cleanup_authorized=True)
@@ -516,7 +517,7 @@ def test_fault_matrix_cleanup_cancellation_is_recovered_from_the_exact_private_l
 
     unrelated = config.state_path / "unrelated-private-directory"
     unrelated.mkdir(mode=0o700)
-    monkeypatch.setattr(run_warehouse_lifecycle_module.shutil, "rmtree", original_rmtree)
+    monkeypatch.setattr(shutil, "rmtree", original_rmtree)
 
     cleanup = teardown_warehouse_lifecycle(
         config,
@@ -1457,16 +1458,16 @@ def test_validate_evidence_cli_strictly_reloads_fault_proof_and_rescans_privacy(
         ("private_marker", private_marker),
         ("tenant_private_marker_field", private_marker),
     )
-    for mutation, value in mutations:
+    for mutation, mutated_value in mutations:
         malformed = json.loads(original)
         if mutation == "engine_validation_digest":
-            malformed["engine_results"][0]["validation_evidence_digest"] = value
+            malformed["engine_results"][0]["validation_evidence_digest"] = mutated_value
         elif mutation == "private_marker":
-            malformed["engine_results"][0]["engine_version"] = value
+            malformed["engine_results"][0]["engine_version"] = mutated_value
         elif mutation == "tenant_private_marker_field":
-            malformed["tenant_id"] = value
+            malformed["tenant_id"] = mutated_value
         else:
-            malformed[mutation] = value
+            malformed[mutation] = mutated_value
         evidence_path.write_bytes(canonical_json_bytes(malformed))
 
         assert main(["validate-evidence"]) == 2, mutation

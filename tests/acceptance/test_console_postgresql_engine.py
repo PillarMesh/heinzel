@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -10,13 +11,18 @@ from heinzel_warehouse_control import (
     LocalAcceptanceWarehouseReadinessPolicy,
     PrivateWarehouseOperation,
     PrivateWarehouseResource,
+    WarehouseBinding,
     WarehouseFailureClassification,
     WarehouseOperationKind,
     WarehouseOperationPhase,
     WarehouseOperationStatus,
+    WarehouseProvider,
+    WarehouseProvisionResult,
     WarehouseResourceCleanupStatus,
     WarehouseResourceCreationState,
     WarehouseResourceKind,
+    WarehouseRetirementEvidence,
+    WarehouseValidationResult,
 )
 from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 from heinzel_warehouse_control.service import WarehouseControlService
@@ -36,8 +42,50 @@ def _clock() -> datetime:
     return _NOW
 
 
+class _UnusedProvider:
+    """Conforms to WarehouseProvider so the factory protocol is really checked.
+
+    These tests assert how `provider_for` calls its factory -- with which keywords,
+    how often, under which binding -- and never touch what it hands back. Returning
+    a bare `object()` left the factory's declared return unchecked, which is the
+    gap `_ProviderFactory` was written to close.
+    """
+
+    engine_kind: EngineKind = EngineKind.POSTGRESQL
+
+    def provision(
+        self, binding: WarehouseBinding, operation: PrivateWarehouseOperation
+    ) -> WarehouseProvisionResult:
+        raise AssertionError("these tests never provision through the deferred provider")
+
+    def reconcile(
+        self, binding: WarehouseBinding, operation: PrivateWarehouseOperation
+    ) -> WarehouseProvisionResult:
+        raise AssertionError("these tests never reconcile through the deferred provider")
+
+    def validate(
+        self,
+        binding: WarehouseBinding,
+        operation: PrivateWarehouseOperation,
+        *,
+        resume: bool,
+    ) -> WarehouseValidationResult:
+        raise AssertionError("these tests never validate through the deferred provider")
+
+    def suspend(self, binding: WarehouseBinding, operation: PrivateWarehouseOperation) -> None:
+        raise AssertionError("these tests never suspend through the deferred provider")
+
+    def resume(self, binding: WarehouseBinding, operation: PrivateWarehouseOperation) -> None:
+        raise AssertionError("these tests never resume through the deferred provider")
+
+    def retire(
+        self, binding: WarehouseBinding, operation: PrivateWarehouseOperation
+    ) -> WarehouseRetirementEvidence:
+        raise AssertionError("these tests never retire through the deferred provider")
+
+
 @pytest.fixture
-def repository(tmp_path: Path):
+def repository(tmp_path: Path) -> Iterator[SQLiteWarehouseRepository]:
     opened = SQLiteWarehouseRepository(str(tmp_path / "warehouse.sqlite3"))
     try:
         yield opened
@@ -88,9 +136,9 @@ def test_the_provider_is_bound_to_the_operation_that_actually_arrives(
     """
     seen: list[str] = []
 
-    def factory(*, binding_id: str, operation_id: str):
+    def factory(*, binding_id: str, operation_id: str) -> WarehouseProvider:
         seen.append(operation_id)
-        return object()
+        return _UnusedProvider()
 
     deferred = DeferredPostgreSQLProvider(factory)
 
@@ -184,9 +232,9 @@ def test_the_provider_is_built_only_once_the_binding_exists(
     """
     built: list[str] = []
 
-    def factory(*, binding_id: str, operation_id: str):
+    def factory(*, binding_id: str, operation_id: str) -> WarehouseProvider:
         built.append(binding_id)
-        return object()
+        return _UnusedProvider()
 
     deferred = DeferredPostgreSQLProvider(factory)
     assert built == []
@@ -202,7 +250,7 @@ def test_a_second_binding_is_refused_rather_than_silently_rebuilt(
     repository: SQLiteWarehouseRepository,
 ) -> None:
     """One run provisions one binding; its secrets are bound to one operation."""
-    deferred = DeferredPostgreSQLProvider(lambda *, binding_id, operation_id: object())
+    deferred = DeferredPostgreSQLProvider(lambda *, binding_id, operation_id: _UnusedProvider())
     deferred.provider_for("whb-one", "wop-" + "a" * 24)
 
     with pytest.raises(RuntimeError, match="one warehouse binding"):
@@ -246,11 +294,11 @@ def test_the_deferred_provider_builds_once_under_concurrent_first_calls(
     built = 0
     built_lock = threading.Lock()
 
-    def factory(*, binding_id: str, operation_id: str):
+    def factory(*, binding_id: str, operation_id: str) -> WarehouseProvider:
         nonlocal built
         with built_lock:
             built += 1
-        return object()
+        return _UnusedProvider()
 
     deferred = DeferredPostgreSQLProvider(factory)
     results: list[object] = []

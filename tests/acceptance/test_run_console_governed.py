@@ -5,8 +5,10 @@ import json
 import os
 import runpy
 import sqlite3
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import pytest
 from heinzel_bi_control import (
@@ -23,6 +25,7 @@ from heinzel_console.contracts import (
     DecisionCommand,
     ProposalPreparationCommand,
     RequestClarificationCommand,
+    RequestDetailView,
     WarehouseBindingCommand,
 )
 from heinzel_console.governed_backend import _catalog_classification_label
@@ -40,7 +43,10 @@ from heinzel_request_management import (
     DeliveryIntent,
     DimensionIntent,
     FreshnessObjective,
+    FulfillmentGroundingSnapshot,
+    FulfillmentProposal,
     Grain,
+    InboxRequest,
     MeasureIntent,
     ProductIntent,
     ProductIntentAuthorityRefs,
@@ -48,10 +54,15 @@ from heinzel_request_management import (
     ProductIntentSourceCoverage,
     RequestState,
     SQLiteRequestRepository,
+    StakeholderAnswerDraft,
 )
-from heinzel_semantic_registry import SQLiteSemanticVersionRepository
+from heinzel_semantic_registry import (
+    FulfillmentAuthorityObservation,
+    SQLiteSemanticVersionRepository,
+)
 from heinzel_state import RunIntent, RunService, SQLiteRunRepository, TriggerWindow
-from heinzel_warehouse_control import EngineKind
+from heinzel_warehouse_control import EngineKind, WarehouseOperationSecrets
+from httpx2 import Response
 from starlette.testclient import TestClient
 
 import tests.acceptance.console_postgresql_engine as postgresql_engine
@@ -75,7 +86,7 @@ _NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 
 
 class _AcceptanceDashboardProvider:
-    provider_kind = "superset"
+    provider_kind: Literal["superset"] = "superset"
 
     def apply(self, definition: BiDashboardDefinition) -> BiApplyResult:
         return BiApplyResult(
@@ -91,9 +102,11 @@ class _RecordingAnswerProvider(ScenarioAnswerProvider):
     def __init__(self) -> None:
         self.calls = 0
 
-    def propose(self, **kwargs):
+    def propose(
+        self, *, request: InboxRequest, grounding: FulfillmentGroundingSnapshot
+    ) -> StakeholderAnswerDraft:
         self.calls += 1
-        return super().propose(**kwargs)
+        return super().propose(request=request, grounding=grounding)
 
 
 def _prepare_question(
@@ -101,7 +114,7 @@ def _prepare_question(
     *,
     purpose: str,
     question: str,
-):
+) -> tuple[str, RequestDetailView]:
     command = CreateRequestCommand.model_validate(
         {
             "expected_revision": 1,
@@ -140,7 +153,7 @@ def _prepare_question(
 
 
 @pytest.fixture
-def deployment(tmp_path: Path):
+def deployment(tmp_path: Path) -> Iterator[GovernedConsoleDeployment]:
     running = GovernedConsoleDeployment(tmp_path)
     try:
         yield running
@@ -218,6 +231,7 @@ def test_published_authority_uses_the_active_publication_contract(
         request=deployment.requests.get(TENANT, request_id),
     )
 
+    assert isinstance(authority, FulfillmentAuthorityObservation)
     assert authority.classification_rule_refs == tuple(
         ArtifactReference(
             artifact_id=classification.object_id,
@@ -355,7 +369,7 @@ def test_postgresql_tls_material_uses_the_host_clock(
     observed_at: list[datetime] = []
     generate = postgresql_engine.run_operation_secrets
 
-    def record_clock(*, clock):
+    def record_clock(*, clock: Callable[[], datetime]) -> WarehouseOperationSecrets:
         observed_at.append(clock())
         return generate(clock=clock)
 
@@ -461,6 +475,7 @@ def test_governed_runtime_applies_and_delivers_approved_access(
         actor_id=ARCHITECT,
         expected_revision=investigating.revision,
     )
+    assert isinstance(proposal, FulfillmentProposal)
     awaiting = deployment.fulfillment.submit_proposal(
         tenant_id=TENANT,
         request_id=request.request_id,
@@ -591,6 +606,7 @@ def test_requester_dashboard_disappears_after_authoritative_access_revocation(
             actor_id=ARCHITECT,
             expected_revision=investigating.revision,
         )
+        assert isinstance(proposal, FulfillmentProposal)
         awaiting = deployment.fulfillment.submit_proposal(
             tenant_id=TENANT,
             request_id=request.request_id,
@@ -932,7 +948,7 @@ def test_the_seeded_decision_reaches_the_architect_inbox(
     }
 
 
-def _withdraw(client: TestClient, request_id: str, expected_revision: int, key: str):
+def _withdraw(client: TestClient, request_id: str, expected_revision: int, key: str) -> Response:
     requester = {"x-heinzel-actor": REQUESTER}
     token = client.get("/api/v1/session", headers=requester).json()["data"]["csrf_token"]
     return client.post(
@@ -1112,6 +1128,7 @@ def test_a_delivery_that_fails_after_admission_can_be_retried(
             capacity="mvp-fixed",
         ),
     )
+    assert stranded.proposal_digest is not None
     retried = deployment.backend.admit_request(
         _context(ARCHITECT),
         seeded.request_id,

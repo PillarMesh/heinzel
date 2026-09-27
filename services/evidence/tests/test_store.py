@@ -1,7 +1,9 @@
 import hashlib
 import sqlite3
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 from heinzel_evidence import (
@@ -12,6 +14,11 @@ from heinzel_evidence import (
     RunRecord,
     SQLiteStore,
 )
+
+# What `sqlite3.Connection.execute` accepts after the statement, named here because
+# typeshed keeps its own alias private. The connection doubles below forward whatever
+# they are handed, so they must accept exactly this.
+type SQLParameters = Sequence[object] | Mapping[str, object]
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 HISTORICAL_V1_CHECKSUM = "20649936aff7f5922006c25ce7e6aa24b8faa847a3d788e51be42f932e4890b3"
@@ -531,8 +538,10 @@ def test_v1_database_is_refused_without_application_table_access_or_mutation(
     statements: list[str] = []
     original_connect = sqlite3.connect
 
-    def traced_connect(*args: object, **kwargs: object) -> sqlite3.Connection:
-        connection = original_connect(*args, **kwargs)
+    def traced_connect(*args: Any, **kwargs: Any) -> sqlite3.Connection:
+        # Forwarded untyped so the double stays as permissive as `sqlite3.connect`
+        # itself; narrowing it here would reject call shapes the real function takes.
+        connection: sqlite3.Connection = original_connect(*args, **kwargs)
         connection.set_trace_callback(statements.append)
         return connection
 
@@ -646,7 +655,7 @@ def test_interrupted_migration_never_leaves_a_schema_without_its_version_row(
         def __init__(self, wrapped: sqlite3.Connection) -> None:
             self._wrapped = wrapped
 
-        def execute(self, statement: str, *arguments: object) -> sqlite3.Cursor:
+        def execute(self, statement: str, *arguments: SQLParameters) -> sqlite3.Cursor:
             if statement.lstrip().upper().startswith("INSERT INTO SCHEMA_METADATA"):
                 raise sqlite3.OperationalError("disk I/O error")
             return self._wrapped.execute(statement, *arguments)
@@ -674,7 +683,7 @@ def test_interrupted_migration_never_leaves_a_schema_without_its_version_row(
 
 def test_replayed_activated_run_does_not_duplicate_lifecycle_evidence(tmp_path: Path) -> None:
     database = store(tmp_path / "evidence.sqlite3")
-    lifecycle_events = (
+    lifecycle_events: tuple[tuple[str, dict[str, object]], ...] = (
         ("draft_created", {"contract_digest": "a" * 64}),
         ("activation", {"summary_digest": "b" * 64}),
     )
@@ -1031,7 +1040,7 @@ class _RefusingConnection:
         self._refuse = refuse
         self._error = error
 
-    def execute(self, statement: str, *arguments: object) -> sqlite3.Cursor:
+    def execute(self, statement: str, *arguments: SQLParameters) -> sqlite3.Cursor:
         if self._refuse in statement:
             raise self._error
         return self._wrapped.execute(statement, *arguments)

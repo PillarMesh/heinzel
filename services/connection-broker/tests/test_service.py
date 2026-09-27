@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 from heinzel_connection_broker import (
     PrivateSourceCapability,
+    SourceAccountMode,
     SourceBindingBoundaryError,
     SourceBindingNotFoundError,
     SourceBindingService,
@@ -17,6 +18,7 @@ from heinzel_connection_broker import (
     StaleSourceBindingRevisionError,
 )
 from heinzel_contract_model import canonical_bytes
+from heinzel_provider_sdk.errors import AcquisitionProviderKind
 
 NOW = datetime(2026, 9, 1, 12, tzinfo=UTC)
 
@@ -27,9 +29,9 @@ class Resolver:
         *,
         tenant_id: str,
         binding_id: str,
-        provider_kind: str,
+        provider_kind: AcquisitionProviderKind,
         connection_handle: str,
-        account_mode: str,
+        account_mode: SourceAccountMode,
         credential_revision: int,
     ) -> PrivateSourceCapability:
         return PrivateSourceCapability(
@@ -78,9 +80,9 @@ class ForgedResolver(Resolver):
         *,
         tenant_id: str,
         binding_id: str,
-        provider_kind: str,
+        provider_kind: AcquisitionProviderKind,
         connection_handle: str,
-        account_mode: str,
+        account_mode: SourceAccountMode,
         credential_revision: int,
     ) -> PrivateSourceCapability:
         capability = super().resolve(

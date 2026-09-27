@@ -11,6 +11,7 @@ from threading import Event, Thread
 
 import pytest
 import uvicorn
+from starlette.applications import Starlette
 
 from tests.acceptance.console_native_answer_fixture import fresh_native_answer_deployment
 from tests.acceptance.run_console_governed import ARCHITECT, REQUESTER
@@ -26,7 +27,7 @@ def _arguments(argv: list[str] | None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _start_server(*, app: object, port: int) -> tuple[uvicorn.Server, Thread]:
+def _start_server(*, app: Starlette, port: int) -> tuple[uvicorn.Server, Thread]:
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
     thread = Thread(target=server.run, daemon=True)
     thread.start()

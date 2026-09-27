@@ -103,9 +103,11 @@ def test_live_observer_reads_postgresql_catalog_and_sum_behavior(
     postgresql_dsn: str,
 ) -> None:
     with psycopg.connect(postgresql_dsn) as connection:
-        server_version_number, server_version_text = connection.execute(
+        version_row = connection.execute(
             "SELECT current_setting('server_version_num'), current_setting('server_version')"
         ).fetchone()
+        assert version_row is not None
+        server_version_number, server_version_text = version_row
     engine_version = f"{int(server_version_number) // 10_000}.{int(server_version_number) % 10_000}"
     engine_build_digest = digest(
         {
@@ -193,9 +195,11 @@ def test_live_observer_does_not_trust_an_unvalidated_not_null_constraint(
     postgresql_dsn: str,
 ) -> None:
     with psycopg.connect(postgresql_dsn) as connection:
-        server_version_number, server_version_text = connection.execute(
+        version_row = connection.execute(
             "SELECT current_setting('server_version_num'), current_setting('server_version')"
         ).fetchone()
+        assert version_row is not None
+        server_version_number, server_version_text = version_row
         attnotnull = connection.execute(
             "SELECT attnotnull FROM pg_catalog.pg_attribute "
             "WHERE attrelid = 'raw.unvalidated'::regclass AND attname = 'generation_id'"

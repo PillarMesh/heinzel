@@ -25,7 +25,7 @@ from heinzel_provider_sdk import (
     VisibilityProof,
 )
 from heinzel_provider_snowflake import encode_segment
-from heinzel_runtime import FaultHook, Runtime
+from heinzel_runtime import FaultHook, Runtime, SegmentEncoder
 
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 ACCEPTANCE_KEY = 984201
@@ -179,7 +179,7 @@ def _runtime(
     output: Path,
     *,
     fault_hook: FaultHook | None = None,
-    segment_encoder=encode_segment,  # type: ignore[no-untyped-def]
+    segment_encoder: SegmentEncoder = encode_segment,
 ) -> Runtime:
     arguments: dict[str, object] = {}
     if fault_hook is not None:

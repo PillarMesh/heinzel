@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import socket
 import struct
+import threading
 import tracemalloc
-from collections.abc import Callable
-from contextlib import contextmanager, suppress
+from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager, contextmanager, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from threading import Event, Thread
-from typing import Any, Literal
+from typing import IO, Any, Literal, NoReturn
 
 import heinzel_provider_postgresql.warehouse as warehouse_module
 import heinzel_provider_postgresql.warehouse_database as warehouse_database
@@ -64,7 +66,12 @@ from heinzel_provider_postgresql.warehouse_settings import (
     POSTGRESQL_WAREHOUSE_IMAGE,
     PostgreSQLWarehouseSettings,
 )
-from heinzel_provider_sdk import ComposeCommandError
+from heinzel_provider_sdk import (
+    ComposeCommandError,
+    ComposeErrorClassification,
+    ComposeResource,
+    ComposeResourceKind,
+)
 from heinzel_warehouse_control import (
     EngineKind,
     PrivateWarehouseOperation,
@@ -329,7 +336,94 @@ class _RepositoryResources:
         )
 
 
-class _ComposeStopsAfterPlanning:
+class _ComposeDouble:
+    """The whole ComposeBoundary surface, raising on every call.
+
+    Each compose stand-in below inherits this and overrides only the calls its own
+    test drives. That keeps two things honest at once: a stand-in really is a
+    ComposeBoundary, so the provider accepts it without a cast; and the boundary is
+    pinned in exactly one place, so widening or renaming anything on it fails here
+    rather than passing and reaching Docker at run time.
+    """
+
+    def _unexpected(self, call: str) -> NoReturn:
+        raise AssertionError(f"{type(self).__name__} does not expect compose.{call}")
+
+    def up(self, *, project_name: str, environment: Mapping[str, str]) -> None:
+        self._unexpected("up")
+
+    def stop(self, *, project_name: str, environment: Mapping[str, str]) -> None:
+        self._unexpected("stop")
+
+    def start(self, *, project_name: str, environment: Mapping[str, str]) -> None:
+        self._unexpected("start")
+
+    def down(self, *, project_name: str, environment: Mapping[str, str]) -> None:
+        self._unexpected("down")
+
+    def exec(
+        self,
+        *,
+        project_name: str,
+        arguments: tuple[str, ...],
+        environment: Mapping[str, str],
+        input_bytes: bytes | None = None,
+        nonzero_classification: ComposeErrorClassification = "rejected",
+    ) -> bytes:
+        self._unexpected("exec")
+
+    def exec_stream(
+        self,
+        *,
+        project_name: str,
+        arguments: tuple[str, ...],
+        environment: Mapping[str, str],
+        stdin: IO[bytes] | None = None,
+    ) -> AbstractContextManager[IO[bytes]]:
+        self._unexpected("exec_stream")
+
+    def discover_resources(
+        self, *, project_name: str, environment: Mapping[str, str]
+    ) -> tuple[ComposeResource, ...]:
+        self._unexpected("discover_resources")
+
+    def remove_resource(
+        self, *, resource_kind: ComposeResourceKind, identifier: str, environment: Mapping[str, str]
+    ) -> None:
+        self._unexpected("remove_resource")
+
+    def resource_is_absent(
+        self, *, resource_kind: ComposeResourceKind, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None:
+        self._unexpected("resource_is_absent")
+
+    def inspect_container_image(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> str | None:
+        self._unexpected("inspect_container_image")
+
+    def inspect_container_running(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None:
+        self._unexpected("inspect_container_running")
+
+    def inspect_container_has_published_ports(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None:
+        self._unexpected("inspect_container_has_published_ports")
+
+    def inspect_container_networks(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> tuple[str, ...] | None:
+        self._unexpected("inspect_container_networks")
+
+    def inspect_network_internal(
+        self, *, identifier: str, environment: Mapping[str, str]
+    ) -> bool | None:
+        self._unexpected("inspect_network_internal")
+
+
+class _ComposeStopsAfterPlanning(_ComposeDouble):
     def __init__(
         self,
         recorder: _RecordingResources,
@@ -352,7 +446,7 @@ class _ComposeStopsAfterPlanning:
         raise self._failure
 
 
-class _BackupStreamCompose:
+class _BackupStreamCompose(_ComposeDouble):
     def __init__(self, recorder: _RecordingResources, payload: bytes) -> None:
         self._recorder = recorder
         self._payload = payload
@@ -375,7 +469,7 @@ class _BackupStreamCompose:
         yield io.BytesIO(self._payload)
 
 
-class _RestoreStreamCompose:
+class _RestoreStreamCompose(_ComposeDouble):
     def __init__(self, recorder: _RecordingResources) -> None:
         self._recorder = recorder
         self.planned_handles_at_stream: frozenset[str] = frozenset()
@@ -387,9 +481,10 @@ class _RestoreStreamCompose:
         self,
         *,
         arguments: tuple[str, ...],
-        stdin: Any,
+        stdin: IO[bytes] | None = None,
         **_kwargs: object,
     ) -> Any:
+        assert stdin is not None
         self.arguments_at_stream = arguments
         self.planned_handles_at_stream = frozenset(
             resource.provider_resource_handle for resource in self._recorder.resources.values()
@@ -402,7 +497,7 @@ class _RestoreStreamCompose:
         yield io.BytesIO()
 
 
-class _DirtyRestoreReplayCompose:
+class _DirtyRestoreReplayCompose(_ComposeDouble):
     def __init__(self, identity: Any) -> None:
         self._identity = identity
         self._present = {
@@ -429,7 +524,7 @@ class _DirtyRestoreReplayCompose:
     def resource_is_absent(self, *, identifier: str, **_kwargs: object) -> bool:
         return identifier not in self._present
 
-    def discover_resources(self, **_kwargs: object) -> tuple[object, ...]:
+    def discover_resources(self, **_kwargs: object) -> tuple[ComposeResource, ...]:
         return ()
 
     def exec(self, *, arguments: tuple[str, ...], **_kwargs: object) -> bytes:
@@ -457,7 +552,7 @@ class _DirtyRestoreReplayCompose:
         return False
 
 
-class _TwoCrashRestoreCompose:
+class _TwoCrashRestoreCompose(_ComposeDouble):
     def __init__(self, identity: Any, *, binding_id: str) -> None:
         self._identity = identity
         self._binding_id = binding_id
@@ -493,7 +588,7 @@ class _TwoCrashRestoreCompose:
     def resource_is_absent(self, *, identifier: str, **_kwargs: object) -> bool:
         return identifier not in self._present
 
-    def discover_resources(self, **_kwargs: object) -> tuple[object, ...]:
+    def discover_resources(self, **_kwargs: object) -> tuple[ComposeResource, ...]:
         return ()
 
     def exec(self, *, arguments: tuple[str, ...], **_kwargs: object) -> bytes:
@@ -582,7 +677,7 @@ class _RestoreIsolationCompose:
 
     def inspect_container_networks(self, *, identifier: str, **_kwargs: object) -> tuple[str, ...]:
         if identifier == self._primary_container:
-            networks = (self._primary_network,)
+            networks: tuple[str, ...] = (self._primary_network,)
             if self.primary_loopback_attached:
                 networks = (*networks, self._primary_loopback_network)
             return tuple(sorted(networks))
@@ -646,7 +741,7 @@ class _RestoreIsolationCompose:
         self.primary_loopback_attached = True
 
 
-class _ExistingCompose:
+class _ExistingCompose(_ComposeDouble):
     def __init__(self) -> None:
         self.up_calls = 0
 
@@ -687,11 +782,11 @@ class _RunningSuspendCompose(_ExistingCompose):
         self.running = False
 
 
-class _RetirementCompose:
+class _RetirementCompose(_ComposeDouble):
     def resource_is_absent(self, **_kwargs: object) -> bool:
         return True
 
-    def discover_resources(self, **_kwargs: object) -> tuple[object, ...]:
+    def discover_resources(self, **_kwargs: object) -> tuple[ComposeResource, ...]:
         return ()
 
     def stop(self, **_kwargs: object) -> None:
@@ -933,7 +1028,7 @@ class _ProbeScopeCursor:
             failures_remaining = self._connection.cleanup_failures_remaining
             if failures_remaining is None or failures_remaining > 0:
                 if failures_remaining is not None:
-                    self._connection.cleanup_failures_remaining -= 1
+                    self._connection.cleanup_failures_remaining = failures_remaining - 1
                 raise RuntimeError("fault-injected probe cleanup failure")
             self._connection.surviving_roles.remove(matched_role)
 
@@ -1954,7 +2049,7 @@ def test_backup_cleanup_attempts_every_file_without_replacing_the_primary_failur
     primary_failure = RuntimeError("primary backup stream failed")
     stream_failed = Event()
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
         def exec_stream(self, **_kwargs: object) -> Any:
             stream_failed.set()
@@ -2039,7 +2134,7 @@ def test_existing_backup_preparation_attempts_every_exact_temporary_cleanup(
             private_operation_directory=private_directory,
             backup_chunk_bytes=4 * 1024,
         ),
-        compose=object(),
+        compose=_ComposeDouble(),
         resource_recorder=recorder,
         secrets=_BackupSecretCapability(
             SecretStr("backup-secret"),
@@ -2103,7 +2198,7 @@ def test_new_backup_preparation_attempts_every_exact_temporary_cleanup(
     recorder = _RecordingResources()
     boundary = PostgreSQLBackupCommandBoundary(
         settings=PostgreSQLWarehouseSettings(private_operation_directory=private_directory),
-        compose=object(),
+        compose=_ComposeDouble(),
         resource_recorder=recorder,
         secrets=_BackupSecretCapability(
             SecretStr("backup-secret"),
@@ -2174,7 +2269,7 @@ def test_private_file_cleanup_never_deletes_an_unrecorded_sibling(tmp_path: Path
     ).model_copy(update={"creation_state": WarehouseResourceCreationState.CREATED})
     recorder = _RecordingResources()
     recorder.resources[resource.resource_id] = resource
-    provider = _provider(private_directory, recorder=recorder, compose=object())
+    provider = _provider(private_directory, recorder=recorder, compose=_ComposeDouble())
     provider._primary_resources[resource.resource_id] = resource
 
     provider._delete_retained_resource(resource, identity, {})
@@ -2216,14 +2311,21 @@ def test_private_file_cleanup_fails_closed_before_erasure_when_recorded_name_swa
     ).model_copy(update={"creation_state": WarehouseResourceCreationState.CREATED})
     recorder = _RecordingResources()
     recorder.resources[resource.resource_id] = resource
-    provider = _provider(private_directory, recorder=recorder, compose=object())
+    provider = _provider(private_directory, recorder=recorder, compose=_ComposeDouble())
     provider._primary_resources[resource.resource_id] = resource
-    real_lstat = warehouse_module.os.lstat
+    real_lstat = os.lstat
     recorded_lstat_calls = 0
 
-    def swap_before_verification(path: object, *args: object, **kwargs: object) -> Any:
+    def swap_before_verification(
+        path: str | bytes | os.PathLike[str] | os.PathLike[bytes],
+        *,
+        dir_fd: int | None = None,
+    ) -> os.stat_result:
+        # The os.lstat overload the code under test uses: it calls lstat both bare and
+        # with dir_fd, never on a file descriptor, and only the dir_fd call is the one
+        # this fault targets.
         nonlocal recorded_lstat_calls
-        if Path(path).name == identity.credential_file.name and kwargs.get("dir_fd") is not None:
+        if Path(os.fsdecode(path)).name == identity.credential_file.name and dir_fd is not None:
             recorded_lstat_calls += 1
             if recorded_lstat_calls == 2:
                 identity.credential_file.rename(preserved)
@@ -2231,9 +2333,9 @@ def test_private_file_cleanup_fails_closed_before_erasure_when_recorded_name_swa
                     identity.credential_file.symlink_to(unrelated)
                 else:
                     unrelated.rename(identity.credential_file)
-        return real_lstat(path, *args, **kwargs)
+        return real_lstat(path, dir_fd=dir_fd)
 
-    monkeypatch.setattr(warehouse_module.os, "lstat", swap_before_verification)
+    monkeypatch.setattr(os, "lstat", swap_before_verification)
 
     provider._delete_retained_resource(resource, identity, {})
 
@@ -2276,7 +2378,7 @@ def test_private_file_cleanup_fails_closed_on_a_final_regular_file_swap(
     ).model_copy(update={"creation_state": WarehouseResourceCreationState.CREATED})
     recorder = _RecordingResources()
     recorder.resources[resource.resource_id] = resource
-    provider = _provider(private_directory, recorder=recorder, compose=object())
+    provider = _provider(private_directory, recorder=recorder, compose=_ComposeDouble())
     provider._primary_resources[resource.resource_id] = resource
     real_same_inode = warehouse_module._same_inode
     comparisons = 0
@@ -2402,9 +2504,12 @@ def test_restore_cleanup_never_replaces_process_or_integrity_failure(
     primary_failure = RuntimeError("primary restore process failed")
     restore_finished = Event()
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
-        def exec_stream(self, *, stdin: Any, **_kwargs: object) -> Any:
+        def exec_stream(self, *, stdin: IO[bytes] | None = None, **_kwargs: object) -> Any:
+            # The provider always streams into compose; the boundary allows omitting
+            # stdin, so a stand-in that reads it says so instead of assuming it.
+            assert stdin is not None
             if failure_kind == "process":
                 restore_finished.set()
                 raise primary_failure
@@ -2483,9 +2588,12 @@ def test_restore_integrity_failure_precedes_the_causal_process_failure_and_is_sa
     recorder = _RecordingResources()
     process_canary = "private-pg-restore-statement-detail"
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
-        def exec_stream(self, *, stdin: Any, **_kwargs: object) -> Any:
+        def exec_stream(self, *, stdin: IO[bytes] | None = None, **_kwargs: object) -> Any:
+            # The provider always streams into compose; the boundary allows omitting
+            # stdin, so a stand-in that reads it says so instead of assuming it.
+            assert stdin is not None
             while stdin.read(4096):
                 pass
             raise RuntimeError(process_canary)
@@ -2559,7 +2667,7 @@ def test_restore_preserves_a_prior_nonprocess_primary_while_integrity_and_cleanu
     recorder = _RecordingResources()
     prior_failure = _SimulatedRestoreCrash("prior controller interruption")
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
         def exec_stream(self, **_kwargs: object) -> Any:
             raise prior_failure
@@ -3094,16 +3202,17 @@ def test_restore_isolation_uses_repeatable_restore_topology_without_mutating_pri
 def test_restore_loopback_tunnel_forwards_without_adding_a_container_route() -> None:
     calls: list[tuple[str, tuple[str, ...]]] = []
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
         def exec_stream(
             self,
             *,
             project_name: str,
             arguments: tuple[str, ...],
-            stdin: Any,
+            stdin: IO[bytes] | None = None,
             **_kwargs: object,
         ) -> Any:
+            assert stdin is not None
             calls.append((project_name, arguments))
             assert stdin.read(4) == b"ping"
             yield io.BytesIO(b"pong")
@@ -3150,9 +3259,9 @@ def test_restore_tunnel_start_failure_never_leaves_cleanup_waiting_for_a_server(
         def is_alive(self) -> bool:
             return False
 
-    monkeypatch.setattr(warehouse_module.threading, "Thread", FailedThread)
+    monkeypatch.setattr(threading, "Thread", FailedThread)
     tunnel = warehouse_module._RestoreLoopbackTunnel(
-        compose=object(),
+        compose=_ComposeDouble(),
         project_name="restore-project",
     )
 
@@ -3202,9 +3311,12 @@ def test_restore_tunnel_close_joins_a_handler_accepted_during_server_shutdown() 
         def shutdown(self, _how: int = socket.SHUT_RDWR) -> None:
             release_accept.set()
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
-        def exec_stream(self, *, stdin: Any, **_kwargs: object) -> Any:
+        def exec_stream(self, *, stdin: IO[bytes] | None = None, **_kwargs: object) -> Any:
+            # The provider always streams into compose; the boundary allows omitting
+            # stdin, so a stand-in that reads it says so instead of assuming it.
+            assert stdin is not None
             handler_started.set()
             while stdin.read(4096):
                 pass
@@ -3277,7 +3389,7 @@ def test_restore_tunnel_close_cancels_a_server_ignoring_initial_socket_close() -
             return None
 
     tunnel = warehouse_module._RestoreLoopbackTunnel(
-        compose=object(),
+        compose=_ComposeDouble(),
         project_name="restore-project",
     )
     tunnel._listener = Listener()  # type: ignore[assignment]
@@ -3351,9 +3463,12 @@ def test_restore_tunnel_close_cancels_a_handler_ignoring_initial_socket_shutdown
         def sendall(self, _value: bytes) -> None:
             return None
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
-        def exec_stream(self, *, stdin: Any, **_kwargs: object) -> Any:
+        def exec_stream(self, *, stdin: IO[bytes] | None = None, **_kwargs: object) -> Any:
+            # The provider always streams into compose; the boundary allows omitting
+            # stdin, so a stand-in that reads it says so instead of assuming it.
+            assert stdin is not None
             while stdin.read(4096):
                 pass
             yield io.BytesIO()
@@ -3364,7 +3479,9 @@ def test_restore_tunnel_close_cancels_a_handler_ignoring_initial_socket_shutdown
         project_name="restore-project",
     )
     tunnel._environment = {"scope": "restore"}
-    handler = Thread(target=tunnel._forward, args=(client,), daemon=True)  # type: ignore[arg-type]
+    handler = Thread(target=tunnel._forward, args=(client,), daemon=True)
+    # _clients is a set[socket.socket], a concrete class, so this partial stand-in
+    # cannot be typed as one however faithfully it behaves.
     tunnel._clients.add(client)  # type: ignore[arg-type]
     tunnel._handler_threads.append(handler)
     handler.start()
@@ -3401,9 +3518,12 @@ def test_restore_tunnel_keeps_a_validated_response_after_rejected_bridge_teardow
     payload = b"SFATAL\0VFATAL\0C28000\0M" + private_canary.encode("ascii") + b"\0\0"
     response = b"E" + struct.pack("!I", len(payload) + 4) + payload
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
-        def exec_stream(self, *, stdin: Any, **_kwargs: object) -> Any:
+        def exec_stream(self, *, stdin: IO[bytes] | None = None, **_kwargs: object) -> Any:
+            # The provider always streams into compose; the boundary allows omitting
+            # stdin, so a stand-in that reads it says so instead of assuming it.
+            assert stdin is not None
             request_size = struct.unpack("!I", stdin.read(4))[0]
             assert len(stdin.read(request_size - 4)) == request_size - 4
             yield io.BytesIO(response)
@@ -3450,7 +3570,7 @@ def test_restore_tunnel_pre_response_failures_remain_fatal_and_sanitized(
 ) -> None:
     private_canary = "private-probe-credential"
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
         def exec_stream(self, **_kwargs: object) -> Any:
             raise ComposeCommandError(
@@ -3489,7 +3609,7 @@ def test_restore_tunnel_pre_response_rejection_is_fatal_without_poisoning_retry(
     payload = b"SFATAL\0VFATAL\0C28000\0Mexplicit authorization denial\0\0"
     response = b"E" + struct.pack("!I", len(payload) + 4) + payload
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
         def exec_stream(self, **_kwargs: object) -> Any:
             nonlocal attempts
@@ -3545,7 +3665,7 @@ def test_restore_tunnel_control_failure_remains_sticky_after_a_later_response(
     payload = b"SFATAL\0VFATAL\0C28000\0Mexplicit authorization denial\0\0"
     response = b"E" + struct.pack("!I", len(payload) + 4) + payload
 
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
         def exec_stream(self, **_kwargs: object) -> Any:
             nonlocal attempts
@@ -3605,7 +3725,7 @@ def test_restore_tunnel_control_failure_remains_sticky_after_a_later_response(
 def test_restore_tunnel_malformed_or_incomplete_response_remains_fatal_and_sanitized(
     response: bytes,
 ) -> None:
-    class Compose:
+    class Compose(_ComposeDouble):
         @contextmanager
         def exec_stream(self, **_kwargs: object) -> Any:
             yield io.BytesIO(response)
@@ -3705,7 +3825,7 @@ def _retirement_boundary(
             private_operation_directory=private_directory,
             retention_period=timedelta(hours=1),
         ),
-        compose=object(),
+        compose=_ComposeDouble(),
         resource_recorder=recorder,
         secrets=_BackupSecretCapability(
             SecretStr("backup-secret"),
@@ -3896,7 +4016,7 @@ def test_backup_retirement_refreshes_repository_owned_resource_revisions(tmp_pat
             private_operation_directory=private_directory,
             retention_period=timedelta(hours=1),
         ),
-        compose=object(),
+        compose=_ComposeDouble(),
         resource_recorder=recorder,
         secrets=_BackupSecretCapability(
             SecretStr("backup-secret"),
@@ -4375,7 +4495,7 @@ def test_ambiguous_exact_network_inspection_cannot_prove_restore_absence() -> No
         def resource_is_absent(self, *, resource_kind: str, **_kwargs: object) -> bool | None:
             return None if resource_kind == "network" else True
 
-        def discover_resources(self, **_kwargs: object) -> tuple[object, ...]:
+        def discover_resources(self, **_kwargs: object) -> tuple[ComposeResource, ...]:
             return ()
 
         def remove_resource(self, **_kwargs: object) -> None:
@@ -4411,7 +4531,7 @@ def test_ambiguous_exact_network_inspection_cannot_complete_restore_cleanup() ->
         def resource_is_absent(self, *, resource_kind: str, **_kwargs: object) -> bool | None:
             return None if resource_kind == "network" else True
 
-        def discover_resources(self, **_kwargs: object) -> tuple[object, ...]:
+        def discover_resources(self, **_kwargs: object) -> tuple[ComposeResource, ...]:
             return ()
 
         def remove_resource(self, **_kwargs: object) -> None:
@@ -4437,7 +4557,7 @@ def test_startup_denial_probe_uses_structured_authorization_sqlstate(
     payload = b"SFATAL\0VFATAL\0C28000\0Mexplicit authorization denial\0\0"
     server.sendall(b"E" + struct.pack("!I", len(payload) + 4) + payload)
     monkeypatch.setattr(
-        warehouse_protocol.socket,
+        socket,
         "create_connection",
         lambda *_args, **_kwargs: client,
     )
@@ -4471,7 +4591,7 @@ def test_startup_denial_probe_keeps_transport_failure_generic(
     def unavailable(*_args: object, **_kwargs: object) -> socket.socket:
         raise transport_failure
 
-    monkeypatch.setattr(warehouse_protocol.socket, "create_connection", unavailable)
+    monkeypatch.setattr(socket, "create_connection", unavailable)
 
     with pytest.raises(psycopg.OperationalError) as captured:
         warehouse_protocol.connect_denial_probe(

@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
+from typing import NoReturn, Protocol
 
 import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -31,10 +32,35 @@ from heinzel_runtime import FaultHook, Runtime, noop_fault_hook, retry_bounded
 NOW = datetime(2026, 8, 13, 12, 0, tzinfo=UTC)
 
 
+class _VerifyVisibility(Protocol):
+    """Named parameters matter: a bare Callable is positional-only, so it is not
+    substitutable for a method a caller may address by keyword."""
+
+    def __call__(self, manifest: SegmentManifest, acceptance_key: int) -> VisibilityProof: ...
+
+
+def _failing_visibility(error: ProviderError) -> _VerifyVisibility:
+    """A verify_visibility that only ever raises, keeping the replaced signature.
+
+    The lambdas this replaces wrote `(_ for _ in ()).throw(...)` to raise from an
+    expression, returned Any, and named their parameters `_manifest` and
+    `_acceptance_key` -- so they were not substitutable for the `manifest` and
+    `acceptance_key` a caller may pass by keyword.
+    """
+
+    def verify_visibility(manifest: SegmentManifest, acceptance_key: int) -> VisibilityProof:
+        raise error
+
+    return verify_visibility
+
+
 def test_noop_fault_hook_is_a_public_no_op() -> None:
+    # The annotation is the assertion: noop_fault_hook must satisfy FaultHook. Its
+    # declared `-> None` already rules out a return value, so calling it proves only
+    # that a fault point passes through it without raising.
     hook: FaultHook = noop_fault_hook
 
-    assert hook("before_extraction") is None
+    hook("before_extraction")
 
 
 class Source:
@@ -162,11 +188,16 @@ def test_graph_verification_precedes_provider_resolution(tmp_path: Path) -> None
     store = SQLiteStore.open(tmp_path / "state.db")
     create_run(store, signed)
     resolutions: list[str] = []
+
+    def never_resolved(handle: str) -> NoReturn:
+        resolutions.append(handle)
+        raise AssertionError("graph verification must precede provider resolution")
+
     runtime = Runtime(
         store=store,
         verifier=GraphVerifier({"key-1": signer.public_key}),
-        source_resolver=lambda handle: resolutions.append(handle),
-        destination_resolver=lambda handle: resolutions.append(handle),
+        source_resolver=never_resolved,
+        destination_resolver=never_resolved,
         segment_encoder=encoder([]),
         output_dir=tmp_path,
         clock=lambda: NOW,
@@ -431,7 +462,7 @@ def test_retryable_stage_uses_one_and_five_second_delays(tmp_path: Path) -> None
     destination = Destination(calls)
     attempts = 0
 
-    def flaky_stage(_path: Path, _manifest: SegmentManifest) -> None:
+    def flaky_stage(path: Path, _manifest: SegmentManifest) -> None:
         nonlocal attempts
         attempts += 1
         if attempts < 3:
@@ -491,10 +522,8 @@ def test_visibility_integrity_failure_is_non_conforming_not_success(tmp_path: Pa
     create_run(store, signed)
     calls: list[str] = []
     destination = Destination(calls)
-    destination.verify_visibility = (  # type: ignore[method-assign]
-        lambda _manifest, _acceptance_key: (_ for _ in ()).throw(
-            ProviderError("visibility digest mismatch", "permanent")
-        )
+    destination.verify_visibility = _failing_visibility(  # type: ignore[method-assign]
+        ProviderError("visibility digest mismatch", "permanent")
     )
     runtime = Runtime(
         store=store,
@@ -562,10 +591,8 @@ def test_exhausted_transient_visibility_failure_is_not_recorded_as_non_conformin
     create_run(store, signed)
     calls: list[str] = []
     destination = Destination(calls)
-    destination.verify_visibility = (  # type: ignore[method-assign]
-        lambda _manifest, _acceptance_key: (_ for _ in ()).throw(
-            ProviderError("visibility read timed out", "retryable")
-        )
+    destination.verify_visibility = _failing_visibility(  # type: ignore[method-assign]
+        ProviderError("visibility read timed out", "retryable")
     )
     runtime = Runtime(
         store=store,
@@ -597,10 +624,8 @@ def test_visibility_retry_budget_exhaustion_is_not_recorded_as_non_conforming(
     create_run(store, signed)
     calls: list[str] = []
     destination = Destination(calls)
-    destination.verify_visibility = (  # type: ignore[method-assign]
-        lambda _manifest, _acceptance_key: (_ for _ in ()).throw(
-            ProviderError("visibility read timed out", "retryable")
-        )
+    destination.verify_visibility = _failing_visibility(  # type: ignore[method-assign]
+        ProviderError("visibility read timed out", "retryable")
     )
     # Stage and commit each sample the clock once before visibility starts its own
     # retry budget and observes that the first failed read consumed it.
