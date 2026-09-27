@@ -830,11 +830,12 @@ def test_live_job_uses_the_repository_pinned_toolchain_actions(workflow: dict[st
     uses = [str(step.get("uses", "")) for step in all_steps]
     assert uses.count("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1") == 2
     assert uses.count("actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a") == 2
-    assert "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9" in uses, (
+    assert "astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7" in uses, (
         "setup-uv must stay pinned to the repository's reviewed commit"
     )
     workflow_source = WORKFLOW_PATH.read_text(encoding="utf-8")
     assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1" in workflow_source
     assert (
-        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1" in workflow_source
+        "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1"
+        in workflow_source
     )
