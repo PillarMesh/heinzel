@@ -17,7 +17,7 @@ dependencies = [
   "heinzel-iir",
   "heinzel-provider-sdk",
   "heinzel-request-management",
-  "pydantic>=2.11,<3",
+  "pydantic>=2.13.5,<3",
 ]
 
 [project.urls]
