@@ -20,7 +20,7 @@ dev = [
   # workflow is the only way to check it; there is no stdlib YAML reader, and a
   # regex over the file would pass on a gate whose job graph had changed.
   "pyyaml>=6.0,<7",
-  "ruff>=0.12,<1",
+  "ruff>=0.16.8,<1",
   # pyyaml ships no inline types, so the workflow contract test is unreadable to
   # mypy without these stubs.
   "types-pyyaml>=6.0,<7",
