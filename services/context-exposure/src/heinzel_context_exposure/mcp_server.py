@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from pydantic import BaseModel
 
 _FORBIDDEN_RESULT_FIELDS = frozenset(
@@ -101,7 +102,7 @@ def _assert_safe_result(value: object) -> None:
     if isinstance(value, dict):
         forbidden = _FORBIDDEN_RESULT_FIELDS.intersection(value)
         if forbidden:
-            raise RuntimeError("forbidden authority or statement field in agent-interface result")
+            raise ToolError("forbidden authority or statement field in agent-interface result")
         for item in value.values():
             _assert_safe_result(item)
     elif isinstance(value, list | tuple):

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, Protocol, cast
 
 from mcp.server import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 
 from .app import build_application
 from .settings import AppSettings
@@ -11,14 +12,14 @@ from .settings import AppSettings
 def _assert_private_mcp_result(value: object, acceptance_key: int | None = None) -> None:
     if isinstance(value, dict):
         if "acceptance_key" in value:
-            raise RuntimeError("private acceptance value in MCP result")
+            raise ToolError("private acceptance value in MCP result")
         for item in value.values():
             _assert_private_mcp_result(item, acceptance_key)
     elif isinstance(value, (list, tuple)):
         for item in value:
             _assert_private_mcp_result(item, acceptance_key)
     elif acceptance_key is not None and (value == acceptance_key or value == str(acceptance_key)):
-        raise RuntimeError("private acceptance value in MCP result")
+        raise ToolError("private acceptance value in MCP result")
 
 
 class MCPApplication(Protocol):

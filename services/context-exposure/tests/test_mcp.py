@@ -139,5 +139,7 @@ def test_server_fails_closed_if_an_adapter_returns_statement_text() -> None:
     )
     server = build_server(application)
 
-    with pytest.raises(ToolError, match="forbidden authority or statement field"):
+    with pytest.raises(ToolError, match="forbidden authority or statement field") as caught:
         _call(server, "explain_answer", {"request_id": "request-1"})
+
+    assert "secret_table" not in str(caught.value)
