@@ -15,7 +15,7 @@ dependencies = [
   "heinzel-access-control",
   "heinzel-contract-model",
   "heinzel-request-management",
-  "pydantic>=2.11,<3",
+  "pydantic>=2.13.5,<3",
   "pydantic-settings>=2.10,<3",
 ]
 

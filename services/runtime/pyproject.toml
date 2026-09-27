@@ -22,7 +22,7 @@ dependencies = [
   "heinzel-state",
   "heinzel-trigger",
   "heinzel-warehouse-control",
-  "pydantic>=2.11,<3",
+  "pydantic>=2.13.5,<3",
 ]
 
 [project.urls]
