@@ -11,6 +11,13 @@ updates:
       python-minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+  # `@types/node` carries the major of the Node release it describes, and nothing ties it to
+  # the runtime pinned in `apps/console/.node-version` and the quickstart Dockerfile. A major
+  # bump therefore type-checks code against APIs the pinned runtime does not have: `node:ffi`
+  # arrived in Node 26 and compiles cleanly under `@types/node` 26, while the pinned Node 24
+  # raises ERR_UNKNOWN_BUILTIN_MODULE for it. The typings move with the runtime, deliberately,
+  # both majors at once. Minor and patch updates inside the pinned major are wanted and still
+  # arrive.
   - package-ecosystem: npm
     directory: /apps/console
     schedule:
@@ -20,6 +27,9 @@ updates:
       console-minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
