@@ -70,7 +70,7 @@ def test_compose_configuration_is_pinned_and_host_private() -> None:
     assert result.returncode == 0, result.stderr
     configuration = json.loads(result.stdout)
     service = configuration["services"]["snowflake"]
-    assert service["image"] == "localstack/snowflake:2026.06.0"
+    assert service["image"] == "localstack/snowflake:2026.8.0"
     assert service["ports"] == [
         {
             "mode": "ingress",
