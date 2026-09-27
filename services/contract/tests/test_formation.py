@@ -18,7 +18,11 @@ from heinzel_contract_model import (
 )
 from heinzel_contract_service import IntegrationContractFormationService
 
-from .test_formation_governance import _Loader, _semantic_version
+# Relative because pytest imports these modules under their full dotted path.
+from .test_formation_governance import (
+    _Loader,
+    _semantic_version,
+)
 
 NOW = datetime(2026, 8, 21, 12, tzinfo=UTC)
 

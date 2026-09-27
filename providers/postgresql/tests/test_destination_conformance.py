@@ -18,7 +18,9 @@ from heinzel_provider_sdk.destination_conformance import (
     destination_target,
     run_destination_conformance,
 )
+from heinzel_provider_sdk.errors import ProviderErrorClassification
 from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
+from pydantic import SecretStr
 
 
 class _Store:
@@ -26,8 +28,8 @@ class _Store:
         self.receipts: dict[str, LandReceipt] = {}
         self.fail_transport = False
         self.fail_after_commit = False
-        self.classified_failure: str | None = None
-        self.inspect_classified_failure: str | None = None
+        self.classified_failure: ProviderErrorClassification | None = None
+        self.inspect_classified_failure: ProviderErrorClassification | None = None
 
     def land_transactionally(self, *, receipt: LandReceipt, rows: tuple[bytes, ...]) -> LandReceipt:
         if self.classified_failure is not None:
@@ -94,7 +96,9 @@ def test_postgresql_recovers_a_response_lost_after_atomic_commit() -> None:
     "classification",
     ("transient_unavailable", "throttled", "authorization_denied", "statement_rejected"),
 )
-def test_postgresql_preserves_driver_failure_classification(classification: str) -> None:
+def test_postgresql_preserves_driver_failure_classification(
+    classification: ProviderErrorClassification,
+) -> None:
     store = _Store()
     store.classified_failure = classification
     provider = PostgreSQLDestinationProvider(store=store)
@@ -193,7 +197,7 @@ def test_concrete_postgresql_store_commits_rows_and_receipt_once() -> None:
     connection = _Connection()
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn="postgresql://ingestion:secret@127.0.0.1/heinzel",
+            dsn=SecretStr("postgresql://ingestion:secret@127.0.0.1/heinzel"),
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",
@@ -236,7 +240,7 @@ def test_concrete_postgresql_store_reconciles_timeout_after_commit() -> None:
 
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn="postgresql://ingestion:secret@127.0.0.1/heinzel",
+            dsn=SecretStr("postgresql://ingestion:secret@127.0.0.1/heinzel"),
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",
@@ -263,7 +267,7 @@ def test_concrete_postgresql_store_classifies_connection_failure() -> None:
 
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn="postgresql://ingestion:secret@127.0.0.1/heinzel",
+            dsn=SecretStr("postgresql://ingestion:secret@127.0.0.1/heinzel"),
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",
@@ -298,7 +302,7 @@ def test_postgresql_binding_composition_resolves_private_settings_without_receip
         ) -> PostgreSQLLandStoreSettings:
             resolved.append((tenant_id, binding_id, binding_revision))
             return PostgreSQLLandStoreSettings(
-                dsn=secret_dsn,
+                dsn=SecretStr(secret_dsn),
                 raw_schema_name="raw",
                 ledger_schema_name="control",
                 ledger_table_name="land_receipts",
@@ -361,7 +365,7 @@ def _store_rejected_at_startup(
 
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn=_PASSWORD_DSN,
+            dsn=SecretStr(_PASSWORD_DSN),
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",
@@ -413,7 +417,7 @@ def test_store_classifies_a_structured_authorization_rejection_before_transport(
 
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn="postgresql://ingestion:secret@127.0.0.1/heinzel",
+            dsn=SecretStr("postgresql://ingestion:secret@127.0.0.1/heinzel"),
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",

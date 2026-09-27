@@ -55,7 +55,7 @@ def test_source_binding_is_frozen_strict_versioned_and_canonical() -> None:
     with pytest.raises(ValidationError):
         SourceConnectionBinding.model_validate(model.model_dump() | {"private_endpoint": "db"})
     with pytest.raises(ValidationError, match="frozen"):
-        model.tenant_id = "tenant-b"  # type: ignore[misc]
+        model.tenant_id = "tenant-b"
 
 
 @pytest.mark.parametrize(

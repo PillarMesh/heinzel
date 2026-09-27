@@ -25,12 +25,13 @@ _JOURNEY_PATH = re.compile(r"^(?:tests|providers|services)/\S+\.py$")
 def workflow() -> dict[str, Any]:
     parsed = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
     assert isinstance(parsed, dict)
-    return parsed
+    # PyYAML resolves an unquoted `on:` key to the boolean True. Normalise it here so
+    # every key really is the str this returns, and callers can index "on" directly.
+    return {("on" if key is True else key): value for key, value in parsed.items()}
 
 
 def _triggers(workflow: dict[str, Any]) -> dict[str, Any]:
-    # PyYAML resolves an unquoted `on:` key to the boolean True.
-    triggers = workflow.get("on", workflow.get(True))
+    triggers = workflow["on"]
     assert isinstance(triggers, dict)
     return triggers
 
@@ -44,7 +45,9 @@ def _job(workflow: dict[str, Any]) -> dict[str, Any]:
 def _step(workflow: dict[str, Any], name: str) -> dict[str, Any]:
     matches = [step for step in _job(workflow)["steps"] if step.get("name") == name]
     assert len(matches) == 1, name
-    return matches[0]
+    step = matches[0]
+    assert isinstance(step, dict)
+    return step
 
 
 def _journey_paths(workflow: dict[str, Any]) -> tuple[str, ...]:

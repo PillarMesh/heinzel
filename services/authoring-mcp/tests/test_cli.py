@@ -1,4 +1,5 @@
 import json
+import sys
 from contextlib import redirect_stderr
 from io import StringIO
 from pathlib import Path
@@ -11,8 +12,35 @@ from heinzel_evidence import PackageMetadata, ScanInput
 
 
 class FakeApplication:
+    """Stand in for the whole `CliApplication` protocol, not the part these tests use.
+
+    `run_cli` dispatches every subcommand through this one object, so a double that
+    implements only the reached branches is more permissive than the component it
+    replaces: a signature the real application would reject stays invisible. The
+    operations these tests never drive therefore refuse to answer rather than being
+    omitted, which keeps an unexpected dispatch loud instead of silently plausible.
+    """
+
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    def create_draft(self, value: dict[str, object]) -> dict[str, object]:
+        raise AssertionError("create_draft is not exercised by these tests")
+
+    def get_draft(self, contract_id: str, version: int) -> dict[str, object]:
+        raise AssertionError("get_draft is not exercised by these tests")
+
+    def verify(self, contract_id: str, version: int) -> dict[str, object]:
+        raise AssertionError("verify is not exercised by these tests")
+
+    def get_activation_summary(self, summary_digest: str) -> dict[str, object]:
+        raise AssertionError("get_activation_summary is not exercised by these tests")
+
+    def get_run(self, run_id: str) -> dict[str, object]:
+        raise AssertionError("get_run is not exercised by these tests")
+
+    def get_trace(self, run_id: str) -> list[dict[str, object]]:
+        raise AssertionError("get_trace is not exercised by these tests")
 
     def activate(
         self, contract_digest: str, summary_digest: str, acceptance_key: int
@@ -135,7 +163,7 @@ def test_entrypoint_rejects_invalid_argv_before_loading_settings(
         lambda: (_ for _ in ()).throw(AssertionError("settings must not be loaded")),
     )
     monkeypatch.setattr(
-        cli_module.sys,
+        sys,
         "argv",
         ["heinzel-authoring", "activate-stdin", "a" * 64, "b" * 64, canary],
     )

@@ -21,6 +21,7 @@ from heinzel_provider_sdk import (
     AcquisitionProviderError,
     acquisition_intent_key,
 )
+from heinzel_provider_sdk.acquisition_models import AcquisitionMode
 from pydantic import SecretStr, ValidationError
 
 from providers.postgresql.tests.test_acquisition_snapshot import (
@@ -142,6 +143,19 @@ def test_incremental_cursor_refuses_naive_timestamp_null_key_and_unknown_input()
     ):
         with pytest.raises(ValidationError):
             PostgreSQLIncrementalCursor.model_validate(values)
+
+
+def _ordering_key(row: tuple[object, ...]) -> int:
+    """The row's first column, which every ordered query sorts and bounds by.
+
+    The fake backend holds rows as `tuple[object, ...]` -- `open_writer` accepts
+    whatever the writer hands it -- so `min`, `max` and `sorted` cannot take
+    `row[0]` on trust.
+    """
+
+    key = row[0]
+    assert isinstance(key, int), row
+    return key
 
 
 class IncrementalBackend(FakeBackend):
@@ -268,20 +282,20 @@ class IncrementalCursor(FakeCursor):
                     else (row[4], row[0]) <= (params[0], params[1])
                 )
             ]
-            keys = [row[0] for row in rows]
+            keys = [_ordering_key(row) for row in rows]
             self.rows = [(min(keys), max(keys), len(keys))] if keys else [(None, None, 0)]
         elif "snapshot_rows_before_first" in rendered and self.name is not None:
             assert isinstance(params, tuple) and len(params) == 1
             self.rows = sorted(
                 (row for row in records if row[4] <= params[0]),
-                key=lambda row: row[0],
+                key=_ordering_key,
             )
         elif "snapshot_rows" in rendered and self.name is not None:
             assert isinstance(params, tuple) and len(params) == 2
             upper = (params[0], params[1])
             self.rows = sorted(
                 (row for row in records if (row[4], row[0]) <= upper),
-                key=lambda row: row[0],
+                key=_ordering_key,
             )
         elif "incremental_rows_before_first" in rendered and self.name is not None:
             assert isinstance(params, tuple) and len(params) in {1, 2}
@@ -370,7 +384,7 @@ def _multi_incremental_provider(
 def _continuation_intent(
     private_cursor: bytes,
     *,
-    mode: str = "incremental",
+    mode: AcquisitionMode = "incremental",
 ) -> AcquisitionIntent:
     object_refs = ("orders",)
     run_intent_ref = "4" * 64

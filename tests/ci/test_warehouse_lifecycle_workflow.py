@@ -54,7 +54,9 @@ AFFECTED_PATHS = (
 def workflow() -> dict[str, Any]:
     parsed = yaml.safe_load(WORKFLOW_PATH.read_text(encoding="utf-8"))
     assert isinstance(parsed, dict)
-    return parsed
+    # PyYAML resolves an unquoted `on:` key to the boolean True. Normalise it here so
+    # every key really is the str this returns, and callers can index "on" directly.
+    return {("on" if key is True else key): value for key, value in parsed.items()}
 
 
 @pytest.fixture(scope="module")
@@ -64,8 +66,7 @@ def gate_script(workflow: dict[str, Any]) -> str:
 
 
 def _triggers(workflow: dict[str, Any]) -> dict[str, Any]:
-    # PyYAML resolves an unquoted `on:` key to the boolean True.
-    triggers = workflow.get("on", workflow.get(True))
+    triggers = workflow["on"]
     assert isinstance(triggers, dict)
     return triggers
 

@@ -9,12 +9,14 @@ from heinzel_knowledge_graph import (
     ApprovalRequirement,
     ContextEdge,
     ContextGraphProjector,
+    ContextGraphSnapshot,
     ContextNode,
     ImpactAnalysisError,
     ImpactAnalyzer,
     SourceRecordObservation,
     add_approval_requirements,
 )
+from heinzel_knowledge_graph.impact import ImpactSubjectKind
 
 _NOW = datetime(2026, 9, 12, 18, tzinfo=UTC)
 
@@ -68,7 +70,7 @@ def _edge(
     )
 
 
-def _snapshot():
+def _snapshot() -> ContextGraphSnapshot:
     nodes = (
         _node("metric:revenue:v2", "metric_version", "principal:finance", "a"),
         _node("dashboard:revenue", "dashboard", "principal:analytics", "b"),
@@ -115,7 +117,7 @@ def _snapshot():
     ),
 )
 def test_every_subject_kind_traverses_from_a_compatible_subject(
-    subject_kind: str,
+    subject_kind: ImpactSubjectKind,
     node_kind: str,
     target_kind: str,
     relationship: str,
@@ -168,7 +170,7 @@ def test_every_subject_kind_traverses_from_a_compatible_subject(
     ),
 )
 def test_analysis_rejects_a_change_kind_incompatible_with_its_subject_node(
-    subject_kind: str,
+    subject_kind: ImpactSubjectKind,
     subject_ref: str,
 ) -> None:
     with pytest.raises(ImpactAnalysisError, match="incompatible"):

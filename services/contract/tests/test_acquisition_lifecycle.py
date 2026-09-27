@@ -206,7 +206,7 @@ def test_contract_activation_rolls_back_contract_and_authorities_together() -> N
             approval=approval,
             source_validation=source_validation,
         )
-    repository._connection = healthy  # type: ignore[assignment]
+    repository._connection = healthy
 
     assert repository.list_contracts("tenant-a") == ()
     assert healthy.execute("SELECT COUNT(*) FROM acquisition_activation_approvals").fetchone() == (

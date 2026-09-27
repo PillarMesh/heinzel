@@ -66,7 +66,9 @@ def test_upload_preserves_original_and_creates_new_version() -> None:
     assert first.original_digest != second.original_digest
     assert first.media_type == MARKDOWN
     assert packages.get_original("tenant-a", first.package_id, 1) == b"# Revenue to cash\n"
-    assert packages.latest("tenant-a").receipt == second
+    latest = packages.latest("tenant-a")
+    assert latest is not None
+    assert latest.receipt == second
 
 
 def test_latest_package_is_tenant_scoped_and_empty_before_upload() -> None:
@@ -211,7 +213,9 @@ def test_foreign_tenant_lookup_does_not_select_original_payload() -> None:
             return self._connection.execute(sql, parameters)
 
     recorder = PayloadQueryRecorder(repository._connection)
-    repository._connection = recorder
+    # A recording stand-in for the connection, so the assertion can prove the tenant
+    # predicate reaches SQLite rather than trusting the repository to add it.
+    repository._connection = recorder  # type: ignore[assignment]
 
     with pytest.raises(KeyError, match="belongs to another tenant"):
         packages.get_original("tenant-b", uploaded.package_id, uploaded.version)
@@ -350,7 +354,7 @@ def test_failed_store_publishes_nothing_and_burns_no_version(tmp_path: Path) -> 
     repository._connection = FailsPackageInsert(healthy)  # type: ignore[assignment]
     with pytest.raises(sqlite3.OperationalError):
         packages.upload("tenant-a", b"# Revenue to cash\n", MARKDOWN, manifest(), "arch-a")
-    repository._connection = healthy  # type: ignore[assignment]
+    repository._connection = healthy
 
     assert healthy.in_transaction is False
     surviving = packages.upload("tenant-a", b"# Revenue to cash\n", MARKDOWN, manifest(), "arch-a")

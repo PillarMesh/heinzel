@@ -16,6 +16,7 @@ from heinzel_provider_postgresql.destination import (
     PostgreSQLLandStoreSettings,
 )
 from heinzel_provider_sdk.destination_conformance import destination_segment, destination_target
+from pydantic import SecretStr
 
 _IMAGE = (
     "postgres:18.6-bookworm@sha256:33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935"
@@ -92,7 +93,7 @@ def test_live_postgresql_land_replay_and_post_commit_reconciliation(
 ) -> None:
     store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn=postgresql_dsn,
+            dsn=SecretStr(postgresql_dsn),
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",
@@ -115,7 +116,7 @@ def test_live_postgresql_land_replay_and_post_commit_reconciliation(
 
     timeout_store = PostgreSQLLandStore(
         PostgreSQLLandStoreSettings(
-            dsn=postgresql_dsn,
+            dsn=SecretStr(postgresql_dsn),
             raw_schema_name="raw",
             ledger_schema_name="control",
             ledger_table_name="land_receipts",

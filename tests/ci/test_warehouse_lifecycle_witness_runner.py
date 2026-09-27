@@ -183,7 +183,7 @@ def test_docker_sampler_sums_exact_resource_memory_and_disk_with_bounded_command
         observed_timeouts.append(timeout)
         return subprocess.CompletedProcess(command, 0, next(responses), "")
 
-    monkeypatch.setattr(witness_runner.subprocess, "run", completed_command)
+    monkeypatch.setattr(subprocess, "run", completed_command)
 
     sample = sample_docker_usage(scope, timeout_seconds=2)
 
@@ -201,7 +201,7 @@ def test_docker_sampler_reports_a_sanitized_failure_on_timeout(
     def timed_out_command(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         raise subprocess.TimeoutExpired(cmd=("docker", "stats"), timeout=1)
 
-    monkeypatch.setattr(witness_runner.subprocess, "run", timed_out_command)
+    monkeypatch.setattr(subprocess, "run", timed_out_command)
 
     with pytest.raises(DockerSamplingError, match="Docker usage sampling failed"):
         sample_docker_usage(
@@ -248,7 +248,7 @@ def test_docker_sampler_ignores_unrelated_daemon_resources(
         assert 0 < timeout <= 2
         return subprocess.CompletedProcess(command, 0, next(responses), "")
 
-    monkeypatch.setattr(witness_runner.subprocess, "run", completed_command)
+    monkeypatch.setattr(subprocess, "run", completed_command)
 
     sample = sample_docker_usage(scope, timeout_seconds=2)
 
@@ -276,7 +276,7 @@ def test_docker_sampler_tolerates_an_exact_container_removed_during_sampling(
     def completed_command(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         return next(responses)
 
-    monkeypatch.setattr(witness_runner.subprocess, "run", completed_command)
+    monkeypatch.setattr(subprocess, "run", completed_command)
 
     sample = sample_docker_usage(scope, timeout_seconds=2)
 
@@ -306,7 +306,7 @@ def test_docker_sampler_retries_volume_measurement_during_an_exact_removal_race(
     def completed_command(*args: object, **kwargs: object) -> subprocess.CompletedProcess[str]:
         return next(responses)
 
-    monkeypatch.setattr(witness_runner.subprocess, "run", completed_command)
+    monkeypatch.setattr(subprocess, "run", completed_command)
 
     sample = sample_docker_usage(scope, timeout_seconds=2)
 
@@ -329,7 +329,7 @@ def test_docker_sampler_rejects_a_persistent_volume_measurement_failure(
             return subprocess.CompletedProcess(command, 0, "", "")
         return subprocess.CompletedProcess(command, 1, "", "volume changed")
 
-    monkeypatch.setattr(witness_runner.subprocess, "run", failed_command)
+    monkeypatch.setattr(subprocess, "run", failed_command)
 
     with pytest.raises(DockerSamplingError, match="Docker usage sampling failed"):
         sample_docker_usage(scope, timeout_seconds=2)
@@ -528,14 +528,14 @@ def test_a_process_group_the_runner_may_no_longer_signal_counts_as_absent(
         absent_calls.append(signal_number)
         raise PermissionError(errno.EPERM, "Operation not permitted")
 
-    monkeypatch.setattr(witness_runner.os, "killpg", denied)
+    monkeypatch.setattr(os, "killpg", denied)
     assert witness_runner._process_group_is_absent(4242) is True
     assert absent_calls == [0]
 
     def broken(process_group_id: int, signal_number: int) -> None:
         raise OSError(errno.EIO, "Input/output error")
 
-    monkeypatch.setattr(witness_runner.os, "killpg", broken)
+    monkeypatch.setattr(os, "killpg", broken)
     with pytest.raises(witness_runner.ProcessTerminationError):
         witness_runner._process_group_is_absent(4242)
 
@@ -680,7 +680,7 @@ def test_unverified_process_group_termination_returns_a_distinct_failure(
             time.sleep(0.01)
         raise DockerSamplingError("Docker usage sampling failed")
 
-    monkeypatch.setattr(witness_runner.os, "killpg", denied_group_signal)
+    monkeypatch.setattr(os, "killpg", denied_group_signal)
 
     exit_code = run_bounded_witness(
         command,
@@ -811,5 +811,7 @@ esac
     cost = _read_cost(output)
     assert cost["peak_docker_memory_bytes"] == 1_048_576
     assert cost["peak_docker_disk_bytes"] == 2_001_024
-    assert cost["sample_count"] >= 1
+    sample_count = cost["sample_count"]
+    assert isinstance(sample_count, int)
+    assert sample_count >= 1
     assert cost["timed_out"] is False

@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from heinzel_catalog_control import CatalogBindingState
+from heinzel_contract_model import ContractFormationStatus
 from heinzel_request_management import RequestState
 
 from tests.acceptance.semantic_formation_orchestration import (
@@ -38,7 +39,7 @@ def test_revenue_to_cash_forms_approved_contract_and_verified_publication(
     assert result.semantic_version.process_package_ref.version == 1
     assert result.semantic_version.approval_ids
     assert result.contract is not None
-    assert result.contract.formation_status == "ready_to_activate"
+    assert result.contract.formation_status is ContractFormationStatus.READY_TO_ACTIVATE
     assert result.contract.source_observation_refs
     assert result.publication_receipt is not None
     assert result.publication_receipt.round_trip_verified is True
