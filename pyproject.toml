@@ -14,7 +14,7 @@ dev = [
   "hypothesis>=6.138,<7",
   "mypy>=1.17,<2",
   "mutmut>=3.3,<4",
-  "pytest>=8.4,<9",
+  "pytest>=9.1.1,<10",
   "pytest-cov>=7.1.0,<8",
   # The workflow contract tests assert the CI gate's structure. Parsing the
   # workflow is the only way to check it; there is no stdlib YAML reader, and a
