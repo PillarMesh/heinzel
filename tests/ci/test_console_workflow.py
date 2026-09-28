@@ -206,8 +206,8 @@ def test_workflow_pins_every_action_the_repository_already_reviewed(
     for entry in uses:
         owner_action, _, reference = entry.partition("@")
         assert re.fullmatch(r"[0-9a-f]{40}", reference), f"{owner_action} is not pinned by commit"
-    assert "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803" in uses
-    assert "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38" in uses
+    assert "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1" in uses
+    assert "actions/setup-node@820762786026740c76f36085b0efc47a31fe5020" in uses
 
 
 def test_python_workflows_are_untouched_by_the_console_gate() -> None:

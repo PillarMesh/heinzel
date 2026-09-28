@@ -62,7 +62,7 @@ def test_the_offline_job_is_bounded(workflow: dict[str, Any]) -> None:
     assert workflow["jobs"]["validate"]["timeout-minutes"] == 30
 
 
-_CHECKOUT_PIN = "actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803"
+_CHECKOUT_PIN = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 
 
 def _steps(workflow: dict[str, Any]) -> list[dict[str, Any]]:

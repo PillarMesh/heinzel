@@ -17,8 +17,8 @@ dependencies = [
   "heinzel-runtime",
   "heinzel-semantic-registry",
   "heinzel-warehouse-control",
-  "psycopg[binary]>=3.2,<4",
-  "pydantic>=2.11,<3",
+  "psycopg[binary]>=3.3.6,<4",
+  "pydantic>=2.13.5,<3",
 ]
 
 [project.urls]

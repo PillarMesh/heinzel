@@ -334,3 +334,40 @@ def test_dependabot_does_not_offer_a_base_image_bump_it_cannot_complete() -> Non
     assert "ghcr.io/astral-sh/uv" not in ignored, (
         "uv is pinned in one place only, so its version updates should still arrive"
     )
+
+
+def test_dependabot_does_not_offer_node_typings_ahead_of_the_pinned_runtime() -> None:
+    """`@types/node` must describe the Node the console runs, not the newest Node.
+
+    The runtime is pinned in `apps/console/.node-version` and again in the quickstart
+    Dockerfile, and the two tests above require those to agree. `@types/node` carries the
+    major of the Node release it describes and nothing ties it to either pin, so a major
+    bump type-checks code against APIs the pinned runtime does not have: `node:ffi` arrived
+    in Node 26 and compiles cleanly under `@types/node` 26, while the pinned Node 24 raises
+    ERR_UNKNOWN_BUILTIN_MODULE for it. Nothing fails at the time of the bump, which is what
+    makes it worth a test -- the cost arrives later, in code that passed typecheck.
+
+    Minor and patch updates inside the pinned major are wanted and still arrive.
+    """
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text(encoding="utf-8"))
+    npm = [update for update in config["updates"] if update["package-ecosystem"] == "npm"]
+    assert len(npm) == 1, "the npm ecosystem should be configured once"
+
+    ignored = {
+        entry["dependency-name"]: set(entry["update-types"]) for entry in npm[0].get("ignore", ())
+    }
+    assert "@types/node" in ignored, (
+        "@types/node tracks the Node release it describes, so an unignored major bump "
+        "silently lets the typings run ahead of the pinned runtime"
+    )
+    assert "version-update:semver-major" in ignored["@types/node"], (
+        f"@types/node ignores {sorted(ignored['@types/node'])}, which still lets a major through"
+    )
+
+    declared = json.loads((ROOT / "apps/console/package.json").read_text(encoding="utf-8"))
+    typings = declared["devDependencies"]["@types/node"].lstrip("^~>=")
+    runtime = (ROOT / "apps/console/.node-version").read_text(encoding="utf-8").strip()
+    assert typings.split(".")[0] == runtime.split(".")[0], (
+        f"@types/node {typings} describes a different Node major than the pinned runtime "
+        f"{runtime}; the typings and the runtime move together"
+    )

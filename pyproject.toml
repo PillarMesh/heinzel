@@ -10,17 +10,17 @@ dev = [
   # request. The console's suite imports it directly, and undeclared it reached
   # the environment only as a transitive dependency of `mcp`, by way of packages
   # the console itself does not depend on.
-  "httpx2>=2.10,<3",
-  "hypothesis>=6.138,<7",
+  "httpx2>=2.13.1,<3",
+  "hypothesis>=6.168.1,<7",
   "mypy>=1.17,<2",
-  "mutmut>=3.3,<4",
-  "pytest>=8.4,<9",
-  "pytest-cov>=6.2,<7",
+  "mutmut>=3.8.0,<4",
+  "pytest>=9.1.1,<10",
+  "pytest-cov>=7.1.0,<8",
   # The workflow contract tests assert the CI gate's structure. Parsing the
   # workflow is the only way to check it; there is no stdlib YAML reader, and a
   # regex over the file would pass on a gate whose job graph had changed.
   "pyyaml>=6.0,<7",
-  "ruff>=0.12,<1",
+  "ruff>=0.16.8,<1",
   # pyyaml ships no inline types, so the workflow contract test is unreadable to
   # mypy without these stubs.
   "types-pyyaml>=6.0,<7",

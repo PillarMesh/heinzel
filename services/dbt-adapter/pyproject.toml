@@ -11,12 +11,12 @@ classifiers = [
   "Operating System :: POSIX",
 ]
 dependencies = [
-  "cryptography>=45,<47",
+  "cryptography>=50.0.1,<51",
   "dbt-clickhouse==1.10.2",
   "dbt-core==1.10.13",
   "dbt-postgres==1.10.2",
   "heinzel-contract-model",
-  "pydantic>=2.11,<3",
+  "pydantic>=2.13.5,<3",
 ]
 
 [project.urls]
