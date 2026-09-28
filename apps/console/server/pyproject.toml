@@ -28,7 +28,7 @@ dependencies = [
   "heinzel-state",
   "heinzel-warehouse-control",
   "pydantic>=2.13.5,<3",
-  "starlette>=1.6,<2",
+  "starlette>=1.7.0,<2",
   "uvicorn>=0.52,<1",
 ]
 
