@@ -13,7 +13,7 @@ classifiers = [
 dependencies = [
   "cryptography>=50.0.1,<51",
   "dbt-clickhouse==1.10.3",
-  "dbt-core==1.10.13",
+  "dbt-core==1.12.5",
   "dbt-postgres==1.10.2",
   "heinzel-contract-model",
   "pydantic>=2.13.5,<3",

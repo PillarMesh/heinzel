@@ -29,7 +29,7 @@ dependencies = [
   "heinzel-warehouse-control",
   "pydantic>=2.13.5,<3",
   "starlette>=1.7.0,<2",
-  "uvicorn>=0.52,<1",
+  "uvicorn>=0.54.0,<1",
 ]
 
 [project.urls]
