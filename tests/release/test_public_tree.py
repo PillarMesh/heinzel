@@ -200,9 +200,11 @@ def _active_terms() -> _Terms:
         raise ValueError(
             f"{_PRIVATE_TERMS_DIGEST_VARIABLE} must be set when HEINZEL_REQUIRE_PRIVATE_TERMS=1"
         )
-    return _GENERIC_TERMS + _load_private_terms(
-        private_path, expected_digest=expected_digest or None
-    )
+    # Pass the value through as read. Collapsing an empty string to None here would let an
+    # exported-but-unpopulated variable -- an unprovisioned secret, or `export V="$UNSET"` --
+    # read as "no digest configured" and skip verification, which is the fail-open this
+    # digest exists to close. Only a genuinely absent variable disables the check.
+    return _GENERIC_TERMS + _load_private_terms(private_path, expected_digest=expected_digest)
 
 
 def tracked_files(root: Path = ROOT) -> tuple[str, ...]:
@@ -643,6 +645,31 @@ def test_active_terms_verifies_the_digest_whenever_it_is_set(
     assert _active_terms()[-1][0] == "stand-in tool"
     monkeypatch.setenv(_PRIVATE_TERMS_DIGEST_VARIABLE, "0" * 64)
     with pytest.raises(ValueError, match="does not match"):
+        _active_terms()
+
+
+def test_active_terms_rejects_a_digest_variable_that_is_set_but_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An exported-but-unpopulated digest must fail closed rather than read as "not configured".
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in tool\tsuper-widget\n")
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
+    monkeypatch.setenv(_PRIVATE_TERMS_DIGEST_VARIABLE, "")
+    with pytest.raises(ValueError, match="64 hexadecimal characters"):
+        _active_terms()
+
+
+def test_active_terms_rejects_a_whitespace_only_digest_variable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in tool\tsuper-widget\n")
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
+    monkeypatch.setenv(_PRIVATE_TERMS_DIGEST_VARIABLE, "   ")
+    with pytest.raises(ValueError, match="64 hexadecimal characters"):
         _active_terms()
 
 
