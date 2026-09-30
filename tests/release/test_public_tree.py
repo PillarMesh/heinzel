@@ -6,13 +6,28 @@ places where the company name is allowed to appear.
 
 Only two kinds of pattern live in this file: the company name (outside its allowed references)
 and personal email addresses. Everything else that is specific to how this company operates
-internally -- account names, tool names, process names, milestone and gate codes -- is loaded at
-run time from a private terms file, named by the HEINZEL_PRIVATE_TERMS_FILE environment variable.
-That file lives outside the public repository, so public CI never has it.
+internally -- account names, tool names, process names, milestone and gate codes -- can be loaded
+at run time from a private terms file, named by the HEINZEL_PRIVATE_TERMS_FILE environment
+variable. Such a file would live outside the public repository, so public CI never has it.
+
+No private terms file is configured. No workflow, script or configuration here sets
+HEINZEL_PRIVATE_TERMS_FILE, HEINZEL_PRIVATE_TERMS_SHA256 or HEINZEL_REQUIRE_PRIVATE_TERMS -- they
+are named only by this module and its documentation -- and no such file ships with it, so
+every run to date has used the two patterns above and nothing else. The internal identifiers named
+in the previous paragraph are therefore *loadable, not checked*: a passing run says the tree is
+clear of the company name and personal addresses, and says nothing about account, tool, process,
+milestone or gate names. The machinery below is ready for a terms file and refuses a damaged one,
+but it stays dormant until someone supplies one and sets the variables.
 
 The whole-tree gate always runs, with the generic patterns at least, and adds the private terms
-whenever the variable is set. The release audit also sets HEINZEL_REQUIRE_PRIVATE_TERMS=1, which
-turns a missing variable into a configuration error rather than a generic-only pass.
+whenever the variable is set. A release audit that also sets HEINZEL_REQUIRE_PRIVATE_TERMS=1 turns
+a missing variable into a configuration error rather than a generic-only pass.
+
+A second variable, HEINZEL_PRIVATE_TERMS_SHA256, carries the sha256 of that file. Every other
+check here accepts a file that is well formed but incomplete, so a terms file that lost lines on
+its way in would scan the tree with less coverage than was configured and still report a pass.
+Comparing the digest is what makes that a failure. It is verified whenever it is set, and is
+required whenever HEINZEL_REQUIRE_PRIVATE_TERMS=1.
 """
 
 from __future__ import annotations
@@ -76,6 +91,14 @@ _COMPANY_EMAIL_ALLOWLIST = frozenset({"contact@pillarmesh.com", "karthik@pillarm
 
 _EMAIL_PATTERN = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 
+# The sha256 of the private terms file, as 64 hexadecimal characters, carried beside the file
+# itself rather than committed here. That file lives outside this repository and changes
+# independently of it, so a digest in the tree would need a matching commit on every change to a
+# file this repository never sees, and would be stale the first time someone forgot.
+_PRIVATE_TERMS_DIGEST_VARIABLE = "HEINZEL_PRIVATE_TERMS_SHA256"
+
+_SHA256_PATTERN = re.compile(r"\A[0-9a-f]{64}\Z")
+
 # The file this scanner lives in intentionally contains lines that its own patterns match, to
 # prove the patterns work. It is the only file excluded from the whole-tree scan, and only
 # because of that; nothing else in the tree gets a pass.
@@ -121,12 +144,40 @@ def _strip_allowed_references(line: str) -> str:
     return cleaned
 
 
-def _load_private_terms(path_str: str) -> _Terms:
+def _verify_private_terms_digest(path_str: str, raw: bytes, expected: str) -> None:
+    """Fail unless the bytes actually loaded hash to the digest that was configured.
+
+    The structural checks below all pass on a file that is well formed but short. A terms file
+    truncated at a line boundary parses cleanly with fewer terms, and one truncated inside a
+    pattern can still compile to a valid but weaker regex. In both cases the scan would cover
+    less than was configured and the gate would report a pass, which is the one failure this
+    gate must never have.
+    """
+    normalized = expected.strip().lower()
+    if not _SHA256_PATTERN.match(normalized):
+        raise ValueError(
+            f"{_PRIVATE_TERMS_DIGEST_VARIABLE} must be 64 hexadecimal characters, got: {expected!r}"
+        )
+    actual = hashlib.sha256(raw).hexdigest()
+    if actual != normalized:
+        raise ValueError(
+            f"private terms file does not match {_PRIVATE_TERMS_DIGEST_VARIABLE}: "
+            f"{path_str} hashes to {actual}, expected {normalized}. It did not survive "
+            f"transport intact, so a gate run against it proves nothing."
+        )
+
+
+def _load_private_terms(path_str: str, *, expected_digest: str | None = None) -> _Terms:
     path = Path(path_str)
     if not path.is_file():
         raise ValueError(f"private terms file not found: {path_str}")
+    # Read once, then hash and parse those same bytes. Hashing a second read would leave a
+    # window in which the file changed, so a verified digest need not describe what was loaded.
+    raw = path.read_bytes()
+    if expected_digest is not None:
+        _verify_private_terms_digest(path_str, raw, expected_digest)
     terms: list[_Term] = []
-    for number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+    for number, raw_line in enumerate(raw.decode("utf-8").splitlines(), start=1):
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
@@ -153,7 +204,16 @@ def _active_terms() -> _Terms:
     private_path = os.environ.get("HEINZEL_PRIVATE_TERMS_FILE")
     if not private_path:
         return _GENERIC_TERMS
-    return _GENERIC_TERMS + _load_private_terms(private_path)
+    expected_digest = os.environ.get(_PRIVATE_TERMS_DIGEST_VARIABLE)
+    if not expected_digest and os.environ.get("HEINZEL_REQUIRE_PRIVATE_TERMS") == "1":
+        raise ValueError(
+            f"{_PRIVATE_TERMS_DIGEST_VARIABLE} must be set when HEINZEL_REQUIRE_PRIVATE_TERMS=1"
+        )
+    # Pass the value through as read. Collapsing an empty string to None here would let an
+    # exported-but-unpopulated variable -- an unprovisioned secret, or `export V="$UNSET"` --
+    # read as "no digest configured" and skip verification, which is the fail-open this
+    # digest exists to close. Only a genuinely absent variable disables the check.
+    return _GENERIC_TERMS + _load_private_terms(private_path, expected_digest=expected_digest)
 
 
 def tracked_files(root: Path = ROOT) -> tuple[str, ...]:
@@ -370,6 +430,8 @@ def test_active_terms_is_generic_only_when_unset(monkeypatch: pytest.MonkeyPatch
 def test_active_terms_raises_if_the_env_file_is_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.delenv(_PRIVATE_TERMS_DIGEST_VARIABLE, raising=False)
     monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(tmp_path / "missing.txt"))
     with pytest.raises(ValueError):
         _active_terms()
@@ -380,6 +442,8 @@ def test_active_terms_loads_the_env_file_when_set(
 ) -> None:
     terms_file = tmp_path / "terms.txt"
     terms_file.write_text("stand-in tool\tsuper-widget\n")
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.delenv(_PRIVATE_TERMS_DIGEST_VARIABLE, raising=False)
     monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
     terms = _active_terms()
     assert terms[: len(_GENERIC_TERMS)] == _GENERIC_TERMS
@@ -480,6 +544,7 @@ def test_the_gate_applies_the_private_terms_file_when_set(
     terms_file = tmp_path / "terms.txt"
     terms_file.write_text("stand-in private term\t\\bLICENSE\\b\n")
     monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.delenv(_PRIVATE_TERMS_DIGEST_VARIABLE, raising=False)
     monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
     with pytest.raises(AssertionError, match="stand-in private term"):
         test_the_public_tree_contains_nothing_internal()
@@ -490,6 +555,140 @@ def test_the_gate_fails_closed_on_a_malformed_private_terms_file(
 ) -> None:
     malformed = tmp_path / "malformed.txt"
     malformed.write_text("no tab on this line\n")
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.delenv(_PRIVATE_TERMS_DIGEST_VARIABLE, raising=False)
     monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(malformed))
     with pytest.raises(ValueError):
+        test_the_public_tree_contains_nothing_internal()
+
+
+# --- the private terms digest ---------------------------------------------------------------
+
+
+def _digest_of(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def test_the_loader_accepts_a_file_whose_digest_matches(tmp_path: Path) -> None:
+    content = "stand-in account\tacct-[0-9]+\n"
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text(content)
+    terms = _load_private_terms(str(terms_file), expected_digest=_digest_of(content))
+    assert [reason for reason, _ in terms] == ["stand-in account"]
+
+
+def test_the_loader_accepts_a_digest_with_surrounding_space_or_capitals(tmp_path: Path) -> None:
+    content = "stand-in account\tacct-[0-9]+\n"
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text(content)
+    padded = f"  {_digest_of(content).upper()}\n"
+    assert _load_private_terms(str(terms_file), expected_digest=padded)
+
+
+def test_the_loader_rejects_a_file_missing_whole_lines_that_would_otherwise_parse(
+    tmp_path: Path,
+) -> None:
+    # The gap the digest closes. Dropping trailing lines leaves a well-formed file, so every
+    # other check passes and the scan silently runs with less coverage than was configured.
+    full = "stand-in account\tacct-[0-9]+\nstand-in tool\tsuper-widget\n"
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in account\tacct-[0-9]+\n")
+    assert len(_load_private_terms(str(terms_file))) == 1
+    with pytest.raises(ValueError, match="does not match"):
+        _load_private_terms(str(terms_file), expected_digest=_digest_of(full))
+
+
+def test_the_loader_rejects_a_file_cut_inside_a_regex_that_still_compiles(tmp_path: Path) -> None:
+    # Truncation inside a pattern can leave a valid but weaker regex, which raises nothing and
+    # quietly stops matching the strings the full pattern covered.
+    full = "stand-in account\tacct-[0-9]+\n"
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in account\tacct-[0-9]")
+    assert _load_private_terms(str(terms_file))[0][1].pattern == "acct-[0-9]"
+    with pytest.raises(ValueError, match="does not match"):
+        _load_private_terms(str(terms_file), expected_digest=_digest_of(full))
+
+
+@pytest.mark.parametrize("bad", ["", "abc", "z" * 64, "0" * 63, "0" * 65, "0" * 32])
+def test_the_loader_rejects_a_digest_that_is_not_64_hexadecimal_characters(
+    tmp_path: Path, bad: str
+) -> None:
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in account\tacct-[0-9]+\n")
+    with pytest.raises(ValueError, match="64 hexadecimal characters"):
+        _load_private_terms(str(terms_file), expected_digest=bad)
+
+
+def test_active_terms_requires_a_digest_when_private_terms_are_required(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in tool\tsuper-widget\n")
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
+    monkeypatch.setenv("HEINZEL_REQUIRE_PRIVATE_TERMS", "1")
+    monkeypatch.delenv(_PRIVATE_TERMS_DIGEST_VARIABLE, raising=False)
+    with pytest.raises(ValueError, match=_PRIVATE_TERMS_DIGEST_VARIABLE):
+        _active_terms()
+
+
+def test_active_terms_does_not_require_a_digest_when_private_terms_are_optional(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in tool\tsuper-widget\n")
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.delenv(_PRIVATE_TERMS_DIGEST_VARIABLE, raising=False)
+    assert _active_terms()[-1][0] == "stand-in tool"
+
+
+def test_active_terms_verifies_the_digest_whenever_it_is_set(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    content = "stand-in tool\tsuper-widget\n"
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text(content)
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
+    monkeypatch.setenv(_PRIVATE_TERMS_DIGEST_VARIABLE, _digest_of(content))
+    assert _active_terms()[-1][0] == "stand-in tool"
+    monkeypatch.setenv(_PRIVATE_TERMS_DIGEST_VARIABLE, "0" * 64)
+    with pytest.raises(ValueError, match="does not match"):
+        _active_terms()
+
+
+def test_active_terms_rejects_a_digest_variable_that_is_set_but_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # An exported-but-unpopulated digest must fail closed rather than read as "not configured".
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in tool\tsuper-widget\n")
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
+    monkeypatch.setenv(_PRIVATE_TERMS_DIGEST_VARIABLE, "")
+    with pytest.raises(ValueError, match="64 hexadecimal characters"):
+        _active_terms()
+
+
+def test_active_terms_rejects_a_whitespace_only_digest_variable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in tool\tsuper-widget\n")
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
+    monkeypatch.setenv(_PRIVATE_TERMS_DIGEST_VARIABLE, "   ")
+    with pytest.raises(ValueError, match="64 hexadecimal characters"):
+        _active_terms()
+
+
+def test_the_gate_fails_closed_when_the_private_terms_digest_does_not_match(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    terms_file = tmp_path / "terms.txt"
+    terms_file.write_text("stand-in private term\t\\bLICENSE\\b\n")
+    monkeypatch.delenv("HEINZEL_REQUIRE_PRIVATE_TERMS", raising=False)
+    monkeypatch.setenv("HEINZEL_PRIVATE_TERMS_FILE", str(terms_file))
+    monkeypatch.setenv(_PRIVATE_TERMS_DIGEST_VARIABLE, "0" * 64)
+    with pytest.raises(ValueError, match="does not match"):
         test_the_public_tree_contains_nothing_internal()

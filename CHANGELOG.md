@@ -12,6 +12,13 @@ All notable changes to Heinzel are recorded here. The format follows
 - A Docker Compose quickstart that builds one container and serves the demonstration console on
   `127.0.0.1:8000`, or on another port through `HEINZEL_PORT`.
 - A `heinzel-console` command that serves the demonstration console from a state directory.
+- The release audit verifies the private terms file against `HEINZEL_PRIVATE_TERMS_SHA256`,
+  and requires that variable whenever `HEINZEL_REQUIRE_PRIVATE_TERMS=1`. Its other checks all
+  accept a terms file that is well formed but incomplete, so one that lost lines on its way in
+  would scan the tree with less coverage than was configured and still report a pass. The
+  digest is carried beside the file rather than committed, because that file lives outside this
+  repository and changes independently of it. `tests/release/README.md` records the variables,
+  the terms file format and what each misconfiguration produces.
 
 ### Changed
 
