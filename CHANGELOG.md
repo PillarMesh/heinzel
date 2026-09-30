@@ -26,6 +26,11 @@ All notable changes to Heinzel are recorded here. The format follows
   resolves: `cryptography` 50.0.1, `pydantic` 2.13.5, `psycopg` 3.3.6 and `mcp` 2.2.0. Several had
   drifted several releases behind the versions every test ran against. `starlette` 1.7.0 and
   `snowflake-connector-python` 4.7.5 followed, and `dbt-clickhouse` moved to 1.10.3.
+- Product materialization now refuses a result the warehouse did not attest was held to the
+  declared `Decimal(57,9)` output magnitude. `MaterializationObservation` carries the output columns
+  the engine asserted it on, the receipt records them, and they must match the physical plan's
+  declared checks exactly. A warehouse implementation that attests nothing is refused rather than
+  assumed compliant, so this is a breaking change for any caller supplying its own observation.
 
 ### Fixed
 
