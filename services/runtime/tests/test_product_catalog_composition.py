@@ -95,6 +95,9 @@ class _Warehouse:
             lineage_digest="3" * 64,
             quality_assertion_count=2,
             quality_disposition="passed",
+            magnitude_asserted_columns=tuple(
+                check.column_name for check in request.physical_plan.decimal_output_checks
+            ),
         )
 
     def switch_consumption_view(
