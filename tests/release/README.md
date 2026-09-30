@@ -29,9 +29,18 @@ sha256, so the pinning check still runs.
 
 ## The private terms file
 
+> **No private terms file is configured today, so this is dormant.** No workflow, script or
+> configuration here sets any of the three variables below -- the command further down shows how
+> to set them by hand -- and no terms file ships with it. Every run to date has
+> used the two built-in patterns alone. A green audit therefore means the tree is clear of the
+> company name and personal addresses; it says nothing about account, tool, process, milestone or
+> gate names. The rest of this section describes machinery that is ready to use, not coverage that
+> is in place. To put it in place, write a terms file and set the variables.
+
 `test_public_tree.py` holds only two patterns itself: the company name outside its allowed
 references, and personal email addresses. Everything specific to how this company operates
-internally lives in a private terms file outside this repository, so public CI never has it.
+internally is intended to live in a private terms file outside this repository, so public CI
+never has it.
 
 The format is one term per line, `reason<TAB>regex`. Blank lines and lines beginning with `#` are
 ignored. The tab is literal and required; a line without one is a configuration error rather than a

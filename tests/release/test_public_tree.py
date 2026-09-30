@@ -6,13 +6,22 @@ places where the company name is allowed to appear.
 
 Only two kinds of pattern live in this file: the company name (outside its allowed references)
 and personal email addresses. Everything else that is specific to how this company operates
-internally -- account names, tool names, process names, milestone and gate codes -- is loaded at
-run time from a private terms file, named by the HEINZEL_PRIVATE_TERMS_FILE environment variable.
-That file lives outside the public repository, so public CI never has it.
+internally -- account names, tool names, process names, milestone and gate codes -- can be loaded
+at run time from a private terms file, named by the HEINZEL_PRIVATE_TERMS_FILE environment
+variable. Such a file would live outside the public repository, so public CI never has it.
+
+No private terms file is configured. No workflow, script or configuration here sets
+HEINZEL_PRIVATE_TERMS_FILE, HEINZEL_PRIVATE_TERMS_SHA256 or HEINZEL_REQUIRE_PRIVATE_TERMS -- they
+are named only by this module and its documentation -- and no such file ships with it, so
+every run to date has used the two patterns above and nothing else. The internal identifiers named
+in the previous paragraph are therefore *loadable, not checked*: a passing run says the tree is
+clear of the company name and personal addresses, and says nothing about account, tool, process,
+milestone or gate names. The machinery below is ready for a terms file and refuses a damaged one,
+but it stays dormant until someone supplies one and sets the variables.
 
 The whole-tree gate always runs, with the generic patterns at least, and adds the private terms
-whenever the variable is set. The release audit also sets HEINZEL_REQUIRE_PRIVATE_TERMS=1, which
-turns a missing variable into a configuration error rather than a generic-only pass.
+whenever the variable is set. A release audit that also sets HEINZEL_REQUIRE_PRIVATE_TERMS=1 turns
+a missing variable into a configuration error rather than a generic-only pass.
 
 A second variable, HEINZEL_PRIVATE_TERMS_SHA256, carries the sha256 of that file. Every other
 check here accepts a file that is well formed but incomplete, so a terms file that lost lines on
