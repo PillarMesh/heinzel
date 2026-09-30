@@ -98,7 +98,6 @@ class _Warehouse:
         self._quality_assertion_count = quality_assertion_count
 
     def execute(self, request: MaterializationRequest) -> MaterializationObservation:
-        del request
         return MaterializationObservation.model_validate(
             {
                 "provider_commit_reference": "warehouse-commit-7",
@@ -109,6 +108,10 @@ class _Warehouse:
                 "lineage_digest": "6" * 64,
                 "quality_assertion_count": self._quality_assertion_count,
                 "quality_disposition": self._quality_disposition,
+                # A conforming warehouse attests the magnitude on every column the plan checks.
+                "magnitude_asserted_columns": tuple(
+                    check.column_name for check in request.physical_plan.decimal_output_checks
+                ),
             }
         )
 
