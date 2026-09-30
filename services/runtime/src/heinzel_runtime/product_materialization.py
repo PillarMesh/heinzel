@@ -110,6 +110,21 @@ class MaterializationObservation(ArtifactModel):
     lineage_digest: str = Field(pattern=_DIGEST_PATTERN)
     quality_assertion_count: int = Field(ge=0)
     quality_disposition: Literal["not_asserted", "passed", "limited"]
+    # Which output columns the engine actually asserted the checked Decimal(57,9) magnitude on.
+    # Naming them, rather than counting them, is what lets the runner refuse an observation that
+    # asserted some of the plan's checked columns and not others. It defaults to empty so that a
+    # warehouse which attests nothing is refused rather than unable to report, which is the
+    # direction this check is meant to fail in.
+    magnitude_asserted_columns: tuple[str, ...] = ()
+
+    @field_validator("magnitude_asserted_columns")
+    @classmethod
+    def magnitude_asserted_columns_are_distinct(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not column.strip() for column in value):
+            raise ValueError("magnitude asserted column must not be blank")
+        if len(value) != len(set(value)):
+            raise ValueError("magnitude asserted columns must be unique")
+        return value
 
 
 class ProductMaterializationReceipt(ArtifactModel):
@@ -133,6 +148,9 @@ class ProductMaterializationReceipt(ArtifactModel):
     lineage_digest: str = Field(pattern=_DIGEST_PATTERN)
     quality_assertion_count: int = Field(ge=0)
     quality_disposition: Literal["not_asserted", "passed", "limited"]
+    # Carried into the receipt so the evidence a reader reconstructs shows which columns the engine
+    # was held to, not merely that a plan declared them.
+    magnitude_asserted_columns: tuple[str, ...] = ()
     committed_at: datetime
     retained_until: datetime
 
@@ -402,6 +420,7 @@ class ProductMaterializationRunner:
                 lineage_digest=observation.lineage_digest,
                 quality_assertion_count=observation.quality_assertion_count,
                 quality_disposition=observation.quality_disposition,
+                magnitude_asserted_columns=observation.magnitude_asserted_columns,
                 committed_at=self._clock(),
                 retained_until=self._clock() + timedelta(seconds=request.retention_seconds),
             )
@@ -610,6 +629,42 @@ class ProductMaterializationRunner:
     ) -> None:
         if observation.output_schema_digest != request.expected_output_schema_digest:
             raise ValueError("observed output schema does not match the approved schema")
+        ProductMaterializationRunner._require_magnitude_enforcement(request, observation)
+
+    @staticmethod
+    def _require_magnitude_enforcement(
+        request: MaterializationRequest, observation: MaterializationObservation
+    ) -> None:
+        """Refuse a result the engine did not hold to the plan's declared decimal magnitude.
+
+        The plan declares one `Decimal57OutputCheck` per aggregate measure, and the emitted
+        statement is what enforces the bound on the engine. Nothing tied the two together: a
+        warehouse could execute a different statement, or materialise without the checked cast, and
+        the only observation the runner compared was the output schema digest -- which a wrong but
+        correctly shaped result satisfies. Requiring the observation to name the columns it asserted
+        closes that, and closes it in the refusing direction: an observation that attests nothing is
+        rejected rather than assumed compliant.
+
+        Declared and asserted must match exactly. An observation naming a column the plan does not
+        check is as wrong as one omitting a column it does: it means the observation describes some
+        other plan, and treating the extra as harmless would accept that confusion.
+        """
+        declared = frozenset(
+            check.column_name for check in request.physical_plan.decimal_output_checks
+        )
+        asserted = frozenset(observation.magnitude_asserted_columns)
+        if declared == asserted:
+            return
+        unasserted = sorted(declared - asserted)
+        if unasserted:
+            raise ValueError(
+                "observed materialization did not assert the checked decimal magnitude on "
+                f"{', '.join(unasserted)}"
+            )
+        raise ValueError(
+            "observed materialization asserted a decimal magnitude the physical plan does not "
+            f"check: {', '.join(sorted(asserted - declared))}"
+        )
 
     def _require_cardinality_evidence(self, request: MaterializationRequest) -> None:
         try:
