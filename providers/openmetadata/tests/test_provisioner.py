@@ -3163,7 +3163,7 @@ def test_the_readiness_budget_is_passed_to_the_readiness_script(
         recorded.append(command)
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(provisioner_module.subprocess, "run", record)
+    monkeypatch.setattr(subprocess, "run", record)
     DockerComposeController(
         compose_file=tmp_path / "compose.yaml",
         readiness_script=tmp_path / "wait_ready.py",
@@ -3184,7 +3184,7 @@ def test_an_unset_readiness_budget_leaves_the_script_default_in_place(
         recorded.append(command)
         return subprocess.CompletedProcess(command, 0, "", "")
 
-    monkeypatch.setattr(provisioner_module.subprocess, "run", record)
+    monkeypatch.setattr(subprocess, "run", record)
     controller(tmp_path)._run_readiness()
 
     assert len(recorded) == 1
