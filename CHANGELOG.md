@@ -34,6 +34,16 @@ All notable changes to Heinzel are recorded here. The format follows
 
 ### Fixed
 
+- The PostgreSQL and ClickHouse warehouses now report the output columns whose decimal magnitude
+  the engine was held to, so a live materialization is admitted again. Both already verified the
+  bound against the materialized relation and refused a violation, but neither carried that
+  result into `MaterializationObservation`, so `magnitude_asserted_columns` stayed empty and the
+  refusal added above rejected every materialization through a real warehouse -- the enforcement
+  landed without the production side that produces its evidence. The attestation is taken from
+  the engine-side result, not from the model's declarations: reading back what was declared would
+  attest only that a check was asked for, which is the decoration the enforcement exists to
+  remove. Columns are reported only where the observed violation count is zero, so a mistake here
+  withholds an attestation and causes a refusal rather than admitting an unchecked result.
 - The authoring and context-exposure MCP servers again report *why* they refused a result. Their
   leakage guards raised `RuntimeError`, which `mcp` 2.2.0 classifies as a crash: it replaces the
   message with a bare `Error executing tool <name>` and keeps the reason server-side. They now

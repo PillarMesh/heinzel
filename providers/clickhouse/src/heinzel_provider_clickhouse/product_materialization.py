@@ -133,6 +133,17 @@ class ClickHouseMaterializationCommit(ArtifactModel):
             lineage_digest=self.dbt_receipt.lineage_digest,
             quality_assertion_count=self.dbt_receipt.quality_assertion_count,
             quality_disposition=self.dbt_receipt.quality_disposition,
+            # The columns the engine was held to. Each result is an observation made against the
+            # materialized relation, and `ClickHouseDecimalMagnitudeObservation.violation_count`
+            # is `Literal[0]`, so a result that exists is one the engine satisfied.
+            #
+            # Filtered on zero anyway, for the same reason as the PostgreSQL provider: omitting a
+            # column makes the runner refuse, while attesting a violated one would make it admit.
+            magnitude_asserted_columns=tuple(
+                result.declaration.column_name
+                for result in self.magnitude_observation.results
+                if result.violation_count == 0
+            ),
         )
 
 
