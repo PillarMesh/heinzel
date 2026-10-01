@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Literal
 
 import pytest
+from cryptography.fernet import Fernet
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
 from heinzel_contract_model import ArtifactReference, digest
 from heinzel_execution_graph import (
@@ -49,6 +50,10 @@ from tests.integration.compiled_journey_catalog_authorities import (
     JourneyProductAuthorities,
     compose_journey_catalog,
     journey_product_authorities,
+)
+from tests.integration.openmetadata_live_harness import LocalOpenMetadata
+from tests.integration.test_postgresql_compiled_product_journey_live import (
+    _openmetadata_state_directory,
 )
 from tests.integration.test_postgresql_product_materialization_live import _land_rows
 
@@ -424,3 +429,24 @@ def test_the_landing_helper_defaults_are_not_the_journey_identity() -> None:
     assert defaults["contract_digest"].default == "2" * 64
     assert defaults["contract_digest"].default != _authorities().contract_digest
     assert defaults["contract_ref"].default != _authorities().contract.contract_id
+
+
+def test_the_journeys_openmetadata_directory_can_host_the_harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Constructing the harness needs no Docker, so the path it is given is checkable here.
+
+    This is the whole of a live failure that cost a run to find: the journey handed the harness a
+    subdirectory it had not created, and SQLite's "unable to open database file" arrived as
+    `CatalogPersistenceError: catalog persistence failed during initialize catalog repository`,
+    naming neither the path nor the missing directory.
+    """
+
+    monkeypatch.setenv("HEINZEL_OPENMETADATA_SECRET_STORE_KEY", Fernet.generate_key().decode())
+    monkeypatch.setenv("HEINZEL_OPENMETADATA_BOOTSTRAP_ADMIN_PASSWORD", "admin")
+
+    directory = _openmetadata_state_directory(tmp_path)
+
+    assert directory.is_dir()
+    # Raises if the directory cannot host the catalog database; no container is started.
+    LocalOpenMetadata(directory)

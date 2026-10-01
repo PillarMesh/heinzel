@@ -225,6 +225,19 @@ def _warehouse_validation(dsn: str) -> WarehouseValidationEvidence:
     )
 
 
+def _openmetadata_state_directory(tmp_path: Path) -> Path:
+    """The directory the harness keeps its catalog database and operation secrets in.
+
+    Created here rather than left to the harness: it opens a SQLite database directly inside this
+    path, and SQLite reports a missing parent as "unable to open database file", which the catalog
+    repository then translates into a persistence failure a long way from the cause.
+    """
+
+    directory = tmp_path / "openmetadata"
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
+
+
 @pytest.fixture
 def openmetadata_factory(tmp_path: Path) -> Generator[Callable[[], LocalOpenMetadata]]:
     """Start a local OpenMetadata only if the test asks for one, and always clean it up.
@@ -236,7 +249,7 @@ def openmetadata_factory(tmp_path: Path) -> Generator[Callable[[], LocalOpenMeta
     started: list[LocalOpenMetadata] = []
 
     def start() -> LocalOpenMetadata:
-        local = LocalOpenMetadata(tmp_path / "openmetadata")
+        local = LocalOpenMetadata(_openmetadata_state_directory(tmp_path))
         started.append(local)
         return local
 
