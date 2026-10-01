@@ -12,6 +12,7 @@ import pytest
 from heinzel_provider_openmetadata import UPSTREAM_IMAGES
 
 from tests.emulators.openmetadata import wait_ready
+from tests.integration import openmetadata_live_harness as live_harness
 
 ROOT = Path(__file__).resolve().parents[2]
 EMULATOR_ROOT = ROOT / "tests" / "emulators" / "openmetadata"
@@ -317,3 +318,31 @@ def test_readiness_accepts_the_openmetadata_terminal_text_response(
     )
 
     assert wait_ready.main(["--url", "http://127.0.0.1:8585", "--timeout-seconds", "0.5"]) == 0
+
+
+def test_an_unset_readiness_budget_leaves_the_readiness_default_in_place(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(live_harness.READINESS_TIMEOUT_ENVIRONMENT_NAME, raising=False)
+
+    assert live_harness._readiness_timeout_seconds() is None
+
+
+def test_a_configured_readiness_budget_widens_the_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(live_harness.READINESS_TIMEOUT_ENVIRONMENT_NAME, "600")
+
+    budget = live_harness._readiness_timeout_seconds()
+
+    assert budget == 600.0
+
+
+@pytest.mark.parametrize("configured", ["", "0", "-5", "soon", "600s"])
+def test_an_unusable_readiness_budget_fails_rather_than_falling_back(
+    monkeypatch: pytest.MonkeyPatch, configured: str
+) -> None:
+    # Falling back to the default would let a run that was configured for slow hardware time
+    # out exactly as though it had never been configured, which is the failure this prevents.
+    monkeypatch.setenv(live_harness.READINESS_TIMEOUT_ENVIRONMENT_NAME, configured)
+
+    with pytest.raises(ValueError, match=live_harness.READINESS_TIMEOUT_ENVIRONMENT_NAME):
+        live_harness._readiness_timeout_seconds()

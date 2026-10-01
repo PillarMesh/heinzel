@@ -27,6 +27,31 @@ from pydantic import SecretStr
 ROOT = Path(__file__).resolve().parents[2]
 EMULATOR_ROOT = ROOT / "tests" / "emulators" / "openmetadata"
 
+# How long the stack may take to report terminal readiness. Unset keeps the readiness script's
+# own default, which suits a developer machine; a shared CI runner bringing up MySQL,
+# Elasticsearch, a schema migration and the server on four cores needs longer, and overrunning
+# the budget raises "did not reach terminal readiness" rather than skipping.
+READINESS_TIMEOUT_ENVIRONMENT_NAME = "HEINZEL_OPENMETADATA_READINESS_TIMEOUT_SECONDS"
+
+
+def _readiness_timeout_seconds() -> float | None:
+    configured = os.environ.get(READINESS_TIMEOUT_ENVIRONMENT_NAME)
+    if configured is None:
+        return None
+    # A malformed budget fails loudly: silently falling back to the default would let a run that
+    # was configured for slow hardware time out as though it had never been configured at all.
+    try:
+        timeout_seconds = float(configured)
+    except ValueError:
+        raise ValueError(
+            f"{READINESS_TIMEOUT_ENVIRONMENT_NAME} must be a positive number of seconds"
+        ) from None
+    if timeout_seconds <= 0:
+        raise ValueError(
+            f"{READINESS_TIMEOUT_ENVIRONMENT_NAME} must be a positive number of seconds"
+        )
+    return timeout_seconds
+
 
 @dataclass(frozen=True, slots=True)
 class LocalBinding:
@@ -84,6 +109,7 @@ class LocalOpenMetadata:
             compose_file=EMULATOR_ROOT / "compose.yaml",
             readiness_script=EMULATOR_ROOT / "wait_ready.py",
             base_url="http://127.0.0.1:8585",
+            readiness_timeout_seconds=_readiness_timeout_seconds(),
         )
         self._secret_store_directory = temporary_path / "openmetadata-operation-secrets"
         self._secret_store_key = SecretStr(secret_store_key)
