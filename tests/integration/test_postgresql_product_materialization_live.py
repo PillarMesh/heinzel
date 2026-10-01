@@ -278,8 +278,22 @@ def _acquire_rows(
 
 
 async def _land_rows(
-    dsn: str, rows: tuple[bytes, ...], *, ledger: GenerationLedger
+    dsn: str,
+    rows: tuple[bytes, ...],
+    *,
+    ledger: GenerationLedger,
+    contract_ref: str = "contract-live-a",
+    contract_digest: str = "2" * 64,
 ) -> LandingResult:
+    """Land rows and record the generation under a contract identity.
+
+    The contract identity is a parameter because the generation ledger is what later proves input
+    cardinality, and that resolver requires the landed receipt's ``contract_ref`` and the
+    acknowledgement's ``contract_digest`` to equal the ones the caller resolves against. A caller
+    whose contract digest is computed from a real contract rather than written down cannot use
+    these defaults.
+    """
+
     segment = StagedSegment(
         segment_digest=staged_segment_digest(rows),
         schema_digest="3" * 64,
@@ -288,7 +302,7 @@ async def _land_rows(
     )
     target = RawGenerationTarget(
         tenant_id="tenant-live-a",
-        contract_ref="contract-live-a",
+        contract_ref=contract_ref,
         contract_revision=1,
         trigger_window="2026-09-12T00:00:00Z/PT1H",
         destination_binding_ref="destination-live-a",
@@ -314,7 +328,7 @@ async def _land_rows(
         batch_manifest_digest="5" * 64,
         candidate_checkpoint_digest="6" * 64,
         prior_checkpoint_revision=0,
-        contract_digest="2" * 64,
+        contract_digest=contract_digest,
         source_binding_ref="source-live-a",
         consumer_ref="destination-live-a",
     )

@@ -291,6 +291,12 @@ def test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on
                 _role_dsn(bootstrap_dsn, "landing_runtime", landing_password),
                 staged_rows,
                 ledger=generation_ledger,
+                # The landed generation carries this journey's contract identity, not the
+                # helper's defaults: the cardinality resolver requires the receipt's
+                # contract_ref and the acknowledgement's contract_digest to equal the ones
+                # resolved against, and this journey's digest is the approved contract's.
+                contract_ref=_CONTRACT_REF,
+                contract_digest=_CONTRACT_DIGEST,
             )
         )
         landing_receipt_digest = digest(landing.receipt)

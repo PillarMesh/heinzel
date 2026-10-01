@@ -12,6 +12,9 @@ publish, and the test that says so is the reason the journey's digest is compute
 
 from __future__ import annotations
 
+import ast
+import inspect
+import pathlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -47,6 +50,7 @@ from tests.integration.compiled_journey_catalog_authorities import (
     compose_journey_catalog,
     journey_product_authorities,
 )
+from tests.integration.test_postgresql_product_materialization_live import _land_rows
 
 # The identifiers the compiled journey materializes under. A disagreement between these and the
 # journey's own constants is what the live run would discover late; keeping them named here is what
@@ -373,3 +377,50 @@ def test_a_warehouse_binding_that_is_not_ready_cannot_publish(tmp_path: Path) ->
         composed.catalog.publish(request, _receipt(request))
 
     assert provider.product is None
+
+
+def test_the_journey_lands_its_generation_under_its_own_contract_identity() -> None:
+    """The landing helper's defaults are not this journey's identity, so it must pass its own.
+
+    The cardinality resolver requires the landed receipt's ``contract_ref`` and the
+    acknowledgement's ``contract_digest`` to equal the ones resolved against. Those agreements are
+    already held by the resolver's own tests; what they cannot catch is a journey that resolves
+    against one identity and lands under another, because the landing happens live. This reads the
+    call instead.
+
+    It is a source-level check because the failure it prevents cost a full live run to find:
+    `ProductInputCardinalityAuthorityError: contract digest mismatch`, raised after PostgreSQL had
+    been provisioned, rows acquired and landed, and the compiler run.
+    """
+
+    journey = ast.parse(
+        pathlib.Path(
+            "tests/integration/test_postgresql_compiled_product_journey_live.py"
+        ).read_text(encoding="utf-8")
+    )
+    calls = [
+        node
+        for node in ast.walk(journey)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "_land_rows"
+    ]
+
+    assert len(calls) == 1
+    passed = {
+        keyword.arg: keyword.value.id
+        for keyword in calls[0].keywords
+        if isinstance(keyword.value, ast.Name)
+    }
+    assert passed.get("contract_ref") == "_CONTRACT_REF"
+    assert passed.get("contract_digest") == "_CONTRACT_DIGEST"
+
+
+def test_the_landing_helper_defaults_are_not_the_journey_identity() -> None:
+    # Why the explicit arguments above are load-bearing rather than decoration: the defaults are a
+    # hand-written placeholder, and no literal can equal the digest of an approved contract.
+    defaults = inspect.signature(_land_rows).parameters
+
+    assert defaults["contract_digest"].default == "2" * 64
+    assert defaults["contract_digest"].default != _authorities().contract_digest
+    assert defaults["contract_ref"].default != _authorities().contract.contract_id
