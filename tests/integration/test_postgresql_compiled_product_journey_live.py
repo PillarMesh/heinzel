@@ -30,6 +30,7 @@ import os
 import secrets
 import shutil
 import sqlite3
+from collections.abc import Callable, Generator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -42,7 +43,7 @@ from heinzel_compiler import (
     compile_product_iir,
     compose_product_physical_plan_candidate,
 )
-from heinzel_contract_model import digest
+from heinzel_contract_model import ArtifactReference, digest
 from heinzel_dbt_adapter import (
     CompiledDbtModel,
     DbtColumnTest,
@@ -72,6 +73,7 @@ from heinzel_iir import (
     ProjectOperation,
     SourceRelation,
 )
+from heinzel_provider_openmetadata import OpenMetadataProductCatalogProvider
 from heinzel_provider_postgresql import (
     PostgreSQLMaterializationSettings,
     PostgreSQLMaterializationWarehouse,
@@ -88,6 +90,7 @@ from heinzel_provider_sdk import (
 )
 from heinzel_runtime import (
     GenerationLedger,
+    MaterializationCatalog,
     MaterializationRequest,
     ProductInputCardinalityResolver,
     ProductInputGenerationExpectation,
@@ -104,6 +107,12 @@ from heinzel_warehouse_control import (
 from psycopg import sql
 from pydantic import SecretStr
 
+from tests.integration.compiled_journey_catalog_authorities import (
+    MEASURE_COLUMN,
+    compose_journey_catalog,
+    journey_product_authorities,
+)
+from tests.integration.openmetadata_live_harness import LocalOpenMetadata
 from tests.integration.test_postgresql_checked_sum_evidence import _pinned_postgresql
 from tests.integration.test_postgresql_product_materialization_live import (
     _acquire_rows,
@@ -116,13 +125,30 @@ from tests.integration.test_postgresql_product_materialization_live import (
 
 _RUN_LIVE = os.environ.get("HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE") == "1"
 _TENANT = "tenant-live-a"
-_CONTRACT_REF = "contract-live-a"
-_CONTRACT_DIGEST = "2" * 64
 _BINDING_ID = "warehouse-live-a"
 _BINDING_REVISION = 1
+_PRODUCT_ID = "product_revenue"
+_NAMESPACE = "consumption"
+_RELATION_NAME = "product_revenue"
 _RELATION_REF = "relation-raw-sales-v1"
 _MODEL_NAME = "product_revenue_v1_g1"
 _GOVERNED_GATES = (15, 17, 18)
+
+# The product's approved authorities, from which the contract reference and digest are read rather
+# than written down. A hand-written contract digest cannot be published: the catalog adapter
+# requires the materialization's digest to equal the digest of the approved contract, and no
+# literal equals that. See tests/integration/test_compiled_journey_catalog_authorities.py, which
+# holds that refusal offline.
+_AUTHORITIES = journey_product_authorities(
+    tenant_id=_TENANT,
+    product_id=_PRODUCT_ID,
+    warehouse_binding_id=_BINDING_ID,
+    warehouse_binding_revision=_BINDING_REVISION,
+    namespace=_NAMESPACE,
+    relation_name=_RELATION_NAME,
+)
+_CONTRACT_REF = _AUTHORITIES.contract.contract_id
+_CONTRACT_DIGEST = _AUTHORITIES.contract_digest
 
 
 def _product() -> ProductIntentIR:
@@ -199,12 +225,44 @@ def _warehouse_validation(dsn: str) -> WarehouseValidationEvidence:
     )
 
 
+@pytest.fixture
+def openmetadata_factory(tmp_path: Path) -> Generator[Callable[[], LocalOpenMetadata]]:
+    """Start a local OpenMetadata only if the test asks for one, and always clean it up.
+
+    A fixture that started the catalog unconditionally would make the variant that needs no
+    catalog pay for four more containers, which is the cost this journey is careful about.
+    """
+
+    started: list[LocalOpenMetadata] = []
+
+    def start() -> LocalOpenMetadata:
+        local = LocalOpenMetadata(tmp_path / "openmetadata")
+        started.append(local)
+        return local
+
+    try:
+        yield start
+    finally:
+        for local in started:
+            local.cleanup()
+
+
 @pytest.mark.live
 @pytest.mark.emulator
 @pytest.mark.skipif(not _RUN_LIVE, reason="set HEINZEL_RUN_PRODUCT_SQL_CONFORMANCE=1")
+@pytest.mark.parametrize(
+    "publish_to_catalog",
+    # Both variants run the same journey. The first keeps the proof that compilation and
+    # materialization stand up without a catalog in the picture, so a catalog outage cannot take
+    # that signal with it; the second adds the publication the product needs to be consumable.
+    [False, True],
+    ids=["catalog_unavailable", "catalog_published"],
+)
 def test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on_the_pinned_engine(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    openmetadata_factory: Callable[[], LocalOpenMetadata],
+    publish_to_catalog: bool,
 ) -> None:
     dbt_executable = shutil.which("dbt")
     if dbt_executable is None:
@@ -421,6 +479,26 @@ def test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on
                 expires_at=issued_at + timedelta(minutes=15),
             ),
         )
+        catalog_state_directory = tmp_path / "catalog-state"
+        catalog_state_directory.mkdir()
+        composed_catalog = None
+        catalog: MaterializationCatalog = _UnavailableCatalog()
+        if publish_to_catalog:
+            local_openmetadata = openmetadata_factory()
+            managed_binding = local_openmetadata.provision_and_validate(_TENANT)
+            composed_catalog = compose_journey_catalog(
+                authorities=_AUTHORITIES,
+                catalog_binding=managed_binding.binding,
+                publication_provider=OpenMetadataProductCatalogProvider(
+                    local_openmetadata.administrator_client(managed_binding)
+                ),
+                # The catalog records where the product physically lives, so the database it names
+                # is the one the journey provisioned, not a configured guess.
+                database_name=str(psycopg.conninfo.conninfo_to_dict(bootstrap_dsn)["dbname"]),
+                landing_receipt_digest=landing_receipt_digest,
+                state_directory=catalog_state_directory,
+            )
+            catalog = composed_catalog.catalog
         runner = ProductMaterializationRunner(
             sqlite3.connect(tmp_path / "materializations.sqlite3"),
             warehouse=PostgreSQLMaterializationWarehouse(
@@ -447,7 +525,7 @@ def test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on
                     ),
                 ),
             ),
-            catalog=_UnavailableCatalog(),
+            catalog=catalog,
             cardinality_evidence_reader=cardinality_repository,
             execution_authorization_verifier=ProductExecutionAuthorizationVerifier(
                 {"runtime-execution-live-1": execution_signer.public_key}
@@ -486,3 +564,40 @@ def test_compiled_product_journey_reaches_the_governed_gates_and_materializes_on
         assert result.receipt.quality_disposition == "passed"
         assert result.receipt.legality_decision_digest == unadmitted_decision_digest
         assert result.receipt.input_generation_digests == (landing_receipt_digest,)
+        # The contract digest is the approved contract's, not a literal. The catalog refuses any
+        # other, so this is the agreement that makes the generation publishable at all.
+        assert result.receipt.contract_digest == digest(_AUTHORITIES.contract)
+        assert result.receipt.magnitude_asserted_columns == (MEASURE_COLUMN,)
+
+        if composed_catalog is None:
+            # No catalog to publish through. The generation is committed and the publication is
+            # owed, which is the state the runner is required to leave behind rather than fail in.
+            assert result.publication_pending is True
+            assert result.publication_ref is None
+            return
+
+        assert result.publication_pending is False
+        assert result.publication_ref is not None
+        product_ref = ArtifactReference(
+            artifact_id=_AUTHORITIES.contract.destination_product.product_name,
+            version=_AUTHORITIES.contract.version,
+            digest=digest(_AUTHORITIES.contract.destination_product),
+        )
+        published = composed_catalog.publication_repository.definition_for_reference(
+            tenant_id=_TENANT, product_ref=product_ref
+        )
+        assert published is not None
+        # Read back out of the catalog itself, not out of what was sent to it: a publication that
+        # cannot be observed again is not evidence that anything was published.
+        observed = OpenMetadataProductCatalogProvider(
+            local_openmetadata.administrator_client(managed_binding)
+        ).observe(tenant_id=_TENANT, stable_external_key=published.stable_external_key)
+
+        assert observed.definition == published
+        assert observed.definition.generation == 1
+        assert observed.definition.catalog_revision == managed_binding.binding.revision
+        assert tuple(column.name for column in observed.definition.columns) == (
+            "region",
+            MEASURE_COLUMN,
+        )
+        assert observed.definition.materialization_receipt_ref.digest == digest(result.receipt)
