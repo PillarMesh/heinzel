@@ -8,7 +8,7 @@ import subprocess
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 
 import psycopg
 import pytest
@@ -84,14 +84,19 @@ def _fresh_postgresql_cluster(root: Path) -> Iterator[str]:
         "--pwfile",
         str(password_file),
     )
-    # `-k` keeps the Unix socket inside this test's own directory. Without it the postmaster
-    # uses the packaging's compiled-in default, which on Debian and Ubuntu is
-    # /var/run/postgresql -- owned by `postgres` and group-writable by `postgres` alone. A
-    # developer in that group never notices; a hosted runner's user is not in it, so the server
-    # cannot create its socket and `pg_ctl start` exits 1. The DSN below connects over TCP, so
-    # nothing depends on where the socket lives.
-    socket_directory = root / "socket"
-    socket_directory.mkdir()
+    # `-k` moves the Unix socket off the packaging's compiled-in default, which on Debian and
+    # Ubuntu is /var/run/postgresql -- owned by `postgres` and group-writable by `postgres`
+    # alone. A developer in that group never notices; a hosted runner's user is not in it, so
+    # the server cannot create its socket and `pg_ctl start` exits 1. The DSN below connects
+    # over TCP, so nothing depends on where the socket lives.
+    #
+    # The directory is a short-lived one of its own rather than `root / "socket"`, because a
+    # Unix socket path is capped at 107 bytes and `root` is a pytest `tmp_path`: it already
+    # carries the temporary root, the test's name and this fixture's subdirectory, which for a
+    # long test name leaves the socket over the cap. The postmaster then logs that the path is
+    # too long and refuses to start -- a failure that reads as a cluster problem and varies
+    # with the length of the test's own name.
+    socket_directory = Path(mkdtemp(prefix="hz-pg-"))
     log_file = root / "postgresql.log"
     started = False
     try:
@@ -127,6 +132,7 @@ def _fresh_postgresql_cluster(root: Path) -> Iterator[str]:
                     "--wait",
                     "stop",
                 )
+        shutil.rmtree(socket_directory, ignore_errors=True)
 
 
 def _provision_estimator(bootstrap_dsn: str, password: str) -> str:

@@ -46,10 +46,14 @@ jobs:
       - name: Sync locked workspace
         run: uv sync --locked --all-packages
       # Only journeys that need nothing but Docker and the locked workspace (dbt included).
-      # Not listed, because the runner does not provide what they need: tests that start a
-      # cluster with host PostgreSQL binaries (initdb), the Superset compose build, Snowflake
-      # and LocalStack. Several of these files mark their tests `emulator` rather than
-      # `live`, so the selection is `live or emulator`; `-m live` alone would deselect them.
+      # Not listed, because the runner does not provide what they need: the Superset compose
+      # build, Snowflake and LocalStack. Several of these files mark their tests `emulator`
+      # rather than `live`, so the selection is `live or emulator`; `-m live` alone would
+      # deselect them.
+      #
+      # A cluster started with the host's PostgreSQL binaries is no longer a reason to leave a
+      # journey out: the step below finds `initdb` where this image keeps it, so the journeys
+      # that call it are listed rather than excluded.
       #
       # OpenMetadata is now provided -- see the environment below -- because the compiled
       # product journey publishes its product through the catalog, and a journey that stops at
@@ -92,11 +96,13 @@ jobs:
               'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
           )"
           export HEINZEL_OPENMETADATA_SECRET_STORE_KEY
-          # The answer and estimator journeys start their own PostgreSQL cluster with `initdb`
+          # Several of the journeys above start their own PostgreSQL cluster with `initdb`
           # rather than a container, and this image keeps the server binaries off PATH while
           # `psql` is on it. Without the directory they skip, and the step after this one fails
           # the run on any skip -- so a missing directory surfaces as a failure naming the
-          # binary (`-rs` prints the reason) rather than as a quiet pass.
+          # binary (`-rs` prints the reason) rather than as a quiet pass. Deliberately no count
+          # or list here: either would have to be revised every time a journey is added, and a
+          # comment that is wrong about which journeys need this is worse than one that is vague.
           if ! command -v initdb >/dev/null 2>&1; then
             postgresql_bin="$(
               ls -1d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -n 1 || true
@@ -114,6 +120,9 @@ jobs:
           tests/integration/test_postgresql_leased_run_resume_live.py \
           tests/integration/test_postgresql_answer_query_live.py \
           tests/integration/test_postgresql_answer_generation_live.py \
+          tests/integration/test_postgresql_product_materialization_live.py \
+          tests/integration/test_postgresql_product_observation_live.py \
+          tests/acceptance/test_console_answer_runtime.py \
           tests/integration/test_postgresql_query_estimator_live.py \
           tests/integration/test_postgresql_rejected_credentials_live.py \
           tests/integration/test_generation_scoped_product_sql_conformance.py \

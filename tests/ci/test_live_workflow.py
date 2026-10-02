@@ -130,6 +130,14 @@ def test_the_core_postgresql_journeys_are_listed(workflow: dict[str, Any]) -> No
         "tests/integration/test_postgresql_answer_query_live.py",
         "tests/integration/test_postgresql_answer_generation_live.py",
         "tests/integration/test_postgresql_query_estimator_live.py",
+        # The product a governed answer is asked of, and the console that serves it. These were
+        # excluded on the ground that the runner could not start a cluster with the host's
+        # PostgreSQL binaries; the step now finds them, so the exclusion no longer holds.
+        # `test_console_answer_runtime` is the only CI proof that the console serves a governed
+        # answer over a real warehouse rather than over fakes.
+        "tests/integration/test_postgresql_product_materialization_live.py",
+        "tests/integration/test_postgresql_product_observation_live.py",
+        "tests/acceptance/test_console_answer_runtime.py",
     } <= paths
 
 
@@ -141,7 +149,8 @@ def test_the_answer_journeys_are_given_the_postgresql_server_binaries(
     # `test_postgresql_answer_query_live` and its siblings start a cluster with `initdb` rather
     # than a pinned container, and `_postgresql_binary` skips when it cannot find one. The
     # runner image ships the server binaries off PATH, under /usr/lib/postgresql/<version>/bin,
-    # so the step has to name that directory or all three journeys skip and fail the run.
+    # so the step has to name that directory or every one of those journeys skips and fails the
+    # run -- the console's among them, which reaches the same helper through its fixture.
     assert "HEINZEL_TEST_POSTGRES_BIN_DIR" in command
     assert "/usr/lib/postgresql" in command
 
