@@ -15,6 +15,13 @@ from heinzel_provider_sdk import (
 from psycopg import sql
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
+from .startup_denial import (
+    AUTHORIZATION_REJECTIONS,
+    StartupDenialProbe,
+    connect_attributing_startup_denial,
+    default_startup_denial_probe,
+)
+
 _IDENTIFIER_PATTERN = r"^[a-z][a-z0-9_]{0,62}$"
 
 
@@ -90,12 +97,16 @@ class PostgreSQLAccessEffectProvider:
         settings: PostgreSQLAccessSettings,
         targets: PostgreSQLAccessTargetAuthority,
         connect: _Connect | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
     ) -> None:
         self._settings = PostgreSQLAccessSettings.model_validate(
             settings.model_dump(mode="python"), strict=True
         )
         self._targets = targets
         self._connect = connect or cast(_Connect, psycopg.connect)
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
 
     def enact(self, command: AccessEffectCommand) -> AccessEffectResult:
         command = AccessEffectCommand.model_validate(command.model_dump(mode="python"), strict=True)
@@ -111,11 +122,23 @@ class PostgreSQLAccessEffectProvider:
         connection: _PostgreSQLAccessConnection | None = None
         effects_started = False
         try:
-            connection = self._connect(self._settings.administrative_dsn.get_secret_value())
+            connection = connect_attributing_startup_denial(
+                self._connect,
+                self._settings.administrative_dsn.get_secret_value(),
+                probe=self._startup_denial_probe,
+            )
             for statement in statements:
                 connection.execute(statement)
                 effects_started = True
             connection.commit()
+        except AUTHORIZATION_REJECTIONS:
+            # Authorization rejections subclass OperationalError; retrying a credential the server
+            # rejected cannot succeed, so it is permanent unless an effect may already have landed.
+            self._rollback_and_close(connection)
+            rejection: AccessEffectFailure = (
+                "ambiguous_outcome" if effects_started else "permanent_failure"
+            )
+            raise self._error(command, rejection) from None
         except (psycopg.OperationalError, OSError, TimeoutError):
             self._rollback_and_close(connection)
             outcome: AccessEffectFailure = (

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import socket
+import sqlite3
 import subprocess
 import time
 import uuid
@@ -14,6 +15,14 @@ from typing import Literal
 import httpx
 import psycopg
 import pytest
+from heinzel_access_control import (
+    AccessGrant,
+    AccessGrantApplicationService,
+    AdmittedAccessProposal,
+    CurrentEntitlementSnapshot,
+    SQLiteAccessGrantRepository,
+)
+from heinzel_contract_model import ArtifactReference, digest
 from heinzel_provider_clickhouse import (
     ClickHouseAccessColumnBinding,
     ClickHouseAccessEffectProvider,
@@ -26,7 +35,14 @@ from heinzel_provider_postgresql import (
     PostgreSQLAccessSettings,
     PostgreSQLAccessTarget,
 )
-from heinzel_provider_sdk import AccessEffectCommand
+from heinzel_provider_sdk import (
+    AccessEffectCommand,
+    AccessEffectFailure,
+    AccessEffectProviderError,
+    AccessEffectResult,
+    AccessPermission,
+)
+from heinzel_runtime import AnswerResultAccessEffectProvider, AnswerResultAccessTarget
 from psycopg import sql
 from pydantic import SecretStr
 
@@ -257,6 +273,303 @@ def test_live_postgresql_access_is_exact_replay_safe_and_immediately_revocable()
             fixture.requester_dsn,
             "SELECT region, net_revenue FROM consumption.revenue_v1",
         )
+
+
+_PRODUCT = ArtifactReference(artifact_id="product:revenue", version=1, digest="b" * 64)
+_PURPOSE = "Review governed regional revenue"
+
+
+def _current_entitlement() -> CurrentEntitlementSnapshot:
+    values: dict[str, object] = {
+        "snapshot_id": "entitlement-live-1",
+        "tenant_id": "tenant-live",
+        "principal_ref": "principal:requester-live",
+        "purpose_digest": digest(_PURPOSE),
+        "connected_authority_ref": "authority:policy-live",
+        "source_revision": 1,
+        "source_payload_digest": "c" * 64,
+        "observation_id": "entitlement-observation-live-1",
+        "product_version_refs": (_PRODUCT,),
+        "semantic_refs": (_PRODUCT,),
+        "filter_domains": (),
+        "permissions": ("query", "view"),
+        "effective_at": _NOW - timedelta(minutes=5),
+        "valid_until": _NOW + timedelta(hours=1),
+        "resolved_at": _NOW,
+    }
+    values["snapshot_digest"] = digest(
+        {"schema_version": "1"}
+        | {
+            key: values[key]
+            for key in (
+                "tenant_id",
+                "principal_ref",
+                "purpose_digest",
+                "connected_authority_ref",
+                "source_revision",
+                "source_payload_digest",
+                "product_version_refs",
+                "semantic_refs",
+                "filter_domains",
+                "permissions",
+                "effective_at",
+                "valid_until",
+            )
+        }
+    )
+    return CurrentEntitlementSnapshot.model_validate(values)
+
+
+def _admitted_proposal() -> AdmittedAccessProposal:
+    return AdmittedAccessProposal.model_validate(
+        {
+            "tenant_id": "tenant-live",
+            "request_id": "request-live-1",
+            "proposal_id": "proposal-live-1",
+            "proposal_revision": 1,
+            "admission_receipt_ref": ArtifactReference(
+                artifact_id="admission:access-live-1", version=1, digest="d" * 64
+            ),
+            "entitlement_snapshot_digest": _current_entitlement().snapshot_digest,
+            "principal_ref": "principal:requester-live",
+            "purpose": _PURPOSE,
+            "data_product_version_ref": _PRODUCT,
+            "fields": ("region", "revenue"),
+            "classification_refs": (),
+            "access_mode": "query",
+            "permissions": ("query", "view"),
+            "effective_at": _NOW - timedelta(minutes=5),
+            "expires_at": _NOW + timedelta(minutes=30),
+            "policy_revision": 1,
+            "targets": (
+                {"surface": "result", "provider_resource_ref": "result:regional-revenue"},
+                {
+                    "surface": "warehouse",
+                    "provider_resource_ref": "relation:consumption.revenue_v1",
+                },
+            ),
+        }
+    )
+
+
+class _AdmittedProposals:
+    def read_admitted(self, *, tenant_id: str, request_id: str) -> AdmittedAccessProposal:
+        assert (tenant_id, request_id) == ("tenant-live", "request-live-1")
+        return _admitted_proposal()
+
+
+class _Entitlements:
+    def resolve_current(
+        self, *, tenant_id: str, principal_ref: str, purpose_digest: str
+    ) -> CurrentEntitlementSnapshot:
+        return _current_entitlement()
+
+
+class _GrantBoundPostgreSQLAuthority:
+    """Binds each command's grant revision and scope to one fixed physical relation."""
+
+    def resolve(self, command: AccessEffectCommand) -> PostgreSQLAccessTarget | None:
+        if command.provider_resource_ref != "relation:consumption.revenue_v1":
+            return None
+        return PostgreSQLAccessTarget(
+            tenant_id=command.tenant_id,
+            grant_id=command.grant_id,
+            grant_revision=command.grant_revision,
+            principal_ref=command.principal_ref,
+            provider_resource_ref=command.provider_resource_ref,
+            role_name="pm_grant_live",
+            namespace="consumption",
+            relation_name="revenue_v1",
+            columns=(
+                PostgreSQLAccessColumnBinding(field="region", column_name="region"),
+                PostgreSQLAccessColumnBinding(field="revenue", column_name="net_revenue"),
+            ),
+            scope_digest=command.scope_digest,
+        )
+
+
+def _result_permissions(
+    permissions: tuple[AccessPermission, ...],
+) -> tuple[Literal["download", "view"], ...]:
+    """Narrow a command's permissions to the ones a result target accepts.
+
+    `AccessGrantApplicationService._surface_permissions` already filters a result command's
+    permissions to exactly these, so this is an identity on anything the service emits. It
+    exists because `AccessEffectCommand` carries the whole permission domain while
+    `AnswerResultAccessTarget` accepts only two of it, and the provider's own `_matches`
+    requires the target to carry the command's permissions unchanged.
+    """
+    narrowed: list[Literal["download", "view"]] = []
+    for permission in permissions:
+        if permission == "download" or permission == "view":
+            narrowed.append(permission)
+    return tuple(narrowed)
+
+
+class _ResultAuthority:
+    def resolve(self, command: AccessEffectCommand) -> AnswerResultAccessTarget:
+        return AnswerResultAccessTarget(
+            tenant_id=command.tenant_id,
+            grant_id=command.grant_id,
+            grant_revision=command.grant_revision,
+            principal_ref=command.principal_ref,
+            result_ref=command.provider_resource_ref,
+            fields=command.fields,
+            permissions=_result_permissions(command.permissions),
+            effective_at=command.effective_at,
+            expires_at=command.expires_at,
+            scope_digest=command.scope_digest,
+        )
+
+
+class _RecordedProvider:
+    """Delegates to the real provider and records only what it returned."""
+
+    def __init__(self, provider: PostgreSQLAccessEffectProvider) -> None:
+        self._provider = provider
+        self.enactments: list[tuple[str, AccessEffectFailure | Literal["succeeded"]]] = []
+
+    @property
+    def surface(self) -> Literal["warehouse"]:
+        return self._provider.surface
+
+    def enact(self, command: AccessEffectCommand) -> AccessEffectResult:
+        try:
+            result = self._provider.enact(command)
+        except AccessEffectProviderError as error:
+            self.enactments.append((command.action, error.outcome))
+            raise
+        self.enactments.append((command.action, "succeeded"))
+        return result
+
+
+def _grant_service(
+    administrative_dsn: str,
+) -> tuple[AccessGrantApplicationService, SQLiteAccessGrantRepository, _RecordedProvider]:
+    repository = SQLiteAccessGrantRepository(sqlite3.connect(":memory:"))
+    provider = _RecordedProvider(
+        PostgreSQLAccessEffectProvider(
+            settings=PostgreSQLAccessSettings(administrative_dsn=SecretStr(administrative_dsn)),
+            targets=_GrantBoundPostgreSQLAuthority(),
+        )
+    )
+    service = AccessGrantApplicationService(
+        grants=repository,
+        admitted_proposals=_AdmittedProposals(),
+        entitlements=_Entitlements(),
+        providers=(
+            AnswerResultAccessEffectProvider.in_memory(
+                targets=_ResultAuthority(), clock=lambda: _NOW
+            ),
+            provider,
+        ),
+        clock=lambda: _NOW,
+    )
+    return service, repository, provider
+
+
+def _apply_live_grant(service: AccessGrantApplicationService) -> AccessGrant:
+    return service.apply(
+        tenant_id="tenant-live", request_id="request-live-1", grant_id="grant-live-1"
+    )
+
+
+_GRANT_ACTIONS: tuple[Literal["apply", "revoke"], ...] = ("apply", "revoke")
+
+
+def _receipt_outcomes(
+    repository: SQLiteAccessGrantRepository,
+) -> tuple[tuple[str, str, str], ...]:
+    grant = repository.load_current("tenant-live", "grant-live-1")
+    assert grant is not None
+    return tuple(
+        sorted(
+            (receipt.surface, receipt.action, receipt.outcome)
+            for revision in range(1, grant.revision + 1)
+            for action in _GRANT_ACTIONS
+            for receipt in repository.effect_receipts(
+                "tenant-live", "grant-live-1", revision, action=action
+            )
+        )
+    )
+
+
+def _with_password(dsn: str, password: str) -> str:
+    return psycopg.conninfo.make_conninfo(dsn, password=password)
+
+
+def _column_select_is_granted(administrative_dsn: str) -> bool:
+    row = _postgresql_query(
+        administrative_dsn,
+        "SELECT has_column_privilege('pm_grant_live', 'consumption.revenue_v1', "
+        "'region', 'SELECT')",
+    )
+    return row == (True,)
+
+
+def test_live_rejected_administrative_credential_fails_the_grant_terminally() -> None:
+    with _postgresql_fixture() as fixture:
+        closed_port_dsn = psycopg.conninfo.make_conninfo(
+            fixture.administrative_dsn, port=_available_loopback_port(), connect_timeout=2
+        )
+        unreachable_service, unreachable_repository, unreachable_provider = _grant_service(
+            closed_port_dsn
+        )
+        unreachable = _apply_live_grant(unreachable_service)
+        unreachable_retry = unreachable_service.reconcile(
+            tenant_id="tenant-live", grant_id="grant-live-1"
+        )
+
+        rejected_service, rejected_repository, rejected_provider = _grant_service(
+            _with_password(fixture.administrative_dsn, "not-the-administrative-password")
+        )
+        rejected = _apply_live_grant(rejected_service)
+        rejected_replay = rejected_service.reconcile(
+            tenant_id="tenant-live", grant_id="grant-live-1"
+        )
+        granted_after_rejection = _column_select_is_granted(fixture.administrative_dsn)
+        requester_denied_after_rejection = _postgresql_is_denied(
+            fixture.requester_dsn, "SELECT region, net_revenue FROM consumption.revenue_v1"
+        )
+
+        accepted_service, _accepted_repository, accepted_provider = _grant_service(
+            fixture.administrative_dsn
+        )
+        accepted = _apply_live_grant(accepted_service)
+        requester_row = _postgresql_query(
+            fixture.requester_dsn, "SELECT region, net_revenue FROM consumption.revenue_v1"
+        )
+
+    assert unreachable.state == unreachable_retry.state == "pending"
+    assert unreachable_provider.enactments == [
+        ("apply", "transient_failure"),
+        ("apply", "transient_failure"),
+    ]
+    assert _receipt_outcomes(unreachable_repository) == (
+        ("result", "apply", "succeeded"),
+        ("warehouse", "apply", "transient_failure"),
+        ("warehouse", "apply", "transient_failure"),
+    )
+
+    assert rejected.state == rejected_replay.state == "failed"
+    assert rejected.failed_action == "revoke"
+    assert rejected_replay == rejected
+    assert rejected_provider.enactments == [
+        ("apply", "permanent_failure"),
+        ("revoke", "permanent_failure"),
+    ]
+    assert _receipt_outcomes(rejected_repository) == (
+        ("result", "apply", "succeeded"),
+        ("result", "revoke", "succeeded"),
+        ("warehouse", "apply", "permanent_failure"),
+        ("warehouse", "revoke", "permanent_failure"),
+    )
+    assert granted_after_rejection is False
+    assert requester_denied_after_rejection is True
+
+    assert accepted.state == "active"
+    assert accepted_provider.enactments == [("apply", "succeeded")]
+    assert requester_row == ("east", 99)
 
 
 @dataclass(frozen=True)

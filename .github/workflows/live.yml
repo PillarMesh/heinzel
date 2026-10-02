@@ -106,6 +106,8 @@ jobs:
           tests/integration/test_clickhouse_warehouse_live.py \
           providers/postgresql/tests/test_destination_live.py \
           providers/postgresql/tests/test_product_sql_observation_live.py \
+          providers/postgresql/tests/test_rejected_credentials_live.py \
+          providers/postgresql/tests/test_tls_rejected_credentials_live.py \
           providers/clickhouse/tests/test_destination_live.py \
           providers/clickhouse/tests/test_publication_conformance_live.py \
           services/dbt-adapter/tests/test_clickhouse_subprocess_live.py

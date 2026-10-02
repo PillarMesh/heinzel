@@ -12,6 +12,12 @@ from heinzel_provider_sdk import ProviderError
 from heinzel_provider_sdk.errors import ProviderErrorClassification
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from .startup_denial import (
+    StartupDenialProbe,
+    connect_attributing_startup_denial,
+    default_startup_denial_probe,
+)
+
 if TYPE_CHECKING:
     from heinzel_compiler import QueryEstimateRequest, QueryScanEstimate
 
@@ -67,9 +73,13 @@ class PostgreSQLQueryEstimator:
         *,
         settings: PostgreSQLQueryEstimatorSettings,
         connect: _Connect | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
     ) -> None:
         self._settings = settings
         self._connect = connect or cast(_Connect, psycopg.connect)
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
 
     def estimate(self, request: QueryEstimateRequest) -> QueryScanEstimate | None:
         parameters = _validate_request(request)
@@ -80,7 +90,9 @@ class PostgreSQLQueryEstimator:
                 self._settings.dsn.get_secret_value(),
                 connect_timeout=str(self._settings.connect_timeout_seconds),
             )
-            connection = self._connect(bounded_dsn)
+            connection = connect_attributing_startup_denial(
+                self._connect, bounded_dsn, probe=self._startup_denial_probe
+            )
             connection.execute("SET TRANSACTION READ ONLY")
             _require_read_only(connection)
             connection.execute(

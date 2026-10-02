@@ -24,6 +24,11 @@ from .product_materialization import (
     _postgresql_decimal_magnitude_checks,
     _postgresql_product_generation_commit_reference,
 )
+from .startup_denial import (
+    StartupDenialProbe,
+    connect_attributing_startup_denial,
+    default_startup_denial_probe,
+)
 
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
 _IDENTIFIER_PATTERN = r"^[a-z][a-z0-9_]{0,62}$"
@@ -180,11 +185,15 @@ class PostgreSQLProductSemanticObserver:
         signed_model: SignedCompiledDbtModel | None = None,
         trusted_compiler_keys: dict[str, Ed25519PublicKey] | None = None,
         connect: _Connect | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
     ) -> None:
         self._settings = settings
         self._signed_model = signed_model
         self._trusted_compiler_keys = dict(trusted_compiler_keys or {})
         self._connect = connect or cast(_Connect, psycopg.connect)
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
 
     def observe(
         self, request: ProductMaterializationReceipt
@@ -199,7 +208,11 @@ class PostgreSQLProductSemanticObserver:
 
         connection: _Connection | None = None
         try:
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = connect_attributing_startup_denial(
+                self._connect,
+                self._settings.dsn.get_secret_value(),
+                probe=self._startup_denial_probe,
+            )
             connection.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             generation = connection.execute(
                 sql.SQL(

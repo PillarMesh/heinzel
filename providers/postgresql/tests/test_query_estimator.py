@@ -267,3 +267,43 @@ def test_estimator_settings_are_strict_and_timeout_is_bounded() -> None:
                 "unexpected": True,
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("probe_outcome", "classification"),
+    (
+        (psycopg.errors.InvalidPassword(), "authorization_denied"),
+        (psycopg.OperationalError("probe transport failed"), "transient_transport"),
+    ),
+)
+def test_estimator_attributes_only_structured_startup_rejections(
+    probe_outcome: Exception, classification: str
+) -> None:
+    probe_calls: list[dict[str, object]] = []
+
+    def rejected(_dsn: str) -> _Connection:
+        raise psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+    def probe(**parameters: object) -> _Connection:
+        probe_calls.append(parameters)
+        raise probe_outcome
+
+    estimator = PostgreSQLQueryEstimator(
+        settings=_settings().model_copy(
+            update={
+                "dsn": SecretStr(
+                    "host=warehouse.internal dbname=db user=estimator "
+                    "password=private-password sslmode=disable gssencmode=disable"
+                )
+            }
+        ),
+        connect=rejected,
+        startup_denial_probe=probe,
+    )
+
+    with pytest.raises(ProviderError) as captured:
+        estimator.estimate(_request())
+
+    assert captured.value.classification == classification
+    assert [call["connect_timeout"] for call in probe_calls] == [4.0]
+    assert "private" not in str(captured.value)
