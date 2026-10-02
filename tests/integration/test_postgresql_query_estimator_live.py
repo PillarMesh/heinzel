@@ -84,19 +84,36 @@ def _fresh_postgresql_cluster(root: Path) -> Iterator[str]:
         "--pwfile",
         str(password_file),
     )
+    # `-k` keeps the Unix socket inside this test's own directory. Without it the postmaster
+    # uses the packaging's compiled-in default, which on Debian and Ubuntu is
+    # /var/run/postgresql -- owned by `postgres` and group-writable by `postgres` alone. A
+    # developer in that group never notices; a hosted runner's user is not in it, so the server
+    # cannot create its socket and `pg_ctl start` exits 1. The DSN below connects over TCP, so
+    # nothing depends on where the socket lives.
+    socket_directory = root / "socket"
+    socket_directory.mkdir()
+    log_file = root / "postgresql.log"
     started = False
     try:
-        _run(
-            pg_ctl,
-            "--pgdata",
-            str(data_directory),
-            "--options",
-            f"-h 127.0.0.1 -p {port}",
-            "--log",
-            str(root / "postgresql.log"),
-            "--wait",
-            "start",
-        )
+        try:
+            _run(
+                pg_ctl,
+                "--pgdata",
+                str(data_directory),
+                "--options",
+                f"-h 127.0.0.1 -p {port} -k {socket_directory}",
+                "--log",
+                str(log_file),
+                "--wait",
+                "start",
+            )
+        except subprocess.CalledProcessError as failure:
+            # `pg_ctl` reports only that the start failed; the reason is in the server's own
+            # log, which this harness names and would otherwise discard with the directory.
+            server_log = log_file.read_text() if log_file.exists() else "<no server log>"
+            raise AssertionError(
+                f"the PostgreSQL server did not start: {failure}\nserver log:\n{server_log}"
+            ) from failure
         started = True
         yield f"postgresql://postgres:{bootstrap_password}@127.0.0.1:{port}/postgres"
     finally:

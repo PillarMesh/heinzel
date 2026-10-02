@@ -123,7 +123,27 @@ def test_the_core_postgresql_journeys_are_listed(workflow: dict[str, Any]) -> No
         "tests/integration/test_postgresql_acquisition_land_live.py",
         "tests/integration/test_postgresql_leased_run_resume_live.py",
         "tests/integration/test_postgresql_rejected_credentials_live.py",
+        # The governed answer path is what `docs/status.md` calls Delivered/Partial on "Live"
+        # proof. These three were absent from the selection for months, so that proof had never
+        # run in CI. An unlisted file is not a skip, so the "skipped == 0" guard after the step
+        # cannot see one missing -- this assertion is the only thing that can.
+        "tests/integration/test_postgresql_answer_query_live.py",
+        "tests/integration/test_postgresql_answer_generation_live.py",
+        "tests/integration/test_postgresql_query_estimator_live.py",
     } <= paths
+
+
+def test_the_answer_journeys_are_given_the_postgresql_server_binaries(
+    workflow: dict[str, Any],
+) -> None:
+    command = _step(workflow, "Run live journeys")["run"]
+
+    # `test_postgresql_answer_query_live` and its siblings start a cluster with `initdb` rather
+    # than a pinned container, and `_postgresql_binary` skips when it cannot find one. The
+    # runner image ships the server binaries off PATH, under /usr/lib/postgresql/<version>/bin,
+    # so the step has to name that directory or all three journeys skip and fail the run.
+    assert "HEINZEL_TEST_POSTGRES_BIN_DIR" in command
+    assert "/usr/lib/postgresql" in command
 
 
 def test_the_quickstart_smoke_test_is_not_a_live_journey(workflow: dict[str, Any]) -> None:

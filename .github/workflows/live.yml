@@ -92,6 +92,19 @@ jobs:
               'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
           )"
           export HEINZEL_OPENMETADATA_SECRET_STORE_KEY
+          # The answer and estimator journeys start their own PostgreSQL cluster with `initdb`
+          # rather than a container, and this image keeps the server binaries off PATH while
+          # `psql` is on it. Without the directory they skip, and the step after this one fails
+          # the run on any skip -- so a missing directory surfaces as a failure naming the
+          # binary (`-rs` prints the reason) rather than as a quiet pass.
+          if ! command -v initdb >/dev/null 2>&1; then
+            postgresql_bin="$(
+              ls -1d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -n 1 || true
+            )"
+            if [ -n "$postgresql_bin" ]; then
+              export HEINZEL_TEST_POSTGRES_BIN_DIR="$postgresql_bin"
+            fi
+          fi
           uv run pytest -m "live or emulator" -q -p no:randomly -rs \
           --junitxml="$RUNNER_TEMP/live-journeys.xml" \
           tests/integration/test_postgresql_checked_sum_evidence.py \
@@ -99,6 +112,9 @@ jobs:
           tests/integration/test_postgresql_composed_acquisition_live.py \
           tests/integration/test_postgresql_acquisition_land_live.py \
           tests/integration/test_postgresql_leased_run_resume_live.py \
+          tests/integration/test_postgresql_answer_query_live.py \
+          tests/integration/test_postgresql_answer_generation_live.py \
+          tests/integration/test_postgresql_query_estimator_live.py \
           tests/integration/test_postgresql_rejected_credentials_live.py \
           tests/integration/test_generation_scoped_product_sql_conformance.py \
           tests/integration/test_warehouse_access_provider_live.py \
