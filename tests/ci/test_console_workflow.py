@@ -7,7 +7,9 @@ whenever it cannot prove the browser suite ran. The job graph is the contract.
 
 from __future__ import annotations
 
+import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -145,9 +147,73 @@ def test_console_job_runs_the_complete_browser_gate(workflow: dict[str, Any]) ->
         "npm run check:contracts",
         "npm run test -- --run",
         "npm run build",
-        "npm run test:e2e",
+        "npm run test:e2e:governed",
+        "npm run test:e2e:native",
     ):
         assert command in steps, f"the console job does not run {command}"
+
+    # `npm run test:e2e` is a prefix of `npm run test:e2e:native`, so a substring check
+    # for it would be satisfied by the native suite alone. The two prove different
+    # things -- fixtures against a real warehouse -- and neither replaces the other.
+    assert any(line.strip() == "npm run test:e2e" for line in steps.splitlines()), (
+        "the console job does not run the fixture browser suite on its own"
+    )
+
+
+def test_the_native_browser_suite_is_given_the_postgresql_server_binaries(
+    workflow: dict[str, Any],
+) -> None:
+    """The native suite starts its own cluster, and a missing `initdb` is not a skip.
+
+    `tests/acceptance/console_native_answer_fixture.py` runs outside pytest here, through
+    `scripts/serve-native-e2e.mjs`, so the `pytest.skip` it would raise for a missing
+    binary surfaces as a server that never starts. The runner keeps the server binaries
+    off PATH under /usr/lib/postgresql/<version>/bin, so the step has to name that
+    directory or the suite cannot run at all.
+    """
+    native = [
+        step
+        for step in workflow["jobs"]["console"]["steps"]
+        if "test:e2e:native" in str(step.get("run", ""))
+    ]
+    assert len(native) == 1, "expected exactly one native browser step"
+    command = str(native[0]["run"])
+
+    assert "HEINZEL_TEST_POSTGRES_BIN_DIR" in command
+    assert "/usr/lib/postgresql" in command
+
+
+def test_the_native_browser_step_runs_the_suite_whether_or_not_it_finds_the_binaries(
+    workflow: dict[str, Any],
+    tmp_path: Path,
+) -> None:
+    """The discovery must not become a second way for the suite to not run.
+
+    A directory that is missing has to reach the harness, which fails loudly, rather
+    than failing this step first with a message about `ls`. The step body is executed
+    here against a stubbed `npm` and a PATH with no `initdb`, which is the case that
+    takes the discovery branch.
+    """
+    native = next(
+        step
+        for step in workflow["jobs"]["console"]["steps"]
+        if "test:e2e:native" in str(step.get("run", ""))
+    )
+    binaries = tmp_path / "bin"
+    binaries.mkdir()
+    stub = binaries / "npm"
+    stub.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+    stub.chmod(0o755)
+
+    completed = subprocess.run(
+        ["bash", "-c", str(native["run"])],
+        capture_output=True,
+        text=True,
+        env=dict(os.environ, PATH=f"{binaries}:/usr/bin:/bin"),
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.split("\n")[:2] == ["run", "test:e2e:native"]
 
 
 def test_console_job_installs_the_python_toolchain_the_browser_gate_needs(

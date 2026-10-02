@@ -15,6 +15,7 @@ node_modules/
 apps/console/dist/
 apps/console/test-results/
 apps/console/test-results-governed/
+apps/console/test-results-native/
 apps/console/playwright-report/
 apps/console/docs/screenshots/*.png
 .worktrees/

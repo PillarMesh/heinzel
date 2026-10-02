@@ -53,7 +53,9 @@ test("unsupported MRR question stops at No Valid Plan and can seed a new request
   await expect(detail).not.toContainText(FIXED_ANSWER)
 
   await page.goto("http://127.0.0.1:8131/requests")
-  await page.getByRole("link", {name: "Open request"}).first().click()
+  // Each row labels its link with the request title, so that a list of them does not
+  // read as a column of identical "Open request" links.
+  await page.getByRole("link", {name: "Open Test"}).first().click()
   await expect(page.getByText("What is the current MRR")).toBeVisible()
   await expect(
     page.getByText(
