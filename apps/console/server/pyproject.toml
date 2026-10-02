@@ -16,6 +16,7 @@ dependencies = [
   "heinzel-access-control",
   "heinzel-bi-control",
   "heinzel-catalog-control",
+  "heinzel-compiler",
   "heinzel-contract-model",
   "heinzel-contract-service",
   "heinzel-evidence",
@@ -43,6 +44,7 @@ heinzel-console = "heinzel_console.cli:main"
 heinzel-access-control = { workspace = true }
 heinzel-bi-control = { workspace = true }
 heinzel-catalog-control = { workspace = true }
+heinzel-compiler = { workspace = true }
 heinzel-contract-model = { workspace = true }
 heinzel-contract-service = { workspace = true }
 heinzel-evidence = { workspace = true }

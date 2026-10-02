@@ -56,6 +56,11 @@ from heinzel_compiler import (
 )
 from heinzel_compiler.postgresql_sql import emit_generation_scoped_postgresql
 from heinzel_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
+from heinzel_console.answers import (
+    ApprovedProductAnswerMetadataReader,
+    GovernedAnswerRuntimeConfiguration,
+    SourceFreshnessReader,
+)
 from heinzel_contract_model import (
     AccessPolicy,
     ApprovedSemanticVersion,
@@ -173,14 +178,9 @@ from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBin
 from psycopg import sql
 from pydantic import SecretStr
 
-from tests.acceptance.console_answer_runtime import GovernedAnswerRuntimeConfiguration
 from tests.acceptance.console_policy_authority import (
     LocalDevelopmentPolicyAuthority,
     create_local_policy_server,
-)
-from tests.acceptance.console_product_authority import (
-    ApprovedProductAnswerMetadataReader,
-    SourceFreshnessReader,
 )
 from tests.acceptance.run_console_governed import (
     REQUESTER,

@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from heinzel_compiler import ProductGenerationReference, QueryReference
+from heinzel_console.answers import DurableProductAnswerAuthorityReader
 from heinzel_contract_model import ArtifactReference
 from heinzel_contract_model import digest as artifact_digest
 from heinzel_contract_service import (
@@ -35,8 +36,6 @@ from heinzel_semantic_registry import (
     ApprovedProductVersionMetadata,
     SQLiteApprovedProductVersionRepository,
 )
-
-from tests.acceptance.console_product_authority import DurableProductAnswerAuthorityReader
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
 TENANT = "tenant-a"
