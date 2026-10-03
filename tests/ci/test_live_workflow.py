@@ -138,6 +138,9 @@ def test_the_core_postgresql_journeys_are_listed(workflow: dict[str, Any]) -> No
         "tests/integration/test_postgresql_product_materialization_live.py",
         "tests/integration/test_postgresql_product_observation_live.py",
         "tests/acceptance/test_console_answer_runtime.py",
+        # The warehouse the quickstart's answer is asked over. Its grants are the
+        # separation the providers rely on, and only a real cluster can check them.
+        "tests/integration/test_demo_warehouse_live.py",
     } <= paths
 
 

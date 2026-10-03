@@ -44,7 +44,13 @@ DEMO_TENANT_ID = "tenant-demo"
 # the two must change together: the authority resolver refuses a question that does not name
 # exactly one published term, as whole words, so renaming the metric below without rewording
 # this would make the demonstration refuse its own happy path.
-DEMO_QUESTION = "What is the daily order count?"
+#
+# A value rather than a count, because the metric has to be one the compiler can materialize.
+# `AggregateMeasure.function` admits `sum` alone, so a counted metric has no product behind it
+# and the demonstration could never answer its own question. Governed queries do admit `count`
+# (`QueryAggregate`); it is the product shape that does not, and that gap is the compiler's to
+# close rather than this demonstration's to work around.
+DEMO_QUESTION = "What is the daily order value?"
 _SEMANTIC_VERSION_ID = "semantic-orders"
 _CONTRACT_ID = "contract-orders"
 _CATALOG_BINDING_ID = "catalog-demo"
@@ -113,9 +119,9 @@ def _semantic_version(*, created_at: datetime) -> ApprovedSemanticVersion:
         constraints=(),
         metrics=(
             SemanticObject(
-                object_id="daily-order-count",
-                name="Daily order count",
-                definition="Confirmed customer orders per calendar day.",
+                object_id="daily-order-value",
+                name="Daily order value",
+                definition="Confirmed customer order value per calendar day.",
                 source_refs=(_SOURCE_NAME,),
             ),
         ),
@@ -148,8 +154,8 @@ def _contract(semantic_version: ApprovedSemanticVersion) -> ManagedIntegrationCo
         source_observation_refs=(),
         mappings=(
             FieldMapping(
-                source_ref=f"{_SOURCE_NAME}.order_id",
-                semantic_ref="daily-order-count",
+                source_ref=f"{_SOURCE_NAME}.order_total",
+                semantic_ref="daily-order-value",
                 transformation="derived",
             ),
         ),

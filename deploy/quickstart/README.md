@@ -48,7 +48,7 @@ adjusting it, naming the spelling to use instead.
 
 ## What it shows
 
-One stakeholder question is waiting in the inbox: *What is the daily order count?*, asked by
+One stakeholder question is waiting in the inbox: *What is the daily order value?*, asked by
 `requester-demo` for a weekly operations review. You open the console as the architect,
 `architect-demo`.
 

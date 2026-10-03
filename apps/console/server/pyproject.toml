@@ -19,15 +19,21 @@ dependencies = [
   "heinzel-compiler",
   "heinzel-contract-model",
   "heinzel-contract-service",
+  "heinzel-dbt-adapter",
   "heinzel-evidence",
+  "heinzel-execution-graph",
+  "heinzel-iir",
   "heinzel-knowledge-graph",
   "heinzel-provider-openmetadata",
+  "heinzel-provider-postgresql",
   "heinzel-provider-sdk",
   "heinzel-request-management",
   "heinzel-runtime",
   "heinzel-semantic-registry",
   "heinzel-state",
   "heinzel-warehouse-control",
+  # The demonstration provisions and reads its own warehouse (`demo/warehouse.py`).
+  "psycopg[binary]>=3.3.6,<4",
   "pydantic>=2.13.5,<3",
   "starlette>=1.7.0,<2",
   "uvicorn>=0.52,<1",
@@ -47,9 +53,13 @@ heinzel-catalog-control = { workspace = true }
 heinzel-compiler = { workspace = true }
 heinzel-contract-model = { workspace = true }
 heinzel-contract-service = { workspace = true }
+heinzel-dbt-adapter = { workspace = true }
 heinzel-evidence = { workspace = true }
+heinzel-execution-graph = { workspace = true }
+heinzel-iir = { workspace = true }
 heinzel-knowledge-graph = { workspace = true }
 heinzel-provider-openmetadata = { workspace = true }
+heinzel-provider-postgresql = { workspace = true }
 heinzel-provider-sdk = { workspace = true }
 heinzel-request-management = { workspace = true }
 heinzel-runtime = { workspace = true }
