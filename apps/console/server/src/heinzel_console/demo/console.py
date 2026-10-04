@@ -13,7 +13,8 @@ Nothing in this package imports from `tests/`, and no test module is executed at
 
 from __future__ import annotations
 
-from contextlib import suppress
+import shutil
+from contextlib import ExitStack, suppress
 from pathlib import Path
 from types import TracebackType
 
@@ -35,6 +36,8 @@ from ..governed_adapters import (
 )
 from ..governed_backend import GovernedConsoleBackend
 from ..operation_handles import InMemoryOperationHandleRepository
+from .answer_runtime import DemoGovernedAnswer, demo_governed_answer
+from .bootstrap import ensure_demo_generation
 from .collaborators import (
     DEMO_ARCHITECT_ID,
     DEMO_ARCHITECT_PRINCIPAL_REF,
@@ -80,8 +83,22 @@ class DemoConsole:
     through protocols and keeps no reference of its own to the repository underneath.
     """
 
-    def __init__(self, state_dir: Path) -> None:
+    def __init__(self, state_dir: Path, *, warehouse_dsn: str | None = None) -> None:
+        """Assemble the console, and its governed answer when it is given a warehouse.
+
+        `warehouse_dsn` is a superuser connection to an otherwise empty database. Given one, the
+        demonstration provisions it, acquires and lands its seeded source, materializes and
+        publishes a product, and composes the governed answer over it -- so a question admitted
+        in the console is answered from that product. Given none, the console is what it was:
+        every answer capability reports itself as not delivered, which is the honest answer when
+        there is no warehouse to answer from.
+
+        The DSN is a parameter rather than an argument of the command that starts the console,
+        because it carries a password and a command's arguments are readable from the process
+        table.
+        """
         self._stores = DemoStores(state_dir)
+        self._closing = ExitStack()
         try:
             publication = build_demo_publication(self._stores, clock=demo_clock)
             role_resolver = DemoRoleResolver()
@@ -130,6 +147,17 @@ class DemoConsole:
                 principal_ref=DEMO_REQUESTER_PRINCIPAL_REF,
             )
             self.publication = publication
+            governed_answer = (
+                None
+                if warehouse_dsn is None
+                else self._compose_governed_answer(
+                    state_dir,
+                    warehouse_dsn=warehouse_dsn,
+                    principals=principals,
+                )
+            )
+            self.governed_answer = governed_answer
+            runtime = None if governed_answer is None else governed_answer.runtime
             self.backend = GovernedConsoleBackend(
                 identity=GovernedWorkspaceIdentity(
                     tenant_ref=DEMO_TENANT_ID,
@@ -143,6 +171,18 @@ class DemoConsole:
                 fulfillment=self._fulfillment_reads,
                 fulfillment_commands=self._fulfillment,
                 fulfillment_preparation_commands=self._fulfillment,
+                # A question's plan is admitted through the governed answer, because that
+                # admission is the one that leaves a plan behind for the execution to run.
+                answer_admission_commands=(
+                    None
+                    if governed_answer is None
+                    else governed_answer.admission_commands(self._requests)
+                ),
+                fulfillment_execution_commands=runtime,
+                incidents=None if runtime is None else runtime.incidents,
+                answer_results=None if runtime is None else runtime.results,
+                verified_answers=None if runtime is None else runtime.answers,
+                answer_downloads=None if runtime is None else runtime.downloads,
                 # The demonstration delivers no grant application, expiry or revocation, so
                 # its own workspace card reports data access as not delivered. Intake must
                 # fail closed to match it: accepted, such a request clears intake and
@@ -156,8 +196,50 @@ class DemoConsole:
         except BaseException:
             # Best-effort clean-up: a failure to close must not replace the failure to build.
             with suppress(Exception):
+                self._closing.close()
+            with suppress(Exception):
                 self._stores.close()
             raise
+
+    def _compose_governed_answer(
+        self,
+        state_dir: Path,
+        *,
+        warehouse_dsn: str,
+        principals: InMemoryWorkspacePrincipalDirectory,
+    ) -> DemoGovernedAnswer:
+        """Bring the warehouse to a published generation and compose the answer over it.
+
+        `dbt` is looked up rather than assumed: the materialization runs it as a subprocess, and
+        a console that started without it would provision a warehouse and then fail partway
+        through materializing, leaving the two to be discarded together.
+        """
+        dbt_executable = shutil.which("dbt")
+        if dbt_executable is None:
+            raise RuntimeError(
+                "the demonstration's warehouse needs the locked dbt executable on PATH to "
+                "materialize its product"
+            )
+        generation = ensure_demo_generation(
+            bootstrap_dsn=warehouse_dsn,
+            stores=self._stores,
+            publication=self.publication,
+            dbt_executable=Path(dbt_executable),
+            workspace=state_dir / "materialization",
+            clock=demo_clock,
+        )
+        return self._closing.enter_context(
+            demo_governed_answer(
+                state_dir / "answers",
+                stores=self._stores,
+                requests=self._requests,
+                principals=principals,
+                publication=self.publication,
+                generation=generation,
+                principal_ref=DEMO_REQUESTER_PRINCIPAL_REF,
+                clock=demo_clock,
+            )
+        )
 
     def seed_demonstration_request(self) -> None:
         """Leave the demonstration's own question waiting, if it is not already there.
@@ -187,8 +269,16 @@ class DemoConsole:
         return tuple(item.request_id for item in self.backend.get_inbox(_ARCHITECT_CONTEXT).items)
 
     def close(self) -> None:
-        """Close every store this console opened."""
-        self._stores.close()
+        """Stop the governed answer's own services, then close every store this console opened.
+
+        In that order: the entitlement authority serves over loopback for as long as the console
+        does, and stopping it after the stores would leave it answering from handles that had
+        already been released.
+        """
+        try:
+            self._closing.close()
+        finally:
+            self._stores.close()
 
     def __enter__(self) -> DemoConsole:
         return self

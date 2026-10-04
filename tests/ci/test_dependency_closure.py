@@ -9,9 +9,11 @@ and its declared dependencies alone, and the undeclared import then fails at
 startup -- in the one build no gate exercises.
 
 An import reached only for type checking is deliberately not a runtime dependency:
-it costs an install that the running code never needs. This file counts an import
-as runtime when it executes on module import, so `if TYPE_CHECKING:` blocks are
-exempt and everything else is not.
+it costs an install that the running code never needs. Everything else is, so
+`if TYPE_CHECKING:` blocks are exempt and nothing else is -- a function body
+included. Deferring an import does not remove the dependency, it moves the
+`ImportError` from start-up to whenever that function is first called, which is
+the worse of the two places to find out.
 """
 
 from __future__ import annotations
@@ -69,10 +71,13 @@ def _guards_type_checking(test: ast.expr) -> bool:
 
 
 def _runtime_imports(source: str) -> frozenset[str]:
-    """The top-level packages a module imports when it is imported.
+    """The top-level packages a module imports to run, whenever it reaches the import.
 
-    Imports inside a function or a `TYPE_CHECKING` block do not run on import and
-    are left out; a relative import names no distribution and is left out too.
+    A `TYPE_CHECKING` block is left out, because nothing there executes; a relative
+    import names no distribution and is left out too. A function body is counted: the
+    import runs when the function is called, and a dependency that fails on the first
+    call rather than at start-up is still a dependency -- found later and further from
+    the manifest that omitted it.
 
     Everything else is descended into by field name rather than by statement type, so
     that a kind this file never thought of -- a module-level `for`, `while` or `match`,
@@ -89,8 +94,6 @@ def _runtime_imports(source: str) -> frozenset[str]:
             elif isinstance(node, ast.ImportFrom):
                 if node.level == 0 and node.module is not None:
                     found.add(node.module.split(".")[0])
-            elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                continue
             elif isinstance(node, ast.If) and _guards_type_checking(node.test):
                 visit(node.orelse)
             else:
@@ -197,10 +200,32 @@ def test_an_import_under_any_compound_statement_is_counted() -> None:
         assert "heinzel_compiler" in _runtime_imports(source), source
 
 
-def test_an_import_inside_a_function_is_not_counted() -> None:
-    """Only module-level imports run when the quickstart image imports the console."""
-    deferred = "def build():\n    import heinzel_compiler\n    return heinzel_compiler\n"
-    assert _runtime_imports(deferred) == frozenset()
+def test_an_import_inside_a_function_is_counted() -> None:
+    """A deferred import is a dependency whose absence is found on the first call.
+
+    Counted because the member really does import the sibling to do its work. An
+    estimator that built a compiler model inside its one method passed every gate
+    while its manifest named no compiler: installed on its own, it would have
+    imported, constructed and then raised `ImportError` from the call.
+    """
+    for deferred in (
+        "def build():\n    import heinzel_compiler\n    return heinzel_compiler\n",
+        "def build():\n    from heinzel_compiler import QueryScanEstimate\n",
+        "async def build():\n    import heinzel_compiler\n",
+        "class Holder:\n    def build(self):\n        import heinzel_compiler\n",
+    ):
+        assert "heinzel_compiler" in _runtime_imports(deferred), deferred
+
+
+def test_a_type_checking_import_inside_a_function_is_still_not_counted() -> None:
+    """The exemption is about what executes, not about where the import is written."""
+    guarded = (
+        "from typing import TYPE_CHECKING\n"
+        "def build():\n"
+        "    if TYPE_CHECKING:\n"
+        "        import heinzel_compiler\n"
+    )
+    assert "heinzel_compiler" not in _runtime_imports(guarded)
 
 
 @pytest.mark.parametrize(

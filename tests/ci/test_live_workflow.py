@@ -141,6 +141,13 @@ def test_the_core_postgresql_journeys_are_listed(workflow: dict[str, Any]) -> No
         # The warehouse the quickstart's answer is asked over. Its grants are the
         # separation the providers rely on, and only a real cluster can check them.
         "tests/integration/test_demo_warehouse_live.py",
+        # The two journeys that say the demonstration answers its own question: one over the
+        # composed services, one over the HTTP surface a browser drives. Every other proof of
+        # this chain stops short of an answer, so without these in the selection nothing in CI
+        # would notice the demonstration going back to refusing -- and an unlisted file is not a
+        # skip, so the guard after the step cannot see them missing.
+        "tests/integration/test_demo_governed_answer_live.py",
+        "tests/integration/test_demo_console_answer_live.py",
     } <= paths
 
 

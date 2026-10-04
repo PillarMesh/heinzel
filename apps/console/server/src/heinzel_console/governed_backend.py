@@ -182,6 +182,7 @@ from .governed_adapters import (
     AccessGrantReader,
     AccessGrantRevocationCommands,
     AcquisitionRunNowCommands,
+    AnswerAdmissionCommands,
     AnswerDownloadReceipt,
     AnswerDownloadReceiptWriter,
     AnswerResultReader,
@@ -406,6 +407,7 @@ class GovernedConsoleBackend:
         request_commands: RequestIntakeCommands | None = None,
         fulfillment_commands: FulfillmentDecisionCommands | None = None,
         fulfillment_execution_commands: FulfillmentExecutionCommands | None = None,
+        answer_admission_commands: AnswerAdmissionCommands | None = None,
         fulfillment_access_execution_commands: FulfillmentAccessExecutionCommands | None = None,
         access_grant_commands: AccessGrantCommands | None = None,
         access_grants: AccessGrantReader | None = None,
@@ -451,6 +453,7 @@ class GovernedConsoleBackend:
         self._request_commands = request_commands
         self._fulfillment_commands = fulfillment_commands
         self._fulfillment_execution_commands = fulfillment_execution_commands
+        self._answer_admission_commands = answer_admission_commands
         self._fulfillment_access_execution_commands = fulfillment_access_execution_commands
         self._access_grant_commands = access_grant_commands
         self._access_grants = access_grants
@@ -2152,14 +2155,43 @@ class GovernedConsoleBackend:
         if request.state is not RequestState.EXECUTING:
             # An executing request was admitted already and only its delivery is pending, so
             # the same command retries delivery rather than recording a second admission.
-            self._guarded(
-                lambda: commands.admit(
-                    tenant_id=context.tenant_id,
-                    request_id=request_id,
-                    actor_id=context.actor_id,
-                    expected_revision=command.expected_revision,
+            #
+            # A question is admitted through the governed answer when one is composed, because
+            # that admission is what leaves a plan behind: the fulfillment admission also moves
+            # the request to executing, and `execute_answer` would then find no admitted plan and
+            # fail the request. The two are exclusive rather than ordered -- each requires a
+            # request that has not been admitted yet, so whichever runs first makes the other
+            # refuse.
+            #
+            # So on this path the checks above are the only ones made before the governed
+            # admission: the actor's role, the revision, the proposal digest the browser
+            # displayed, and `_admission_view`'s own projection of the approvals recorded
+            # against that proposal. What the fulfillment service would have added is not
+            # made here: whether each approving actor still holds the authority they approved
+            # under, whether the proposal's impact authority or policy snapshot has drifted
+            # since it was compiled, and a `FulfillmentAdmissionReceipt` recording the
+            # admission. A deployment composing both needs a fulfillment service that can
+            # judge admissibility without consuming it; this console has no such seam, and the
+            # quickstart README lists the gap rather than implying it is covered.
+            answer_admission = self._answer_admission_commands
+            if isinstance(request.payload, StakeholderQuestion) and answer_admission is not None:
+                self._guarded(
+                    lambda: answer_admission.admit_answer(
+                        tenant_id=context.tenant_id,
+                        request_id=request_id,
+                        actor_id=context.actor_id,
+                        expected_revision=command.expected_revision,
+                    )
                 )
-            )
+            else:
+                self._guarded(
+                    lambda: commands.admit(
+                        tenant_id=context.tenant_id,
+                        request_id=request_id,
+                        actor_id=context.actor_id,
+                        expected_revision=command.expected_revision,
+                    )
+                )
         admitted = self._visible_request(context, request_id)
         if (
             admitted.state is RequestState.EXECUTING

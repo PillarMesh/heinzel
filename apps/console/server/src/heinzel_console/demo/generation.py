@@ -15,7 +15,7 @@ creates, so a step reaching past its grant fails here exactly as it would elsewh
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from heinzel_contract_model import ManagedIntegrationContract, canonical_bytes, digest
 from heinzel_provider_postgresql import (
@@ -39,7 +39,7 @@ from heinzel_provider_sdk import (
 from heinzel_runtime import GenerationLedger, LandingResult, LandingRunner
 from pydantic import SecretStr
 
-from .warehouse import SOURCE_SCHEMA, SOURCE_TABLE
+from .warehouse import DEMO_MAX_WRITE_TRANSACTION_DURATION, SOURCE_SCHEMA, SOURCE_TABLE
 
 __all__ = [
     "DEMO_LOGICAL_OBJECT",
@@ -109,7 +109,7 @@ def acquire_demo_rows(acquisition_dsn: str, *, tenant_id: str) -> AcquiredRows:
             # holds no privilege on a relation outside its declaration, so `warehouse.py`
             # creates this schema and a relation in it for the check to have a subject.
             unrelated_schema_name="private_admin",
-            max_write_transaction_duration=timedelta(minutes=5),
+            max_write_transaction_duration=DEMO_MAX_WRITE_TRANSACTION_DURATION,
         ),
         private_boundary_reference_factory=lambda tenant, reference: (
             f"private://{tenant}/{reference}"

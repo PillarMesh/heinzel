@@ -198,8 +198,8 @@ class ProductQueryBindingRepository(Protocol):
 
 
 class SQLiteProductQueryBindingRepository:
-    def __init__(self, database_path: str) -> None:
-        self._connection = sqlite3.connect(database_path)
+    def __init__(self, database_path: str, *, check_same_thread: bool = True) -> None:
+        self._connection = sqlite3.connect(database_path, check_same_thread=check_same_thread)
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS approved_product_query_bindings ("
             "tenant_id TEXT NOT NULL, product_id TEXT NOT NULL, product_revision INTEGER NOT NULL, "

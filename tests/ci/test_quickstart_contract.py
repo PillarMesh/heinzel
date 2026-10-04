@@ -221,12 +221,19 @@ def test_both_readmes_name_the_published_port() -> None:
 
 
 def test_every_quickstart_image_is_digest_pinned() -> None:
-    """A tag can be rebuilt; a digest cannot, so only a digest fixes what is installed."""
+    """A tag can be rebuilt; a digest cannot, so only a digest fixes what is installed.
+
+    Both files, because the quickstart runs images from both: the Dockerfile builds the console
+    and `compose.yaml` runs the warehouse beside it. A check that read one would have let the
+    other drift.
+    """
     dockerfile = DOCKERFILE.read_text(encoding="utf-8")
     images = re.findall(r"^FROM\s+(\S+)", dockerfile, re.MULTILINE)
     images += re.findall(r"^COPY\s+--from=(\S+)", dockerfile, re.MULTILINE)
     # uv is mounted from its image for the length of one instruction rather than copied in.
     images += re.findall(r"--mount=\S*?from=([^,\s]+)", dockerfile)
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    images += [service["image"] for service in compose["services"].values() if "image" in service]
     referenced = [image for image in images if ":" in image or "/" in image]
     assert referenced, "no image references found"
     unpinned = [image for image in referenced if "@sha256:" not in image]
@@ -371,3 +378,78 @@ def test_dependabot_does_not_offer_node_typings_ahead_of_the_pinned_runtime() ->
         f"@types/node {typings} describes a different Node major than the pinned runtime "
         f"{runtime}; the typings and the runtime move together"
     )
+
+
+def _warehouse_service() -> dict[str, object]:
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    service: dict[str, object] = compose["services"]["warehouse"]
+    return service
+
+
+def test_the_warehouse_is_never_published() -> None:
+    """The unpublished port is the whole boundary that lets its superuser need no password.
+
+    Publishing it would put a trust-authenticated superuser on the host's network, so this is
+    not a preference about tidiness: it is the reason the compose file holds no credential.
+    """
+    assert "ports" not in _warehouse_service()
+
+
+def test_the_warehouse_holds_no_credential_in_version_control() -> None:
+    """A password committed beside the console that uses it is a password in git forever.
+
+    The configured values, not the file's text: the comments explain why there is no credential
+    here, and a check over the text would be satisfied by deleting the explanation.
+    """
+    environment = _warehouse_service()["environment"]
+    assert isinstance(environment, dict)
+    assert "POSTGRES_PASSWORD" not in environment
+    assert environment["POSTGRES_HOST_AUTH_METHOD"] == "trust"
+
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    secretish = tuple(
+        f"{service_name}.{key}"
+        for service_name, service in compose["services"].items()
+        for key, value in (service.get("environment") or {}).items()
+        if "PASSWORD" in key.upper()
+        or "SECRET" in key.upper()
+        # A DSN is configuration naming where to connect; it carries a credential only if
+        # somebody writes one into it, which is what this catches.
+        or (
+            isinstance(value, str)
+            and "://" in value
+            and "@" in value.split("://", 1)[1]
+            and ":" in value.split("://", 1)[1].split("@", 1)[0]
+        )
+    )
+    assert secretish == (), f"these carry or could carry a credential: {secretish}"
+
+
+def test_the_console_waits_for_the_warehouse_to_accept_connections() -> None:
+    """Provisioning is the console's first act, and a refused connection ends the command.
+
+    `service_started` is not enough: the server accepts connections before `POSTGRES_DB` exists,
+    and the console connects to that database by name.
+    """
+    assert _console_service()["depends_on"] == {"warehouse": {"condition": "service_healthy"}}
+    healthcheck = _warehouse_service()["healthcheck"]
+    assert isinstance(healthcheck, dict)
+    assert "--dbname=heinzel" in " ".join(str(part) for part in healthcheck["test"])
+
+
+def test_the_console_is_given_the_warehouse_this_compose_runs() -> None:
+    """The DSN names the service by its compose name, and the database the warehouse creates."""
+    environment = _console_service()["environment"]
+    assert isinstance(environment, dict)
+    dsn = environment["HEINZEL_DEMO_WAREHOUSE_DSN"]
+    assert isinstance(dsn, str)
+    assert dsn.endswith("@warehouse:5432/heinzel")
+    assert _warehouse_service()["environment"]["POSTGRES_DB"] == "heinzel"  # type: ignore[index]
+
+
+def test_both_volumes_are_named_so_one_command_discards_both() -> None:
+    """The console refuses to start when its state and its warehouse disagree, naming
+    `docker compose down -v` -- which removes nothing that is not a named volume."""
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    assert set(compose["volumes"]) == {"heinzel-state", "heinzel-warehouse"}
+    assert _warehouse_service()["volumes"] == ["heinzel-warehouse:/var/lib/postgresql/data"]

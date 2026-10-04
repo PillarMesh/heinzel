@@ -1,3 +1,16 @@
+"""Which column answers which approved term, read from the durable query binding.
+
+A governed query names columns. Which column carries which approved metric or dimension is
+not the compiler's to decide and not a caller's to assert: it is recorded in the approved
+product query binding, and this reads it back. A caller that assembled the mapping itself
+could ask for a column the owner never bound a term to.
+
+This lived under `tests/acceptance/` and was composed nowhere, so the mapping it exists to
+enforce was asserted by hand at every call site that needed one. The quickstart image ships
+`apps`, `packages`, `providers` and `services` but not `tests`, so a console in a container
+could not reach it at all.
+"""
+
 from __future__ import annotations
 
 from typing import Literal, Protocol
@@ -12,6 +25,13 @@ from heinzel_compiler import (
 from heinzel_contract_model import ArtifactModel, ArtifactReference
 from heinzel_semantic_registry import ApprovedProductQueryBinding
 from pydantic import ConfigDict, Field
+
+__all__ = [
+    "DurableProductQueryBindingReader",
+    "GovernedQueryBindingProjection",
+    "ProductQueryBindingRepositoryReader",
+    "ProductQueryBindingUnavailable",
+]
 
 
 class ProductQueryBindingUnavailable(RuntimeError):

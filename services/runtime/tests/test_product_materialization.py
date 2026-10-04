@@ -31,6 +31,7 @@ from heinzel_runtime.product_materialization import (
     ProductMaterializationRunner,
     PublicationRecoveryCommand,
     PublicationRecoveryNotAllowedError,
+    SQLiteProductMaterializationReceiptReader,
     StalePublicationRevisionError,
 )
 from heinzel_state import (
@@ -1033,6 +1034,79 @@ def test_receipt_reader_returns_only_the_exact_recorded_generation() -> None:
 
     assert exact == result.receipt
     assert absent is None
+
+
+def test_a_receipt_reader_answers_over_a_ledger_whose_runner_has_ended(tmp_path: Path) -> None:
+    """A process that restarts has the ledger but not the runner that wrote it.
+
+    The runner needs a warehouse, a catalog, a cardinality reader and an authorization verifier,
+    because it materializes. A consumer answering for a generation committed by a run that has
+    since ended has none of those, and composing a runner it will never materialize with would
+    be claiming a capability to satisfy a read.
+    """
+    ledger_path = tmp_path / "materializations.sqlite3"
+    writing = sqlite3.connect(ledger_path)
+    try:
+        committed = ProductMaterializationRunner(
+            writing,
+            warehouse=_Warehouse(),
+            catalog=_Catalog(),
+            execution_authorization_verifier=_authorization_verifier(),
+            cardinality_evidence_reader=_cardinality_repository(),
+            clock=lambda: NOW,
+        ).materialize(_request(), admission=_admission())
+    finally:
+        writing.close()
+
+    reading = sqlite3.connect(ledger_path)
+    try:
+        reader = SQLiteProductMaterializationReceiptReader(reading)
+        assert (
+            reader.read_receipt(
+                tenant_id="tenant-a",
+                product_id="product-revenue",
+                product_revision=1,
+                product_generation=1,
+            )
+            == committed.receipt
+        )
+        assert (
+            reader.read_receipt(
+                tenant_id="tenant-a",
+                product_id="product-revenue",
+                product_revision=1,
+                product_generation=2,
+            )
+            is None
+        )
+    finally:
+        reading.close()
+
+
+def test_a_ledger_that_has_committed_nothing_reads_as_no_receipt(tmp_path: Path) -> None:
+    """A reader must not create the table it reads, and an empty ledger is not a fault.
+
+    A first start has a state directory with no materialization in it. Reporting that as an
+    unavailable authority would make an answer path refuse for a reason that reads as damage
+    rather than as nothing having been materialized yet.
+    """
+    connection = sqlite3.connect(tmp_path / "empty.sqlite3")
+    try:
+        assert (
+            SQLiteProductMaterializationReceiptReader(connection).read_receipt(
+                tenant_id="tenant-a",
+                product_id="product-revenue",
+                product_revision=1,
+                product_generation=1,
+            )
+            is None
+        )
+        # Read-only: nothing was created by asking.
+        assert connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table'"
+        ).fetchone() == (0,)
+    finally:
+        connection.close()
 
 
 def test_materialization_ledger_retains_multiple_generations_of_one_product_revision() -> None:

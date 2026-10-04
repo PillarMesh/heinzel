@@ -25,6 +25,28 @@ uv run mypy && ./tests/type-check/check.sh
 uv run pytest -m "not live" -q
 ```
 
+CI also scans the tree for secrets, in the same job and before any of the above. It is the one
+offline check with no `uv` entry point, so run it the way CI does -- over the committed tree, so
+that a file `git archive` omits is omitted here too:
+
+```bash
+tree="$(mktemp -d)" && git archive HEAD | tar -x -C "$tree"
+docker run --rm --network none -v "$tree:/repo:ro" \
+  "$(grep -om1 'ghcr.io/gitleaks/gitleaks@sha256:[0-9a-f]*' \
+    .github/workflows/repository-structure.yml)" \
+  dir /repo --config /repo/.gitleaks.toml --no-banner --redact
+```
+
+The image digest is read out of the workflow rather than written here, so this runs the scanner
+CI runs. A different version reports differently, which is the one way this check can agree with
+itself locally and still fail in CI.
+
+`.gitleaks.toml` allows the exact synthetic values the default rules mistake for secrets, each
+named with its rule and its file. Moving one of those files moves its entry: the allowlist
+matches on path and value together, so the entry stops covering the value and the scan reports
+it. Read the flagged line before adding an entry, and never allowlist a value you have not
+confirmed is fake.
+
 If you change the console, also run:
 
 ```bash

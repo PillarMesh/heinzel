@@ -124,6 +124,8 @@ jobs:
           tests/integration/test_postgresql_product_observation_live.py \
           tests/acceptance/test_console_answer_runtime.py \
           tests/integration/test_demo_warehouse_live.py \
+          tests/integration/test_demo_governed_answer_live.py \
+          tests/integration/test_demo_console_answer_live.py \
           tests/integration/test_postgresql_query_estimator_live.py \
           tests/integration/test_postgresql_rejected_credentials_live.py \
           tests/integration/test_generation_scoped_product_sql_conformance.py \

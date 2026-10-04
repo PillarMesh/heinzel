@@ -1,6 +1,6 @@
-# The local demonstration decided in ADR-0009. It packages the demonstration backend, not a
-# deployment: the console has no authentication, so anyone who reaches the published port acts
-# as the architect. Start it from the repository root:
+# The local demonstration decided in ADR-0009. It packages the demonstration, not a deployment:
+# the console has no authentication, so anyone who reaches the published port acts as the
+# architect. Start it from the repository root:
 #
 #   docker compose -f deploy/quickstart/compose.yaml up --build
 #
@@ -9,9 +9,48 @@
 #
 #   HEINZEL_PORT=9000 docker compose -f deploy/quickstart/compose.yaml up --build
 #
+# Two containers: the console, and the warehouse it provisions and answers over. The first start
+# materializes the demonstration's product, which runs dbt and takes a little longer than the
+# starts after it.
+#
 # See the README beside this file for what the demonstration shows and where it stops.
 
 services:
+  # The warehouse the demonstration provisions, acquires from, materializes into and answers
+  # over. Pinned by digest as well as by tag, like every image in the Dockerfile beside this
+  # file, so a rebuilt tag cannot change what this runs. The major version matches the one the
+  # live tests run against.
+  warehouse:
+    image: postgres:16.10-bookworm@sha256:38471f330eb885e04de130b768d6db4e10469e2311879c7e5c699f6d2d8a1c74
+    # Deliberately not published. Nothing outside this compose network can reach it, and that is
+    # what lets the superuser connect without a password: no credential is written down here, so
+    # none can be read out of this repository or a process listing. A password committed beside
+    # the console that uses it would be a password in version control forever.
+    #
+    # This is the bootstrap superuser alone. The three least-privilege logins the demonstration
+    # provisions -- acquisition, landing, materialization -- and the two read-only ones it grants
+    # the product to are given freshly generated passwords on every start, so the boundary this
+    # demonstration exists to show is unaffected by how the superuser connects.
+    #
+    # To look inside: `docker compose -f deploy/quickstart/compose.yaml exec warehouse psql
+    # --username=postgres heinzel`.
+    environment:
+      POSTGRES_DB: heinzel
+      POSTGRES_HOST_AUTH_METHOD: trust
+    # The console starts by provisioning this database, so it must be accepting connections for
+    # the named database rather than merely running. `pg_isready` without `--dbname` reports the
+    # server, which is ready before `POSTGRES_DB` exists.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username=postgres --dbname=heinzel"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # Removed by `docker compose down -v` together with the console's state. The two must be
+    # discarded together: the console refuses to start when its state directory and its warehouse
+    # disagree about whether the product has been materialized, naming that command.
+    volumes:
+      - heinzel-warehouse:/var/lib/postgresql/data
+
   console:
     build:
       context: ../..
@@ -29,9 +68,23 @@ services:
     # served, because the browser would then send `http://127.0.0.1` and this names a port.
     environment:
       HEINZEL_CONSOLE_ALLOWED_ORIGIN: "http://127.0.0.1:${HEINZEL_PORT:-8000}"
-    # The demonstration's state directory and its SQLite stores. `docker compose down` keeps it
-    # and the demonstration resumes; `docker compose down -v` removes it and the next start is a
-    # fresh demonstration.
+      # The warehouse above, by its service name on the compose network. Given this, the console
+      # provisions the database, acquires its seeded source, lands it under a receipt,
+      # materializes and publishes a product, and answers the seeded question from it. Unset, the
+      # console reports every answer capability as not delivered, which is the honest answer with
+      # no warehouse to answer from.
+      HEINZEL_DEMO_WAREHOUSE_DSN: "postgresql://postgres@warehouse:5432/heinzel"
+    # Not merely started: the console provisions the database as its first act, so the warehouse
+    # has to be accepting connections for the named database, not just running. The console also
+    # waits a bounded time for it, which is what covers `docker compose restart` -- that command
+    # restarts both containers without re-reading this.
+    depends_on:
+      warehouse:
+        condition: service_healthy
+    # The demonstration's state directory and its SQLite stores. `docker compose down` keeps
+    # this and the warehouse's volume, and the demonstration resumes from the product it already
+    # materialized; `docker compose down -v` removes both and the next start is a fresh
+    # demonstration. Removing one and keeping the other is what the console refuses to start on.
     volumes:
       - heinzel-state:/var/lib/heinzel
     # No `restart:` on purpose, deviating from the quickstart design's `unless-stopped`. This is
@@ -43,3 +96,4 @@ services:
 
 volumes:
   heinzel-state:
+  heinzel-warehouse:

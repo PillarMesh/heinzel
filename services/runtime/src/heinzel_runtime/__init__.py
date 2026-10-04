@@ -156,6 +156,7 @@ from .product_materialization import (
     PublicationRecoveryEvidence,
     PublicationRecoveryNotAllowedError,
     PublicationRecoveryStatus,
+    SQLiteProductMaterializationReceiptReader,
     StalePublicationRevisionError,
 )
 from .query_execution import (
@@ -305,6 +306,7 @@ __all__ = [
     "RuntimeSource",
     "SQLiteAnswerResultStore",
     "SQLiteProductInputCardinalityEvidenceRepository",
+    "SQLiteProductMaterializationReceiptReader",
     "SegmentEncoder",
     "SignedProductInputCardinalityEvidence",
     "SignedProductInputCardinalityEvidenceReader",

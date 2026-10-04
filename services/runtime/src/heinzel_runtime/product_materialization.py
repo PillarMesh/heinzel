@@ -324,6 +324,71 @@ class _Record(BaseModel):
         return self
 
 
+class SQLiteProductMaterializationReceiptReader:
+    """Read committed materialization receipts without composing the runner that wrote them.
+
+    The runner needs a warehouse, a catalog, a cardinality reader and an authorization verifier,
+    because it materializes. A reader that only answers for what was already committed needs the
+    ledger alone -- which is what a process that restarts over an existing ledger has: the
+    generation it is answering for was committed by a run that has since ended.
+
+    Read-only. A ledger with no table yet has committed nothing, so that reads as no receipt
+    rather than as an unavailable authority; creating the table here would make a reader that
+    writes.
+    """
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+
+    def read_receipt(
+        self,
+        *,
+        tenant_id: str,
+        product_id: str,
+        product_revision: int,
+        product_generation: int,
+    ) -> ProductMaterializationReceipt | None:
+        materialization_key = _materialization_key(
+            tenant_id=tenant_id,
+            product_id=product_id,
+            product_revision=product_revision,
+            product_generation=product_generation,
+        )
+        try:
+            if (
+                self._connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    (_MATERIALIZATION_TABLE,),
+                ).fetchone()
+                is None
+            ):
+                return None
+            row = self._connection.execute(
+                f"SELECT payload FROM {_MATERIALIZATION_TABLE} WHERE materialization_key = ?",
+                (materialization_key,),
+            ).fetchone()
+            record = None if row is None else _Record.model_validate_json(bytes(row[0]))
+        except (sqlite3.Error, ValidationError) as error:
+            raise MaterializationAuthorityError(
+                "materialization authority is invalid or unavailable"
+            ) from error
+        # A record whose consumption view was never switched describes a generation nothing
+        # reads yet, so it is not a receipt a consumer may answer from.
+        if record is None or not record.view_switched:
+            return None
+        receipt = record.receipt
+        if (
+            receipt.tenant_id != tenant_id
+            or receipt.product_id != product_id
+            or receipt.product_revision != product_revision
+            or receipt.product_generation != product_generation
+        ):
+            raise MaterializationAuthorityError(
+                "materialization authority index does not match its payload"
+            )
+        return receipt
+
+
 class ProductMaterializationRunner:
     def __init__(
         self,
@@ -596,32 +661,18 @@ class ProductMaterializationRunner:
         product_revision: int,
         product_generation: int,
     ) -> ProductMaterializationReceipt | None:
-        try:
-            record = self._load(
-                _materialization_key(
-                    tenant_id=tenant_id,
-                    product_id=product_id,
-                    product_revision=product_revision,
-                    product_generation=product_generation,
-                )
-            )
-        except (sqlite3.Error, ValidationError) as error:
-            raise MaterializationAuthorityError(
-                "materialization authority is invalid or unavailable"
-            ) from error
-        if record is None or not record.view_switched:
-            return None
-        receipt = record.receipt
-        if (
-            receipt.tenant_id != tenant_id
-            or receipt.product_id != product_id
-            or receipt.product_revision != product_revision
-            or receipt.product_generation != product_generation
-        ):
-            raise MaterializationAuthorityError(
-                "materialization authority index does not match its payload"
-            )
-        return receipt
+        """Answer for a committed generation, through the same reader a consumer would use.
+
+        Delegated rather than duplicated: a consumer reading this ledger without the runner must
+        apply the same conditions, and two copies of "which records are answerable" would be two
+        answers to one question.
+        """
+        return SQLiteProductMaterializationReceiptReader(self._connection).read_receipt(
+            tenant_id=tenant_id,
+            product_id=product_id,
+            product_revision=product_revision,
+            product_generation=product_generation,
+        )
 
     @staticmethod
     def _validate_observation(

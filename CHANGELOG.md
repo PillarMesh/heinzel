@@ -9,8 +9,29 @@ All notable changes to Heinzel are recorded here. The format follows
 ### Added
 
 - Initial public release of Heinzel under the Apache License 2.0.
-- A Docker Compose quickstart that builds one container and serves the demonstration console on
-  `127.0.0.1:8000`, or on another port through `HEINZEL_PORT`.
+- A Docker Compose quickstart that runs the demonstration console and the PostgreSQL warehouse
+  it answers over, on `127.0.0.1:8000` or on another port through `HEINZEL_PORT`. The warehouse
+  is not published, and `down -v` discards it together with the console's state.
+- The demonstration answers its own seeded question. Given `HEINZEL_DEMO_WAREHOUSE_DSN`, the
+  console provisions that database with five least-privilege logins, acquires its seeded source
+  through the acquisition provider, lands it under a receipt, compiles and materializes a
+  product with dbt, and publishes the generation through the product authorities -- all before it
+  listens. Admitting the approved proposal then compiles a governed query over that product,
+  bounds its scan by the relation's measured size, admits it under the answer scope policy's
+  ceilings, runs it as a read-only role and delivers the rows to the requester who asked.
+  Without that variable the console is unchanged: every answer capability reports itself as not
+  delivered. `deploy/quickstart/README.md` records what the answer went through and where it
+  stops.
+- `PostgreSQLRelationSizeQueryEstimator`, which bounds a restricted statement's scan by the
+  measured size of the one relation it reads. `PostgreSQLQueryEstimator` beside it declines to
+  report PostgreSQL's planner output as scan bytes and is right to, which left policy admission
+  with no estimate to check a ceiling against. The new bound needs no statistics, refuses a
+  statement over any relation other than the one it was configured for, and is deliberately
+  loose: it is an upper bound on what a statement can read, not a prediction of what a plan will.
+- `SQLiteProductMaterializationReceiptReader`, so a process that restarts over an existing
+  ledger can answer for a generation whose materialization run has long since ended.
+  `ProductMaterializationRunner.read_receipt` now delegates to it rather than keeping a second
+  copy of which records are answerable.
 - A `heinzel-console` command that serves the demonstration console from a state directory.
 - The release audit verifies the private terms file against `HEINZEL_PRIVATE_TERMS_SHA256`,
   and requires that variable whenever `HEINZEL_REQUIRE_PRIVATE_TERMS=1`. Its other checks all
@@ -22,6 +43,34 @@ All notable changes to Heinzel are recorded here. The format follows
 
 ### Changed
 
+- An answer's policy admission may now be recorded from a request awaiting approval as well as
+  from one being investigated, so a console that drives propose, review, approve, admit can
+  reach an admitted plan. The reason code `request_not_investigating` becomes
+  `request_state_not_admissible`, which is a breaking change for a caller matching on it. The
+  set is stated in three places that must agree -- the evaluation, the transaction that records
+  the receipt and the delivery's re-read of the request's history -- and all three moved
+  together. Nothing else about the admission changed: the plan, the policy, the entitlement
+  snapshot and every ceiling are decided the same way whichever state it was asked from, and the
+  state check remains a check on where the request has got to rather than a claim about what has
+  been approved.
+- The demonstration console starts again over its own state directory. Two things stopped it:
+  it connected to its warehouse without waiting, and the local entitlement authority refused the
+  entitlement a second start publishes. `docker compose restart` restarts both containers without
+  re-reading `depends_on`, so the console came back while PostgreSQL was still starting; and the
+  authority's store, which is a stand-in for a connected one, refuses a body that does not
+  supersede what it holds -- which a second start's otherwise identical entitlement does not,
+  because its timestamps move while its revision does not. The authority now starts from an empty
+  store, as the rest of it already did: its signing key, its bearer credential and its TLS
+  material are all generated per run, so an entitlement carried over was one nothing could verify.
+- The demonstration console waits up to a minute for its warehouse to accept connections before
+  provisioning it, instead of ending the command on the first refused connection. Compose holds
+  the first start back until the warehouse reports healthy, but `docker compose restart` restarts
+  both containers without re-reading `depends_on`, which left the console exiting while PostgreSQL
+  was still starting. A refusal the server produced -- a wrong password, a missing database -- is
+  still reported at once rather than waited out.
+- `heinzel-provider-postgresql` now declares `heinzel-compiler`, which its new estimator
+  constructs a scan estimate with. Installed from its own manifest alone it would have imported
+  cleanly and then raised `ImportError` from the call.
 - The declared minimum versions of the runtime dependencies now match what the lockfile actually
   resolves: `cryptography` 50.0.1, `pydantic` 2.13.5, `psycopg` 3.3.6 and `mcp` 2.2.0. Several had
   drifted several releases behind the versions every test ran against. `starlette` 1.7.0 and

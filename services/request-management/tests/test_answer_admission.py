@@ -325,7 +325,7 @@ def _request(*, cancelled: bool = False) -> InboxRequest:
         tenant_id="tenant-1",
         requester_id="requester-1",
         payload=StakeholderQuestion(purpose="operations", question="What is revenue?"),
-        state=RequestState.CANCELLED if cancelled else RequestState.INVESTIGATING,
+        state=RequestState.CANCELLED if cancelled else RequestState.AWAITING_APPROVAL,
         revision=2,
         submitted_at=NOW - timedelta(hours=1),
         updated_at=NOW,
@@ -464,7 +464,7 @@ def test_metric_plan_routing_refuses_missing_or_over_ceiling_estimates(
     assert result.receipt is None
     assert result.evaluation.outcome == "review_required"
     assert reason in result.evaluation.reason_codes
-    assert repository.request.state is RequestState.INVESTIGATING
+    assert repository.request.state is RequestState.AWAITING_APPROVAL
     assert repository.receipts == []
 
 
@@ -584,7 +584,7 @@ def test_admission_requires_restatement_and_honors_breach_budget_and_cancellatio
 
     assert result.receipt is None
     assert result.evaluation.reason_codes == (
-        "request_not_investigating",
+        "request_state_not_admissible",
         "restatement_not_accepted",
         "prior_statement_ceiling_breach",
         "period_scan_budget_exceeded",
@@ -1517,3 +1517,42 @@ def test_general_transition_cannot_bypass_policy_admission_receipt() -> None:
         )
         == ()
     )
+
+
+@pytest.mark.parametrize(
+    "state",
+    (RequestState.AWAITING_APPROVAL, RequestState.INVESTIGATING),
+)
+def test_both_states_an_admission_may_be_recorded_from_are_admitted(state: RequestState) -> None:
+    """Two states reach an admission, because two paths do.
+
+    A request awaiting approval has a proposal under review, which is what a console drives to. A
+    request still being investigated has a restated question. Which of the two it is changes
+    nothing this service decides, and neither state is a claim that the approvals or the
+    requester's confirmation are recorded -- that is the caller's to establish.
+    """
+    result, repository = _admit(request=_request().model_copy(update={"state": state}))
+
+    assert result.receipt is not None
+    assert "request_state_not_admissible" not in result.evaluation.reason_codes
+    assert repository.receipts != []
+
+
+@pytest.mark.parametrize(
+    "state",
+    (
+        RequestState.SUBMITTED,
+        RequestState.CLARIFYING,
+        RequestState.PROPOSED,
+        RequestState.EXECUTING,
+        RequestState.DELIVERED,
+    ),
+)
+def test_every_other_state_is_refused_the_admission(state: RequestState) -> None:
+    """Including `proposed` and `executing`: a proposal not yet submitted for review is not at a
+    point an answer may be admitted from, and an executing request was admitted already."""
+    result, repository = _admit(request=_request().model_copy(update={"state": state}))
+
+    assert result.receipt is None
+    assert "request_state_not_admissible" in result.evaluation.reason_codes
+    assert repository.receipts == []

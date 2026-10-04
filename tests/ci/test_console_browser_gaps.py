@@ -55,8 +55,16 @@ _OTHER_DISABLERS = (
 )
 
 # The sentence in `docs/status.md` that these gaps rest on. Both halves cause
-# them: no identity but the architect's, and no warehouse for an effect to land in.
-_CAPABILITY_CLAIM = "no authentication, no warehouse"
+# them: no identity but the architect's, and no managed warehouse binding for a
+# provisioning effect to land in.
+#
+# This fired once already, when the demonstration gained a PostgreSQL database of
+# its own and the sentence stopped saying "no warehouse". Every entry below was
+# re-examined then: all six survived, because none of them rests on the absence of a
+# database. Three rest on the absence of a *binding* -- `_warehouse_bindings` is
+# unwired, so `_stage_states` reads no binding and the setup stage never leaves
+# `foundation` -- and the wording here and in the registry now says that instead.
+_CAPABILITY_CLAIM = "no authentication and no managed warehouse binding"
 
 
 @dataclass(frozen=True)
@@ -90,25 +98,28 @@ _REGISTRY: dict[str, _Gap] = {
     "and the three approval gates": _Gap(
         spec="e2e/architect-journey.spec.ts",
         blocked_by=(
-            "No warehouse. `SetupWorkbench` renders by `SetupView.active_stage`, which stays "
-            "`foundation` because no provisioning effect ever lands -- the sibling test "
-            "`step 2 honesty` asserts exactly that, and advancing the stage would make the "
-            "demonstration claim a managed effect it does not have."
+            "No managed warehouse binding. `SetupWorkbench` renders by `SetupView.active_stage`, "
+            "which stays `foundation` because the demonstration composes no warehouse-control "
+            "reader, so `_stage_states` sees no binding and no provisioning effect ever lands -- "
+            "the sibling test `step 2 honesty` asserts exactly that, and advancing the stage "
+            "would make the demonstration claim a managed effect it does not have. The database "
+            "it provisions for its own product is not that binding."
         ),
     ),
     "meaning-review": _Gap(
         spec="e2e/screenshots.spec.ts",
         blocked_by=(
-            "No warehouse, as above: `/reviews/review-meaning` renders the foundation stage "
-            "for the same reason, so no honest image of this screen can be produced."
+            "No managed warehouse binding, as above: `/reviews/review-meaning` renders the "
+            "foundation stage for the same reason, so no honest image of this screen can be "
+            "produced."
         ),
     ),
     "activation-review": _Gap(
         spec="e2e/screenshots.spec.ts",
         blocked_by=(
-            "No warehouse, as above, and no authentication: `get_review` admits a review only "
-            "to a role in its `required_authorities`, and `review-data-product` (`data_owner`) "
-            "and `review-activation` (`budget_approver`) therefore answer 404."
+            "No managed warehouse binding, as above, and no authentication: `get_review` admits "
+            "a review only to a role in its `required_authorities`, and `review-data-product` "
+            "(`data_owner`) and `review-activation` (`budget_approver`) therefore answer 404."
         ),
     ),
     "keyboard-only request intake and clarified-outcome acceptance": _Gap(
@@ -213,14 +224,20 @@ def test_delivering_the_capability_these_gaps_rest_on_fails_this_file() -> None:
     """The tripwire: these six are only acceptable while the capability is undelivered.
 
     `docs/status.md` calls the demonstration console a demonstration and not a
-    deployment, with no authentication and no warehouse. That is why four of these
-    screens have no reachable browser state and two have no second identity. When
-    that stops being true the sentence changes, this assertion fails, and the gaps
-    above have to be reconsidered rather than quietly outliving their reason.
+    deployment, with no authentication and no managed warehouse binding. That is why
+    four of these screens have no reachable browser state and two have no second
+    identity. When that stops being true the sentence changes, this assertion fails,
+    and the gaps above have to be reconsidered rather than quietly outliving their
+    reason.
+
+    It has fired once, and worked: the demonstration gained a database of its own and
+    the sentence stopped saying "no warehouse", which forced every entry to be
+    re-read rather than left to drift behind a claim that no longer held.
     """
     assert _CAPABILITY_CLAIM in STATUS.read_text(encoding="utf-8"), (
         f"`docs/status.md` no longer says {_CAPABILITY_CLAIM!r}. If the demonstration console "
-        "gained an identity or a warehouse, revisit every entry in _REGISTRY."
+        "gained an identity or a managed warehouse binding, revisit every entry in _REGISTRY "
+        "before changing this constant to match."
     )
 
 
@@ -233,4 +250,4 @@ def test_a_registered_gap_cites_an_undelivered_capability(title: str, gap: _Gap)
     characters, so rewording a sentence would have failed this for something that
     has nothing to do with whether the reason is true.
     """
-    assert gap.blocked_by.startswith(("No authentication", "No warehouse")), title
+    assert gap.blocked_by.startswith(("No authentication", "No managed warehouse binding")), title

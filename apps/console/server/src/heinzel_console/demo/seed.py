@@ -14,13 +14,9 @@ from __future__ import annotations
 from heinzel_request_management import RequestManagementService, StakeholderQuestion
 
 from .collaborators import DEMO_REQUESTER_ID
-from .publication import DEMO_QUESTION, DEMO_TENANT_ID
+from .publication import DEMO_PURPOSE, DEMO_QUESTION, DEMO_TENANT_ID
 
 __all__ = ["seed_demo_request"]
-
-# Why the requester is asking. The demonstration's question is an operational one, so the
-# purpose the architect reads beside it is an operational purpose.
-_DEMO_PURPOSE = "weekly operations review"
 
 
 def seed_demo_request(requests: RequestManagementService) -> None:
@@ -35,7 +31,7 @@ def seed_demo_request(requests: RequestManagementService) -> None:
     requests.submit_question(
         tenant_id=DEMO_TENANT_ID,
         requester_id=DEMO_REQUESTER_ID,
-        purpose=_DEMO_PURPOSE,
+        purpose=DEMO_PURPOSE,
         question=DEMO_QUESTION,
         title=DEMO_QUESTION,
     )

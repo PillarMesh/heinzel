@@ -707,6 +707,7 @@ name = "heinzel-console"
 version = "0.1.0"
 source = { editable = "apps/console/server" }
 dependencies = [
+    { name = "cryptography" },
     { name = "heinzel-access-control" },
     { name = "heinzel-bi-control" },
     { name = "heinzel-catalog-control" },
@@ -726,6 +727,7 @@ dependencies = [
     { name = "heinzel-semantic-registry" },
     { name = "heinzel-state" },
     { name = "heinzel-warehouse-control" },
+    { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "starlette" },
@@ -734,6 +736,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50.0.1,<51" },
     { name = "heinzel-access-control", editable = "services/access-control" },
     { name = "heinzel-bi-control", editable = "services/bi-control" },
     { name = "heinzel-catalog-control", editable = "services/catalog-control" },
@@ -753,6 +756,7 @@ requires-dist = [
     { name = "heinzel-semantic-registry", editable = "services/semantic-registry" },
     { name = "heinzel-state", editable = "services/state" },
     { name = "heinzel-warehouse-control", editable = "services/warehouse-control" },
+    { name = "httpx", specifier = ">=0.28,<1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6,<4" },
     { name = "pydantic", specifier = ">=2.13.5,<3" },
     { name = "starlette", specifier = ">=1.7.0,<2" },
@@ -958,6 +962,7 @@ name = "heinzel-provider-postgresql"
 version = "0.1.0"
 source = { editable = "providers/postgresql" }
 dependencies = [
+    { name = "heinzel-compiler" },
     { name = "heinzel-contract-model" },
     { name = "heinzel-dbt-adapter" },
     { name = "heinzel-provider-sdk" },
@@ -970,6 +975,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "heinzel-compiler", editable = "services/compiler" },
     { name = "heinzel-contract-model", editable = "packages/contract-model" },
     { name = "heinzel-dbt-adapter", editable = "services/dbt-adapter" },
     { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },

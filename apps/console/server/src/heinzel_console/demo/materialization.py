@@ -17,12 +17,16 @@ from __future__ import annotations
 import base64
 import os
 import sqlite3
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import psycopg
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 from heinzel_compiler import ProductPhysicalPlanAuthority, compose_product_physical_plan_candidate
 from heinzel_contract_model import ManagedIntegrationContract, digest
 from heinzel_dbt_adapter import (
@@ -61,6 +65,7 @@ from heinzel_provider_postgresql import (
 )
 from heinzel_runtime import (
     GenerationLedger,
+    MaterializationCatalog,
     MaterializationRequest,
     ProductInputCardinalityResolver,
     ProductInputGenerationExpectation,
@@ -73,22 +78,24 @@ from psycopg import sql
 from pydantic import SecretStr
 
 from .generation import DEMO_LOGICAL_OBJECT, DEMO_RAW_TABLE
-from .warehouse import role_dsn
+from .publication import DEMO_PRODUCT_NAME
+from .warehouse import DEMO_WAREHOUSE_ROLES, role_dsn
 
 __all__ = [
     "DEMO_COMPILER_KEY_ID",
     "DEMO_GROUP_COLUMN",
     "DEMO_MEASURE_COLUMN",
-    "DEMO_PRODUCT_REF",
+    "DEMO_RETENTION_SECONDS",
     "MaterializedDemoProduct",
     "compose_demo_physical_plan",
+    "demo_model_name",
     "demo_product_intent",
+    "demo_target_schema",
     "materialize_demo_generation",
     "sign_demo_model",
     "unadmitted_decision_digest",
 ]
 
-DEMO_PRODUCT_REF = "orders_daily"
 DEMO_GROUP_COLUMN = "ordered_on"
 DEMO_MEASURE_COLUMN = "total_order_value"
 DEMO_COMPILER_KEY_ID = "compiler-demo-1"
@@ -105,6 +112,34 @@ _RAW_RELATION = "raw_customer_orders"
 # The demonstration measures one day of orders, so a product older than a day is stale.
 _FRESHNESS_SECONDS = 86400
 
+# How long the committed generation stays answerable. `DurableProductAnswerAuthorityReader`
+# refuses a receipt whose `retained_until` has passed, so a day's retention would mean a
+# demonstration left running overnight silently stops answering its own seeded question. A year
+# matches the publication's own authority validity, which exists for the same reason.
+DEMO_RETENTION_SECONDS = 365 * 86400
+
+# The demonstration commits one generation. It is named rather than written as `1` in four
+# places, so the product's relation, its request and its catalog cannot disagree about which
+# generation they describe.
+_DEMO_GENERATION = 1
+
+
+def demo_target_schema(contract: ManagedIntegrationContract) -> str:
+    """The schema the product is materialized into, derived from the contract it serves.
+
+    Derived rather than configured, so a changed contract is a different schema and two
+    contracts can never write over each other's product. The digest is truncated to fit
+    PostgreSQL's 63-byte identifier limit alongside the prefix.
+    """
+    return "contract_" + digest(contract)[:54]
+
+
+def demo_model_name(generation: int) -> str:
+    """The relation one generation of the product lands in."""
+    if generation < 1:
+        raise ValueError("a product generation is numbered from one")
+    return f"{DEMO_PRODUCT_NAME}_g{generation}"
+
 
 def demo_product_intent() -> ProductIntentIR:
     """The demonstration's product: order value summed per day.
@@ -118,7 +153,7 @@ def demo_product_intent() -> ProductIntentIR:
         relation_alias=DEMO_LOGICAL_OBJECT, column_name=_SOURCE_VALUE_COLUMN
     )
     return ProductIntentIR(
-        product_ref=DEMO_PRODUCT_REF,
+        product_ref=DEMO_PRODUCT_NAME,
         source=SourceRelation(
             relation_namespace="logical",
             relation_name=DEMO_LOGICAL_OBJECT,
@@ -194,7 +229,7 @@ def compose_demo_physical_plan(
     """Compile the demonstration's intent into the statement that materializes it."""
     authority = ProductPhysicalPlanAuthority(
         tenant_id=contract.tenant_id,
-        product_id=DEMO_PRODUCT_REF,
+        product_id=DEMO_PRODUCT_NAME,
         product_revision=contract.version,
         contract_ref=contract.contract_id,
         contract_revision=contract.version,
@@ -262,23 +297,9 @@ class MaterializedDemoProduct:
     model_name: str
     signed_model: SignedCompiledDbtModel
     physical_plan: ProductPhysicalPlan
-
-
-class _DemoCatalog:
-    """The demonstration's own catalog: a reference derived from what was committed.
-
-    `MaterializationCatalog` exists so a generation is published somewhere before it can
-    be consumed. The demonstration has no external catalog service, so its publication
-    reference is derived from the receipt rather than issued by one. It is deterministic
-    and names the generation it describes, so two generations never share a reference.
-    """
-
-    def publish(
-        self, request: MaterializationRequest, receipt: ProductMaterializationReceipt
-    ) -> str:
-        return (
-            f"demo-catalog://{request.tenant_id}/{request.product_id}/{receipt.product_generation}"
-        )
+    # The public half of the key the model above was signed with. The private half signed once
+    # and was discarded with the call: a verifier needs only this.
+    compiler_public_key: Ed25519PublicKey
 
 
 def unadmitted_decision_digest(plan: ProductPhysicalPlan) -> str:
@@ -315,7 +336,7 @@ def write_demo_dbt_profile(directory: Path, bootstrap_dsn: str, *, target_schema
         f"      host: {parsed['host']}\n"
         f"      port: {parsed['port']}\n"
         f"      dbname: {parsed['dbname']}\n"
-        "      user: materialization_runtime\n"
+        f"      user: {DEMO_WAREHOUSE_ROLES.materialization}\n"
         "      password: \"{{ env_var('" + _DBT_PASSWORD_VARIABLE + "') }}\"\n"
         f"      schema: {target_schema}\n"
         "      threads: 1\n"
@@ -335,6 +356,8 @@ def materialize_demo_generation(
     generation_id: str,
     record_count: int,
     ledger: GenerationLedger,
+    materialization_ledger: sqlite3.Connection,
+    catalog: Callable[[str, str], MaterializationCatalog],
 ) -> MaterializedDemoProduct:
     """Compile, admit and run the demonstration's product, committing one generation.
 
@@ -342,14 +365,22 @@ def materialize_demo_generation(
     compiler, the input cardinality from the generation ledger, and the execution
     authorization is signed over the plan it authorizes. What is deliberately absent is an
     admitted legality decision -- see `unadmitted_decision_digest`.
+
+    `catalog` is a factory rather than a catalog because the catalog has to name the relation
+    this call materializes into, and that relation is derived here. Called with the schema and
+    the relation name, in that order, it cannot publish authority for a table other than the
+    one the run wrote. `compose_demo_product_catalog` is the demonstration's own.
     """
-    target_schema = "contract_" + digest(contract)[:54]
-    model_name = f"{DEMO_PRODUCT_REF}_g1"
+    target_schema = demo_target_schema(contract)
+    model_name = demo_model_name(_DEMO_GENERATION)
 
     with psycopg.connect(bootstrap_dsn) as connection:
         connection.execute(
-            sql.SQL("CREATE SCHEMA IF NOT EXISTS {} AUTHORIZATION materialization_runtime").format(
-                sql.Identifier(target_schema)
+            # The role is named from the one role set rather than written here: dbt connects as
+            # it, and a schema owned by anyone else would leave it unable to create the model.
+            sql.SQL("CREATE SCHEMA IF NOT EXISTS {} AUTHORIZATION {}").format(
+                sql.Identifier(target_schema),
+                sql.Identifier(DEMO_WAREHOUSE_ROLES.materialization),
             )
         )
 
@@ -430,15 +461,23 @@ def materialize_demo_generation(
             expires_at=issued_at + timedelta(minutes=15),
         ),
     )
-    runner = ProductMaterializationRunner.in_memory(
+    # The ledger is the caller's, and durable: `ProductMaterializationRunner.in_memory` would
+    # commit the receipt to a database that dies with this call, leaving the governed answer
+    # nothing to answer from and no sign that anything was lost.
+    runner = ProductMaterializationRunner(
+        materialization_ledger,
         warehouse=PostgreSQLMaterializationWarehouse(
             settings=PostgreSQLMaterializationSettings(
                 tenant_id=contract.tenant_id,
                 dsn=SecretStr(
-                    role_dsn(bootstrap_dsn, "materialization_runtime", materialization_password)
+                    role_dsn(
+                        bootstrap_dsn,
+                        DEMO_WAREHOUSE_ROLES.materialization,
+                        materialization_password,
+                    )
                 ),
                 consumption_schema_name="consumption",
-                consumption_view_name=DEMO_PRODUCT_REF,
+                consumption_view_name=DEMO_PRODUCT_NAME,
                 control_schema_name="product_control",
                 generation_table_name="product_generations",
                 generation_pointer_table_name="product_generation_pointers",
@@ -457,7 +496,7 @@ def materialize_demo_generation(
                 ),
             ),
         ),
-        catalog=_DemoCatalog(),
+        catalog=catalog(target_schema, model_name),
         cardinality_evidence_reader=cardinality_repository,
         execution_authorization_verifier=ProductExecutionAuthorizationVerifier(
             {"demo-runtime-execution-1": signer.public_key}
@@ -474,10 +513,10 @@ def materialize_demo_generation(
             MaterializationRequest(
                 run_id="demo-materialization-1",
                 tenant_id=contract.tenant_id,
-                product_id=DEMO_PRODUCT_REF,
+                product_id=DEMO_PRODUCT_NAME,
                 product_revision=contract.version,
-                product_generation=1,
-                retention_seconds=86400,
+                product_generation=_DEMO_GENERATION,
+                retention_seconds=DEMO_RETENTION_SECONDS,
                 contract_digest=digest(contract),
                 physical_plan=plan,
                 physical_plan_digest=digest(plan),
@@ -504,4 +543,5 @@ def materialize_demo_generation(
         model_name=model_name,
         signed_model=signed_model,
         physical_plan=plan,
+        compiler_public_key=compiler_key.public_key(),
     )

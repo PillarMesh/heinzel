@@ -11,6 +11,7 @@ classifiers = [
   "Operating System :: POSIX",
 ]
 dependencies = [
+  "heinzel-compiler",
   "heinzel-dbt-adapter",
   "heinzel-contract-model",
   "heinzel-provider-sdk",
@@ -26,6 +27,7 @@ Repository = "https://github.com/PillarMesh/heinzel"
 Issues = "https://github.com/PillarMesh/heinzel/issues"
 
 [tool.uv.sources]
+heinzel-compiler = { workspace = true }
 heinzel-dbt-adapter = { workspace = true }
 heinzel-contract-model = { workspace = true }
 heinzel-provider-sdk = { workspace = true }

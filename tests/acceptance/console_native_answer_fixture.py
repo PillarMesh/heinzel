@@ -2,30 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import ipaddress
 import secrets
 import shutil
 import sqlite3
-import ssl
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from threading import Thread
 from typing import Literal
 
-import httpx
 import psycopg
 import pytest
-from cryptography import x509
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from cryptography.x509.oid import NameOID
 from heinzel_access_control import (
     SignedEntitlementBody,
-    SignedHttpConnectedPolicyAuthority,
-    SignedHttpPolicyAuthoritySettings,
 )
 from heinzel_bi_control import (
     DashboardCompositionService,
@@ -57,9 +48,11 @@ from heinzel_compiler import (
 from heinzel_compiler.postgresql_sql import emit_generation_scoped_postgresql
 from heinzel_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
 from heinzel_console.answers import (
+    LOCAL_CONNECTED_AUTHORITY_REF,
     ApprovedProductAnswerMetadataReader,
     GovernedAnswerRuntimeConfiguration,
     SourceFreshnessReader,
+    local_signed_policy_authority,
 )
 from heinzel_contract_model import (
     AccessPolicy,
@@ -178,10 +171,6 @@ from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBin
 from psycopg import sql
 from pydantic import SecretStr
 
-from tests.acceptance.console_policy_authority import (
-    LocalDevelopmentPolicyAuthority,
-    create_local_policy_server,
-)
 from tests.acceptance.run_console_governed import (
     REQUESTER,
     REQUESTER_PRINCIPAL,
@@ -328,21 +317,6 @@ class _NativeDashboardProvider:
             external_url="https://superset.invalid/dashboard",
             provider_version="native-fixture-v1",
         )
-
-
-@dataclass(frozen=True, slots=True)
-class _NativeSignedPolicyAuthority:
-    reader: SignedHttpConnectedPolicyAuthority
-    database_path: Path
-    signing_key: Ed25519PrivateKey = field(repr=False)
-
-    def publish(self, body: SignedEntitlementBody) -> None:
-        with sqlite3.connect(self.database_path) as connection:
-            LocalDevelopmentPolicyAuthority(
-                connection,
-                key_ref="local-policy-key",
-                signing_key=self.signing_key,
-            ).publish(body)
 
 
 class _NativeInterpreter:
@@ -511,95 +485,6 @@ class _NativeProductCatalogProvider:
             ),
             provider_version="native-acceptance-v1",
         )
-
-
-@contextmanager
-def signed_https_policy_authority(
-    root: Path,
-    *,
-    body: SignedEntitlementBody,
-) -> Iterator[_NativeSignedPolicyAuthority]:
-    root.mkdir(parents=True, exist_ok=True)
-    tls_key = Ed25519PrivateKey.generate()
-    now = datetime.now(UTC)
-    name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "local policy test")])
-    certificate = (
-        x509.CertificateBuilder()
-        .subject_name(name)
-        .issuer_name(name)
-        .public_key(tls_key.public_key())
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(now - timedelta(minutes=1))
-        .not_valid_after(now + timedelta(hours=24))
-        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
-        .add_extension(
-            x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]),
-            critical=False,
-        )
-        .sign(tls_key, algorithm=None)
-    )
-    certificate_path = root / "policy-tls.pem"
-    certificate_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
-    key_path = root / "policy-tls-key.pem"
-    key_path.touch(mode=0o600)
-    key_path.write_bytes(
-        tls_key.private_bytes(
-            serialization.Encoding.PEM,
-            serialization.PrivateFormat.PKCS8,
-            serialization.NoEncryption(),
-        )
-    )
-    tls_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    tls_context.load_cert_chain(certificate_path, key_path)
-    signing_key = Ed25519PrivateKey.generate()
-    database_path = root / "policy-authority.sqlite3"
-    with sqlite3.connect(database_path) as connection:
-        LocalDevelopmentPolicyAuthority(
-            connection,
-            key_ref="local-policy-key",
-            signing_key=signing_key,
-        ).publish(body)
-    bearer = SecretStr(secrets.token_urlsafe(32))
-    server = create_local_policy_server(
-        database_path=database_path,
-        signing_key=signing_key,
-        key_ref="local-policy-key",
-        bearer_credential=bearer,
-        tls_context=tls_context,
-    )
-    thread = Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    settings = SignedHttpPolicyAuthoritySettings.model_validate(
-        {
-            "endpoint": f"https://127.0.0.1:{server.server_port}/entitlements/current",
-            "tls_ca_bundle_path": certificate_path,
-            "bearer_credential": bearer,
-            "signing_key_ref": "local-policy-key",
-            "signing_public_key_pem": signing_key.public_key()
-            .public_bytes(
-                serialization.Encoding.PEM,
-                serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
-            .decode(),
-            "connected_authority_ref": "local-policy",
-            "connection_binding_ref": "local-policy-binding",
-            "adapter_ref": "signed-http-local-test",
-            "timeout_seconds": 2.0,
-        }
-    )
-    with httpx.Client(verify=ssl.create_default_context(cafile=str(certificate_path))) as client:
-        try:
-            yield _NativeSignedPolicyAuthority(
-                reader=SignedHttpConnectedPolicyAuthority(settings=settings, http_client=client),
-                database_path=database_path,
-                signing_key=signing_key,
-            )
-        finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=5)
-            if thread.is_alive():
-                raise RuntimeError("local policy authority did not stop")
 
 
 async def _land_rows_for_console_tenant(
@@ -1231,7 +1116,7 @@ def fresh_native_answer_deployment(
             catalog_binding=catalog_binding,
             catalog_provider=catalog_provider,
         ) as product,
-        signed_https_policy_authority(root / "policy", body=entitlement) as policy_authority,
+        local_signed_policy_authority(root / "policy", body=entitlement) as policy_authority,
     ):
         dashboard_control = DashboardControlService(
             dashboard_repository,
@@ -1247,7 +1132,7 @@ def fresh_native_answer_deployment(
             root / "console",
             answer_runtime_configuration=GovernedAnswerRuntimeConfiguration(
                 connected_authority=policy_authority.reader,
-                connected_authority_ref="local-policy",
+                connected_authority_ref=LOCAL_CONNECTED_AUTHORITY_REF,
                 interpreter=_NativeInterpreter(),
                 materializations=product.receipt_reader,
                 freshness=product.freshness_reader,
