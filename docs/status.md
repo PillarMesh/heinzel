@@ -14,6 +14,9 @@ against real engines in Docker, are opt-in, and are not run on every pull reques
 [Live tests](../README.md#live-tests)). The warehouse lifecycle acceptance run is the exception: CI
 runs it whenever a change touches it.
 
+[demonstration-gaps.md](demonstration-gaps.md) reads the other way round: what the demonstration
+console cannot show, and in what order the gaps are worth closing.
+
 ## Capabilities
 
 | Capability | Status | What works today | Proof |

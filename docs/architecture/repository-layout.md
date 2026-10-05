@@ -65,7 +65,7 @@ services/compiler/legality/
 ## Other Top-Level Areas
 
 - `deploy/`: infrastructure-neutral deployment material after an ADR selects technology.
-- `docs/`: the architecture overview, capability status, this layout, and architecture decision records.
+- `docs/`: the architecture overview, capability status, demonstration gaps, this layout, and architecture decision records.
 - `tests/`: repository structure and cross-component integration, compatibility, conformance, fault-injection, and end-to-end suites. Unit tests remain colocated.
 
 ## Structural Change Rule

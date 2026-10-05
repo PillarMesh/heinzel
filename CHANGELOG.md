@@ -40,6 +40,11 @@ All notable changes to Heinzel are recorded here. The format follows
   digest is carried beside the file rather than committed, because that file lives outside this
   repository and changes independently of it. `tests/release/README.md` records the variables,
   the terms file format and what each misconfiguration produces.
+- `docs/demonstration-gaps.md`, which reads `docs/status.md` the other way round: what the
+  demonstration console cannot show, measured against one flow -- a warehouse chosen and
+  populated, an unanticipated question asked, an answer presented as a dashboard. Each gap
+  names the file that establishes it and whether the capability is unbuilt or merely
+  unwired, and the page closes with the order the gaps are worth closing in.
 
 ### Changed
 
