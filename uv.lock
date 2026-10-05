@@ -707,20 +707,28 @@ name = "heinzel-console"
 version = "0.1.0"
 source = { editable = "apps/console/server" }
 dependencies = [
+    { name = "cryptography" },
     { name = "heinzel-access-control" },
     { name = "heinzel-bi-control" },
     { name = "heinzel-catalog-control" },
+    { name = "heinzel-compiler" },
     { name = "heinzel-contract-model" },
     { name = "heinzel-contract-service" },
+    { name = "heinzel-dbt-adapter" },
     { name = "heinzel-evidence" },
+    { name = "heinzel-execution-graph" },
+    { name = "heinzel-iir" },
     { name = "heinzel-knowledge-graph" },
     { name = "heinzel-provider-openmetadata" },
+    { name = "heinzel-provider-postgresql" },
     { name = "heinzel-provider-sdk" },
     { name = "heinzel-request-management" },
     { name = "heinzel-runtime" },
     { name = "heinzel-semantic-registry" },
     { name = "heinzel-state" },
     { name = "heinzel-warehouse-control" },
+    { name = "httpx" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "starlette" },
     { name = "uvicorn" },
@@ -728,20 +736,28 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=50.0.1,<51" },
     { name = "heinzel-access-control", editable = "services/access-control" },
     { name = "heinzel-bi-control", editable = "services/bi-control" },
     { name = "heinzel-catalog-control", editable = "services/catalog-control" },
+    { name = "heinzel-compiler", editable = "services/compiler" },
     { name = "heinzel-contract-model", editable = "packages/contract-model" },
     { name = "heinzel-contract-service", editable = "services/contract" },
+    { name = "heinzel-dbt-adapter", editable = "services/dbt-adapter" },
     { name = "heinzel-evidence", editable = "services/evidence" },
+    { name = "heinzel-execution-graph", editable = "packages/execution-graph" },
+    { name = "heinzel-iir", editable = "packages/iir" },
     { name = "heinzel-knowledge-graph", editable = "services/knowledge-graph" },
     { name = "heinzel-provider-openmetadata", editable = "providers/openmetadata" },
+    { name = "heinzel-provider-postgresql", editable = "providers/postgresql" },
     { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },
     { name = "heinzel-request-management", editable = "services/request-management" },
     { name = "heinzel-runtime", editable = "services/runtime" },
     { name = "heinzel-semantic-registry", editable = "services/semantic-registry" },
     { name = "heinzel-state", editable = "services/state" },
     { name = "heinzel-warehouse-control", editable = "services/warehouse-control" },
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6,<4" },
     { name = "pydantic", specifier = ">=2.13.5,<3" },
     { name = "starlette", specifier = ">=1.7.0,<2" },
     { name = "uvicorn", specifier = ">=0.52,<1" },
@@ -946,6 +962,7 @@ name = "heinzel-provider-postgresql"
 version = "0.1.0"
 source = { editable = "providers/postgresql" }
 dependencies = [
+    { name = "heinzel-compiler" },
     { name = "heinzel-contract-model" },
     { name = "heinzel-dbt-adapter" },
     { name = "heinzel-provider-sdk" },
@@ -958,6 +975,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "heinzel-compiler", editable = "services/compiler" },
     { name = "heinzel-contract-model", editable = "packages/contract-model" },
     { name = "heinzel-dbt-adapter", editable = "services/dbt-adapter" },
     { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },

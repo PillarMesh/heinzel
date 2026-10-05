@@ -217,3 +217,51 @@ def test_postgresql_access_provider_conforms_to_replay_contract() -> None:
         lambda: _provider(connection),
         lambda **updates: _command(**updates),
     )
+
+
+_PASSWORD_DSN = (
+    "host=warehouse.internal dbname=warehouse user=access_admin "
+    "password=private-password sslmode=disable gssencmode=disable"
+)
+
+
+def _provider_rejected_at_startup(
+    probe_outcome: Exception,
+) -> tuple[PostgreSQLAccessEffectProvider, list[dict[str, object]]]:
+    probe_calls: list[dict[str, object]] = []
+
+    def rejected(_dsn: str) -> _Connection:
+        raise psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+    def probe(**parameters: object) -> _Connection:
+        probe_calls.append(parameters)
+        raise probe_outcome
+
+    provider = PostgreSQLAccessEffectProvider(
+        settings=PostgreSQLAccessSettings(administrative_dsn=SecretStr(_PASSWORD_DSN)),
+        targets=_Authority(),
+        connect=rejected,
+        startup_denial_probe=probe,
+    )
+    return provider, probe_calls
+
+
+@pytest.mark.parametrize(
+    ("probe_outcome", "outcome"),
+    (
+        (psycopg.errors.InvalidPassword(), "permanent_failure"),
+        (psycopg.errors.InvalidAuthorizationSpecification(), "permanent_failure"),
+        (psycopg.OperationalError("probe transport failed"), "transient_failure"),
+    ),
+)
+def test_rejected_administrative_credentials_are_permanent_before_any_effect(
+    probe_outcome: Exception, outcome: str
+) -> None:
+    provider, probe_calls = _provider_rejected_at_startup(probe_outcome)
+
+    with pytest.raises(AccessEffectProviderError) as captured:
+        provider.enact(_command())
+
+    assert captured.value.outcome == outcome
+    assert len(probe_calls) == 1
+    assert "private-password" not in str(captured.value)

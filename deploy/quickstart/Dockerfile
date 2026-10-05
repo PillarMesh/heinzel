@@ -65,8 +65,19 @@ ENV PATH=/src/.venv/bin:$PATH \
     HEINZEL_CONSOLE_DIST=/srv/console/dist
 EXPOSE 8000
 # Loopback inside the container, which `--container` binds along with every other interface.
-HEALTHCHECK --interval=10s --timeout=3s --start-period=30s --retries=6 \
+#
+# The start period covers the first start's own work, not just the server coming up: given a
+# warehouse, the console provisions it, acquires and lands its seeded source, and runs dbt to
+# materialize the product before it listens at all. Thirty seconds was enough when the console
+# only opened SQLite files; a dbt invocation on a cold image is not reliably inside it, and a
+# health check that fails during legitimate start-up reports a broken image.
+HEALTHCHECK --interval=10s --timeout=3s --start-period=240s --retries=6 \
   CMD python -c "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8000/healthz').read()"
-# The state directory holds the demonstration's SQLite stores. Mount a volume on it to keep
-# the demonstration between runs.
+# The state directory holds the demonstration's SQLite stores, and the dbt workspace the
+# materialization runs in. Mount a volume on it to keep the demonstration between runs -- and
+# discard it together with the warehouse's, because the console refuses to start when the two
+# disagree about whether the product has been materialized.
+#
+# `HEINZEL_DEMO_WAREHOUSE_DSN` is read from the environment rather than passed here: it carries a
+# connection the deployment chooses, and a default would name a host this image cannot know.
 ENTRYPOINT ["heinzel-console", "serve", "--state-dir", "/var/lib/heinzel", "--container"]

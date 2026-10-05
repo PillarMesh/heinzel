@@ -13,10 +13,6 @@ from heinzel_access_control import (
     SQLiteEntitlementRepository,
 )
 from heinzel_compiler.query_repository import SQLiteQueryPlanRepository
-from heinzel_console.governed_adapters import (
-    InMemoryWorkspacePrincipalDirectory,
-    SQLiteAnswerDownloadReceiptRepository,
-)
 from heinzel_request_management import (
     AnswerInterpreter,
     AnswerPolicyAdmissionService,
@@ -59,8 +55,12 @@ from heinzel_runtime import (
 )
 from heinzel_state import SQLiteIncidentRepository
 
-from tests.acceptance.console_answer_authority import CurrentAnswerAuthority
-from tests.acceptance.console_product_authority import (
+from ..governed_adapters import (
+    InMemoryWorkspacePrincipalDirectory,
+    SQLiteAnswerDownloadReceiptRepository,
+)
+from .authority import CurrentAnswerAuthority
+from .product_authority import (
     ApprovedProductAnswerMetadataReader,
     DurableProductAnswerAuthorityReader,
     MaterializationReceiptReader,

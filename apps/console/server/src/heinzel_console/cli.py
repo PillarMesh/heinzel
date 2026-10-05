@@ -57,6 +57,11 @@ _TERMINATION_SIGNALS = (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT)
 
 _ORIGIN_VARIABLE = "HEINZEL_CONSOLE_ALLOWED_ORIGIN"
 _DIST_VARIABLE = "HEINZEL_CONSOLE_DIST"
+# The warehouse the demonstration provisions, acquires from and answers over. Read from the
+# environment and never from a command argument: it carries a password, and a process's arguments
+# are readable by anything that can list processes. Absent, the console reports every answer
+# capability as not delivered, which is the honest answer with no warehouse to answer from.
+_WAREHOUSE_VARIABLE = "HEINZEL_DEMO_WAREHOUSE_DSN"
 
 # Invalid configuration, matching argparse's own code for arguments it rejects.
 _INVALID_CONFIGURATION = 2
@@ -344,11 +349,25 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             dist = require_bundle(dist=arguments.dist, configured=os.environ.get(_DIST_VARIABLE))
             app, close = build_demo_app(
-                arguments.state_dir, seed=not arguments.no_seed, origin=origin, dist=dist
+                arguments.state_dir,
+                seed=not arguments.no_seed,
+                origin=origin,
+                dist=dist,
+                # Blank reads as absent: an unset variable and one set to the empty string are
+                # the same statement, and passing "" on would reach psycopg as a DSN naming no
+                # host at all.
+                warehouse_dsn=os.environ.get(_WAREHOUSE_VARIABLE) or None,
             )
         except ValueError as invalid:
             _LOGGER.error("the console cannot be configured: %s", invalid)
             return _INVALID_CONFIGURATION
+        except RuntimeError as unavailable:
+            # The warehouse was configured but could not be brought to a published product: a
+            # warehouse that never accepted a connection, a missing `dbt`, a database that is not
+            # empty, or a state directory and a warehouse that disagree. Each names what to do
+            # about it.
+            _LOGGER.error("the demonstration's warehouse is not ready: %s", unavailable)
+            return _UNAVAILABLE
         except OSError as refused:
             _LOGGER.error(
                 "the console's state directory could not be opened: %s%s",

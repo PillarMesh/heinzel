@@ -153,6 +153,28 @@ jobs:
             -- \
             uv run python -m tests.acceptance.run_warehouse_lifecycle run \
               --authorize-retention-cleanup
+      - name: Report the witnessed cost in the job summary
+        # Always, and before the upload: the peak figures matter most when the run
+        # failed, and the artifact that carries them cannot be read without
+        # downloading it. Every field of the cost is a scalar count, so there is
+        # nothing to redact.
+        if: always()
+        run: |
+          set -euo pipefail
+          cost="$RUNNER_TEMP/warehouse-lifecycle-cost.json"
+          echo '### Witnessed warehouse lifecycle cost' >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          # tee, not cat: the summary renders only in a browser, so the log needs
+          # the figures too. A client that cannot reach the artifact host reads
+          # the log, which is the case this step exists to serve.
+          if test -f "$cost"; then
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            tee -a "$GITHUB_STEP_SUMMARY" < "$cost"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'No cost was recorded: the witness did not reach its sampling step.' \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
       - name: Validate sanitized warehouse lifecycle evidence
         run: uv run python -m tests.acceptance.run_warehouse_lifecycle validate-evidence
       - name: Upload sanitized warehouse lifecycle evidence

@@ -25,7 +25,7 @@ type PolicyAdmissionOutcome = Literal[
     "admitted", "review_required", "dependency_required", "no_valid_plan"
 ]
 type PolicyAdmissionReason = Literal[
-    "request_not_investigating",
+    "request_state_not_admissible",
     "validation_not_admitted",
     "intent_binding_mismatch",
     "validation_policy_mismatch",
@@ -357,9 +357,25 @@ class AnswerPolicyAdmissionService:
             )
         reasons: list[PolicyAdmissionReason] = []
 
-        request_investigating = request.state is RequestState.INVESTIGATING
-        if not request_investigating:
-            reasons.append("request_not_investigating")
+        # Two states reach an admission, because two paths do. A request awaiting approval has a
+        # proposal under review, which is the path a console drives: propose, review, approve,
+        # admit. A request still being investigated has a restated question the requester may
+        # have confirmed, which `SQLiteAnswerInvestigationAuthority` records.
+        #
+        # This is a check on where the request has got to, and nothing more. It does not
+        # establish that the proposal's approvals are recorded or that the investigation was
+        # confirmed -- no state does, and this service never looked: `intent_bound` below accepts
+        # a request whose revision matches the intent's, so a confirmation is what it needs only
+        # when the revision has since moved. Who may admit, and on what recorded authority, is
+        # the caller's to establish before asking; what this service decides is the statement,
+        # the policy, the entitlement snapshot and every ceiling, and it decides all of them the
+        # same way whichever state it was asked from.
+        request_state_admissible = request.state in (
+            RequestState.AWAITING_APPROVAL,
+            RequestState.INVESTIGATING,
+        )
+        if not request_state_admissible:
+            reasons.append("request_state_not_admissible")
 
         validation_admitted = validation.outcome == "admitted"
         if not validation_admitted:
@@ -498,7 +514,7 @@ class AnswerPolicyAdmissionService:
             reasons.append("request_cancelled")
 
         terms = PolicyAdmissionTerms(
-            request_state="satisfied" if request_investigating else "failed",
+            request_state="satisfied" if request_state_admissible else "failed",
             validation_outcome=(
                 "satisfied" if validation_admitted and intent_bound and policy_bound else "failed"
             ),
@@ -719,8 +735,17 @@ class SQLiteAnswerAdmissionRepository:
             request = self._requests.load_owned_request(receipt.tenant_id, receipt.request_id)
             if request.revision != receipt.request_revision:
                 raise StaleRevisionError("policy admission request revision is stale")
-            if request.state is not RequestState.INVESTIGATING:
-                raise ValueError("policy admission requires an investigating request")
+            # The same two states the evaluation admits from, checked again inside the
+            # transaction that records the receipt and transitions the request: the state the
+            # evaluation saw was read before this transaction opened, and a request that moved in
+            # between must not be transitioned on the strength of the older read.
+            if request.state not in (
+                RequestState.AWAITING_APPROVAL,
+                RequestState.INVESTIGATING,
+            ):
+                raise ValueError(
+                    "policy admission requires a request awaiting approval or being investigated"
+                )
             if (receipt.plan_digest is None) != (reservation is None):
                 raise ValueError("metric admission requires one scan reservation")
             if receipt.period_scan_consumed is not None:

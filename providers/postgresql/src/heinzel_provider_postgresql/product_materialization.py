@@ -224,6 +224,20 @@ class PostgreSQLMaterializationWarehouse:
                 lineage_digest=invocation_receipt.lineage_digest,
                 quality_assertion_count=invocation_receipt.quality_assertion_count,
                 quality_disposition=invocation_receipt.quality_disposition,
+                # The columns the engine was held to, not the ones the plan declared. Each pair
+                # here comes from a count query against the materialized relation, and
+                # `_postgresql_decimal_magnitude_checks` raises `integrity_failure` on any
+                # non-zero count, so a pair reaching this point is engine-verified evidence.
+                #
+                # Filtered on zero rather than taken wholesale: if that refusal were ever
+                # relaxed, attesting a violated column would tell the runner the engine held to
+                # a bound it broke. Omitting a column makes the runner refuse, which is the
+                # direction a mistake here must fail in.
+                magnitude_asserted_columns=tuple(
+                    check.column_name
+                    for check, violation_count in magnitude_checks
+                    if violation_count == 0
+                ),
             )
         finally:
             with suppress(Exception):

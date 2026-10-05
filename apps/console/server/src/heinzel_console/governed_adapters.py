@@ -924,6 +924,26 @@ class FulfillmentExecutionCommands(Protocol):
     ) -> object: ...
 
 
+class AnswerAdmissionCommands(Protocol):
+    """Admit a stakeholder question's governed query plan, transitioning it to execution.
+
+    Separate from `FulfillmentDecisionCommands.admit` because they are different admissions of
+    different things: the fulfillment service admits an approved proposal, and the governed
+    answer admits a compiled statement against the policy's ceilings. Both move a request to
+    executing, and only one of them leaves behind a plan for `execute_answer` to run -- so for a
+    question, this is the one that must be made.
+    """
+
+    def admit_answer(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        actor_id: str,
+        expected_revision: int,
+    ) -> object: ...
+
+
 class FulfillmentAccessExecutionCommands(Protocol):
     def execute_access(
         self,

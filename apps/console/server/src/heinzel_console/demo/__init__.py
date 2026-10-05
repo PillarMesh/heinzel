@@ -23,9 +23,10 @@ def build_demo_app(
     seed: bool = True,
     origin: str = "http://127.0.0.1:8000",
     dist: Path | None = None,
+    warehouse_dsn: str | None = None,
 ) -> tuple[Starlette, Callable[[], None]]:
-    """Build the demonstration console and a callable that closes its stores."""
-    console = DemoConsole(state_dir)
+    """Build the demonstration console and a callable that closes what it opened."""
+    console = DemoConsole(state_dir, warehouse_dsn=warehouse_dsn)
     try:
         if seed:
             console.seed_demonstration_request()

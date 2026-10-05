@@ -663,6 +663,72 @@ def test_signed_decimal_magnitude_check_accepts_exact_boundary_inside_values() -
     )
 
 
+def test_the_observation_attests_the_columns_the_engine_was_held_to() -> None:
+    """The runner refuses a result whose observation attests nothing, so the provider must attest.
+
+    `ProductMaterializationRunner._require_magnitude_enforcement` requires declared and asserted
+    columns to match exactly. The count query above is the evidence: it is run against the
+    materialized relation and refuses a non-zero result, so naming its columns reports what the
+    engine was held to rather than what the plan asked for.
+    """
+
+    signed_model = _magnitude_model()
+    lock_connection = _TargetLockConnection()
+    inspect_connection = _InspectConnection(
+        lock_connection,
+        magnitude_values=(Decimal("1.5"), Decimal("-1.5")),
+        columns=[(1, "total_revenue", "numeric", "NO")],
+    )
+    warehouse = _magnitude_warehouse(signed_model, (lock_connection, inspect_connection))
+
+    observation = warehouse.execute(_magnitude_request(signed_model))
+
+    assert observation.magnitude_asserted_columns == ("total_revenue",)
+    # The declared set, so a runner comparing the two exactly admits this result.
+    assert observation.magnitude_asserted_columns == tuple(
+        check.column_name for check in signed_model.model.output_magnitude_checks
+    )
+
+
+def test_every_checked_column_is_attested_in_declared_order() -> None:
+    # The runner compares declared against asserted as sets, so a provider attesting only the
+    # first of several checks would be refused -- correctly, but with a message about the engine
+    # rather than about the provider. There is no plan with no checks to test instead:
+    # `ProductPhysicalPlan.decimal_output_checks` requires at least one.
+    model = CompiledDbtModel(
+        model_name="orders",
+        contract_digest="1" * 64,
+        provider="postgresql",
+        input_generation_digests=("2" * 64,),
+        target_schema="contract_" + "1" * 54,
+        output_columns=("total_revenue", "total_refunds"),
+        output_magnitude_checks=(
+            DbtDecimalMagnitudeCheck(column_name="total_revenue"),
+            DbtDecimalMagnitudeCheck(column_name="total_refunds"),
+        ),
+        compiled_sql="SELECT 1 AS total_revenue, 2 AS total_refunds",
+    )
+    signed_model = SignedCompiledDbtModel(
+        model=model,
+        model_digest="3" * 64,
+        key_id="compiler",
+        signature="verified-by-fake-invoker",
+    )
+    lock_connection = _TargetLockConnection()
+    inspect_connection = _InspectConnection(
+        lock_connection,
+        columns=[
+            (1, "total_revenue", "numeric", "NO"),
+            (2, "total_refunds", "numeric", "NO"),
+        ],
+    )
+    warehouse = _magnitude_warehouse(signed_model, (lock_connection, inspect_connection))
+
+    observation = warehouse.execute(_magnitude_request(signed_model))
+
+    assert observation.magnitude_asserted_columns == ("total_revenue", "total_refunds")
+
+
 @pytest.mark.parametrize("exclusive_boundary", [Decimal("-1e48"), Decimal("1e48")])
 def test_signed_decimal_magnitude_check_rejects_exclusive_bounds(
     exclusive_boundary: Decimal,

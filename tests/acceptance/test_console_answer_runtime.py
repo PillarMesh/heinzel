@@ -13,6 +13,7 @@ from heinzel_access_control import (
 )
 from heinzel_compiler import GovernedQueryPlan
 from heinzel_compiler.query_signing import QueryPlanSigner, QueryPlanVerifier
+from heinzel_console.answers import GovernedAnswerRuntimeConfiguration
 from heinzel_contract_model import ArtifactReference, digest
 from heinzel_contract_service import SourceFreshnessObservation
 from heinzel_request_management import (
@@ -43,7 +44,6 @@ from heinzel_semantic_registry import ApprovedProductVersionMetadata
 from heinzel_state import IncidentRecord
 from starlette.testclient import TestClient
 
-from tests.acceptance.console_answer_runtime import GovernedAnswerRuntimeConfiguration
 from tests.acceptance.run_console_governed import (
     ARCHITECT,
     REQUESTER,

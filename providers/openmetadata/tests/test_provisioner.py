@@ -3150,3 +3150,58 @@ def test_recovery_failure_is_sanitized_at_the_provider_boundary() -> None:
     assert captured.value.classification == "invalid_request"
     assert str(captured.value) == "OpenMetadata private resource is unavailable"
     repository._connection.close()
+
+
+def test_the_readiness_budget_is_passed_to_the_readiness_script(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A caller on slower hardware than a developer machine must be able to widen the budget;
+    # without this the script's own default governs and the only symptom is a failed journey.
+    recorded: list[list[str]] = []
+
+    def record(command: list[str], **keywords: object) -> subprocess.CompletedProcess[str]:
+        recorded.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", record)
+    DockerComposeController(
+        compose_file=tmp_path / "compose.yaml",
+        readiness_script=tmp_path / "wait_ready.py",
+        base_url="http://127.0.0.1:8585",
+        readiness_timeout_seconds=600.0,
+    )._run_readiness()
+
+    assert len(recorded) == 1
+    assert recorded[0][-2:] == ["--timeout-seconds", "600.0"]
+
+
+def test_an_unset_readiness_budget_leaves_the_script_default_in_place(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recorded: list[list[str]] = []
+
+    def record(command: list[str], **keywords: object) -> subprocess.CompletedProcess[str]:
+        recorded.append(command)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(subprocess, "run", record)
+    controller(tmp_path)._run_readiness()
+
+    assert len(recorded) == 1
+    assert "--timeout-seconds" not in recorded[0]
+    assert recorded[0][-2:] == ["--url", "http://127.0.0.1:8585"]
+
+
+@pytest.mark.parametrize("timeout_seconds", [0.0, -1.0])
+def test_a_readiness_budget_that_cannot_elapse_is_refused(
+    tmp_path: Path, timeout_seconds: float
+) -> None:
+    # Refused at construction rather than passed on: the readiness script would take a
+    # non-positive deadline as already expired and report a healthy stack unready.
+    with pytest.raises(ValueError, match="readiness timeout must be positive"):
+        DockerComposeController(
+            compose_file=tmp_path / "compose.yaml",
+            readiness_script=tmp_path / "wait_ready.py",
+            base_url="http://127.0.0.1:8585",
+            readiness_timeout_seconds=timeout_seconds,
+        )

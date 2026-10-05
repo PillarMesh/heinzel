@@ -17,6 +17,11 @@ from heinzel_provider_sdk import (
 from psycopg import sql
 
 from .settings import PostgresSettings
+from .startup_denial import (
+    StartupDenialProbe,
+    connect_attributing_startup_denial,
+    default_startup_denial_probe,
+)
 
 type ColumnMetadata = (
     tuple[str, str, str, str, int | None, int | None]
@@ -53,15 +58,23 @@ class PostgresProvider:
         self,
         settings: PostgresSettings,
         *,
-        connect: Callable[..., Any] = psycopg.connect,
+        connect: Callable[..., Any] | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
         self._settings = settings
-        self._connect = connect
+        self._connect: Callable[..., Any] = connect or psycopg.connect
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
         self._clock = clock or (lambda: datetime.now(UTC))
 
     def _connection(self) -> Any:
-        return self._connect(self._settings.dsn.get_secret_value())
+        return connect_attributing_startup_denial(
+            self._connect,
+            self._settings.dsn.get_secret_value(),
+            probe=self._startup_denial_probe,
+        )
 
     def _metadata(
         self, connection: Any

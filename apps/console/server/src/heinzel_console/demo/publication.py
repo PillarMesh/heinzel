@@ -37,20 +37,52 @@ from heinzel_semantic_registry.publication import CatalogPublicationReceipt, pub
 
 from .stores import DemoStores
 
-__all__ = ["DEMO_QUESTION", "DEMO_TENANT_ID", "DemoPublication", "build_demo_publication"]
+__all__ = [
+    "DEMO_CATALOG_BINDING_ID",
+    "DEMO_PRODUCT_NAME",
+    "DEMO_PURPOSE",
+    "DEMO_QUESTION",
+    "DEMO_SOURCE_NAME",
+    "DEMO_TENANT_ID",
+    "DEMO_WAREHOUSE_BINDING_ID",
+    "DemoPublication",
+    "build_demo_publication",
+    "demo_catalog_binding",
+    "demo_placeholder_digest",
+]
 
 DEMO_TENANT_ID = "tenant-demo"
 # The question the demonstration console seeds. It lives beside the metric it names because
 # the two must change together: the authority resolver refuses a question that does not name
 # exactly one published term, as whole words, so renaming the metric below without rewording
 # this would make the demonstration refuse its own happy path.
-DEMO_QUESTION = "What is the daily order count?"
+#
+# A value rather than a count, because the metric has to be one the compiler can materialize.
+# `AggregateMeasure.function` admits `sum` alone, so a counted metric has no product behind it
+# and the demonstration could never answer its own question. Governed queries do admit `count`
+# (`QueryAggregate`); it is the product shape that does not, and that gap is the compiler's to
+# close rather than this demonstration's to work around.
+DEMO_QUESTION = "What is the daily order value?"
+
+# Why the requester is asking. The demonstration's question is an operational one, so the
+# purpose the architect reads beside it is an operational purpose.
+#
+# It lives here rather than privately in the seed because the answer scope policy must list the
+# same purpose: `interpret_and_validate` refuses outright when the request's purpose is not one
+# the policy covers, so two copies that drifted would refuse the demonstration's happy path with
+# `answer interpretation is not authorized` and name nothing about why.
+DEMO_PURPOSE = "weekly operations review"
 _SEMANTIC_VERSION_ID = "semantic-orders"
 _CONTRACT_ID = "contract-orders"
-_CATALOG_BINDING_ID = "catalog-demo"
+DEMO_CATALOG_BINDING_ID = "catalog-demo"
 _PUBLICATION_ID = "publication-orders-daily"
-_PRODUCT_NAME = "orders_daily"
-_SOURCE_NAME = "customer_orders"
+# The product the demonstration materializes and answers over. This is the name the
+# materialization's `product_id` must carry: `AuthoritativeProductCatalog` refuses to publish
+# a generation whose request names a product other than the contract's, so a second literal
+# somewhere else would turn a rename into a publication refusal rather than a type error.
+DEMO_PRODUCT_NAME = "orders_daily"
+DEMO_SOURCE_NAME = "customer_orders"
+DEMO_WAREHOUSE_BINDING_ID = "warehouse-demo"
 _PROCESS_PACKAGE_ID = "process-orders"
 _PROVIDER_VERSION = "demonstration-catalog-1"
 
@@ -59,7 +91,7 @@ _PROVIDER_VERSION = "demonstration-catalog-1"
 _AUTHORITY_VALIDITY = timedelta(days=365)
 
 
-def _demo_digest(purpose: str) -> str:
+def demo_placeholder_digest(purpose: str) -> str:
     """A 64-character hex digest derived from a purpose label, not from any artifact.
 
     These fields name evidence the demonstration does not have: there is no candidate set
@@ -85,6 +117,31 @@ class DemoPublication:
     valid_until: datetime
 
 
+def demo_catalog_binding(*, now: datetime) -> CatalogBinding:
+    """The managed catalog binding the demonstration publishes through.
+
+    One function rather than a literal per caller, because two authorities must agree on it:
+    the semantic publication below, and the product catalog the materialization publishes a
+    generation into. `ProductCatalogPublicationService.prepare` refuses a binding that differs
+    from the one its authority returns, so a second copy that drifted would fail there.
+
+    `provider_kind` is `openmetadata` because that is the only value the artifact admits, and
+    the demonstration runs no OpenMetadata: its provider is a local stand-in. The receipt is
+    therefore accurate about what was published and overstated about what published it. That
+    is a limit of the artifact type, not something this demonstration can state more honestly.
+    """
+    return CatalogBinding(
+        binding_id=DEMO_CATALOG_BINDING_ID,
+        tenant_id=DEMO_TENANT_ID,
+        capability_profile_digest=demo_placeholder_digest("capability-profile"),
+        lifecycle_state=CatalogBindingState.READY,
+        revision=1,
+        created_at=now,
+        updated_at=now,
+        provisioned_at=now,
+    )
+
+
 def _semantic_version(*, created_at: datetime) -> ApprovedSemanticVersion:
     """The demonstration's approved meaning: one entity, one metric, one classification."""
     return ApprovedSemanticVersion(
@@ -94,16 +151,28 @@ def _semantic_version(*, created_at: datetime) -> ApprovedSemanticVersion:
         process_package_ref=ArtifactReference(
             artifact_id=_PROCESS_PACKAGE_ID,
             version=1,
-            digest=_demo_digest("process-package"),
+            digest=demo_placeholder_digest("process-package"),
         ),
-        candidate_set_digest=_demo_digest("candidate-set"),
-        review_bundle_digest=_demo_digest("review-bundle"),
+        candidate_set_digest=demo_placeholder_digest("candidate-set"),
+        review_bundle_digest=demo_placeholder_digest("review-bundle"),
         entities=(
             SemanticObject(
                 object_id="order",
                 name="Order",
                 definition="A confirmed customer order.",
-                source_refs=(_SOURCE_NAME,),
+                source_refs=(DEMO_SOURCE_NAME,),
+            ),
+            # The day the product groups by. A metric binding alone is not a query binding:
+            # `ProductQueryBindingDeclaration` requires at least one dimension, and that
+            # dimension must be a term of this approved version rather than a column name the
+            # product happens to carry. Naming it `order_day` keeps it out of the seeded
+            # question: matching is on whole word sequences, and "order day" is not one of
+            # "What is the daily order value?", so the question still names one term.
+            SemanticObject(
+                object_id="order_day",
+                name="Order day",
+                definition="The calendar day a customer order was placed on.",
+                source_refs=(DEMO_SOURCE_NAME,),
             ),
         ),
         events=(),
@@ -113,10 +182,10 @@ def _semantic_version(*, created_at: datetime) -> ApprovedSemanticVersion:
         constraints=(),
         metrics=(
             SemanticObject(
-                object_id="daily-order-count",
-                name="Daily order count",
-                definition="Confirmed customer orders per calendar day.",
-                source_refs=(_SOURCE_NAME,),
+                object_id="daily-order-value",
+                name="Daily order value",
+                definition="Confirmed customer order value per calendar day.",
+                source_refs=(DEMO_SOURCE_NAME,),
             ),
         ),
         classifications=(
@@ -124,7 +193,7 @@ def _semantic_version(*, created_at: datetime) -> ApprovedSemanticVersion:
                 object_id="commercial",
                 name="Commercial",
                 definition="Commercially sensitive information.",
-                source_refs=(_SOURCE_NAME,),
+                source_refs=(DEMO_SOURCE_NAME,),
             ),
         ),
         authority_bindings=(),
@@ -148,15 +217,15 @@ def _contract(semantic_version: ApprovedSemanticVersion) -> ManagedIntegrationCo
         source_observation_refs=(),
         mappings=(
             FieldMapping(
-                source_ref=f"{_SOURCE_NAME}.order_id",
-                semantic_ref="daily-order-count",
+                source_ref=f"{DEMO_SOURCE_NAME}.order_total",
+                semantic_ref="daily-order-value",
                 transformation="derived",
             ),
         ),
         integrity_constraints=(),
         destination_product=DestinationProductRequirement(
-            product_name=_PRODUCT_NAME,
-            warehouse_binding_id="warehouse-demo",
+            product_name=DEMO_PRODUCT_NAME,
+            warehouse_binding_id=DEMO_WAREHOUSE_BINDING_ID,
             supported_engines=("postgresql",),
         ),
         freshness=FreshnessRequirement(maximum_age_seconds=86400),
@@ -164,7 +233,7 @@ def _contract(semantic_version: ApprovedSemanticVersion) -> ManagedIntegrationCo
         trigger_policy=TriggerRequirement(run_now_allowed=True),
         access_policy=AccessPolicy(
             classification_refs=("commercial",),
-            required_approver_refs=(f"owner:{_PRODUCT_NAME}",),
+            required_approver_refs=(f"owner:{DEMO_PRODUCT_NAME}",),
         ),
         evidence_policy=EvidencePolicy(),
         failure_policy=FailurePolicy(),
@@ -215,27 +284,18 @@ def build_demo_publication(stores: DemoStores, *, clock: Callable[[], datetime])
     semantic_version = _semantic_version(created_at=now)
     contract = _contract(semantic_version)
     intent = publication_intent(
-        binding=CatalogBinding(
-            binding_id=_CATALOG_BINDING_ID,
-            tenant_id=DEMO_TENANT_ID,
-            capability_profile_digest=_demo_digest("capability-profile"),
-            lifecycle_state=CatalogBindingState.READY,
-            revision=1,
-            created_at=now,
-            updated_at=now,
-            provisioned_at=now,
-        ),
+        binding=demo_catalog_binding(now=now),
         semantic_version=semantic_version,
         contract=contract,
     )
     stores.publications.store_intent(
         intent=intent, semantic_version=semantic_version, contract=contract
     )
-    normalized_payload = {"demo_object": _PRODUCT_NAME}
+    normalized_payload = {"demo_object": DEMO_PRODUCT_NAME}
     observation = CatalogObjectSnapshot(
         tenant_key=DEMO_TENANT_ID,
-        stable_identity=f"demo-object-{_PRODUCT_NAME}",
-        logical_identity=f"demo.{_PRODUCT_NAME}",
+        stable_identity=f"demo-object-{DEMO_PRODUCT_NAME}",
+        logical_identity=f"demo.{DEMO_PRODUCT_NAME}",
         object_kind="namespace",
         normalized_payload=normalized_payload,
         normalized_digest=digest(normalized_payload),

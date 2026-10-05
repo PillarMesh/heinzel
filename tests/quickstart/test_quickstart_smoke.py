@@ -30,6 +30,9 @@ BASE_URL = "http://127.0.0.1:8000"
 # The demonstration's architect. An unknown or absent actor resolves to the architect
 # too, so naming the real one is what keeps this test honest about the header.
 ARCHITECT = "architect-demo"
+# The requester the demonstration seeds its question as, and so the only actor its answer
+# belongs to. Named rather than defaulted, because an unknown actor resolves to the architect.
+REQUESTER = "requester-demo"
 
 # The console's bootstrap and the client it reads through. Both are read at run time
 # rather than summarised here, so that a change to either is picked up instead of
@@ -65,9 +68,21 @@ def _wait_for_health(timeout_seconds: int = 300) -> None:
 
 
 def _read_json(request: urllib.request.Request) -> dict[str, Any]:
-    with urllib.request.urlopen(request, timeout=10) as response:
-        assert response.status == 200, response.status
-        payload: dict[str, Any] = json.loads(response.read())
+    """The decoded envelope, or an assertion naming the error the console returned.
+
+    The body matters on a failure: every refusal the console makes carries a code, and
+    `urllib` raises `HTTPError` without it, which leaves a CI log saying `HTTP Error 422`
+    and nothing about which rule was broken.
+    """
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            assert response.status == 200, response.status
+            payload: dict[str, Any] = json.loads(response.read())
+    except urllib.error.HTTPError as refused:
+        body = refused.read().decode("utf-8", errors="replace")
+        raise AssertionError(
+            f"{request.method} {request.full_url} -> {refused.code}: {body}"
+        ) from refused
     return payload
 
 
@@ -80,8 +95,16 @@ def _inbox_items() -> list[dict[str, Any]]:
     return items
 
 
-def _csrf_token() -> str:
-    token = _read_json(urllib.request.Request(f"{BASE_URL}/api/v1/session"))["data"]["csrf_token"]
+def _csrf_token(actor: str) -> str:
+    """The CSRF token for this actor's session, which is the only one their commands pass.
+
+    `CsrfTokenIssuer.matches` checks the token against the acting context, so a token read
+    without the actor header is the architect's and is refused `csrf_invalid` -- a `422` -- on
+    any command sent as the requester. Every caller names its actor for that reason.
+    """
+    token = _read_json(
+        urllib.request.Request(f"{BASE_URL}/api/v1/session", headers={"x-heinzel-actor": actor})
+    )["data"]["csrf_token"]
     assert isinstance(token, str)
     return token
 
@@ -96,8 +119,8 @@ def _record_clarification(request_id: str) -> str:
     body = {
         "expected_revision": 1,
         "active_role": "data_architect",
-        "restated_request": "Daily order count for the weekly operations review.",
-        "in_scope_summary": "Completed orders per calendar day.",
+        "restated_request": "Daily order value for the weekly operations review.",
+        "in_scope_summary": "Confirmed order value per calendar day.",
         "out_of_scope_summary": "Cancelled orders and refunds.",
     }
     request = urllib.request.Request(
@@ -108,7 +131,7 @@ def _record_clarification(request_id: str) -> str:
             "Content-Type": "application/json",
             "Origin": BASE_URL,
             "Idempotency-Key": uuid.uuid4().hex,
-            "x-csrf-token": _csrf_token(),
+            "x-csrf-token": _csrf_token(ARCHITECT),
             "x-heinzel-actor": ARCHITECT,
         },
     )
@@ -135,6 +158,91 @@ def _get(path: str, actor: str | None = None) -> tuple[int, bytes]:
             return response.status, response.read()
     except urllib.error.HTTPError as error:
         return error.code, error.read()
+
+
+def _command(request_id: str, path: str, body: dict[str, Any], *, actor: str) -> dict[str, Any]:
+    """Issue one console command the way a browser does, and return the state it left behind."""
+    request = urllib.request.Request(
+        f"{BASE_URL}/api/v1/{path.format(request_id=request_id)}",
+        data=json.dumps(body).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "Origin": BASE_URL,
+            "Idempotency-Key": uuid.uuid4().hex,
+            "x-csrf-token": _csrf_token(actor),
+            "x-heinzel-actor": actor,
+        },
+    )
+    data = _read_json(request)["data"]
+    assert isinstance(data, dict), data
+    return data
+
+
+def _read(path: str, *, actor: str) -> dict[str, Any]:
+    payload = _read_json(
+        urllib.request.Request(f"{BASE_URL}{path}", headers={"x-heinzel-actor": actor})
+    )["data"]
+    assert isinstance(payload, dict)
+    return payload
+
+
+def _drive_to_admission(request_id: str) -> dict[str, Any]:
+    """Clarify, propose, submit, accept and approve, and return the reviewed proposal.
+
+    The journey the README describes, issued as commands rather than described: every step is
+    held to the origin, CSRF and idempotency rules the console enforces, so a step that stopped
+    working in the image fails here rather than in front of whoever runs the demonstration.
+    """
+    opened = _read(f"/api/v1/inbox/{request_id}", actor=ARCHITECT)
+    clarified = _command(
+        request_id,
+        "inbox/{request_id}/clarification",
+        {
+            "expected_revision": opened["revision"],
+            "active_role": "data_architect",
+            "restated_request": "Daily order value for the weekly operations review.",
+            "in_scope_summary": "Confirmed order value per calendar day.",
+            "out_of_scope_summary": "Cancelled orders and refunds.",
+        },
+        actor=ARCHITECT,
+    )
+    proposed = _command(
+        request_id,
+        "inbox/{request_id}/proposal",
+        {"expected_revision": clarified["revision"], "active_role": "data_architect"},
+        actor=ARCHITECT,
+    )
+    _command(
+        request_id,
+        "inbox/{request_id}/proposal/submission",
+        {"expected_revision": proposed["revision"], "active_role": "data_architect"},
+        actor=ARCHITECT,
+    )
+    statement = _read(f"/api/v1/requests/{request_id}/clarified-outcome", actor=REQUESTER)
+    _command(
+        request_id,
+        "requests/{request_id}/clarified-outcome/acceptance",
+        {
+            "expected_revision": statement["revision"],
+            "clarified_outcome_digest": statement["statement_digest"],
+            "active_role": "requester",
+            "decision": "approve",
+        },
+        actor=REQUESTER,
+    )
+    detail = _read(f"/api/v1/inbox/{request_id}", actor=ARCHITECT)
+    return _command(
+        request_id,
+        "inbox/{request_id}/decisions",
+        {
+            "expected_revision": detail["revision"],
+            "reviewed_digest": detail["proposal_digest"],
+            "active_role": "data_architect",
+            "decision": "approve",
+        },
+        actor=ARCHITECT,
+    )
 
 
 def _bootstrap_reads() -> dict[str, str]:
@@ -191,6 +299,55 @@ def test_the_quickstart_serves_a_console_the_browser_can_start() -> None:
                 continue
             code = json.loads(body).get("error", {}).get("code")
             assert code in tolerated, (name, path, read_status, code)
+    finally:
+        _compose("down", "-v")
+
+
+@requires_quickstart
+def test_the_quickstart_answers_the_question_it_seeds() -> None:
+    """The whole promise, in the published image: a seeded question becomes a governed answer.
+
+    The console provisions the warehouse beside it, acquires its seeded source through the
+    acquisition provider, lands it under a receipt, materializes a product with dbt and publishes
+    it -- all before it listens. Then this drives the request to admission, where the governed
+    query plan is compiled and admitted, and reads the answer back as the requester who asked.
+
+    This is the only test that runs that against the image someone would actually pull.
+    """
+    _compose("up", "--build", "-d")
+    try:
+        _wait_for_health()
+        request_id = _seeded_request_id()
+        reviewed = _drive_to_admission(request_id)
+
+        admitted = _command(
+            request_id,
+            "inbox/{request_id}/admission",
+            {
+                "expected_revision": reviewed["revision"],
+                "reviewed_digest": reviewed["proposal_digest"],
+                "active_role": "data_architect",
+            },
+            actor=ARCHITECT,
+        )
+        # Past `execution_ready`: the governed admission left a plan and the execution ran it.
+        assert admitted["state"] == "delivered", admitted
+
+        result = _read(f"/api/v1/requests/{request_id}/result", actor=REQUESTER)
+        assert [column["name"] for column in result["columns"]] == [
+            "ordered_on",
+            "total_order_value",
+        ], result
+        # The demonstration's own seeded numbers, read out of the product it materialized.
+        assert [[str(value) for value in row] for row in result["rows"]] == [
+            ["2026-09-10", "30.000000000"],
+            ["2026-09-11", "125.500000000"],
+            ["2026-09-12", "99.000000000"],
+        ], result
+
+        # A result belongs to whoever asked for it, and the architect did not.
+        refused, _ = _get(f"/api/v1/requests/{request_id}/result", actor=ARCHITECT)
+        assert refused == 404, refused
     finally:
         _compose("down", "-v")
 

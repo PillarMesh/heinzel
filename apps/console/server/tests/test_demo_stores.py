@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 from heinzel_console.demo import stores as demo_stores
 from heinzel_console.demo.stores import DemoStores, default_state_directory
+from heinzel_contract_model import ArtifactReference
 
 
 class _RefusingRepository:
@@ -34,6 +36,42 @@ def test_every_store_opens_under_the_state_directory(tmp_path: Path) -> None:
     finally:
         stores.close()
     assert {"requests.sqlite3", "semantic.sqlite3", "catalog.sqlite3"} <= names
+
+
+def test_every_store_can_be_read_from_another_thread(tmp_path: Path) -> None:
+    """The console serves its backend on a threadpool, so a thread-affine store is a 500.
+
+    A SQLite connection opened with `check_same_thread` left on raises
+    `sqlite3.ProgrammingError` for any thread but the one that opened it. Every test that
+    reads these stores on the main thread passes either way, which is why this one does not.
+    """
+    stores = DemoStores(tmp_path / "state")
+    product_ref = ArtifactReference(artifact_id="orders_daily", version=1, digest="a" * 64)
+
+    def read() -> tuple[object, ...]:
+        return (
+            stores.requests.connection.execute("SELECT 1").fetchone(),
+            stores.publications.list_publications(tenant_id="tenant-demo"),
+            stores.product_publications.read_for_product_generation(
+                tenant_id="tenant-demo", product_ref=product_ref, generation=1
+            ),
+            stores.product_versions.read_current(
+                tenant_id="tenant-demo", product_ref=product_ref, generation=1
+            ),
+            stores.query_bindings.read_current(
+                tenant_id="tenant-demo", product_ref=product_ref, generation=1
+            ),
+            stores.source_freshness.read_for_generation(
+                tenant_id="tenant-demo", input_generation_digest="b" * 64
+            ),
+            stores.generations.load("absent-generation"),
+        )
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            assert pool.submit(read).result() == ((1,), (), None, None, None, None, None)
+    finally:
+        stores.close()
 
 
 def test_closing_twice_is_harmless(tmp_path: Path) -> None:

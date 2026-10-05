@@ -174,8 +174,11 @@ def _verifying_revision(admission_revision: int, history: tuple[TransitionEvent,
     verifying = next(
         (event for event in history if event.request_revision == verifying_revision), None
     )
+    # From either state an admission may be recorded from, which is the third place that set is
+    # stated: the evaluation's own reason code, the transaction that records the receipt, and
+    # here, where the delivery re-reads the history rather than trusting the receipt about it.
     if executing is None or (
-        executing.from_state is not RequestState.INVESTIGATING
+        executing.from_state not in (RequestState.AWAITING_APPROVAL, RequestState.INVESTIGATING)
         or executing.to_state is not RequestState.EXECUTING
     ):
         raise GovernedAnswerVerificationError(

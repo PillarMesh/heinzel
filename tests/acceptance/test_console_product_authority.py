@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from heinzel_compiler import ProductGenerationReference, QueryReference
+from heinzel_console.answers import DurableProductAnswerAuthorityReader
 from heinzel_contract_model import ArtifactReference
 from heinzel_contract_model import digest as artifact_digest
 from heinzel_contract_service import (
@@ -35,8 +36,6 @@ from heinzel_semantic_registry import (
     ApprovedProductVersionMetadata,
     SQLiteApprovedProductVersionRepository,
 )
-
-from tests.acceptance.console_product_authority import DurableProductAnswerAuthorityReader
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
 TENANT = "tenant-a"
@@ -98,7 +97,6 @@ class _Warehouse:
         self._quality_assertion_count = quality_assertion_count
 
     def execute(self, request: MaterializationRequest) -> MaterializationObservation:
-        del request
         return MaterializationObservation.model_validate(
             {
                 "provider_commit_reference": "warehouse-commit-7",
@@ -109,6 +107,10 @@ class _Warehouse:
                 "lineage_digest": "6" * 64,
                 "quality_assertion_count": self._quality_assertion_count,
                 "quality_disposition": self._quality_disposition,
+                # A conforming warehouse attests the magnitude on every column the plan checks.
+                "magnitude_asserted_columns": tuple(
+                    check.column_name for check in request.physical_plan.decimal_output_checks
+                ),
             }
         )
 

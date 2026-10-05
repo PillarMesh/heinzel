@@ -60,7 +60,7 @@ def _access_request(*, data_product_id: str) -> InboxRequest:
         payload=DataAccessRequest(
             purpose="weekly review",
             data_product_id=data_product_id,
-            requested_fields=("daily-order-count",),
+            requested_fields=("daily-order-value",),
             access_mode="dashboard",
             expires_at=NOW + timedelta(days=1),
         ),
@@ -139,7 +139,7 @@ def test_the_demo_publication_resolves_to_a_fulfillment_snapshot(tmp_path: Path)
         )
         grounding, _policy = resolved
         assert [reference.artifact_id for reference in grounding.metric_refs] == [
-            "daily-order-count"
+            "daily-order-value"
         ]
         assert [reference.artifact_id for reference in grounding.classification_refs] == [
             "commercial"
@@ -189,7 +189,7 @@ def test_a_question_naming_two_published_terms_is_refused_as_ambiguous(tmp_path:
         resolved = _resolve(
             stores,
             published,
-            _question(question="Is the daily order count commercial information?"),
+            _question(question="Is the daily order value commercial information?"),
         )
         assert isinstance(resolved, ResolutionFailure), (
             f"a question naming two published terms was grounded anyway: {resolved!r}"
@@ -212,7 +212,7 @@ def test_a_data_access_request_for_an_unknown_product_is_refused(tmp_path: Path)
         stores.close()
 
 
-def test_the_daily_order_count_question_answers_about_the_metric_and_cites_it(
+def test_the_daily_order_value_question_answers_about_the_metric_and_cites_it(
     tmp_path: Path,
 ) -> None:
     stores = DemoStores(tmp_path / "state")
@@ -228,9 +228,9 @@ def test_the_daily_order_count_question_answers_about_the_metric_and_cites_it(
         )
         # The demonstration restates the approved definition and never invents a number.
         assert draft.answer_text == (
-            "Daily order count is confirmed customer orders per calendar day."
+            "Daily order value is confirmed customer order value per calendar day."
         )
-        assert [reference.artifact_id for reference in draft.metric_refs] == ["daily-order-count"]
+        assert [reference.artifact_id for reference in draft.metric_refs] == ["daily-order-value"]
         assert draft.disclosure_classifications == ()
     finally:
         stores.close()
@@ -289,7 +289,7 @@ def test_the_demonstration_question_grounds_and_answers(tmp_path: Path) -> None:
     try:
         published = build_demo_publication(stores, clock=_clock(NOW))
         assert _answer(stores, published, _question(question=DEMO_QUESTION)).answer_text == (
-            "Daily order count is confirmed customer orders per calendar day."
+            "Daily order value is confirmed customer order value per calendar day."
         )
     finally:
         stores.close()

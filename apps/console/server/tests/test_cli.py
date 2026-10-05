@@ -23,13 +23,15 @@ from starlette.applications import Starlette
 
 _ORIGIN_VARIABLE = "HEINZEL_CONSOLE_ALLOWED_ORIGIN"
 _DIST_VARIABLE = "HEINZEL_CONSOLE_DIST"
+_WAREHOUSE_VARIABLE = "HEINZEL_DEMO_WAREHOUSE_DSN"
 
 
 @pytest.fixture(autouse=True)
 def _no_configured_origin(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Keep the environment's own origin out of every test that does not set one."""
+    """Keep the environment's own configuration out of every test that does not set it."""
     monkeypatch.delenv(_ORIGIN_VARIABLE, raising=False)
     monkeypatch.delenv(_DIST_VARIABLE, raising=False)
+    monkeypatch.delenv(_WAREHOUSE_VARIABLE, raising=False)
     yield
 
 
@@ -203,7 +205,15 @@ def test_every_serve_option_reaches_the_console(
         == 0
     )
     assert console.built == [
-        (tmp_path, {"seed": False, "origin": "http://127.0.0.1:9111", "dist": dist})
+        (
+            tmp_path,
+            {
+                "seed": False,
+                "origin": "http://127.0.0.1:9111",
+                "dist": dist,
+                "warehouse_dsn": None,
+            },
+        )
     ]
     assert served == [{"host": "127.0.0.1", "port": 9111}]
 
@@ -214,7 +224,15 @@ def test_the_demonstration_is_seeded_unless_it_is_refused(
     console, _ = _served(monkeypatch)
     assert cli.main(["serve", "--state-dir", str(tmp_path)]) == 0
     assert console.built == [
-        (tmp_path, {"seed": True, "origin": "http://127.0.0.1:8000", "dist": None})
+        (
+            tmp_path,
+            {
+                "seed": True,
+                "origin": "http://127.0.0.1:8000",
+                "dist": None,
+                "warehouse_dsn": None,
+            },
+        )
     ]
 
 
@@ -226,9 +244,47 @@ def test_the_container_takes_its_origin_from_the_environment_not_the_bind_addres
     console, served = _served(monkeypatch)
     assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed", "--container"]) == 0
     assert console.built == [
-        (tmp_path, {"seed": False, "origin": "http://127.0.0.1:8000", "dist": None})
+        (
+            tmp_path,
+            {
+                "seed": False,
+                "origin": "http://127.0.0.1:8000",
+                "dist": None,
+                "warehouse_dsn": None,
+            },
+        )
     ]
     assert served == [{"host": "0.0.0.0", "port": 8000}]
+
+
+def test_the_warehouse_connection_is_read_from_the_environment(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A DSN carries a password, so it is never a command argument a process listing shows."""
+    monkeypatch.setenv(_WAREHOUSE_VARIABLE, "postgresql://postgres:secret@127.0.0.1/heinzel")
+    console, _ = _served(monkeypatch)
+
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 0
+
+    assert console.built[0][1]["warehouse_dsn"] == (
+        "postgresql://postgres:secret@127.0.0.1/heinzel"
+    )
+
+
+def test_a_blank_warehouse_connection_reads_as_no_warehouse(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An unset variable and one set to nothing are the same statement.
+
+    Passed on as `""` it reaches psycopg as a connection naming no host, which fails somewhere
+    inside provisioning rather than reading as a console with no warehouse configured.
+    """
+    monkeypatch.setenv(_WAREHOUSE_VARIABLE, "")
+    console, _ = _served(monkeypatch)
+
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 0
+
+    assert console.built[0][1]["warehouse_dsn"] is None
 
 
 def test_the_origin_option_is_preferred_over_the_environment(

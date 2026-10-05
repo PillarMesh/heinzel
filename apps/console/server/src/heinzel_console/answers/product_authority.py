@@ -14,7 +14,7 @@ from heinzel_runtime import (
 )
 from heinzel_semantic_registry import ApprovedProductVersionMetadata
 
-from tests.acceptance.console_answer_authority import ProductAnswerAuthority
+from .authority import ProductAnswerAuthority
 
 
 class MaterializationReceiptReader(Protocol):

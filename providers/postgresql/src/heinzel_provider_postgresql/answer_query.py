@@ -37,6 +37,11 @@ from .product_materialization import (
     _postgresql_decimal_magnitude_checks,
     _postgresql_product_generation_commit_reference,
 )
+from .startup_denial import (
+    StartupDenialProbe,
+    connect_attributing_startup_denial,
+    default_startup_denial_probe,
+)
 
 _POSTGRESQL_TYPES: dict[int, Literal["boolean", "decimal", "integer", "string", "timestamp"]] = {
     16: "boolean",
@@ -233,6 +238,7 @@ class PostgreSQLAnswerQueryProvider:
         settings: PostgreSQLAnswerQuerySettings,
         generation_authority: PostgreSQLAnswerGenerationBindingAuthority,
         connect: _Connect | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
         fetch_size: int = 128,
     ) -> None:
         if fetch_size < 1 or fetch_size > 10_000:
@@ -242,6 +248,9 @@ class PostgreSQLAnswerQueryProvider:
         )
         self._generation_authority = generation_authority
         self._connect = connect or cast(_Connect, psycopg.connect)
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
         self._fetch_size = fetch_size
 
     def execute_read_only(self, request: ReadOnlyAnswerQuery) -> AnswerQueryCursor:
@@ -257,7 +266,11 @@ class PostgreSQLAnswerQueryProvider:
         connection: _PostgreSQLQueryConnection | None = None
         cursor: _PostgreSQLQueryCursor | None = None
         try:
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = connect_attributing_startup_denial(
+                self._connect,
+                self._settings.dsn.get_secret_value(),
+                probe=self._startup_denial_probe,
+            )
             connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             _require_read_only(connection)
             _require_direct_runtime_session(connection)

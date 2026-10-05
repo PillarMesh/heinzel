@@ -296,6 +296,14 @@ def test_execute_binds_physical_identity_schema_dbt_magnitude_and_seal() -> None
     assert observation.lineage_digest == "5" * 64
     assert observation.quality_assertion_count == 1
     assert observation.quality_disposition == "passed"
+    # The runner refuses a result whose observation attests no magnitude, so the commit's
+    # engine-side observation has to reach the runtime observation. Taken from the observed
+    # results rather than the model's declarations: `ClickHouseDecimalMagnitudeObservation`
+    # carries `violation_count: Literal[0]`, so a result that exists is one the engine satisfied.
+    assert observation.magnitude_asserted_columns == ("total_revenue",)
+    assert observation.magnitude_asserted_columns == tuple(
+        result.declaration.column_name for result in commit.magnitude_observation.results
+    )
     assert len(invoker.calls) == 1
     assert invoker.calls[0] == DbtInvocationAuthority(
         contract_digest="1" * 64,
