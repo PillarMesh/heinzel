@@ -1,5 +1,5 @@
 x-clickhouse-service: &clickhouse-service
-  image: clickhouse/clickhouse-server:25.8.32.4@sha256:7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0
+  image: clickhouse/clickhouse-server:26.9.8.3@sha256:230b973a00b5bac5b8925bd2898fae95a039aa6f25063fa8c507ffe9e2c7d770
   entrypoint:
     - /bin/bash
     - -ceu
@@ -48,7 +48,7 @@ services:
       - restore_host_loopback
 
   clickhouse_isolation_probe:
-    image: clickhouse/clickhouse-server:25.8.32.4@sha256:7c39abeb161d627fa3ca6a1e5f6241ecdc24501e8463486e61b80be3ab4471b0
+    image: clickhouse/clickhouse-server:26.9.8.3@sha256:230b973a00b5bac5b8925bd2898fae95a039aa6f25063fa8c507ffe9e2c7d770
     profiles: ["restore"]
     container_name: ${HEINZEL_CLICKHOUSE_RESTORE_ISOLATION_PROBE_CONTAINER_NAME:-clickhouse-restore-isolation-probe-inactive}
     entrypoint:
