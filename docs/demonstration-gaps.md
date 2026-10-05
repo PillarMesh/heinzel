@@ -7,8 +7,13 @@ states what the demonstration console cannot show, measured against one flow:
 > nobody anticipated. The answer arrives as a dashboard.
 
 Each gap names the file that establishes it. A gap is **wiring** when the capability exists, is
-tested, and no demonstration surface reaches it; **unbuilt** when the capability does not exist.
-The distinction decides sequencing, and the two are not comparable in cost.
+tested, runs in the shape this demonstration deploys, and only wants a reader passed in;
+**unbuilt** when it does not exist, or exists only in a deployment shape the demonstration is
+not. The distinction decides sequencing, and the two are not comparable in cost. It is also
+easy to get wrong from the console's side alone: three of the gaps below read as missing
+arguments and are not. Every gap on this page currently classifies unbuilt. The column stays
+because the distinction is the one worth asking of each new gap, and because the first of them
+to become wiring changes what should be built next.
 
 This page describes the demonstration console in `apps/console`, not a deployment. Several gaps
 below are deliberate for a demonstration and would be defects in a deployment; they are listed
@@ -32,14 +37,20 @@ unbuilt. Until it is, a question typed into the demonstration is a label on a fi
 
 | Gap | Kind | Established by |
 | --- | --- | --- |
-| The demonstration wires no warehouse-binding reader, so the warehouse capability reports `not_delivered` and the setup surface refuses. The workspace still summarises as `active`, deliberately: routing to a setup surface that answers 503 would name work the deployment cannot offer. | Wiring | `GovernedConsoleBackend` construction in `demo/console.py` passes no `warehouse_bindings`; `_warehouse_capability` and `_workspace_state` in `governed_backend.py` |
-| The demonstration provisions its own PostgreSQL rather than one warehouse-control provisioned, so its setup never advances past `foundation`. | Wiring | `demo/warehouse.py` |
+| The demonstration wires no warehouse-binding reader, so the warehouse capability reports `not_delivered` and the setup surface refuses. The workspace still summarises as `active`, deliberately: routing to a setup surface that answers 503 would name work the deployment cannot offer. | Unbuilt | `GovernedConsoleBackend` construction in `demo/console.py` passes no `warehouse_bindings`; `_warehouse_capability` and `_workspace_state` in `governed_backend.py` |
+| The demonstration provisions its own PostgreSQL rather than one warehouse-control provisioned, so its setup never advances past `foundation`. Passing a reader would not change that: a binding reported here has to be one warehouse-control made. | Unbuilt | `demo/warehouse.py` |
 | The `sources`, `meaning`, `data_product` and `activation` setup stages are reported blocked unconditionally. | Unbuilt | `_UNDELIVERED_STAGES` in `governed_backend.py` |
 | The engine options carry a fixed region and one capacity profile. | Unbuilt | `WarehouseOptionView` construction in `governed_backend.py` |
 
 warehouse-control itself provisions, validates, backs up, restores, suspends, resumes and retires
 on PostgreSQL and ClickHouse with signed evidence, and CI runs that acceptance whenever a change
-touches it. The gap here is that the demonstration does not call it.
+touches it. It provisions by driving a Compose project: `PostgreSQLWarehouseProvider` takes a
+`ComposeProjectControl` alongside nine secret capabilities and TLS material. A console that
+reports a real binding is therefore a console that creates warehouses, and the quickstart
+declares its warehouse as a sibling service the console cannot create. Reporting a binding here
+without that is worse than reporting none, because `WarehouseBinding.deployment_mode` admits
+only `heinzel_cloud`: the record would say a managed warehouse exists where a temporary local
+database does. Closing this is a deployment-shape change, not a reader.
 
 ## 2. Populate it
 
@@ -48,7 +59,7 @@ touches it. The gap here is that the demonstration does not call it.
 | No surface registers a source; the demonstration acquires one seeded source at startup. | Unbuilt | `demo/seed.py`, `_UNDELIVERED_STAGES` |
 | The Stripe provider reads object snapshots and events against a mocked API, is not composed into acquisition, and has no live test. | Unbuilt | `providers/stripe`, [status.md](status.md) |
 | No owning service binds a contract to its destination; LAND routing is deployment configuration. | Unbuilt | [status.md](status.md) |
-| The acquisition receipts surface exists in the console but the demonstration wires no reader. | Wiring | `apps/console/web/src/features/acquisition/`, `demo/console.py` |
+| The acquisition receipts surface exists in the console, and the demonstration has nothing to show in it: it acquires through the provider directly rather than through the runtime's acquisition application, so no `AcquisitionEvidenceReceipt` is composed and its stores hold no evidence store to keep one in. | Unbuilt | `acquire_demo_rows` in `demo/generation.py`; `DemoStores` in `demo/stores.py`; `compose_acquisition_application` in `services/runtime/src/heinzel_runtime/acquisition_composition.py` |
 | One generation, materialized once. No refresh, no second generation, and no scheduler: `services/trigger` holds trigger policies and nothing runs them. | Unbuilt | `services/trigger`, [quickstart README](../deploy/quickstart/README.md) |
 
 ## 3. Define the product
@@ -122,7 +133,7 @@ would report approvals as satisfied in exactly the case the test above exists to
 | Gap | Kind | Established by |
 | --- | --- | --- |
 | The requester receives a governed table and an exact CSV. There is no chart. | Unbuilt | `apps/console/web/src/features/results/` |
-| The dashboards surface exists in the console; the demonstration wires no dashboard reader. | Wiring | `apps/console/web/src/features/dashboards/`, `demo/console.py` |
+| The dashboards surface exists in the console and the demonstration publishes no dashboards. `deploy/quickstart/compose.yaml` declares `warehouse` and `console` and nothing else, and the reader returns only dashboards whose desired state has a matching provider receipt, so a reader passed in would report a delivered capability with nothing in it. | Unbuilt | `deploy/quickstart/compose.yaml`; `DashboardPublicationReader` in `governed_adapters.py` |
 | Superset single sign-on is not implemented. | Unbuilt | [status.md](status.md) |
 
 The Superset provider publishes governed dashboards to a fresh Superset, reads them back, and
@@ -140,14 +151,21 @@ demonstration.
 
 ## Order worth closing them in
 
-The order below is by risk and by cost, not by visibility. The dashboard is the most visibly
-absent stage and among the cheapest to close; the interpreter is the least visible and the most
-expensive.
+The order below is by risk and by cost, not by visibility.
 
-1. **The three readers.** Pass warehouse-binding, dashboard and acquisition-receipt readers into
-   `GovernedConsoleBackend` in `demo/console.py`, and provision the demonstration's warehouse
-   through warehouse-control rather than beside it. This closes stages 1 and 6 of the flow with
-   capabilities that already hold under live tests.
+An earlier revision of this page opened with three readers to pass into
+`GovernedConsoleBackend`, and said that closed stages 1 and 6. It does not. Each of those three
+reads from the console's side as a missing argument, and each turns out to need something the
+demonstration does not have: a warehouse binding needs a warehouse warehouse-control created,
+dashboards need a Superset the quickstart does not run, and acquisition receipts need the
+acquisition to run through the runtime's application rather than the provider alone. Only the
+third is reachable without changing what the demonstration deploys, which is why it leads here
+and the other two sit with the deployment-shape work.
+
+1. **Acquisition receipts.** Acquire through `compose_acquisition_application` rather than the
+   provider directly, give `DemoStores` the evidence store the receipt is written to, and pass
+   the reader in. The service composes the evidence and the console only reads it, which is the
+   boundary [AGENTS.md](../AGENTS.md) requires.
 2. **Identity.** Two real logins in place of a header. Every other gap is a missing feature; this
    one is a missing boundary, and no external audience should be shown a console where naming
    another actor is a header edit.
@@ -155,6 +173,9 @@ expensive.
    the only item where the demonstration's headline claim rests on a step that refused, and it is
    the gap least likely to be forgiven on inspection.
 4. **A question that reaches its answer.**
+5. **The deployment shape**, which is what the warehouse binding and the dashboards are. Either
+   the demonstration gains a warehouse it created and a Superset to publish to, or those two
+   stages stay honestly absent. Neither is a reader.
 
 On the fourth: a constrained question builder is worth preferring to free-text interpretation, on
 three grounds rather than on cost alone.
