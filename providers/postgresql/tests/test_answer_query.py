@@ -948,3 +948,42 @@ def test_postgresql_composition_resolves_only_ready_matching_answer_credentials(
             connect=lambda _dsn: connection,
         )
     assert captured.value.classification == "authorization_denied"
+
+
+@pytest.mark.parametrize(
+    ("probe_outcome", "classification"),
+    (
+        (psycopg.errors.InvalidPassword(), "authorization_denied"),
+        (psycopg.OperationalError("probe transport failed"), "transient_transport"),
+    ),
+)
+def test_answer_query_attributes_only_structured_startup_rejections(
+    probe_outcome: Exception, classification: str
+) -> None:
+    probe_calls: list[dict[str, object]] = []
+
+    def rejected(_dsn: str) -> _Connection:
+        raise psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+    def probe(**parameters: object) -> _Connection:
+        probe_calls.append(parameters)
+        raise probe_outcome
+
+    provider = PostgreSQLAnswerQueryProvider(
+        settings=PostgreSQLAnswerQuerySettings(
+            dsn=SecretStr(
+                "host=warehouse.internal dbname=db user=answer "
+                "password=private-password sslmode=disable gssencmode=disable"
+            )
+        ),
+        generation_authority=_GenerationAuthority(),
+        connect=rejected,
+        startup_denial_probe=probe,
+    )
+
+    with pytest.raises(ProviderError) as captured:
+        provider.execute_read_only(_request())
+
+    assert captured.value.classification == classification
+    assert len(probe_calls) == 1
+    assert "private" not in str(captured.value)

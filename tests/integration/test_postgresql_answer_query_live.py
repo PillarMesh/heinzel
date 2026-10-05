@@ -10,7 +10,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, mkdtemp
 
 import psycopg
 import pytest
@@ -162,19 +162,41 @@ def _fresh_postgresql_cluster(root: Path) -> Iterator[str]:
         "--pwfile",
         str(password_file),
     )
+    # `-k` moves the Unix socket off the packaging's compiled-in default, which on Debian and
+    # Ubuntu is /var/run/postgresql -- owned by `postgres` and group-writable by `postgres`
+    # alone. A developer in that group never notices; a hosted runner's user is not in it, so
+    # the server cannot create its socket and `pg_ctl start` exits 1. The DSN below connects
+    # over TCP, so nothing depends on where the socket lives.
+    #
+    # The directory is a short-lived one of its own rather than `root / "socket"`, because a
+    # Unix socket path is capped at 107 bytes and `root` is a pytest `tmp_path`: it already
+    # carries the temporary root, the test's name and this fixture's subdirectory, which for a
+    # long test name leaves the socket over the cap. The postmaster then logs that the path is
+    # too long and refuses to start -- a failure that reads as a cluster problem and varies
+    # with the length of the test's own name.
+    socket_directory = Path(mkdtemp(prefix="hz-pg-"))
+    log_file = root / "postgresql.log"
     started = False
     try:
-        _run(
-            pg_ctl,
-            "--pgdata",
-            str(data_directory),
-            "--options",
-            f"-h 127.0.0.1 -p {port}",
-            "--log",
-            str(root / "postgresql.log"),
-            "--wait",
-            "start",
-        )
+        try:
+            _run(
+                pg_ctl,
+                "--pgdata",
+                str(data_directory),
+                "--options",
+                f"-h 127.0.0.1 -p {port} -k {socket_directory}",
+                "--log",
+                str(log_file),
+                "--wait",
+                "start",
+            )
+        except subprocess.CalledProcessError as failure:
+            # `pg_ctl` reports only that the start failed; the reason is in the server's own
+            # log, which this harness names and would otherwise discard with the directory.
+            server_log = log_file.read_text() if log_file.exists() else "<no server log>"
+            raise AssertionError(
+                f"the PostgreSQL server did not start: {failure}\nserver log:\n{server_log}"
+            ) from failure
         started = True
         yield f"postgresql://postgres:{bootstrap_password}@127.0.0.1:{port}/postgres"
     finally:
@@ -188,6 +210,7 @@ def _fresh_postgresql_cluster(root: Path) -> Iterator[str]:
                     "--wait",
                     "stop",
                 )
+        shutil.rmtree(socket_directory, ignore_errors=True)
 
 
 def _provision_fresh_data(bootstrap_dsn: str, runtime_password: str) -> str:

@@ -3,6 +3,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from heinzel_console.answers import (
+    DurableProductQueryBindingReader,
+    ProductQueryBindingUnavailable,
+)
 from heinzel_contract_model import ArtifactReference, digest
 from heinzel_semantic_registry import (
     ApprovedProductQueryBinding,
@@ -11,11 +15,6 @@ from heinzel_semantic_registry import (
     ProductQueryDimensionBinding,
     ProductQueryMetricBinding,
     SQLiteProductQueryBindingRepository,
-)
-
-from tests.acceptance.console_answer_query_binding import (
-    DurableProductQueryBindingReader,
-    ProductQueryBindingUnavailable,
 )
 
 PRODUCT = ArtifactReference(artifact_id="product-revenue", version=1, digest="1" * 64)

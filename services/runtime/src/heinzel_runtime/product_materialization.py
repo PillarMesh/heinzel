@@ -110,6 +110,21 @@ class MaterializationObservation(ArtifactModel):
     lineage_digest: str = Field(pattern=_DIGEST_PATTERN)
     quality_assertion_count: int = Field(ge=0)
     quality_disposition: Literal["not_asserted", "passed", "limited"]
+    # Which output columns the engine actually asserted the checked Decimal(57,9) magnitude on.
+    # Naming them, rather than counting them, is what lets the runner refuse an observation that
+    # asserted some of the plan's checked columns and not others. It defaults to empty so that a
+    # warehouse which attests nothing is refused rather than unable to report, which is the
+    # direction this check is meant to fail in.
+    magnitude_asserted_columns: tuple[str, ...] = ()
+
+    @field_validator("magnitude_asserted_columns")
+    @classmethod
+    def magnitude_asserted_columns_are_distinct(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if any(not column.strip() for column in value):
+            raise ValueError("magnitude asserted column must not be blank")
+        if len(value) != len(set(value)):
+            raise ValueError("magnitude asserted columns must be unique")
+        return value
 
 
 class ProductMaterializationReceipt(ArtifactModel):
@@ -133,6 +148,9 @@ class ProductMaterializationReceipt(ArtifactModel):
     lineage_digest: str = Field(pattern=_DIGEST_PATTERN)
     quality_assertion_count: int = Field(ge=0)
     quality_disposition: Literal["not_asserted", "passed", "limited"]
+    # Carried into the receipt so the evidence a reader reconstructs shows which columns the engine
+    # was held to, not merely that a plan declared them.
+    magnitude_asserted_columns: tuple[str, ...] = ()
     committed_at: datetime
     retained_until: datetime
 
@@ -306,6 +324,71 @@ class _Record(BaseModel):
         return self
 
 
+class SQLiteProductMaterializationReceiptReader:
+    """Read committed materialization receipts without composing the runner that wrote them.
+
+    The runner needs a warehouse, a catalog, a cardinality reader and an authorization verifier,
+    because it materializes. A reader that only answers for what was already committed needs the
+    ledger alone -- which is what a process that restarts over an existing ledger has: the
+    generation it is answering for was committed by a run that has since ended.
+
+    Read-only. A ledger with no table yet has committed nothing, so that reads as no receipt
+    rather than as an unavailable authority; creating the table here would make a reader that
+    writes.
+    """
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        self._connection = connection
+
+    def read_receipt(
+        self,
+        *,
+        tenant_id: str,
+        product_id: str,
+        product_revision: int,
+        product_generation: int,
+    ) -> ProductMaterializationReceipt | None:
+        materialization_key = _materialization_key(
+            tenant_id=tenant_id,
+            product_id=product_id,
+            product_revision=product_revision,
+            product_generation=product_generation,
+        )
+        try:
+            if (
+                self._connection.execute(
+                    "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+                    (_MATERIALIZATION_TABLE,),
+                ).fetchone()
+                is None
+            ):
+                return None
+            row = self._connection.execute(
+                f"SELECT payload FROM {_MATERIALIZATION_TABLE} WHERE materialization_key = ?",
+                (materialization_key,),
+            ).fetchone()
+            record = None if row is None else _Record.model_validate_json(bytes(row[0]))
+        except (sqlite3.Error, ValidationError) as error:
+            raise MaterializationAuthorityError(
+                "materialization authority is invalid or unavailable"
+            ) from error
+        # A record whose consumption view was never switched describes a generation nothing
+        # reads yet, so it is not a receipt a consumer may answer from.
+        if record is None or not record.view_switched:
+            return None
+        receipt = record.receipt
+        if (
+            receipt.tenant_id != tenant_id
+            or receipt.product_id != product_id
+            or receipt.product_revision != product_revision
+            or receipt.product_generation != product_generation
+        ):
+            raise MaterializationAuthorityError(
+                "materialization authority index does not match its payload"
+            )
+        return receipt
+
+
 class ProductMaterializationRunner:
     def __init__(
         self,
@@ -402,6 +485,7 @@ class ProductMaterializationRunner:
                 lineage_digest=observation.lineage_digest,
                 quality_assertion_count=observation.quality_assertion_count,
                 quality_disposition=observation.quality_disposition,
+                magnitude_asserted_columns=observation.magnitude_asserted_columns,
                 committed_at=self._clock(),
                 retained_until=self._clock() + timedelta(seconds=request.retention_seconds),
             )
@@ -577,32 +661,18 @@ class ProductMaterializationRunner:
         product_revision: int,
         product_generation: int,
     ) -> ProductMaterializationReceipt | None:
-        try:
-            record = self._load(
-                _materialization_key(
-                    tenant_id=tenant_id,
-                    product_id=product_id,
-                    product_revision=product_revision,
-                    product_generation=product_generation,
-                )
-            )
-        except (sqlite3.Error, ValidationError) as error:
-            raise MaterializationAuthorityError(
-                "materialization authority is invalid or unavailable"
-            ) from error
-        if record is None or not record.view_switched:
-            return None
-        receipt = record.receipt
-        if (
-            receipt.tenant_id != tenant_id
-            or receipt.product_id != product_id
-            or receipt.product_revision != product_revision
-            or receipt.product_generation != product_generation
-        ):
-            raise MaterializationAuthorityError(
-                "materialization authority index does not match its payload"
-            )
-        return receipt
+        """Answer for a committed generation, through the same reader a consumer would use.
+
+        Delegated rather than duplicated: a consumer reading this ledger without the runner must
+        apply the same conditions, and two copies of "which records are answerable" would be two
+        answers to one question.
+        """
+        return SQLiteProductMaterializationReceiptReader(self._connection).read_receipt(
+            tenant_id=tenant_id,
+            product_id=product_id,
+            product_revision=product_revision,
+            product_generation=product_generation,
+        )
 
     @staticmethod
     def _validate_observation(
@@ -610,6 +680,42 @@ class ProductMaterializationRunner:
     ) -> None:
         if observation.output_schema_digest != request.expected_output_schema_digest:
             raise ValueError("observed output schema does not match the approved schema")
+        ProductMaterializationRunner._require_magnitude_enforcement(request, observation)
+
+    @staticmethod
+    def _require_magnitude_enforcement(
+        request: MaterializationRequest, observation: MaterializationObservation
+    ) -> None:
+        """Refuse a result the engine did not hold to the plan's declared decimal magnitude.
+
+        The plan declares one `Decimal57OutputCheck` per aggregate measure, and the emitted
+        statement is what enforces the bound on the engine. Nothing tied the two together: a
+        warehouse could execute a different statement, or materialise without the checked cast, and
+        the only observation the runner compared was the output schema digest -- which a wrong but
+        correctly shaped result satisfies. Requiring the observation to name the columns it asserted
+        closes that, and closes it in the refusing direction: an observation that attests nothing is
+        rejected rather than assumed compliant.
+
+        Declared and asserted must match exactly. An observation naming a column the plan does not
+        check is as wrong as one omitting a column it does: it means the observation describes some
+        other plan, and treating the extra as harmless would accept that confusion.
+        """
+        declared = frozenset(
+            check.column_name for check in request.physical_plan.decimal_output_checks
+        )
+        asserted = frozenset(observation.magnitude_asserted_columns)
+        if declared == asserted:
+            return
+        unasserted = sorted(declared - asserted)
+        if unasserted:
+            raise ValueError(
+                "observed materialization did not assert the checked decimal magnitude on "
+                f"{', '.join(unasserted)}"
+            )
+        raise ValueError(
+            "observed materialization asserted a decimal magnitude the physical plan does not "
+            f"check: {', '.join(sorted(asserted - declared))}"
+        )
 
     def _require_cardinality_evidence(self, request: MaterializationRequest) -> None:
         try:

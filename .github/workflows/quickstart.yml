@@ -1,8 +1,9 @@
 name: Quickstart
 
-# The smoke test builds the published image and starts it twice, so this runs only when
-# something the image is built from changes, rather than on every pull request. The
-# contract tests beside it need no Docker and run in the offline suite every time.
+# The smoke test builds the published image and starts it several times over, and each start
+# now provisions a warehouse and runs dbt, so this runs only when something the image is built
+# from changes rather than on every pull request. The contract tests beside it need no Docker
+# and run in the offline suite every time.
 on:
   pull_request:
     paths:

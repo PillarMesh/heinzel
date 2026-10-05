@@ -48,7 +48,12 @@ from .product_sql_observation import (
     PostgreSQLProductSqlObserver,
 )
 from .provider import PostgresProvider, normalize_columns
-from .query_estimator import PostgreSQLQueryEstimator, PostgreSQLQueryEstimatorSettings
+from .query_estimator import (
+    PostgreSQLQueryEstimator,
+    PostgreSQLQueryEstimatorSettings,
+    PostgreSQLRelationSizeQueryEstimator,
+    PostgreSQLRelationSizeQueryEstimatorSettings,
+)
 from .settings import PostgresSettings
 from .warehouse import PostgreSQLBackupCommandBoundary, PostgreSQLWarehouseProvider
 from .warehouse_settings import (
@@ -95,6 +100,8 @@ __all__ = [
     "PostgreSQLProductSqlObserver",
     "PostgreSQLQueryEstimator",
     "PostgreSQLQueryEstimatorSettings",
+    "PostgreSQLRelationSizeQueryEstimator",
+    "PostgreSQLRelationSizeQueryEstimatorSettings",
     "PostgreSQLSourceObjectDeclaration",
     "PostgreSQLWarehouseProvider",
     "PostgreSQLWarehouseSettings",

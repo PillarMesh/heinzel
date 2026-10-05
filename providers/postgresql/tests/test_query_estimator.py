@@ -10,6 +10,8 @@ from heinzel_compiler.sql_models import SqlParameter
 from heinzel_provider_postgresql.query_estimator import (
     PostgreSQLQueryEstimator,
     PostgreSQLQueryEstimatorSettings,
+    PostgreSQLRelationSizeQueryEstimator,
+    PostgreSQLRelationSizeQueryEstimatorSettings,
 )
 from heinzel_provider_sdk import ProviderError
 from pydantic import SecretStr, ValidationError
@@ -267,3 +269,179 @@ def test_estimator_settings_are_strict_and_timeout_is_bounded() -> None:
                 "unexpected": True,
             }
         )
+
+
+@pytest.mark.parametrize(
+    ("probe_outcome", "classification"),
+    (
+        (psycopg.errors.InvalidPassword(), "authorization_denied"),
+        (psycopg.OperationalError("probe transport failed"), "transient_transport"),
+    ),
+)
+def test_estimator_attributes_only_structured_startup_rejections(
+    probe_outcome: Exception, classification: str
+) -> None:
+    probe_calls: list[dict[str, object]] = []
+
+    def rejected(_dsn: str) -> _Connection:
+        raise psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+    def probe(**parameters: object) -> _Connection:
+        probe_calls.append(parameters)
+        raise probe_outcome
+
+    estimator = PostgreSQLQueryEstimator(
+        settings=_settings().model_copy(
+            update={
+                "dsn": SecretStr(
+                    "host=warehouse.internal dbname=db user=estimator "
+                    "password=private-password sslmode=disable gssencmode=disable"
+                )
+            }
+        ),
+        connect=rejected,
+        startup_denial_probe=probe,
+    )
+
+    with pytest.raises(ProviderError) as captured:
+        estimator.estimate(_request())
+
+    assert captured.value.classification == classification
+    assert [call["connect_timeout"] for call in probe_calls] == [4.0]
+    assert "private" not in str(captured.value)
+
+
+_RELATION_SETTINGS = PostgreSQLRelationSizeQueryEstimatorSettings(
+    dsn=SecretStr("postgresql://estimator@127.0.0.1/heinzel"),
+    connect_timeout_seconds=5,
+    statement_timeout_seconds=5,
+    namespace="consumption",
+    relation_name="sales",
+)
+
+
+class _SizeCursor:
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self.row = row
+        self.closed = False
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self.row
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _SizeConnection:
+    """Answers the size query, and records the control statements asked before it."""
+
+    def __init__(self, row: tuple[object, ...] | None) -> None:
+        self.row = row
+        self.control: list[tuple[object, tuple[object, ...]]] = []
+        self.rolled_back = False
+        self.closed = False
+        self.transaction_read_only = "on"
+
+    def execute(self, statement: object, params: tuple[object, ...] = ()) -> _SizeCursor:
+        self.control.append((statement, params))
+        if statement == "SHOW transaction_read_only":
+            return _SizeCursor((self.transaction_read_only,))
+        if isinstance(statement, str) and statement.startswith("SELECT pg_total_relation_size"):
+            return _SizeCursor(self.row)
+        return _SizeCursor(None)
+
+    def rollback(self) -> None:
+        self.rolled_back = True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _relation_size_estimator(
+    connection: _SizeConnection,
+    *,
+    settings: PostgreSQLRelationSizeQueryEstimatorSettings = _RELATION_SETTINGS,
+) -> PostgreSQLRelationSizeQueryEstimator:
+    return PostgreSQLRelationSizeQueryEstimator(
+        settings=settings,
+        connect=lambda dsn: connection,
+        # Returns the same connection rather than nothing: a probe hands back something the
+        # caller closes, and one that returned `None` could only ever be a probe nobody calls.
+        startup_denial_probe=lambda **_: connection,
+    )
+
+
+def test_the_relation_size_bound_is_the_relation_the_statement_reads() -> None:
+    """The measured bytes are the bound, and the rows follow from them, not from statistics."""
+    connection = _SizeConnection((8192,))
+
+    estimate = _relation_size_estimator(connection).estimate(_request())
+
+    assert estimate is not None
+    assert estimate.bytes == 8192
+    # A heap tuple costs at least a 24-byte MAXALIGNed header, so a page cannot hold more than
+    # this many. Over-counting is the conservative direction for a ceiling.
+    assert estimate.rows == 8192 // 24
+    assert estimate.estimator_version == "postgresql-relation-size-v1"
+
+
+def test_the_relation_size_bound_is_measured_in_a_read_only_transaction() -> None:
+    """A bound measured by a session that could write is a bound measured by a writer."""
+    connection = _SizeConnection((8192,))
+
+    _relation_size_estimator(connection).estimate(_request())
+
+    assert ("SET TRANSACTION READ ONLY", ()) in connection.control
+    assert connection.rolled_back and connection.closed
+
+
+def test_an_empty_relation_bounds_the_scan_at_nothing() -> None:
+    """A relation occupying no pages can be scanned for no bytes, which is a bound, not a gap."""
+    estimate = _relation_size_estimator(_SizeConnection((0,))).estimate(_request())
+
+    assert estimate is not None
+    assert (estimate.rows, estimate.bytes) == (0, 0)
+
+
+def test_a_statement_over_another_relation_is_refused() -> None:
+    """A bound measured against one relation says nothing about a statement over another."""
+    elsewhere = _RELATION_SETTINGS.model_copy(update={"relation_name": "other_sales"})
+
+    with pytest.raises(ProviderError) as refusal:
+        _relation_size_estimator(_SizeConnection((8192,)), settings=elsewhere).estimate(_request())
+
+    assert refusal.value.classification == "statement_rejected"
+
+
+def test_an_unmeasurable_relation_is_refused_rather_than_bounded_at_zero() -> None:
+    """`to_regclass` is NULL for a relation this role cannot see, and so is its size.
+
+    Reporting that as a zero-byte scan would admit a query over a relation the estimator could
+    not even find, under a ceiling it never checked anything against.
+    """
+    with pytest.raises(ProviderError) as refusal:
+        _relation_size_estimator(_SizeConnection((None,))).estimate(_request())
+
+    assert refusal.value.classification == "authorization_denied"
+
+
+def test_a_session_that_is_not_read_only_is_refused() -> None:
+    connection = _SizeConnection((8192,))
+    connection.transaction_read_only = "off"
+
+    with pytest.raises(ProviderError) as refusal:
+        _relation_size_estimator(connection).estimate(_request())
+
+    assert refusal.value.classification == "authorization_denied"
+
+
+def test_a_statement_outside_the_compiler_allowlist_is_refused() -> None:
+    """The single-relation bound holds for the restricted form and for nothing else."""
+    joined = _request(
+        statement='SELECT 1 FROM "consumption"."sales" JOIN "x"."y" ON true', parameters=()
+    )
+
+    with pytest.raises(ProviderError) as refusal:
+        _relation_size_estimator(_SizeConnection((8192,))).estimate(joined)
+
+    assert refusal.value.classification == "statement_rejected"

@@ -400,3 +400,43 @@ def test_observer_rejects_incorrect_sum_probe_results() -> None:
         observer.observe(_request(), warehouse_validation=_evidence())
 
     assert caught.value.classification == "integrity_failure"
+
+
+@pytest.mark.parametrize(
+    ("probe_outcome", "classification"),
+    (
+        (psycopg.errors.InvalidPassword(), "authorization_denied"),
+        (psycopg.OperationalError("probe transport failed"), "transient_transport"),
+    ),
+)
+def test_observer_attributes_only_structured_startup_rejections(
+    probe_outcome: Exception, classification: str
+) -> None:
+    probe_calls: list[dict[str, object]] = []
+
+    def rejected(dsn: str) -> _Connection:
+        raise psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+    def probe(**parameters: object) -> _Connection:
+        probe_calls.append(parameters)
+        raise probe_outcome
+
+    observer = PostgreSQLProductSqlObserver(
+        _settings().model_copy(
+            update={
+                "dsn": SecretStr(
+                    "host=warehouse.internal dbname=warehouse user=observer "
+                    "password=private-secret sslmode=disable gssencmode=disable"
+                )
+            }
+        ),
+        connect=rejected,
+        startup_denial_probe=probe,
+    )
+
+    with pytest.raises(ProviderError) as caught:
+        observer.observe(_request(), warehouse_validation=_evidence())
+
+    assert caught.value.classification == classification
+    assert len(probe_calls) == 1
+    assert "private" not in str(caught.value)

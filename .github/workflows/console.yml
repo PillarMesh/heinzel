@@ -130,6 +130,33 @@ jobs:
         run: npx playwright install --with-deps chromium
       - name: Run browser acceptance
         run: npm run test:e2e
+      # The governed suite drives a question the workspace cannot answer, and asserts that
+      # it stops at `No Valid Plan` with the reason stated in the requester's language and
+      # the compiler's own code kept out of it. That refusal is the governed behaviour this
+      # product exists to show, and until now no CI run had ever exercised it in a browser.
+      - name: Run governed browser acceptance
+        run: npm run test:e2e:governed
+      # `npm run test:e2e` above drives these screens over fixtures. This suite is the
+      # only browser proof that the console serves a governed answer over a real
+      # warehouse: it starts a PostgreSQL cluster with `initdb`, acquires and lands
+      # source rows through the real providers, materializes a product through dbt, and
+      # then checks the rendered result rows and the bytes of the CSV download.
+      #
+      # The runner keeps the server binaries off PATH while `psql` is on it, so the
+      # directory is named here. A missing one is not a skip to hide behind: the harness
+      # runs outside pytest, so it raises at server start and fails this step.
+      - name: Run native browser acceptance
+        run: |
+          set -euo pipefail
+          if ! command -v initdb >/dev/null 2>&1; then
+            postgresql_bin="$(
+              ls -1d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -n 1 || true
+            )"
+            if [ -n "$postgresql_bin" ]; then
+              export HEINZEL_TEST_POSTGRES_BIN_DIR="$postgresql_bin"
+            fi
+          fi
+          npm run test:e2e:native
       - name: Upload browser artifacts
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -137,6 +164,8 @@ jobs:
           name: console-browser-artifacts
           path: |
             apps/console/test-results
+            apps/console/test-results-governed
+            apps/console/test-results-native
             apps/console/playwright-report
           if-no-files-found: ignore
 

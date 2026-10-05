@@ -155,8 +155,9 @@ class SQLiteSourceFreshnessObservationRepository:
         database_path: str,
         *,
         fault_hook: SourceFreshnessFaultHook = _noop_freshness_fault_hook,
+        check_same_thread: bool = True,
     ) -> None:
-        self._connection = sqlite3.connect(database_path)
+        self._connection = sqlite3.connect(database_path, check_same_thread=check_same_thread)
         self._fault_hook = fault_hook
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS source_freshness_observations ("

@@ -1,9 +1,12 @@
 # Quickstart
 
-A local demonstration of the governed request path, packaged as one container by
+A local demonstration of the governed request path, from a stakeholder's question to a governed
+answer, packaged by
 [ADR-0009](../../docs/architecture/decisions/ADR-0009-container-packaging.md). It is a way to
 look at the product on one machine. It is not a deployment, and nothing here is a starting
 point for one.
+
+Two containers: the console, and the PostgreSQL warehouse it provisions and answers over.
 
 ## Start it
 
@@ -14,8 +17,10 @@ docker compose -f deploy/quickstart/compose.yaml up --build
 ```
 
 The first build compiles the console bundle and installs the Python environment, so it takes a
-few minutes; later starts reuse both. When it reports itself healthy, open
-<http://127.0.0.1:8000>.
+few minutes; later starts reuse both. The first *start* then provisions the warehouse, acquires
+and lands its seeded source and runs dbt to materialize a product, which takes a further half
+minute or so; later starts find that product and skip straight to serving. When it reports
+itself healthy, open <http://127.0.0.1:8000>.
 
 To publish it somewhere else, set `HEINZEL_PORT`, which moves the published port and the origin
 the console accepts together:
@@ -48,7 +53,7 @@ adjusting it, naming the spelling to use instead.
 
 ## What it shows
 
-One stakeholder question is waiting in the inbox: *What is the daily order count?*, asked by
+One stakeholder question is waiting in the inbox: *What is the daily order value?*, asked by
 `requester-demo` for a weekly operations review. You open the console as the architect,
 `architect-demo`.
 
@@ -84,26 +89,74 @@ curl -fsS -X POST \
                 active_role: "requester", decision: "approve"}' <<<"$REQUEST")"
 ```
 
-Reload the inbox afterwards: admission is offered, and admitting the proposal moves the request
-to `execution_ready`.
+Reload the inbox afterwards: admission is offered, and admitting the proposal delivers the
+answer. The admission is where a question differs from a data access request: admitting it
+compiles a governed query over the published product, checks it against the answer scope
+policy's ceilings, runs it as a read-only role, and delivers the result — so the request reaches
+`delivered` rather than stopping at `execution_ready`.
+
+The answer belongs to the requester who asked for it, so read it as them:
+
+```bash
+curl -fsS -H "$AS_REQUESTER" "$BASE/api/v1/requests/$(jq -r .request_id <<<"$REQUEST")/result" \
+  | jq '.data.rows'
+```
+
+Three rows, one per day the seeded source carries: `30.000000000`, `125.500000000` and
+`99.000000000`. Asking as the architect answers `404` — a result belongs to whoever asked.
+
+## What the answer went through
+
+Before the console listened at all, it provisioned the warehouse with five least-privilege
+logins, seeded a source table, acquired its approved columns through the acquisition provider —
+which refuses the whole acquisition if the connecting role can reach more than its declaration —
+landed them under a receipt, compiled the product through the compiler's own entry point, ran
+that statement with dbt, and published the generation through the product authorities.
+
+Admitting the question then resolved the requester's entitlement from a signed authority over
+loopback TLS, validated the question against the approved scope policy, read which column
+answers which approved term out of the durable query binding, compiled the statement, bounded
+its scan by the product relation's measured size, and admitted the plan under the policy's
+ceilings.
+
+None of that is visible in the console, and almost all of it is load-bearing: the answer refuses
+outright if the entitlement, the materialization receipt, the freshness observation, the query
+binding or the scan bound is missing, or if the product's relation can still be written by a role
+that can log in.
+
+The compiled model the answer verifies is the exception, and it is the one worth knowing about.
+Given no signed model, the provider returns no decimal magnitude checks and answers anyway — so a
+demonstration that lost it on restart would come back enforcing nothing about its own output
+magnitudes and look exactly the same doing it. That is why it is stored rather than held in the
+process that signed it.
 
 ## Where it stops
 
-`execution_ready` is the end of the demonstration. It carries the request path — intake,
-clarification, proposal preparation and submission, acceptance, approval and admission — and
-nothing beyond it.
-
-The demonstration deliberately carries no acquisition harness and no answer runtime, and it says
-so rather than showing an empty page that reads like a working capability with nothing in it:
+The answer is the end of the demonstration. Beyond it:
 
 - `GET /api/v1/runs` and `GET /api/v1/acquisition-receipts` answer `503
-  capability_not_delivered` to the architect, who is the actor entitled to ask.
-- `GET /api/v1/requests/{request_id}/result` answers `503 capability_not_delivered` to the
-  requester it belongs to, and `404` to an architect, who is not entitled to ask for it.
+  capability_not_delivered` to the architect, who is the actor entitled to ask. The
+  demonstration acquires and lands its own source once, at start-up, and carries no run harness
+  that would make either of those a list worth showing.
+- The answer scope policy carries no disclosure classifications, though the demonstration's
+  contract classifies its product `commercial`. Carrying one requires a policy authority's
+  approval, and the demonstration has two actors: an architect and a requester. So it shows no
+  disclosure control over a classified product.
+- The product is one generation of three rows, materialized once. There is no refresh, no second
+  generation and no scheduled run.
+- Admitting a question is the governed answer's admission, not the fulfillment service's, and
+  they are exclusive: each needs a request that has not been admitted yet, so whichever runs
+  first makes the other refuse. The console still checks the actor's role, the revision, the
+  proposal digest and the approvals it has projected against that proposal. What it does not
+  check on this path is what the fulfillment service would have: whether each approver still
+  holds the authority they approved under, and whether the proposal's impact authority or policy
+  snapshot has drifted since it was compiled. No fulfillment admission receipt is recorded
+  either, so a question's evidence names the governed admission alone. Composing both needs a
+  service that can judge admissibility without consuming it, which is not delivered.
 
 Data access requests are refused at intake for a different reason: grant application, expiry and
-revocation are not delivered either, so accepting one into an inbox no action could move would be
-the same false promise.
+revocation are not delivered, so accepting one into an inbox no action could move would be a
+false promise.
 
 [docs/status.md](../../docs/status.md) states what Heinzel does today, and how each claim is
 proved.
@@ -115,7 +168,13 @@ docker compose -f deploy/quickstart/compose.yaml down
 ```
 
 The demonstration keeps its state — SQLite stores under `/var/lib/heinzel` — in a named volume,
-which `down` leaves in place. The next start resumes exactly where you left off.
+and the warehouse keeps its data in another. `down` leaves both in place, and the next start
+resumes exactly where you left off, finding the product it already materialized.
+
+Discard them together. The console refuses to start when its state directory and its warehouse
+disagree about whether the product has been materialized, because materializing again would
+either commit a generation the warehouse already holds or publish authority for a relation that
+is not there — and it names `down -v`, which removes both.
 
 ## Reset it
 

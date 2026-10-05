@@ -904,3 +904,43 @@ def test_observation_preserves_strictly_increasing_physical_ordinals_with_gaps()
     )
 
     assert tuple(column.ordinal for column in observation.columns) == (1, 3)
+
+
+@pytest.mark.parametrize(
+    ("probe_outcome", "classification"),
+    (
+        (psycopg.errors.InvalidPassword(), "authorization_denied"),
+        (psycopg.OperationalError("probe transport failed"), "transient_transport"),
+    ),
+)
+def test_observer_attributes_only_structured_startup_rejections(
+    probe_outcome: Exception, classification: str
+) -> None:
+    probe_calls: list[dict[str, object]] = []
+
+    def rejected(_dsn: str) -> _Connection:
+        raise psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+    def probe(**parameters: object) -> _Connection:
+        probe_calls.append(parameters)
+        raise probe_outcome
+
+    observer = PostgreSQLProductSemanticObserver(
+        _settings().model_copy(
+            update={
+                "dsn": SecretStr(
+                    "host=warehouse.internal dbname=database user=observer "
+                    "password=private-secret sslmode=disable gssencmode=disable"
+                )
+            }
+        ),
+        connect=rejected,
+        startup_denial_probe=probe,
+    )
+
+    with pytest.raises(ProviderError) as caught:
+        observer.observe(_request())
+
+    assert caught.value.classification == classification
+    assert len(probe_calls) == 1
+    assert "private" not in str(caught.value)

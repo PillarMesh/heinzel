@@ -39,22 +39,27 @@ docker compose -f deploy/quickstart/compose.yaml up --build
 ```
 
 The first build compiles the console bundle and installs the Python environment, so it takes a
-few minutes. Then open <http://127.0.0.1:8000>. A stakeholder question is waiting in the inbox:
+few minutes. The first start then provisions a PostgreSQL warehouse beside the console, acquires
+and lands its seeded source and materializes a product with dbt, which takes a further half
+minute. Then open <http://127.0.0.1:8000>. A stakeholder question is waiting in the inbox:
 clarify it, prepare an answer proposal, submit it to the requester and record your approval.
 
-The demonstration carries the governed request path as far as approval, and says so rather than
-implying more. Runs, acquisition receipts and answer delivery are not part of it, and the console
-reports them as not delivered rather than showing an empty page. Admission to `execution_ready`
-needs the requester's acceptance too, which the browser cannot give because the demonstration
-console has one actor; [deploy/quickstart/README.md](deploy/quickstart/README.md) says what the
-demonstration shows, where it stops, how to send that acceptance, and how to publish it on
-another port.
+Admitting the approved proposal answers the question — a governed query compiled over that
+product, checked against an answer scope policy's ceilings and run as a read-only role. The
+answer belongs to the requester who asked for it, and the architect reading it gets a `404`.
+
+Admission needs the requester's acceptance too, which the browser cannot give because the
+demonstration console has one actor. Runs and acquisition receipts are not part of the
+demonstration, and the console reports them as not delivered rather than showing an empty page.
+[deploy/quickstart/README.md](deploy/quickstart/README.md) says what the answer went through,
+where the demonstration stops, how to send that acceptance and read the result, and how to
+publish it on another port.
 
 It has **no authentication**: anyone who reaches the published port acts as the data architect,
 which is why compose publishes it on `127.0.0.1` only. Keep it there, and do not expose it to a
 network.
 
-To reset the demonstration, discarding its state:
+To reset the demonstration, discarding both its state and its warehouse:
 
 ```bash
 docker compose -f deploy/quickstart/compose.yaml down -v

@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import psycopg
 import pytest
 from heinzel_contract_model import canonical_bytes, digest
 from heinzel_provider_postgresql import PostgresProvider, PostgresSettings, normalize_columns
@@ -303,3 +304,34 @@ def test_abandoned_snapshot_rolls_back_and_cannot_claim_a_closed_boundary() -> N
     assert connection.rolled_back and connection.closed
     with pytest.raises(RuntimeError, match="not been consumed"):
         rows.final_boundary()  # type: ignore[attr-defined]
+
+
+def test_rejected_credentials_surface_the_structured_authorization_rejection() -> None:
+    probe_calls: list[dict[str, object]] = []
+
+    def rejected(_dsn: str) -> FakeConnection:
+        raise psycopg.OperationalError("localized startup rejection without SQLSTATE")
+
+    def probe(**parameters: object) -> FakeConnection:
+        probe_calls.append(parameters)
+        raise psycopg.errors.InvalidPassword()
+
+    provider = PostgresProvider(
+        PostgresSettings(
+            dsn=SecretStr(
+                "host=source.internal dbname=source user=reader password=private-secret "
+                "sslmode=disable gssencmode=disable"
+            ),
+            connection_handle="source-account",
+            schema_name="fixture",
+            table_name="orders",
+        ),
+        connect=rejected,
+        startup_denial_probe=probe,
+        clock=lambda: NOW,
+    )
+
+    with pytest.raises(psycopg.errors.InvalidPassword):
+        provider.observe()
+
+    assert len(probe_calls) == 1

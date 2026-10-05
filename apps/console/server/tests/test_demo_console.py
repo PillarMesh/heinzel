@@ -128,7 +128,7 @@ def test_the_seeded_question_travels_the_whole_journey_to_execution_ready(
     # The answer is the published definition of the term the question named, not a number
     # the demonstration invented.
     assert proposal["proposal"]["candidate"] == (
-        "Daily order count is confirmed customer orders per calendar day."
+        "Daily order value is confirmed customer order value per calendar day."
     )
 
     submitted = console.post(

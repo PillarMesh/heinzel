@@ -839,3 +839,84 @@ def test_live_job_uses_the_repository_pinned_toolchain_actions(workflow: dict[st
         "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1"
         in workflow_source
     )
+
+
+def test_witnessed_cost_reaches_the_job_summary(workflow: dict[str, Any], tmp_path: Path) -> None:
+    """The peak figures are readable without fetching the artifact.
+
+    The cost is uploaded as an artifact, and an artifact cannot be read from the
+    run's own page or from a client that cannot reach blob storage. These are the
+    numbers that say whether another engine stack fits beside this one, so they
+    belong in the summary the run already renders. Every field of the cost is a
+    scalar count, so there is nothing in it to redact.
+
+    They reach the log as well as the summary. A rendered summary needs a
+    browser, so a summary alone leaves the figures unreadable to exactly the
+    clients that cannot fetch the artifact either.
+    """
+    steps = workflow["jobs"]["lifecycle"]["steps"]
+    step = _job_step(workflow, "lifecycle", "Report the witnessed cost in the job summary")
+    upload = _job_step(workflow, "lifecycle", "Upload the sanitized cost artifact")
+    runner_temp = tmp_path / "temp"
+    runner_temp.mkdir()
+    cost = json.dumps(
+        {
+            "duration_seconds": 64,
+            "peak_docker_disk_bytes": 1234567890,
+            "peak_docker_memory_bytes": 2147483648,
+            "sample_count": 61,
+            "timed_out": False,
+        },
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    (runner_temp / "warehouse-lifecycle-cost.json").write_text(cost + "\n", encoding="utf-8")
+    summary = tmp_path / "summary.md"
+
+    completed = _run_step(
+        step,
+        tmp_path=tmp_path,
+        environment={
+            "RUNNER_TEMP": str(runner_temp),
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert str(step["if"]).strip() == "always()"
+    assert steps.index(step) < steps.index(upload)
+    rendered = summary.read_text(encoding="utf-8")
+    assert cost in rendered
+    assert "peak_docker_memory_bytes" in rendered
+    assert cost in completed.stdout
+
+
+def test_a_witness_that_recorded_no_cost_does_not_add_a_second_failure(
+    workflow: dict[str, Any], tmp_path: Path
+) -> None:
+    """A witness that fails before sampling leaves no file, and that is not a new error.
+
+    The witness exits before it samples when its own configuration fails, so the
+    cost is absent exactly when the run already has a real failure to report.
+    Reporting that plainly keeps the summary honest without displacing the
+    failure; the upload step is what holds a missing file to be an error.
+    """
+    step = _job_step(workflow, "lifecycle", "Report the witnessed cost in the job summary")
+    runner_temp = tmp_path / "temp"
+    runner_temp.mkdir()
+    summary = tmp_path / "summary.md"
+
+    completed = _run_step(
+        step,
+        tmp_path=tmp_path,
+        environment={
+            "RUNNER_TEMP": str(runner_temp),
+            "GITHUB_STEP_SUMMARY": str(summary),
+        },
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    rendered = summary.read_text(encoding="utf-8")
+    assert "No cost was recorded" in rendered
+    assert "peak_docker_memory_bytes" not in rendered
+    assert "No cost was recorded" in completed.stdout

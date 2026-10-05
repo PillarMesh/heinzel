@@ -33,10 +33,14 @@ regexes = [
 ]
 
 [[allowlists]]
+# The field this covers moved: the local policy authority it belongs to was composed only
+# in the acceptance fixture until the quickstart image needed it, and the image ships no
+# `tests`. The fixture no longer carries the annotation, so its path is replaced rather
+# than joined -- an allowlisted path a rule no longer fires on is coverage given away.
 description = "A type annotation, `signing_key: Ed25519PrivateKey`, not a key value."
 targetRules = ["generic-api-key"]
 condition = "AND"
-paths = ['''(?:^|/)tests/acceptance/console_native_answer_fixture\.py$''']
+paths = ['''(?:^|/)apps/console/server/src/heinzel_console/answers/policy_authority\.py$''']
 regexes = ['''^Ed25519PrivateKey$''']
 
 [[allowlists]]

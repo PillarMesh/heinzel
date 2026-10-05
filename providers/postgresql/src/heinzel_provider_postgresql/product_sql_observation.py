@@ -20,6 +20,11 @@ from heinzel_warehouse_control import EngineKind, WarehouseValidationEvidence
 from psycopg import sql
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from .startup_denial import (
+    StartupDenialProbe,
+    connect_attributing_startup_denial,
+    default_startup_denial_probe,
+)
 from .warehouse_settings import POSTGRESQL_WAREHOUSE_IMAGE
 
 _IDENTIFIER_PATTERN = r"^[a-z][a-z0-9_]{0,62}$"
@@ -65,6 +70,7 @@ class PostgreSQLProductSqlObserver:
         settings: PostgreSQLProductSqlObservationSettings,
         *,
         connect: _ConnectProtocol | None = None,
+        startup_denial_probe: StartupDenialProbe | None = None,
         signer: ProductSqlProviderObservationSigner | None = None,
     ) -> None:
         if signer is not None and not isinstance(signer, ProductSqlProviderObservationSigner):
@@ -74,6 +80,9 @@ class PostgreSQLProductSqlObserver:
             )
         self._settings = settings
         self._connect = connect or cast(_ConnectProtocol, psycopg.connect)
+        self._startup_denial_probe = default_startup_denial_probe(
+            connect=connect, probe=startup_denial_probe
+        )
         self._signer = signer
 
     def observe_signed(
@@ -110,7 +119,11 @@ class PostgreSQLProductSqlObserver:
         )
         connection: _Connection | None = None
         try:
-            connection = self._connect(self._settings.dsn.get_secret_value())
+            connection = connect_attributing_startup_denial(
+                self._connect,
+                self._settings.dsn.get_secret_value(),
+                probe=self._startup_denial_probe,
+            )
             connection.execute("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
             context = _read_context(connection)
             _require_validated_engine(context, warehouse_validation=warehouse_validation)

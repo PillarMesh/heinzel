@@ -11,7 +11,11 @@ from .warehouse_protocol import connect_denial_probe
 
 _DEFAULT_CONNECT_TIMEOUT_SECONDS = 10.0
 _PROBED_SSL_MODES = frozenset({"disable", "prefer", "verify-full"})
-_AUTHORIZATION_REJECTIONS = (
+# Shared with the call sites that classify a rejection themselves rather than through
+# `connect_attributing_startup_denial` -- `access.py` has to distinguish an effect that may
+# already have landed. Two copies of this tuple can drift apart, and a site that lost one of
+# these classes would silently classify a rejected credential as a transient failure again.
+AUTHORIZATION_REJECTIONS = (
     psycopg.errors.InvalidAuthorizationSpecification,
     psycopg.errors.InvalidPassword,
 )
@@ -70,7 +74,7 @@ def recover_startup_denial(
         return error
     try:
         connection = probe(**parameters)
-    except _AUTHORIZATION_REJECTIONS as rejection:
+    except AUTHORIZATION_REJECTIONS as rejection:
         return rejection
     except (psycopg.Error, OSError, ValueError):
         # The probe is diagnostic only; its own failure is not evidence about the credential.

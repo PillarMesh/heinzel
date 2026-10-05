@@ -31,6 +31,7 @@ from heinzel_runtime.product_materialization import (
     ProductMaterializationRunner,
     PublicationRecoveryCommand,
     PublicationRecoveryNotAllowedError,
+    SQLiteProductMaterializationReceiptReader,
     StalePublicationRevisionError,
 )
 from heinzel_state import (
@@ -41,6 +42,7 @@ from heinzel_state import (
     SQLiteIncidentRepository,
     SQLiteRunRepository,
 )
+from pydantic import ValidationError
 
 NOW = datetime(2026, 9, 11, 12, tzinfo=UTC)
 _LEGALITY_DECISION_DIGEST = "8" * 64
@@ -174,6 +176,11 @@ class _CardinalityEvidenceReader:
         return self.evidence
 
 
+def _asserted_magnitude_columns(request: MaterializationRequest) -> tuple[str, ...]:
+    """What a conforming warehouse attests: every column the plan declares a magnitude check on."""
+    return tuple(check.column_name for check in request.physical_plan.decimal_output_checks)
+
+
 class _Warehouse:
     def __init__(self) -> None:
         self.executions = 0
@@ -190,6 +197,7 @@ class _Warehouse:
             lineage_digest="3" * 64,
             quality_assertion_count=0,
             quality_disposition="not_asserted",
+            magnitude_asserted_columns=_asserted_magnitude_columns(request),
         )
 
     def switch_consumption_view(
@@ -219,6 +227,9 @@ class _Catalog:
 class _SchemaMismatchWarehouse(_Warehouse):
     def execute(self, request: MaterializationRequest) -> MaterializationObservation:
         self.executions += 1
+        # Attests the magnitude so this double fails on the schema digest alone. Without it the
+        # runner would refuse it for an unasserted magnitude and the schema test would pass for
+        # the wrong reason.
         return MaterializationObservation(
             provider_commit_reference="commit-1",
             output_schema_digest="e" * 64,
@@ -228,6 +239,7 @@ class _SchemaMismatchWarehouse(_Warehouse):
             lineage_digest="3" * 64,
             quality_assertion_count=0,
             quality_disposition="not_asserted",
+            magnitude_asserted_columns=_asserted_magnitude_columns(request),
         )
 
 
@@ -1024,6 +1036,79 @@ def test_receipt_reader_returns_only_the_exact_recorded_generation() -> None:
     assert absent is None
 
 
+def test_a_receipt_reader_answers_over_a_ledger_whose_runner_has_ended(tmp_path: Path) -> None:
+    """A process that restarts has the ledger but not the runner that wrote it.
+
+    The runner needs a warehouse, a catalog, a cardinality reader and an authorization verifier,
+    because it materializes. A consumer answering for a generation committed by a run that has
+    since ended has none of those, and composing a runner it will never materialize with would
+    be claiming a capability to satisfy a read.
+    """
+    ledger_path = tmp_path / "materializations.sqlite3"
+    writing = sqlite3.connect(ledger_path)
+    try:
+        committed = ProductMaterializationRunner(
+            writing,
+            warehouse=_Warehouse(),
+            catalog=_Catalog(),
+            execution_authorization_verifier=_authorization_verifier(),
+            cardinality_evidence_reader=_cardinality_repository(),
+            clock=lambda: NOW,
+        ).materialize(_request(), admission=_admission())
+    finally:
+        writing.close()
+
+    reading = sqlite3.connect(ledger_path)
+    try:
+        reader = SQLiteProductMaterializationReceiptReader(reading)
+        assert (
+            reader.read_receipt(
+                tenant_id="tenant-a",
+                product_id="product-revenue",
+                product_revision=1,
+                product_generation=1,
+            )
+            == committed.receipt
+        )
+        assert (
+            reader.read_receipt(
+                tenant_id="tenant-a",
+                product_id="product-revenue",
+                product_revision=1,
+                product_generation=2,
+            )
+            is None
+        )
+    finally:
+        reading.close()
+
+
+def test_a_ledger_that_has_committed_nothing_reads_as_no_receipt(tmp_path: Path) -> None:
+    """A reader must not create the table it reads, and an empty ledger is not a fault.
+
+    A first start has a state directory with no materialization in it. Reporting that as an
+    unavailable authority would make an answer path refuse for a reason that reads as damage
+    rather than as nothing having been materialized yet.
+    """
+    connection = sqlite3.connect(tmp_path / "empty.sqlite3")
+    try:
+        assert (
+            SQLiteProductMaterializationReceiptReader(connection).read_receipt(
+                tenant_id="tenant-a",
+                product_id="product-revenue",
+                product_revision=1,
+                product_generation=1,
+            )
+            is None
+        )
+        # Read-only: nothing was created by asking.
+        assert connection.execute(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table'"
+        ).fetchone() == (0,)
+    finally:
+        connection.close()
+
+
 def test_materialization_ledger_retains_multiple_generations_of_one_product_revision() -> None:
     warehouse = _Warehouse()
     catalog = _Catalog()
@@ -1183,3 +1268,138 @@ def test_crash_after_receipt_resumes_without_rerunning_transform() -> None:
     )
     assert warehouse.executions == 1
     assert warehouse.switches == 1
+
+
+class _UnassertedMagnitudeWarehouse(_Warehouse):
+    """A warehouse that runs the statement but attests no magnitude assertion at all."""
+
+    def execute(self, request: MaterializationRequest) -> MaterializationObservation:
+        observation = super().execute(request)
+        return observation.model_copy(update={"magnitude_asserted_columns": ()})
+
+
+class _PartialMagnitudeWarehouse(_Warehouse):
+    """A warehouse that asserts the magnitude on all but the last checked column."""
+
+    def execute(self, request: MaterializationRequest) -> MaterializationObservation:
+        observation = super().execute(request)
+        return observation.model_copy(
+            update={"magnitude_asserted_columns": observation.magnitude_asserted_columns[:-1]}
+        )
+
+
+class _ForeignMagnitudeWarehouse(_Warehouse):
+    """A warehouse attesting a column the physical plan declares no magnitude check on."""
+
+    def execute(self, request: MaterializationRequest) -> MaterializationObservation:
+        observation = super().execute(request)
+        return observation.model_copy(
+            update={
+                "magnitude_asserted_columns": (
+                    *observation.magnitude_asserted_columns,
+                    "unchecked_total",
+                )
+            }
+        )
+
+
+def test_materialization_is_refused_when_the_engine_asserted_no_decimal_magnitude() -> None:
+    """A correctly shaped result is not evidence the engine held the declared magnitude.
+
+    The output schema digest is the only thing the runner compared before this check existed, and a
+    warehouse that materialised without the checked cast satisfies it: the shape is right and the
+    number may not be. Refusing an observation that attests nothing is what ties the plan's signed
+    `Decimal57OutputCheck` to something that actually happened on the engine.
+    """
+    warehouse = _UnassertedMagnitudeWarehouse()
+    runner = ProductMaterializationRunner.in_memory(
+        warehouse=warehouse,
+        catalog=_Catalog(),
+        clock=lambda: NOW,
+        execution_authorization_verifier=_authorization_verifier(),
+        cardinality_evidence_reader=_CardinalityEvidenceReader(_CARDINALITY_EVIDENCE),
+    )
+
+    with pytest.raises(ValueError, match="did not assert the checked decimal magnitude"):
+        runner.materialize(_request(), admission=_admission())
+
+    assert warehouse.executions == 1
+    assert (
+        runner.read_receipt(
+            tenant_id="tenant-a",
+            product_id="product-revenue",
+            product_revision=1,
+            product_generation=4,
+        )
+        is None
+    )
+
+
+def test_materialization_is_refused_when_only_some_checked_columns_were_asserted() -> None:
+    """Counting assertions would accept this; naming the columns is why it is refused."""
+    runner = ProductMaterializationRunner.in_memory(
+        warehouse=_PartialMagnitudeWarehouse(),
+        catalog=_Catalog(),
+        clock=lambda: NOW,
+        execution_authorization_verifier=_authorization_verifier(),
+        cardinality_evidence_reader=_CardinalityEvidenceReader(_CARDINALITY_EVIDENCE),
+    )
+
+    with pytest.raises(ValueError, match="revenue_total"):
+        runner.materialize(_request(), admission=_admission())
+
+
+def test_materialization_is_refused_when_an_unchecked_column_was_asserted() -> None:
+    """An observation describing a plan the request does not carry is refused, not tolerated."""
+    runner = ProductMaterializationRunner.in_memory(
+        warehouse=_ForeignMagnitudeWarehouse(),
+        catalog=_Catalog(),
+        clock=lambda: NOW,
+        execution_authorization_verifier=_authorization_verifier(),
+        cardinality_evidence_reader=_CardinalityEvidenceReader(_CARDINALITY_EVIDENCE),
+    )
+
+    with pytest.raises(ValueError, match="the physical plan does not check: unchecked_total"):
+        runner.materialize(_request(), admission=_admission())
+
+
+def test_committed_receipt_records_the_columns_the_engine_was_held_to() -> None:
+    """The attestation reaches the receipt, so reconstructed evidence shows it, not just the plan.
+
+    A plan declaring a check proves an intention. A receipt naming the columns the engine was held
+    to is what a later reader can verify.
+    """
+    runner = ProductMaterializationRunner.in_memory(
+        warehouse=_Warehouse(),
+        catalog=_Catalog(),
+        clock=lambda: NOW,
+        execution_authorization_verifier=_authorization_verifier(),
+        cardinality_evidence_reader=_CardinalityEvidenceReader(_CARDINALITY_EVIDENCE),
+    )
+
+    result = runner.materialize(_request(), admission=_admission())
+
+    assert result.receipt.magnitude_asserted_columns == ("revenue_total",)
+
+
+@pytest.mark.parametrize(
+    "columns",
+    [
+        pytest.param(("revenue_total", "revenue_total"), id="duplicate"),
+        pytest.param(("revenue_total", "  "), id="blank"),
+    ],
+)
+def test_observation_refuses_malformed_magnitude_attestation(columns: tuple[str, ...]) -> None:
+    """A duplicated or blank attested column would let a warehouse pad the list to match."""
+    with pytest.raises(ValidationError):
+        MaterializationObservation(
+            provider_commit_reference="commit-1",
+            output_schema_digest="d" * 64,
+            output_row_count=3,
+            dbt_manifest_digest="1" * 64,
+            dbt_run_results_digest="2" * 64,
+            lineage_digest="3" * 64,
+            quality_assertion_count=0,
+            quality_disposition="not_asserted",
+            magnitude_asserted_columns=columns,
+        )

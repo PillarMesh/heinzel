@@ -14,6 +14,7 @@ from heinzel_access_control import (
 )
 from heinzel_compiler import GovernedQueryPlan, ProductGenerationReference
 from heinzel_compiler.query_repository import SQLiteQueryPlanRepository
+from heinzel_console.answers import CurrentAnswerAuthority, ProductAnswerAuthority
 from heinzel_contract_model import ArtifactReference, digest
 from heinzel_request_management import (
     AnswerExecutionEvidence,
@@ -46,8 +47,6 @@ from heinzel_request_management import (
     StakeholderQuestion,
 )
 from heinzel_request_management.answer_admission import PolicyScanReservation
-
-from tests.acceptance.console_answer_authority import CurrentAnswerAuthority, ProductAnswerAuthority
 
 NOW = datetime(2026, 9, 12, 12, tzinfo=UTC)
 TENANT = "tenant-a"

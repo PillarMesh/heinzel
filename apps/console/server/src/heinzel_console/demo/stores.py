@@ -9,9 +9,18 @@ from pathlib import Path
 from typing import Protocol
 
 from heinzel_catalog_control import SQLiteCatalogRepository
+from heinzel_contract_service import SQLiteSourceFreshnessObservationRepository
 from heinzel_request_management import SQLiteRequestRepository
-from heinzel_semantic_registry import SQLiteCatalogPublicationRepository
+from heinzel_runtime import GenerationLedger, SQLiteProductMaterializationReceiptReader
+from heinzel_semantic_registry import (
+    SQLiteApprovedProductVersionRepository,
+    SQLiteCatalogPublicationRepository,
+    SQLiteProductCatalogPublicationRepository,
+    SQLiteProductQueryBindingRepository,
+)
 from heinzel_semantic_registry.repository import SQLiteSemanticRepository
+
+from .model_authority import DemoSignedModelStore
 
 __all__ = ["DemoStores", "default_state_directory"]
 
@@ -86,6 +95,51 @@ class DemoStores:
                 str(state_dir / "publications.sqlite3"), check_same_thread=False
             )
             opened.append(self.publications)
+            # The product authority the governed answer reads. These are distinct from
+            # `publications` above, which records the catalog publication intent and its
+            # receipt: these three carry what the materialization established about the
+            # product itself -- which generation is current, what its columns mean, and
+            # which query over it is approved.
+            self.product_publications = SQLiteProductCatalogPublicationRepository(
+                str(state_dir / "product-publications.sqlite3"), check_same_thread=False
+            )
+            opened.append(self.product_publications)
+            self.product_versions = SQLiteApprovedProductVersionRepository(
+                str(state_dir / "approved-products.sqlite3"), check_same_thread=False
+            )
+            opened.append(self.product_versions)
+            self.query_bindings = SQLiteProductQueryBindingRepository(
+                str(state_dir / "approved-query-bindings.sqlite3"), check_same_thread=False
+            )
+            opened.append(self.query_bindings)
+            # How current the landed source was, per generation. The governed answer refuses a
+            # generation it can find no observation for, so this is part of the product
+            # authority rather than a separate record of it.
+            self.source_freshness = SQLiteSourceFreshnessObservationRepository(
+                str(state_dir / "source-freshness.sqlite3"), check_same_thread=False
+            )
+            opened.append(self.source_freshness)
+            # What was landed, and under which generation. The product's input cardinality is
+            # resolved against this, so it is durable rather than per-run: a ledger that lived
+            # only as long as the process could not answer for a generation it had committed.
+            ledger_connection = self._connect(state_dir / "generations.sqlite3")
+            opened.append(ledger_connection)
+            self.generations = GenerationLedger(ledger_connection)
+            # What the materialization committed, and so what the governed answer may answer
+            # from. Durable rather than in memory: the receipt outlives the run that wrote it,
+            # and a restart answers for a generation whose runner has long since ended.
+            self.materialization_ledger = self._connect(state_dir / "materializations.sqlite3")
+            opened.append(self.materialization_ledger)
+            self.materialization_receipts = SQLiteProductMaterializationReceiptReader(
+                self.materialization_ledger
+            )
+            # The compiler's signed model for the committed generation, and the public half of
+            # the key that verifies it. The answer path re-verifies the model before answering,
+            # and without this it would restart into enforcing nothing about output magnitudes.
+            self.signed_models = DemoSignedModelStore(
+                str(state_dir / "signed-models.sqlite3"), check_same_thread=False
+            )
+            opened.append(self.signed_models)
         except BaseException:
             # Best-effort clean-up: a failure to close must not replace the failure to open.
             _close_each(tuple(reversed(opened)))

@@ -339,7 +339,16 @@ class EncryptedDirectoryOpenMetadataSecretStore:
 
 
 class DockerComposeController:
-    def __init__(self, *, compose_file: Path, readiness_script: Path, base_url: str) -> None:
+    def __init__(
+        self,
+        *,
+        compose_file: Path,
+        readiness_script: Path,
+        base_url: str,
+        readiness_timeout_seconds: float | None = None,
+    ) -> None:
+        if readiness_timeout_seconds is not None and readiness_timeout_seconds <= 0:
+            raise ValueError("OpenMetadata readiness timeout must be positive")
         self._compose_file = compose_file
         self._process = DockerComposeProcess(
             compose_file=compose_file,
@@ -349,6 +358,11 @@ class DockerComposeController:
         )
         self._readiness_script = readiness_script
         self._base_url = base_url
+        # None keeps the readiness script's own default. A caller on slower hardware than a
+        # developer machine -- a shared CI runner starting MySQL, Elasticsearch, a schema
+        # migration and the server on four cores -- needs a longer budget, and discovering that
+        # as "did not reach terminal readiness" costs a whole run to learn one number.
+        self._readiness_timeout_seconds = readiness_timeout_seconds
 
     def up(self, *, project_name: str, environment: Mapping[str, str]) -> None:
         self._compose(project_name, "up", "--detach", environment=environment)
@@ -592,8 +606,11 @@ class DockerComposeController:
         raise RuntimeError("OpenMetadata database did not become ready for restore")
 
     def _run_readiness(self) -> None:
+        command = [sys.executable, str(self._readiness_script), "--url", self._base_url]
+        if self._readiness_timeout_seconds is not None:
+            command += ["--timeout-seconds", str(self._readiness_timeout_seconds)]
         result = subprocess.run(
-            [sys.executable, str(self._readiness_script), "--url", self._base_url],
+            command,
             capture_output=True,
             text=True,
             check=False,

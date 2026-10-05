@@ -44,6 +44,10 @@ from heinzel_access_control import (
     SQLiteAccessGrantRepository,
 )
 from heinzel_catalog_control import CatalogControlService, SQLiteCatalogRepository
+from heinzel_console.answers import (
+    GovernedAnswerRuntime,
+    GovernedAnswerRuntimeConfiguration,
+)
 from heinzel_console.app import create_app
 from heinzel_console.auth import TrustedActorContext
 from heinzel_console.contracts import ActorRole
@@ -186,10 +190,6 @@ from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 from starlette.applications import Starlette
 from starlette.requests import Request
 
-from tests.acceptance.console_answer_runtime import (
-    GovernedAnswerRuntime,
-    GovernedAnswerRuntimeConfiguration,
-)
 from tests.acceptance.run_request_fulfillment import (
     ScenarioFreshness,
     published_repository,
