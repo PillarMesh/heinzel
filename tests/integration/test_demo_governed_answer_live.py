@@ -26,6 +26,7 @@ from heinzel_console.demo.collaborators import (
     DEMO_REQUESTER_ID,
     DEMO_REQUESTER_PRINCIPAL_REF,
 )
+from heinzel_console.demo.cursor_cipher import DemoCursorCipher
 from heinzel_console.demo.materialization import DEMO_GROUP_COLUMN, DEMO_MEASURE_COLUMN
 from heinzel_console.demo.publication import DEMO_TENANT_ID, build_demo_publication
 from heinzel_console.demo.seed import seed_demo_request
@@ -56,7 +57,9 @@ def test_the_demonstration_answers_its_own_seeded_question(tmp_path: Path) -> No
         pytest.skip("the locked dbt executable is unavailable")
 
     with _fresh_postgresql_cluster(tmp_path) as bootstrap_dsn:
-        stores = DemoStores(tmp_path / "state")
+        # The cipher that seals the source cursors: without one the governed acquisition has
+        # no state store to admit a checkpoint into and refuses to run at all.
+        stores = DemoStores(tmp_path / "state", cursor_cipher_factory=DemoCursorCipher)
         try:
             publication = build_demo_publication(stores, clock=_clock)
             requests = RequestManagementService(stores.requests, clock=_clock)

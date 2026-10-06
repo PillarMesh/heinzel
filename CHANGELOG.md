@@ -14,9 +14,11 @@ All notable changes to Heinzel are recorded here. The format follows
   is not published, and `down -v` discards it together with the console's state.
 - The demonstration answers its own seeded question. Given `HEINZEL_DEMO_WAREHOUSE_DSN`, the
   console provisions that database with five least-privilege logins, acquires its seeded source
-  through the acquisition provider, lands it under a receipt, compiles and materializes a
-  product with dbt, and publishes the generation through the product authorities -- all before it
-  listens. Admitting the approved proposal then compiles a governed query over that product,
+  through the runtime's governed acquisition under an acquisition contract it activates over an
+  observation of that source, lands it under a receipt and acknowledges it, compiles and
+  materializes a product with dbt, and publishes the generation through the product authorities
+  -- all before it listens. Acquisition happens once and never again: the acknowledgement
+  advances the source checkpoint, so a later start reads back the generation it already landed. Admitting the approved proposal then compiles a governed query over that product,
   bounds its scan by the relation's measured size, admits it under the answer scope policy's
   ceilings, runs it as a read-only role and delivers the rows to the requester who asked.
   Without that variable the console is unchanged: every answer capability reports itself as not

@@ -22,7 +22,8 @@ from heinzel_console.demo.catalog import (
     compose_demo_product_catalog,
     demo_source_freshness_observation,
 )
-from heinzel_console.demo.generation import acquire_demo_rows, land_demo_rows
+from heinzel_console.demo.cursor_cipher import DemoCursorCipher
+from heinzel_console.demo.generation import DemoAcquisition
 from heinzel_console.demo.materialization import (
     DEMO_GROUP_COLUMN,
     DEMO_MEASURE_COLUMN,
@@ -42,7 +43,6 @@ from heinzel_console.demo.warehouse import (
 from heinzel_contract_model import ArtifactReference, digest
 from heinzel_dbt_adapter import compiled_dbt_model_signing_bytes
 from heinzel_provider_sdk.errors import AcquisitionProviderError
-from heinzel_runtime import GenerationLedger
 from psycopg import sql
 
 from tests.integration.test_postgresql_answer_query_live import _fresh_postgresql_cluster
@@ -53,6 +53,16 @@ pytestmark = pytest.mark.live
 # The moment the live tests' own warehouse was populated. Fixed so that a test can assert the
 # watermark the acquisition measures, which is this rather than any date carried by the rows.
 _SEEDED_AT = datetime(2026, 9, 13, tzinfo=UTC)
+
+
+def _stores(state_dir: Path) -> DemoStores:
+    """The demonstration's stores, with the cipher that seals its source cursors.
+
+    The governed acquisition will not run without one: a cursor that could not be encrypted
+    is not a cursor this product stores, so `DemoStores` leaves the state repository unopened
+    and the acquisition refuses rather than acquiring into nothing.
+    """
+    return DemoStores(state_dir, cursor_cipher_factory=DemoCursorCipher)
 
 
 def _provisioned(bootstrap_dsn: str) -> dict[str, str]:
@@ -149,56 +159,92 @@ def test_provisioning_a_database_that_already_carries_the_schemas_is_refused(
 def test_acquisition_and_landing_produce_a_generation_the_ledger_records(
     tmp_path: Path,
 ) -> None:
-    """The landed relation arrives through the providers, under a receipt.
+    """The landed relation arrives through the governed acquisition, under a receipt.
 
     Writing `raw.raw_customer_orders` directly would leave the demonstration with landed
-    rows no receipt describes, which is the one thing a generation is for.
+    rows no receipt describes, which is the one thing a generation is for. Going through the
+    runtime's acquisition rather than the provider is what makes the receipt real: the
+    preparation is admitted under an activated contract, the segments are published as
+    verified artifacts, and the landing's acknowledgement is what advances the checkpoint.
     """
     with _fresh_postgresql_cluster(tmp_path) as bootstrap_dsn:
         passwords = _provisioned(bootstrap_dsn)
-        publication = build_demo_publication(
-            DemoStores(tmp_path / "state"), clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
-        )
-
-        acquired = acquire_demo_rows(
-            role_dsn(
-                bootstrap_dsn,
-                DEMO_WAREHOUSE_ROLES.acquisition,
-                passwords[DEMO_WAREHOUSE_ROLES.acquisition],
-            ),
-            tenant_id=publication.contract.tenant_id,
-        )
-        assert len(acquired.rows) == 5
-        # The provider measures the watermark off the rows it read: when the source was last
-        # written, not the business day the orders fall on. A watermark fixed to an order day
-        # would grow staler every day until no scope policy could admit the product.
-        assert acquired.watermark_at == _SEEDED_AT
-        assert acquired.observed_at >= acquired.watermark_at
-
-        ledger = GenerationLedger.in_memory()
-        landed = asyncio.run(
-            land_demo_rows(
+        stores = _stores(tmp_path / "state")
+        try:
+            publication = build_demo_publication(
+                stores, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
+            )
+            contract = publication.contract
+            acquisition = DemoAcquisition(
                 role_dsn(
                     bootstrap_dsn,
-                    DEMO_WAREHOUSE_ROLES.landing,
-                    passwords[DEMO_WAREHOUSE_ROLES.landing],
+                    DEMO_WAREHOUSE_ROLES.acquisition,
+                    passwords[DEMO_WAREHOUSE_ROLES.acquisition],
                 ),
-                acquired,
-                contract=publication.contract,
-                ledger=ledger,
+                publication=publication,
+                stores=stores,
+                # The real clock, not the publication's: the intent must be admitted no
+                # earlier than the observation the contract was activated over, and the
+                # provider stamps that observation with the wall clock.
+                clock=lambda: datetime.now(UTC),
             )
-        )
+            prepared = acquisition.prepare()
 
-        assert landed.receipt.record_count == 5
-        assert landed.receipt.generation_id
+            assert prepared.record_count == 5
+            # The provider measures the watermark off the rows it read: when the source was
+            # last written, not the business day the orders fall on. A watermark fixed to an
+            # order day would grow staler every day until no scope policy could admit the
+            # product.
+            assert prepared.watermark_at == _SEEDED_AT
+            # A receipt the service composed, not one this demonstration wrote.
+            evidence = prepared.preparation.result.evidence
+            assert evidence.outcome == "prepared"
+            assert evidence.prepared_receipt_ref is not None
 
-        # The rows are in the warehouse, under the generation the receipt names.
-        with psycopg.connect(bootstrap_dsn) as connection:
-            landed_rows = connection.execute(
-                "SELECT count(*) FROM raw.raw_customer_orders WHERE generation_id = %s",
-                (landed.receipt.generation_id,),
-            ).fetchone()
-        assert landed_rows == (5,)
+            landed = asyncio.run(
+                acquisition.land(
+                    prepared,
+                    landing_dsn=role_dsn(
+                        bootstrap_dsn,
+                        DEMO_WAREHOUSE_ROLES.landing,
+                        passwords[DEMO_WAREHOUSE_ROLES.landing],
+                    ),
+                )
+            )
+
+            assert landed.receipt.record_count == 5
+            assert landed.receipt.generation_id
+            assert landed.receipt.committed_at >= prepared.watermark_at
+
+            # The ledger's acknowledgement carries the managed contract's own digest, which is
+            # what `ProductInputCardinalityResolver` requires of it when the product is
+            # materialized. An acquisition contract digest chosen any other way would land and
+            # materialize and then refuse to answer.
+            record = stores.generations.load_record(landed.generation_key)
+            assert record is not None
+            assert record.receipt == landed.receipt
+            assert record.acknowledgement.contract_digest == digest(contract)
+
+            # Nothing advanced the source until the landing acknowledged it, and then once.
+            assert stores.acquisition_state is not None
+            checkpoint = stores.acquisition_state.load_checkpoint(
+                contract.tenant_id, digest(contract), record.acknowledgement.source_binding_ref
+            )
+            assert checkpoint.revision == 1
+
+            # Every attempt left its own durable receipt, the acknowledgement included.
+            receipts = stores.acquisition_evidence.list_acquisition_receipts(contract.tenant_id)
+            assert sorted(receipt.outcome for receipt in receipts) == ["acknowledged", "prepared"]
+
+            # The rows are in the warehouse, under the generation the receipt names.
+            with psycopg.connect(bootstrap_dsn) as connection:
+                landed_rows = connection.execute(
+                    "SELECT count(*) FROM raw.raw_customer_orders WHERE generation_id = %s",
+                    (landed.receipt.generation_id,),
+                ).fetchone()
+            assert landed_rows == (5,)
+        finally:
+            stores.close()
 
 
 def test_a_privilege_outside_the_declaration_refuses_the_whole_acquisition(
@@ -210,17 +256,36 @@ def test_a_privilege_outside_the_declaration_refuses_the_whole_acquisition(
     observes what the connecting role may reach and refuses `authorization_denied` when
     that is more than the declaration. A demonstration whose role drifted wider would
     otherwise keep working and keep claiming a boundary it no longer had.
+
+    The refusal arrives from `observe_source`, which is the first thing a governed
+    acquisition does and the one step that happens before any contract is activated -- so it
+    is the provider's own error rather than one the runner reclassified. Each attempt gets a
+    state directory of its own, because an acquisition that already activated its contract
+    refuses the next one on that ground instead and would hide this.
     """
     with _fresh_postgresql_cluster(tmp_path) as bootstrap_dsn:
         passwords = _provisioned(bootstrap_dsn)
-        acquisition = role_dsn(
+        acquisition_dsn = role_dsn(
             bootstrap_dsn,
             DEMO_WAREHOUSE_ROLES.acquisition,
             passwords[DEMO_WAREHOUSE_ROLES.acquisition],
         )
 
         # Provisioned as it stands, the acquisition succeeds.
-        assert len(acquire_demo_rows(acquisition, tenant_id="tenant-demo").rows) == 5
+        granted = _stores(tmp_path / "granted")
+        try:
+            publication = build_demo_publication(
+                granted, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
+            )
+            prepared = DemoAcquisition(
+                acquisition_dsn,
+                publication=publication,
+                stores=granted,
+                clock=lambda: datetime.now(UTC),
+            ).prepare()
+            assert prepared.record_count == 5
+        finally:
+            granted.close()
 
         # One column more than the approved schema names.
         with psycopg.connect(bootstrap_dsn) as connection:
@@ -229,9 +294,24 @@ def test_a_privilege_outside_the_declaration_refuses_the_whole_acquisition(
                 "GRANT SELECT (memo) ON source_data.customer_orders TO acquisition_runtime"
             )
 
-        with pytest.raises(AcquisitionProviderError) as refusal:
-            acquire_demo_rows(acquisition, tenant_id="tenant-demo")
-        assert "authorization_denied" in str(refusal.value)
+        widened = _stores(tmp_path / "widened")
+        try:
+            publication = build_demo_publication(
+                widened, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
+            )
+            with pytest.raises(AcquisitionProviderError) as refusal:
+                DemoAcquisition(
+                    acquisition_dsn,
+                    publication=publication,
+                    stores=widened,
+                    clock=lambda: datetime.now(UTC),
+                )
+            assert "authorization_denied" in str(refusal.value)
+            # Refused before anything was activated, so the state directory is still one a
+            # repaired grant could acquire under.
+            assert widened.acquisition_lifecycle.list_contracts("tenant-demo") == ()
+        finally:
+            widened.close()
 
 
 def test_the_demonstration_materializes_and_publishes_one_generation(tmp_path: Path) -> None:
@@ -253,32 +333,31 @@ def test_the_demonstration_materializes_and_publishes_one_generation(tmp_path: P
         passwords = _provisioned(bootstrap_dsn)
         database_name = psycopg.conninfo.conninfo_to_dict(bootstrap_dsn)["dbname"]
         assert isinstance(database_name, str)
-        stores = DemoStores(tmp_path / "state")
+        stores = _stores(tmp_path / "state")
         try:
             published = build_demo_publication(
                 stores, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
             )
             contract = published.contract
 
-            acquired = acquire_demo_rows(
+            acquisition = DemoAcquisition(
                 role_dsn(
                     bootstrap_dsn,
                     DEMO_WAREHOUSE_ROLES.acquisition,
                     passwords[DEMO_WAREHOUSE_ROLES.acquisition],
                 ),
-                tenant_id=contract.tenant_id,
+                publication=published,
+                stores=stores,
+                clock=lambda: datetime.now(UTC),
             )
-            ledger = GenerationLedger.in_memory()
             landed = asyncio.run(
-                land_demo_rows(
-                    role_dsn(
+                acquisition.land(
+                    acquisition.prepare(),
+                    landing_dsn=role_dsn(
                         bootstrap_dsn,
                         DEMO_WAREHOUSE_ROLES.landing,
                         passwords[DEMO_WAREHOUSE_ROLES.landing],
                     ),
-                    acquired,
-                    contract=contract,
-                    ledger=ledger,
                 )
             )
 
@@ -291,7 +370,9 @@ def test_the_demonstration_materializes_and_publishes_one_generation(tmp_path: P
                 landing_receipt_digest=digest(landed.receipt),
                 generation_id=landed.receipt.generation_id,
                 record_count=landed.receipt.record_count,
-                ledger=ledger,
+                # The ledger the acquisition landed into, which is the durable one: the input
+                # cardinality is resolved against the record it wrote there.
+                ledger=stores.generations,
                 materialization_ledger=stores.materialization_ledger,
                 catalog=lambda namespace, relation_name: compose_demo_product_catalog(
                     stores=stores,
@@ -455,7 +536,7 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
         pytest.skip("the locked dbt executable is unavailable")
 
     with _fresh_postgresql_cluster(tmp_path) as bootstrap_dsn:
-        stores = DemoStores(tmp_path / "state")
+        stores = _stores(tmp_path / "state")
         try:
             publication = build_demo_publication(
                 stores, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
@@ -596,7 +677,7 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
 
         # The state directory discarded and the warehouse kept. Materializing now would commit
         # a generation the warehouse already holds, so it is refused with what to do instead.
-        discarded = DemoStores(tmp_path / "state-two")
+        discarded = _stores(tmp_path / "state-two")
         try:
             with pytest.raises(ProvisioningRefused, match="disagree"):
                 ensure_demo_generation(
@@ -619,10 +700,10 @@ def test_a_start_that_fails_after_landing_can_still_start_again(
     """The window between landing and publishing, which a dbt failure lands a start in.
 
     The freshness observation is stored before dbt runs, and its store is immutable under an
-    identity derived from the landing receipt. The landing itself replays from the generation
-    ledger, so that identity is the same on the next start -- which means the observation's
-    own payload has to be the same too, or the second start is refused for a reason the first
-    one caused and no operator can act on.
+    identity derived from the landing receipt. The second start reads that receipt back out of
+    the generation ledger, so the identity is the same -- which means the observation's own
+    payload, the watermark included, has to be the same too, or the second start is refused for
+    a reason the first one caused and no operator can act on.
 
     The failure is injected at the materialization runner rather than at dbt, because what
     matters is the ordering inside `ensure_demo_generation`: the catalog composition that
@@ -633,7 +714,7 @@ def test_a_start_that_fails_after_landing_can_still_start_again(
         pytest.skip("the locked dbt executable is unavailable")
 
     with _fresh_postgresql_cluster(tmp_path) as bootstrap_dsn:
-        stores = DemoStores(tmp_path / "state")
+        stores = _stores(tmp_path / "state")
         try:
             publication = build_demo_publication(
                 stores, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
@@ -657,8 +738,10 @@ def test_a_start_that_fails_after_landing_can_still_start_again(
                 )
             monkeypatch.undo()
 
-            # The second start reaches acquisition again, because nothing was published. It
-            # must get past the freshness store it already wrote.
+            # The second start publishes what the first one landed, rather than acquiring
+            # again, and must get past the freshness store the first one already wrote: the
+            # observation is stored under an identity derived from the landing receipt, in a
+            # store that is immutable.
             resumed = ensure_demo_generation(
                 bootstrap_dsn=bootstrap_dsn,
                 stores=stores,
@@ -668,5 +751,109 @@ def test_a_start_that_fails_after_landing_can_still_start_again(
                 clock=lambda: datetime.now(UTC),
             )
             assert resumed.relation_name
+        finally:
+            stores.close()
+
+
+def test_a_restarted_start_publishes_what_it_landed_without_acquiring_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Landing acknowledges the batch, so a later start must never reach acquisition again.
+
+    The acknowledgement advances the source checkpoint to revision 1, and from there the
+    provider admits no snapshot (`permanent_configuration`: a snapshot requires revision 0) and
+    the state store refuses to replay an acknowledged preparation as pending. Surviving a
+    restart is therefore not enough: the restart has to get past acquisition without attempting
+    it, which is what the landed-generation record is for.
+
+    Both starts are failed at the materialization runner, so neither runs dbt. What is under
+    test is the ordering inside `ensure_demo_generation` -- reaching materialization at all
+    means acquisition was skipped -- and `DemoAcquisition` is replaced on the second start so
+    that reaching it is a failure rather than a slow success.
+    """
+    dbt_executable = shutil.which("dbt")
+    if dbt_executable is None:
+        pytest.skip("the locked dbt executable is unavailable")
+
+    def _refuse_materialization(*_arguments: object, **_keywords: object) -> None:
+        raise RuntimeError("dbt failed")
+
+    def _refuse_acquisition(*_arguments: object, **_keywords: object) -> None:
+        raise AssertionError("the restarted start reached acquisition again")
+
+    with _fresh_postgresql_cluster(tmp_path) as bootstrap_dsn:
+        stores = _stores(tmp_path / "state")
+        try:
+            publication = build_demo_publication(
+                stores, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
+            )
+            contract = publication.contract
+            monkeypatch.setattr(
+                "heinzel_console.demo.materialization.ProductMaterializationRunner.materialize",
+                _refuse_materialization,
+            )
+            with pytest.raises(RuntimeError, match="dbt failed"):
+                ensure_demo_generation(
+                    bootstrap_dsn=bootstrap_dsn,
+                    stores=stores,
+                    publication=publication,
+                    dbt_executable=Path(dbt_executable),
+                    workspace=tmp_path / "failed",
+                    clock=lambda: datetime.now(UTC),
+                )
+
+            # The first start landed, acknowledged, and recorded what it landed.
+            landed = stores.landed_generations.read(
+                tenant_id=contract.tenant_id, contract_ref=contract.contract_id
+            )
+            assert landed is not None
+            record = stores.generations.load_record(landed.generation_key)
+            assert record is not None
+            assert stores.acquisition_state is not None
+            assert (
+                stores.acquisition_state.load_checkpoint(
+                    contract.tenant_id,
+                    digest(contract),
+                    record.acknowledgement.source_binding_ref,
+                ).revision
+                == 1
+            )
+            receipts_after_landing = stores.acquisition_evidence.list_acquisition_receipts(
+                contract.tenant_id
+            )
+            assert sorted(receipt.outcome for receipt in receipts_after_landing) == [
+                "acknowledged",
+                "prepared",
+            ]
+
+            # The restart reaches materialization, which is past acquisition, without
+            # constructing an acquisition at all.
+            monkeypatch.setattr(
+                "heinzel_console.demo.bootstrap.DemoAcquisition", _refuse_acquisition
+            )
+            with pytest.raises(RuntimeError, match="dbt failed"):
+                ensure_demo_generation(
+                    bootstrap_dsn=bootstrap_dsn,
+                    stores=stores,
+                    publication=publication,
+                    dbt_executable=Path(dbt_executable),
+                    workspace=tmp_path / "resumed",
+                    clock=lambda: datetime.now(UTC),
+                )
+
+            # And it attempted nothing against the source: no further evidence, and the
+            # checkpoint still stands where the one acknowledgement left it.
+            assert (
+                stores.acquisition_evidence.list_acquisition_receipts(contract.tenant_id)
+                == receipts_after_landing
+            )
+            assert (
+                stores.acquisition_state.load_checkpoint(
+                    contract.tenant_id,
+                    digest(contract),
+                    record.acknowledgement.source_binding_ref,
+                ).revision
+                == 1
+            )
         finally:
             stores.close()

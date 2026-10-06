@@ -108,10 +108,12 @@ Three rows, one per day the seeded source carries: `30.000000000`, `125.50000000
 ## What the answer went through
 
 Before the console listened at all, it provisioned the warehouse with five least-privilege
-logins, seeded a source table, acquired its approved columns through the acquisition provider —
-which refuses the whole acquisition if the connecting role can reach more than its declaration —
-landed them under a receipt, compiled the product through the compiler's own entry point, ran
-that statement with dbt, and published the generation through the product authorities.
+logins, seeded a source table, acquired its approved columns through the runtime's governed
+acquisition — under an acquisition contract activated over an observation of that source, which
+refuses the whole acquisition if the connecting role can reach more than its declaration —
+landed them under a receipt and acknowledged them against the source checkpoint, compiled the
+product through the compiler's own entry point, ran that statement with dbt, and published the
+generation through the product authorities.
 
 Admitting the question then resolved the requester's entitlement from a signed authority over
 loopback TLS, validated the question against the approved scope policy, read which column
@@ -135,9 +137,12 @@ process that signed it.
 The answer is the end of the demonstration. Beyond it:
 
 - `GET /api/v1/runs` and `GET /api/v1/acquisition-receipts` answer `503
-  capability_not_delivered` to the architect, who is the actor entitled to ask. The
-  demonstration acquires and lands its own source once, at start-up, and carries no run harness
-  that would make either of those a list worth showing.
+  capability_not_delivered` to the architect, who is the actor entitled to ask. The acquisition
+  does leave real evidence receipts in the demonstration's own evidence store, but the console
+  does not serve them: the demonstration acquires and lands its source once and never again —
+  the acknowledgement advances the source checkpoint, and from there the provider admits no
+  second snapshot — so it carries no run harness that would make either of those a list worth
+  showing.
 - The answer scope policy carries no disclosure classifications, though the demonstration's
   contract classifies its product `commercial`. Carrying one requires a policy authority's
   approval, and the demonstration has two actors: an architect and a requester. So it shows no

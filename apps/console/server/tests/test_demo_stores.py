@@ -3,11 +3,17 @@ from __future__ import annotations
 import os
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from heinzel_console.demo import stores as demo_stores
-from heinzel_console.demo.stores import DemoStores, default_state_directory
+from heinzel_console.demo.stores import (
+    DemoLandedGeneration,
+    DemoLandedGenerationError,
+    DemoStores,
+    default_state_directory,
+)
 from heinzel_contract_model import ArtifactReference
 from heinzel_contract_service import SQLiteAcquisitionContractLifecycleRepository
 from heinzel_evidence import SQLiteStore
@@ -67,6 +73,7 @@ def test_every_store_opens_under_the_state_directory(tmp_path: Path) -> None:
         "acquisition-lifecycle.sqlite3",
         "acquisition-evidence.sqlite3",
         "acquisition-artifacts",
+        "landed-generations.sqlite3",
     } <= names
 
 
@@ -116,6 +123,7 @@ def test_every_store_can_be_read_from_another_thread(tmp_path: Path) -> None:
             stores.acquisition_artifacts.exists_verified(
                 tenant_id="tenant-demo", artifact_digest="a" * 64
             ),
+            stores.landed_generations.read(tenant_id="tenant-demo", contract_ref="contract-orders"),
         )
 
     try:
@@ -132,6 +140,7 @@ def test_every_store_can_be_read_from_another_thread(tmp_path: Path) -> None:
                 None,
                 (),
                 False,
+                None,
             )
     finally:
         stores.close()
@@ -220,10 +229,9 @@ def test_a_late_failure_closes_the_acquisition_stores_already_opened(
 ) -> None:
     """The acquisition handles join the clean-up list, so a later failure closes them too.
 
-    The artifact store is the last store opened and the only one holding no connection,
-    which makes it the one place a failure can arrive with every acquisition handle open.
-    The recorded order is the reverse of the opening order, so each borrowed connection is
-    closed after whatever borrowed it.
+    The artifact store holds no connection, so it takes no place in the clean-up order and a
+    failure there arrives with every acquisition handle open. The recorded order is the reverse
+    of the opening order, so each borrowed connection is closed after whatever borrowed it.
     """
     closed: list[str] = []
 
@@ -251,6 +259,79 @@ def test_a_late_failure_closes_the_acquisition_stores_already_opened(
         DemoStores(tmp_path / "state", cursor_cipher_factory=_cursor_cipher)
 
     assert closed == ["evidence", "lifecycle"]
+
+
+def test_the_landed_generation_is_read_back_exactly_as_it_was_recorded(tmp_path: Path) -> None:
+    """A later start reads this instead of acquiring, so a value that shifted would mislead it.
+
+    The watermark matters as much as the key: the freshness observation composed from it is
+    stored under an identity derived from the landing receipt in a store that is immutable, so
+    a watermark that came back changed would refuse the restart it was recorded to rescue.
+    """
+    stores = DemoStores(tmp_path / "state")
+    landed = DemoLandedGeneration(
+        generation_key="d" * 64, watermark_at=datetime(2026, 9, 13, tzinfo=UTC)
+    )
+    try:
+        assert (
+            stores.landed_generations.read(tenant_id="tenant-demo", contract_ref="contract-orders")
+            is None
+        )
+        stores.landed_generations.record(
+            tenant_id="tenant-demo", contract_ref="contract-orders", landed=landed
+        )
+        # Recorded again, as a start that failed after landing and before publishing does.
+        stores.landed_generations.record(
+            tenant_id="tenant-demo", contract_ref="contract-orders", landed=landed
+        )
+        assert (
+            stores.landed_generations.read(tenant_id="tenant-demo", contract_ref="contract-orders")
+            == landed
+        )
+        # Scoped to the contract it was landed under, not to the tenant alone.
+        assert (
+            stores.landed_generations.read(tenant_id="tenant-demo", contract_ref="contract-other")
+            is None
+        )
+    finally:
+        stores.close()
+
+
+def test_a_second_different_landed_generation_for_one_contract_is_refused(tmp_path: Path) -> None:
+    """Two generations for one contract is a contradiction, and silence would be the worst of it.
+
+    The whole point of this record is that a later start trusts it rather than acquiring again,
+    so a record quietly replaced would send that start to a generation nothing else describes.
+    """
+    stores = DemoStores(tmp_path / "state")
+    try:
+        stores.landed_generations.record(
+            tenant_id="tenant-demo",
+            contract_ref="contract-orders",
+            landed=DemoLandedGeneration(
+                generation_key="d" * 64, watermark_at=datetime(2026, 9, 13, tzinfo=UTC)
+            ),
+        )
+        with pytest.raises(DemoLandedGenerationError, match="already recorded"):
+            stores.landed_generations.record(
+                tenant_id="tenant-demo",
+                contract_ref="contract-orders",
+                landed=DemoLandedGeneration(
+                    generation_key="e" * 64, watermark_at=datetime(2026, 9, 13, tzinfo=UTC)
+                ),
+            )
+        # Refused rather than written: the first record still stands.
+        recorded = stores.landed_generations.read(
+            tenant_id="tenant-demo", contract_ref="contract-orders"
+        )
+        assert recorded is not None and recorded.generation_key == "d" * 64
+    finally:
+        stores.close()
+
+
+def test_a_landed_generation_watermark_must_be_timezone_aware_utc() -> None:
+    with pytest.raises(ValueError, match="timezone-aware UTC"):
+        DemoLandedGeneration(generation_key="d" * 64, watermark_at=datetime(2026, 9, 13))
 
 
 def test_the_default_state_directory_follows_xdg(monkeypatch: pytest.MonkeyPatch) -> None:

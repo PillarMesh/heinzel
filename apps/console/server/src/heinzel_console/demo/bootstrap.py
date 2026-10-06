@@ -8,7 +8,10 @@ What comes out is a generation the governed answer can be asked of.
 It is written to be safe to run again. A second start over the same warehouse and the same
 state directory finds its own earlier generation and returns it rather than committing a
 second one, and a start that finds the two disagreeing refuses with what to do about it
-instead of materializing into a warehouse whose history it cannot see.
+instead of materializing into a warehouse whose history it cannot see. Acquisition is the one
+step that cannot be repeated at all: landing acknowledges the batch and so advances the source
+checkpoint, after which the provider admits no second snapshot -- so a start that already
+landed reads its generation back out of the ledger rather than acquiring again.
 
 Nothing in this package imports from `tests/`, and no test module is executed at runtime.
 """
@@ -24,10 +27,10 @@ from pathlib import Path
 
 import psycopg
 from heinzel_contract_model import ArtifactReference, digest
-from heinzel_runtime import LandingResult
+from heinzel_provider_sdk import LandReceipt
 
 from .catalog import compose_demo_product_catalog, demo_source_freshness_observation
-from .generation import AcquiredRows, acquire_demo_rows, land_demo_rows
+from .generation import DemoAcquisition, LandedDemoGeneration
 from .materialization import (
     DEMO_GROUP_COLUMN,
     DEMO_MEASURE_COLUMN,
@@ -35,7 +38,7 @@ from .materialization import (
 )
 from .model_authority import SignedModelAuthority
 from .publication import DemoPublication
-from .stores import DemoStores
+from .stores import DemoLandedGeneration, DemoStores
 from .warehouse import (
     DEMO_MAX_WRITE_TRANSACTION_DURATION,
     DEMO_WAREHOUSE_ROLES,
@@ -117,27 +120,99 @@ def _warehouse_holds_a_generation(bootstrap_dsn: str, *, tenant_id: str, product
     return bool(row is not None and row[0])
 
 
-def _land(
-    landing_dsn: str,
-    acquired: AcquiredRows,
+def _acquire_and_land(
+    bootstrap_dsn: str,
     *,
     publication: DemoPublication,
     stores: DemoStores,
-) -> LandingResult:
-    """Land the acquired rows, driving the landing runner's own asynchronous interface.
+    passwords: Mapping[str, str],
+    clock: Callable[[], datetime],
+) -> LandedDemoGeneration:
+    """Acquire the approved source columns and land them, under the runtime's governance.
+
+    Observing the source, activating the contract and preparing the batch happen in one object
+    because they must happen in one process; see `DemoAcquisition`.
 
     `asyncio.run` rather than an awaited call, because this whole chain runs once before the
     server starts and has no loop of its own. Calling it from inside a running loop would raise,
     which is the right failure: landing is startup work, not something a request handler does.
     """
+    acquisition = DemoAcquisition(
+        role_dsn(
+            bootstrap_dsn,
+            DEMO_WAREHOUSE_ROLES.acquisition,
+            passwords[DEMO_WAREHOUSE_ROLES.acquisition],
+        ),
+        publication=publication,
+        stores=stores,
+        clock=clock,
+    )
+    prepared = acquisition.prepare()
     return asyncio.run(
-        land_demo_rows(
-            landing_dsn,
-            acquired,
-            contract=publication.contract,
-            ledger=stores.generations,
+        acquisition.land(
+            prepared,
+            landing_dsn=role_dsn(
+                bootstrap_dsn,
+                DEMO_WAREHOUSE_ROLES.landing,
+                passwords[DEMO_WAREHOUSE_ROLES.landing],
+            ),
         )
     )
+
+
+def _landed_generation(
+    bootstrap_dsn: str,
+    *,
+    publication: DemoPublication,
+    stores: DemoStores,
+    passwords: Mapping[str, str],
+    clock: Callable[[], datetime],
+) -> tuple[LandReceipt, datetime]:
+    """The landed generation this demonstration stands on, acquired now or found from before.
+
+    A start that already landed must not reach acquisition again. The acknowledgement that
+    closes a landing advances the source checkpoint, and from there the provider refuses a
+    snapshot (`permanent_configuration`: a snapshot is admitted only at revision 0) and the
+    state store refuses to replay an acknowledged preparation as pending. So what was landed
+    is recorded the moment it was landed, and a later start reads the receipt back out of the
+    generation ledger instead.
+
+    The watermark comes back from the same record rather than being measured again. The
+    freshness observation composed from it is stored under an identity derived from the
+    landing receipt, in a store that is immutable, so a second start that measured a fresh
+    watermark would be refused for an identity collision it caused itself.
+    """
+    contract = publication.contract
+    recorded = stores.landed_generations.read(
+        tenant_id=contract.tenant_id, contract_ref=contract.contract_id
+    )
+    if recorded is not None:
+        record = stores.generations.load_record(recorded.generation_key)
+        if record is None:
+            raise ProvisioningRefused(
+                "the demonstration recorded a landed generation its generation ledger does not "
+                "hold, so what the product would be built from cannot be read back. Discard "
+                "the state directory and the warehouse together with `docker compose down -v`."
+            )
+        return record.receipt, recorded.watermark_at
+    landed = _acquire_and_land(
+        bootstrap_dsn,
+        publication=publication,
+        stores=stores,
+        passwords=passwords,
+        clock=clock,
+    )
+    # Recorded immediately, because the acknowledgement above has already moved the source
+    # checkpoint: from here on this is the only route back to the generation, and a start that
+    # failed before writing it is refused rather than left to acquire a second time.
+    stores.landed_generations.record(
+        tenant_id=contract.tenant_id,
+        contract_ref=contract.contract_id,
+        landed=DemoLandedGeneration(
+            generation_key=landed.generation_key, watermark_at=landed.watermark_at
+        ),
+    )
+    return landed.receipt, landed.watermark_at
 
 
 def _readable(
@@ -262,41 +337,31 @@ def ensure_demo_generation(
             relation_name=published.relation_name,
         )
 
-    acquired = acquire_demo_rows(
-        role_dsn(
-            bootstrap_dsn,
-            DEMO_WAREHOUSE_ROLES.acquisition,
-            passwords[DEMO_WAREHOUSE_ROLES.acquisition],
-        ),
-        tenant_id=contract.tenant_id,
-    )
-    landed = _land(
-        role_dsn(
-            bootstrap_dsn, DEMO_WAREHOUSE_ROLES.landing, passwords[DEMO_WAREHOUSE_ROLES.landing]
-        ),
-        acquired,
+    receipt, watermark_at = _landed_generation(
+        bootstrap_dsn,
         publication=publication,
         stores=stores,
+        passwords=passwords,
+        clock=clock,
     )
-    landing_receipt_digest = digest(landed.receipt)
+    landing_receipt_digest = digest(receipt)
     # The watermark the acquisition measured, not the seed's own constant: the observation
-    # describes what was read, and reading it from the acquisition is what keeps it true of a
-    # source whose rows someone changes.
+    # describes what was read, and measuring it from the acquired records is what keeps it true
+    # of a source whose rows someone changes.
     #
     # The reading time comes from the landed receipt rather than from the acquisition's own
     # boundary clock, because this observation is stored under an identity derived from the
-    # receipt digest and that store is immutable. The landing replays from the generation
-    # ledger and hands back the receipt it already holds, so the receipt's `committed_at` is
-    # the same value on every later start while a fresh boundary reading is not. A start that
-    # fails between here and publishing reaches this line again; with a moving reading it is
-    # refused for an identity collision it caused itself, which no operator can act on. The
-    # rows were read no later than the transaction that committed them, so the receipt's time
-    # is also the honest upper bound.
+    # receipt digest and that store is immutable. `_landed_generation` hands back the receipt it
+    # already holds, so the receipt's `committed_at` is the same value on every later start
+    # while a fresh boundary reading is not. A start that fails between here and publishing
+    # reaches this line again; with a moving reading it is refused for an identity collision it
+    # caused itself, which no operator can act on. The rows were read no later than the
+    # transaction that committed them, so the receipt's time is also the honest upper bound.
     freshness = demo_source_freshness_observation(
         landing_receipt_digest=landing_receipt_digest,
-        generation_id=landed.receipt.generation_id,
-        watermark_at=acquired.watermark_at,
-        observed_at=landed.receipt.committed_at,
+        generation_id=receipt.generation_id,
+        watermark_at=watermark_at,
+        observed_at=receipt.committed_at,
     )
     materialized = materialize_demo_generation(
         bootstrap_dsn=bootstrap_dsn,
@@ -305,8 +370,8 @@ def ensure_demo_generation(
         workspace=workspace,
         contract=contract,
         landing_receipt_digest=landing_receipt_digest,
-        generation_id=landed.receipt.generation_id,
-        record_count=landed.receipt.record_count,
+        generation_id=receipt.generation_id,
+        record_count=receipt.record_count,
         ledger=stores.generations,
         materialization_ledger=stores.materialization_ledger,
         catalog=lambda namespace, relation_name: compose_demo_product_catalog(

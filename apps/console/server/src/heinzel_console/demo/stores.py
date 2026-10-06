@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 import sqlite3
 from collections.abc import Callable, Sequence
+from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -32,10 +34,111 @@ from heinzel_state import (
     LocalAcquisitionArtifactStore,
     SQLiteAcquisitionStateRepository,
 )
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .model_authority import DemoSignedModelStore
 
-__all__ = ["DemoStores", "default_state_directory"]
+__all__ = [
+    "DemoLandedGeneration",
+    "DemoLandedGenerationError",
+    "DemoLandedGenerationStore",
+    "DemoStores",
+    "default_state_directory",
+]
+
+
+class DemoLandedGenerationError(RuntimeError):
+    """The recorded landed generation is unreadable, or disagrees with what is offered."""
+
+
+class DemoLandedGeneration(BaseModel):
+    """What one start's acquisition landed: the ledger's key for it, and its watermark.
+
+    Both are needed again on a later start and neither can be recomputed there. The
+    generation ledger is keyed only by `generation_key` and offers no listing, so the key is
+    the only way back to the receipt; and the watermark was measured from records the
+    acquisition no longer offers, while the freshness observation composed from it is stored
+    under an identity derived from the landing receipt and is immutable -- so a second start
+    that measured it afresh would be refused for an identity collision it caused itself.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    generation_key: str = Field(min_length=1)
+    watermark_at: datetime
+
+    @field_validator("watermark_at")
+    @classmethod
+    def requires_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("watermark_at must be timezone-aware UTC")
+        return value.astimezone(UTC)
+
+
+class DemoLandedGenerationStore:
+    """The generation the demonstration landed, one per contract it landed under.
+
+    Immutable, like every other authority the demonstration writes: a second, different
+    generation for the same contract is a contradiction rather than an update, and the whole
+    point of this record is that a later start trusts it instead of acquiring again.
+    """
+
+    def __init__(self, database_path: str, *, check_same_thread: bool = True) -> None:
+        self._connection = sqlite3.connect(database_path, check_same_thread=check_same_thread)
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS demo_landed_generations ("
+            "tenant_id TEXT NOT NULL, contract_ref TEXT NOT NULL, payload BLOB NOT NULL, "
+            "PRIMARY KEY (tenant_id, contract_ref))"
+        )
+        self._connection.commit()
+
+    def close(self) -> None:
+        self._connection.close()
+
+    def record(self, *, tenant_id: str, contract_ref: str, landed: DemoLandedGeneration) -> None:
+        """Record what this contract landed, or confirm the recorded one is identical."""
+        payload = landed.model_dump_json().encode("utf-8")
+        try:
+            self._connection.execute(
+                "INSERT INTO demo_landed_generations (tenant_id, contract_ref, payload) "
+                "VALUES (?, ?, ?) ON CONFLICT (tenant_id, contract_ref) DO NOTHING",
+                (tenant_id, contract_ref, payload),
+            )
+            row = self._connection.execute(
+                "SELECT payload FROM demo_landed_generations "
+                "WHERE tenant_id = ? AND contract_ref = ?",
+                (tenant_id, contract_ref),
+            ).fetchone()
+            if row is None or bytes(row[0]) != payload:
+                raise DemoLandedGenerationError(
+                    "a different landed generation is already recorded for this contract"
+                )
+            self._connection.commit()
+        except BaseException:
+            # Best-effort clean-up: a failure to close the transaction must not replace the
+            # failure being reported.
+            with suppress(sqlite3.Error):
+                self._connection.rollback()
+            raise
+
+    def read(self, *, tenant_id: str, contract_ref: str) -> DemoLandedGeneration | None:
+        """What this contract landed, or `None` when no start has landed anything yet."""
+        try:
+            row = self._connection.execute(
+                "SELECT payload FROM demo_landed_generations "
+                "WHERE tenant_id = ? AND contract_ref = ?",
+                (tenant_id, contract_ref),
+            ).fetchone()
+        except sqlite3.Error as error:
+            raise DemoLandedGenerationError(
+                "the landed generation record is unavailable"
+            ) from error
+        if row is None:
+            return None
+        try:
+            return DemoLandedGeneration.model_validate_json(bytes(row[0]), strict=True)
+        except ValueError as error:
+            raise DemoLandedGenerationError("the recorded landed generation is invalid") from error
 
 
 class _Closeable(Protocol):
@@ -209,6 +312,16 @@ class DemoStores:
             self.acquisition_artifacts = LocalAcquisitionArtifactStore(
                 state_dir / "acquisition-artifacts"
             )
+            # Which raw generation this demonstration landed, and the watermark measured for
+            # it. The acknowledgement that follows a landing advances the source checkpoint,
+            # after which the provider refuses a second snapshot of the same source -- so a
+            # later start must find the generation it already has rather than acquire again.
+            # The generation ledger is keyed only by `generation_key` and offers no listing,
+            # which is why the key has to be recorded here rather than searched for there.
+            self.landed_generations = DemoLandedGenerationStore(
+                str(state_dir / "landed-generations.sqlite3"), check_same_thread=False
+            )
+            opened.append(self.landed_generations)
         except BaseException:
             # Best-effort clean-up: a failure to close must not replace the failure to open.
             _close_each(tuple(reversed(opened)))
