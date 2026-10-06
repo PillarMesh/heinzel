@@ -162,8 +162,12 @@ def test_a_question_with_no_selection_digests_to_what_it_always_digested_to() ->
     """
     content = _content("question")
 
-    assert content.payload.selection is None
-    assert "selection" not in content.payload.model_dump()
+    # Narrowed rather than asserted on the union: `_content` returns either payload kind, and
+    # only a question carries a selection.
+    payload = content.payload
+    assert isinstance(payload, StakeholderQuestion)
+    assert payload.selection is None
+    assert "selection" not in payload.model_dump()
     assert digest(content) == _UNSELECTED_QUESTION_DIGEST
 
 
