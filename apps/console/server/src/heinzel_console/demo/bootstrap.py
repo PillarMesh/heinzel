@@ -282,11 +282,21 @@ def ensure_demo_generation(
     # The watermark the acquisition measured, not the seed's own constant: the observation
     # describes what was read, and reading it from the acquisition is what keeps it true of a
     # source whose rows someone changes.
+    #
+    # The reading time comes from the landed receipt rather than from the acquisition's own
+    # boundary clock, because this observation is stored under an identity derived from the
+    # receipt digest and that store is immutable. The landing replays from the generation
+    # ledger and hands back the receipt it already holds, so the receipt's `committed_at` is
+    # the same value on every later start while a fresh boundary reading is not. A start that
+    # fails between here and publishing reaches this line again; with a moving reading it is
+    # refused for an identity collision it caused itself, which no operator can act on. The
+    # rows were read no later than the transaction that committed them, so the receipt's time
+    # is also the honest upper bound.
     freshness = demo_source_freshness_observation(
         landing_receipt_digest=landing_receipt_digest,
         generation_id=landed.receipt.generation_id,
         watermark_at=acquired.watermark_at,
-        observed_at=acquired.observed_at,
+        observed_at=landed.receipt.committed_at,
     )
     materialized = materialize_demo_generation(
         bootstrap_dsn=bootstrap_dsn,

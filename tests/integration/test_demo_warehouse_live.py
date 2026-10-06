@@ -611,3 +611,62 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
                 )
         finally:
             discarded.close()
+
+
+def test_a_start_that_fails_after_landing_can_still_start_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The window between landing and publishing, which a dbt failure lands a start in.
+
+    The freshness observation is stored before dbt runs, and its store is immutable under an
+    identity derived from the landing receipt. The landing itself replays from the generation
+    ledger, so that identity is the same on the next start -- which means the observation's
+    own payload has to be the same too, or the second start is refused for a reason the first
+    one caused and no operator can act on.
+
+    The failure is injected at the materialization runner rather than at dbt, because what
+    matters is the ordering inside `ensure_demo_generation`: the catalog composition that
+    stores the observation has already run by the time the run itself can fail.
+    """
+    dbt_executable = shutil.which("dbt")
+    if dbt_executable is None:
+        pytest.skip("the locked dbt executable is unavailable")
+
+    with _fresh_postgresql_cluster(tmp_path) as bootstrap_dsn:
+        stores = DemoStores(tmp_path / "state")
+        try:
+            publication = build_demo_publication(
+                stores, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
+            )
+
+            def _refuse(*_arguments: object, **_keywords: object) -> None:
+                raise RuntimeError("dbt failed")
+
+            monkeypatch.setattr(
+                "heinzel_console.demo.materialization.ProductMaterializationRunner.materialize",
+                _refuse,
+            )
+            with pytest.raises(RuntimeError, match="dbt failed"):
+                ensure_demo_generation(
+                    bootstrap_dsn=bootstrap_dsn,
+                    stores=stores,
+                    publication=publication,
+                    dbt_executable=Path(dbt_executable),
+                    workspace=tmp_path / "failed",
+                    clock=lambda: datetime.now(UTC),
+                )
+            monkeypatch.undo()
+
+            # The second start reaches acquisition again, because nothing was published. It
+            # must get past the freshness store it already wrote.
+            resumed = ensure_demo_generation(
+                bootstrap_dsn=bootstrap_dsn,
+                stores=stores,
+                publication=publication,
+                dbt_executable=Path(dbt_executable),
+                workspace=tmp_path / "resumed",
+                clock=lambda: datetime.now(UTC),
+            )
+            assert resumed.relation_name
+        finally:
+            stores.close()
