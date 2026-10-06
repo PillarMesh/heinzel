@@ -247,3 +247,28 @@ def test_a_console_with_no_warehouse_still_stops_at_execution_ready(tmp_path: Pa
 
         assert refused.status_code == 503, refused.text
         assert refused.json()["error"]["code"] == "capability_not_delivered"
+
+
+def test_the_console_serves_the_receipts_its_acquisition_recorded(
+    tmp_path: Path, warehouse: str
+) -> None:
+    """The acquisition surface answers from the evidence the startup acquisition composed.
+
+    Before the acquisition ran through the runtime's own application there was nothing for
+    this route to read, and it refused. What it must not do now is the other failure: a
+    console that acquired nothing still has an evidence store, and answering that one with
+    an empty list would read as a delivered capability holding nothing.
+    """
+    with DemoConsole(tmp_path / "state", warehouse_dsn=warehouse) as console:
+        browser = _Browser(console)
+        response = browser.get("/api/v1/acquisition-receipts", actor=DEMO_ARCHITECT_ID)
+        assert response.status_code == 200, response.text
+        receipts = browser.data(response)["receipts"]
+        assert receipts, "the startup acquisition recorded no receipt"
+
+    # The same console without a warehouse acquires nothing, and says so rather than
+    # answering with the empty store it still opens.
+    with DemoConsole(tmp_path / "dry-state") as dry:
+        refused = _Browser(dry).get("/api/v1/acquisition-receipts", actor=DEMO_ARCHITECT_ID)
+        assert refused.status_code == 503, refused.text
+        assert refused.json()["error"]["code"] == "capability_not_delivered"

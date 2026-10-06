@@ -11,9 +11,9 @@ tested, runs in the shape this demonstration deploys, and only wants a reader pa
 **unbuilt** when it does not exist, or exists only in a deployment shape the demonstration is
 not. The distinction decides sequencing, and the two are not comparable in cost. It is also
 easy to get wrong from the console's side alone: three of the gaps below read as missing
-arguments and are not. Every gap on this page currently classifies unbuilt. The column stays
-because the distinction is the one worth asking of each new gap, and because the first of them
-to become wiring changes what should be built next.
+arguments and are not. The column stays because the distinction is the one worth asking of
+each new gap. The acquisition receipts were the first of the three to close, and closing them
+took the acquisition itself rather than a reader.
 
 This page describes the demonstration console in `apps/console`, not a deployment. Several gaps
 below are deliberate for a demonstration and would be defects in a deployment; they are listed
@@ -59,7 +59,6 @@ database does. Closing this is a deployment-shape change, not a reader.
 | No surface registers a source; the demonstration acquires one seeded source at startup. | Unbuilt | `demo/seed.py`, `_UNDELIVERED_STAGES` |
 | The Stripe provider reads object snapshots and events against a mocked API, is not composed into acquisition, and has no live test. | Unbuilt | `providers/stripe`, [status.md](status.md) |
 | No owning service binds a contract to its destination; LAND routing is deployment configuration. | Unbuilt | [status.md](status.md) |
-| The acquisition receipts surface exists in the console, and the demonstration has nothing to show in it: it acquires through the provider directly rather than through the runtime's acquisition application, so no `AcquisitionEvidenceReceipt` is composed and its stores hold no evidence store to keep one in. | Unbuilt | `acquire_demo_rows` in `demo/generation.py`; `DemoStores` in `demo/stores.py`; `compose_acquisition_application` in `services/runtime/src/heinzel_runtime/acquisition_composition.py` |
 | One generation, materialized once. No refresh, no second generation, and no scheduler: `services/trigger` holds trigger policies and nothing runs them. | Unbuilt | `services/trigger`, [quickstart README](../deploy/quickstart/README.md) |
 
 ## 3. Define the product
@@ -162,10 +161,11 @@ acquisition to run through the runtime's application rather than the provider al
 third is reachable without changing what the demonstration deploys, which is why it leads here
 and the other two sit with the deployment-shape work.
 
-1. **Acquisition receipts.** Acquire through `compose_acquisition_application` rather than the
-   provider directly, give `DemoStores` the evidence store the receipt is written to, and pass
-   the reader in. The service composes the evidence and the console only reads it, which is the
-   boundary [AGENTS.md](../AGENTS.md) requires.
+1. ~~**Acquisition receipts.**~~ Delivered. The demonstration acquires through the runtime's
+   acquisition application, the service composes the evidence, and the console reads it. The
+   placeholder run and contract digests went with it, and a start that dies between landing and
+   publishing now resumes from what it landed rather than acquiring into a checkpoint it cannot
+   take a snapshot from.
 2. **Identity.** Two real logins in place of a header. Every other gap is a missing feature; this
    one is a missing boundary, and no external audience should be shown a console where naming
    another actor is a header edit.

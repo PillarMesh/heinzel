@@ -183,6 +183,18 @@ class DemoConsole:
                     if governed_answer is None
                     else governed_answer.admission_commands(self._requests)
                 ),
+                # The receipts the governed acquisition composed at startup. The evidence
+                # store answers this read itself, so nothing stands between the console and
+                # what the acquisition recorded.
+                #
+                # Offered only once there is a warehouse, because only then has anything been
+                # acquired. The store opens either way, so wiring it unconditionally would
+                # answer a console that never acquired with an empty list -- a capability that
+                # looks delivered and holds nothing, which is what `not_delivered` exists to
+                # say instead.
+                acquisition_receipts=(
+                    None if governed_answer is None else self._stores.acquisition_evidence
+                ),
                 fulfillment_execution_commands=runtime,
                 incidents=None if runtime is None else runtime.incidents,
                 answer_results=None if runtime is None else runtime.results,
