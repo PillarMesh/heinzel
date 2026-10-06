@@ -17,6 +17,7 @@ dependencies = [
   "heinzel-bi-control",
   "heinzel-catalog-control",
   "heinzel-compiler",
+  "heinzel-connection-broker",
   "heinzel-contract-model",
   "heinzel-contract-service",
   "heinzel-dbt-adapter",
@@ -56,6 +57,7 @@ heinzel-access-control = { workspace = true }
 heinzel-bi-control = { workspace = true }
 heinzel-catalog-control = { workspace = true }
 heinzel-compiler = { workspace = true }
+heinzel-connection-broker = { workspace = true }
 heinzel-contract-model = { workspace = true }
 heinzel-contract-service = { workspace = true }
 heinzel-dbt-adapter = { workspace = true }

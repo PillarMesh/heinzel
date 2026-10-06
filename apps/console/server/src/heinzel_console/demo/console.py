@@ -49,6 +49,7 @@ from .collaborators import (
     build_demo_snapshot_resolver,
     demo_clock,
 )
+from .cursor_cipher import DemoCursorCipher
 from .publication import DEMO_TENANT_ID, build_demo_publication
 from .seed import seed_demo_request
 from .stores import DemoStores
@@ -97,7 +98,11 @@ class DemoConsole:
         because it carries a password and a command's arguments are readable from the process
         table.
         """
-        self._stores = DemoStores(state_dir)
+        # The cipher is named here rather than inside `DemoStores`, because which cipher
+        # seals a deployment's cursors is the deployment's answer and not the store's. This
+        # demonstration's answer is a key beside its own state; a deployment names the one
+        # its key custody answers for.
+        self._stores = DemoStores(state_dir, cursor_cipher_factory=DemoCursorCipher)
         self._closing = ExitStack()
         try:
             publication = build_demo_publication(self._stores, clock=demo_clock)

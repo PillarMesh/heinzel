@@ -9,6 +9,31 @@ import pytest
 from heinzel_console.demo import stores as demo_stores
 from heinzel_console.demo.stores import DemoStores, default_state_directory
 from heinzel_contract_model import ArtifactReference
+from heinzel_contract_service import SQLiteAcquisitionContractLifecycleRepository
+from heinzel_evidence import SQLiteStore
+from heinzel_state import AcquisitionStateNotFoundError, CursorCipher
+
+
+class _CursorCipher:
+    """Stands in for the demonstration's cursor cipher, with the properties it must have.
+
+    Reversible and tenant-bound, because the state repository checks both: it refuses a
+    ciphertext that still contains its plaintext, and it decrypts under the tenant that
+    stored the cursor. A cipher that returned its input would pass neither.
+    """
+
+    def encrypt(self, *, tenant_id: str, plaintext: bytes) -> bytes:
+        return b"cipher:" + tenant_id.encode() + b":" + plaintext[::-1]
+
+    def decrypt(self, *, tenant_id: str, ciphertext: bytes) -> bytes:
+        prefix = b"cipher:" + tenant_id.encode() + b":"
+        if not ciphertext.startswith(prefix):
+            raise ValueError("cursor tenant mismatch")
+        return ciphertext.removeprefix(prefix)[::-1]
+
+
+def _cursor_cipher(_state_dir: Path) -> CursorCipher:
+    return _CursorCipher()
 
 
 class _RefusingRepository:
@@ -35,7 +60,14 @@ def test_every_store_opens_under_the_state_directory(tmp_path: Path) -> None:
         names = {path.name for path in (tmp_path / "state").iterdir()}
     finally:
         stores.close()
-    assert {"requests.sqlite3", "semantic.sqlite3", "catalog.sqlite3"} <= names
+    assert {
+        "requests.sqlite3",
+        "semantic.sqlite3",
+        "catalog.sqlite3",
+        "acquisition-lifecycle.sqlite3",
+        "acquisition-evidence.sqlite3",
+        "acquisition-artifacts",
+    } <= names
 
 
 def test_every_store_can_be_read_from_another_thread(tmp_path: Path) -> None:
@@ -45,8 +77,21 @@ def test_every_store_can_be_read_from_another_thread(tmp_path: Path) -> None:
     `sqlite3.ProgrammingError` for any thread but the one that opened it. Every test that
     reads these stores on the main thread passes either way, which is why this one does not.
     """
-    stores = DemoStores(tmp_path / "state")
+    stores = DemoStores(tmp_path / "state", cursor_cipher_factory=_cursor_cipher)
     product_ref = ArtifactReference(artifact_id="orders_daily", version=1, digest="a" * 64)
+
+    def read_absent_checkpoint() -> object:
+        """A checkpoint store with nothing in it answers by refusing, so that is the read.
+
+        The refusal is specific: the repository translates `sqlite3.ProgrammingError` --
+        which a thread-affine connection raises, and which is a `sqlite3.Error` -- into
+        `AcquisitionStatePersistenceError`. Catching only the not-found case therefore still
+        fails if this connection carries the affinity of the thread that opened it.
+        """
+        assert stores.acquisition_state is not None
+        with pytest.raises(AcquisitionStateNotFoundError):
+            stores.acquisition_state.load_checkpoint("tenant-demo", "c" * 64, "source-binding:demo")
+        return None
 
     def read() -> tuple[object, ...]:
         return (
@@ -65,11 +110,63 @@ def test_every_store_can_be_read_from_another_thread(tmp_path: Path) -> None:
                 tenant_id="tenant-demo", input_generation_digest="b" * 64
             ),
             stores.generations.load("absent-generation"),
+            stores.acquisition_lifecycle.list_activated("tenant-demo"),
+            read_absent_checkpoint(),
+            stores.acquisition_evidence.list_acquisition_receipts("tenant-demo"),
+            stores.acquisition_artifacts.exists_verified(
+                tenant_id="tenant-demo", artifact_digest="a" * 64
+            ),
         )
 
     try:
         with ThreadPoolExecutor(max_workers=1) as pool:
-            assert pool.submit(read).result() == ((1,), (), None, None, None, None, None)
+            assert pool.submit(read).result() == (
+                (1,),
+                (),
+                None,
+                None,
+                None,
+                None,
+                None,
+                (),
+                None,
+                (),
+                False,
+            )
+    finally:
+        stores.close()
+
+
+def test_the_acquisition_state_store_is_absent_without_a_cursor_cipher(tmp_path: Path) -> None:
+    """Cursors are stored encrypted, so no cipher means no store rather than a store.
+
+    Opening it under a cipher this class invented would be the one outcome worse than not
+    opening it: cursors written under a stand-in cannot be read back by the real one.
+    """
+    stores = DemoStores(tmp_path / "state")
+    try:
+        assert stores.acquisition_state is None
+        assert not (tmp_path / "state/acquisition-state.sqlite3").exists()
+    finally:
+        stores.close()
+
+
+def test_the_cursor_cipher_is_composed_over_an_existing_state_directory(tmp_path: Path) -> None:
+    """The cipher's key material belongs beside the stores, so the directory must be there.
+
+    A factory called before the directory was made could only create it a second time, with
+    whichever permissions it chose rather than the ones this class established.
+    """
+    seen: list[Path] = []
+
+    def recording_factory(state_dir: Path) -> CursorCipher:
+        seen.append(state_dir)
+        assert state_dir.is_dir()
+        return _CursorCipher()
+
+    stores = DemoStores(tmp_path / "state", cursor_cipher_factory=recording_factory)
+    try:
+        assert seen == [tmp_path / "state"]
     finally:
         stores.close()
 
@@ -116,6 +213,44 @@ def test_a_store_that_fails_to_open_closes_the_connections_already_opened(
     for connection in opened:
         with pytest.raises(sqlite3.ProgrammingError):
             connection.execute("SELECT 1")
+
+
+def test_a_late_failure_closes_the_acquisition_stores_already_opened(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The acquisition handles join the clean-up list, so a later failure closes them too.
+
+    The artifact store is the last store opened and the only one holding no connection,
+    which makes it the one place a failure can arrive with every acquisition handle open.
+    The recorded order is the reverse of the opening order, so each borrowed connection is
+    closed after whatever borrowed it.
+    """
+    closed: list[str] = []
+
+    class _RecordingLifecycleRepository(SQLiteAcquisitionContractLifecycleRepository):
+        def close(self) -> None:
+            closed.append("lifecycle")
+            super().close()
+
+    class _RecordingEvidenceStore(SQLiteStore):
+        def close(self) -> None:
+            closed.append("evidence")
+            super().close()
+
+    class _RefusingArtifactStore:
+        def __init__(self, root: Path) -> None:
+            raise RuntimeError("the artifact store refused to open")
+
+    monkeypatch.setattr(
+        demo_stores, "SQLiteAcquisitionContractLifecycleRepository", _RecordingLifecycleRepository
+    )
+    monkeypatch.setattr(demo_stores, "SQLiteStore", _RecordingEvidenceStore)
+    monkeypatch.setattr(demo_stores, "LocalAcquisitionArtifactStore", _RefusingArtifactStore)
+
+    with pytest.raises(RuntimeError, match="refused to open"):
+        DemoStores(tmp_path / "state", cursor_cipher_factory=_cursor_cipher)
+
+    assert closed == ["evidence", "lifecycle"]
 
 
 def test_the_default_state_directory_follows_xdg(monkeypatch: pytest.MonkeyPatch) -> None:
