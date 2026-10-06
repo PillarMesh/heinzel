@@ -80,6 +80,11 @@ updates:
   - package-ecosystem: docker-compose
     directories:
       - /deploy/quickstart
+      # The warehouse the demonstration's opt-in warehouse-control path creates. Its image is
+      # pinned a second time as `POSTGRESQL_WAREHOUSE_IMAGE` in the PostgreSQL provider, which
+      # inspects the running container against it, and a test keeps the two in step -- so a bump
+      # raised here arrives with that test failing until the provider's pin moves with it.
+      - /deploy/quickstart/warehouse-control
       - /tests/emulators/localstack-snowflake
       - /tests/emulators/openmetadata
       - /tests/emulators/superset

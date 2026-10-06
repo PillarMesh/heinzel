@@ -1,0 +1,96 @@
+# The warehouse the demonstration creates when it provisions through warehouse-control, which is
+# the opt-in path `HEINZEL_DEMO_WAREHOUSE_CONTROL` selects. Nothing starts this file by hand:
+# `PostgreSQLWarehouseProvider` drives it through `DockerComposeProcess`, under a project name it
+# derives from the warehouse binding, and every variable below is supplied by the provider rather
+# than by an operator's environment. A `docker compose -f` of this file on its own refuses,
+# because each `:?required` variable is unset.
+#
+# This is not the quickstart's own `warehouse` service one directory up. That one is a sibling
+# container the console connects to and does not create; this one is created, validated, backed
+# up, restored and retired by warehouse-control. The two are separate files because they are
+# separate deployment shapes, and the quickstart's must keep working unchanged.
+#
+# Driving Compose means the console needs the Docker socket, which is host-level access. The
+# README one directory up says what that costs and why this path is opt-in rather than default.
+#
+# The image is the digest `POSTGRESQL_WAREHOUSE_IMAGE` pins in
+# `providers/postgresql/src/heinzel_provider_postgresql/warehouse_settings.py`, and the provider
+# inspects the running container against that exact string before it validates anything. A
+# different image here is not a variation, it is a provisioning the provider refuses, so the two
+# move together and a test keeps them in step.
+x-postgresql-service: &postgresql-service
+    image: postgres:18.6-bookworm@sha256:33c86c9cfb790e257e470b29e8c97bd1bd6fee0a70ab2d7a2e377ab639c09935
+    environment:
+      POSTGRES_DB: heinzel_warehouse
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+      POSTGRES_PASSWORD: ${HEINZEL_POSTGRES_BOOTSTRAP_PASSWORD:?required}
+      POSTGRES_USER: postgres
+    # The server is started over the provider's own TLS material and host-based authentication
+    # file, copied out of the private directory it mounts read-only. Plaintext connections are
+    # rejected by that file, and the provider proves it by attempting one.
+    entrypoint:
+      - /bin/bash
+      - -ceu
+      - |
+        install -d -m 0700 -o postgres -g postgres /var/lib/postgresql/heinzel-tls
+        install -m 0600 -o postgres -g postgres /heinzel-private/server.key /var/lib/postgresql/heinzel-tls/server.key
+        install -m 0644 -o postgres -g postgres /heinzel-private/server.crt /var/lib/postgresql/heinzel-tls/server.crt
+        install -m 0644 -o postgres -g postgres /heinzel-private/ca.crt /var/lib/postgresql/heinzel-tls/ca.crt
+        install -m 0600 -o postgres -g postgres /heinzel-private/pg_hba.conf /var/lib/postgresql/heinzel-tls/pg_hba.conf
+        exec /usr/local/bin/docker-entrypoint.sh postgres \
+          -c listen_addresses=* \
+          -c password_encryption=scram-sha-256 \
+          -c ssl=on \
+          -c ssl_ca_file=/var/lib/postgresql/heinzel-tls/ca.crt \
+          -c ssl_cert_file=/var/lib/postgresql/heinzel-tls/server.crt \
+          -c ssl_key_file=/var/lib/postgresql/heinzel-tls/server.key \
+          -c ssl_min_protocol_version=TLSv1.3 \
+          -c hba_file=/var/lib/postgresql/heinzel-tls/pg_hba.conf
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --dbname heinzel_warehouse --username postgres"]
+      interval: 1s
+      timeout: 3s
+      retries: 90
+    # The private directory carries the TLS key, the client certificate and the bootstrap
+    # password file. It is the provider's, mounted read-only, and it is a host path: the daemon
+    # resolves it, not the process that ran the command.
+    volumes:
+      - warehouse_data:/var/lib/postgresql
+      - ${HEINZEL_POSTGRES_PRIVATE_DIRECTORY:?required}:/heinzel-private:ro
+    networks:
+      - warehouse_internal
+      - host_loopback
+
+services:
+  postgresql:
+    <<: *postgresql-service
+    container_name: ${HEINZEL_POSTGRES_CONTAINER_NAME:?required}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Loopback only, on a port the provider allocated and recorded. The provider reads the
+    # published binding back with `docker compose port` and refuses anything that is not exactly
+    # this, so a published port on another interface fails provisioning rather than exposing the
+    # warehouse.
+    ports:
+      - "127.0.0.1:${HEINZEL_POSTGRES_HOST_PORT:?required}:5432"
+
+  # The second instance a validation restores its own backup into, started under a profile so it
+  # exists only while that verification runs and is torn down with its volume afterwards. It
+  # publishes no port and its loopback network is internal, which is what keeps a restored copy
+  # of the warehouse off every interface.
+  postgresql_restore:
+    <<: *postgresql-service
+    profiles: ["restore"]
+    container_name: ${HEINZEL_POSTGRES_RESTORE_CONTAINER_NAME:?required}
+
+volumes:
+  warehouse_data:
+    name: ${HEINZEL_POSTGRES_DATA_VOLUME_NAME:?required}
+
+networks:
+  warehouse_internal:
+    name: ${HEINZEL_POSTGRES_NETWORK_NAME:?required}
+    internal: true
+  host_loopback:
+    name: ${HEINZEL_POSTGRES_LOOPBACK_NETWORK_NAME:?required}
+    internal: ${HEINZEL_POSTGRES_LOOPBACK_NETWORK_INTERNAL:?required}

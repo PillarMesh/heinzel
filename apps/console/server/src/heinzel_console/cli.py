@@ -18,7 +18,7 @@ from pathlib import Path
 from types import FrameType
 from typing import Never
 
-from .demo import build_demo_app
+from .demo import ManagedWarehouseOption, build_demo_app
 from .routes import canonical_browser_origin
 
 type _SignalHandler = Callable[[int, FrameType | None], object] | int | signal.Handlers | None
@@ -29,6 +29,7 @@ __all__ = [
     "parse_arguments",
     "require_bundle",
     "require_loopback",
+    "resolve_managed_warehouse",
     "resolve_origin",
     "warn_when_unauthenticated",
 ]
@@ -62,6 +63,17 @@ _DIST_VARIABLE = "HEINZEL_CONSOLE_DIST"
 # are readable by anything that can list processes. Absent, the console reports every answer
 # capability as not delivered, which is the honest answer with no warehouse to answer from.
 _WAREHOUSE_VARIABLE = "HEINZEL_DEMO_WAREHOUSE_DSN"
+# The other way to have a warehouse: warehouse-control provisions one, by driving the Compose
+# project the demonstration ships, and the console reports the binding it made. Opt-in rather
+# than default because it needs a reachable Docker daemon -- and, from inside a container, that
+# daemon's socket, which is host-level access. The variable above needs neither, so it stays the
+# default. The two are exclusive; `DemoConsole` refuses both.
+_WAREHOUSE_CONTROL_VARIABLE = "HEINZEL_DEMO_WAREHOUSE_CONTROL"
+# What counts as selecting it. An unrecognised value is refused rather than read as off: a
+# console that treated `HEINZEL_DEMO_WAREHOUSE_CONTROL=flase` as unset would start on the other
+# path and report a capability the operator asked for as not delivered.
+_AFFIRMATIVE = frozenset({"1", "true", "yes", "on"})
+_NEGATIVE = frozenset({"0", "false", "no", "off"})
 
 # Invalid configuration, matching argparse's own code for arguments it rejects.
 _INVALID_CONFIGURATION = 2
@@ -254,6 +266,27 @@ def require_bundle(*, dist: Path | None, configured: str | None) -> Path | None:
     return selected
 
 
+def resolve_managed_warehouse(configured: str | None) -> ManagedWarehouseOption | None:
+    """Whether to provision through warehouse-control, from the one variable that says so.
+
+    `None` is the demonstration as it has always been. A value is required to be one of the
+    spellings below rather than judged truthy, because the two paths deploy differently -- one
+    needs a Docker socket and the other does not -- and silently choosing the other one over a
+    typo would report the capability the operator asked for as not delivered.
+    """
+    if configured is None or not configured.strip():
+        return None
+    selection = configured.strip().lower()
+    if selection in _AFFIRMATIVE:
+        return ManagedWarehouseOption()
+    if selection in _NEGATIVE:
+        return None
+    raise ValueError(
+        f"{_WAREHOUSE_CONTROL_VARIABLE} must be one of "
+        f"{', '.join(sorted(_AFFIRMATIVE | _NEGATIVE))}, or unset"
+    )
+
+
 def warn_when_unauthenticated(*, host: str) -> None:
     """Say plainly, every time, that what is being served has no authentication."""
     _LOGGER.warning(
@@ -357,6 +390,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 # the same statement, and passing "" on would reach psycopg as a DSN naming no
                 # host at all.
                 warehouse_dsn=os.environ.get(_WAREHOUSE_VARIABLE) or None,
+                managed_warehouse=resolve_managed_warehouse(
+                    os.environ.get(_WAREHOUSE_CONTROL_VARIABLE)
+                ),
             )
         except ValueError as invalid:
             _LOGGER.error("the console cannot be configured: %s", invalid)
@@ -365,7 +401,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             # The warehouse was configured but could not be brought to a published product: a
             # warehouse that never accepted a connection, a missing `dbt`, a database that is not
             # empty, or a state directory and a warehouse that disagree. Each names what to do
-            # about it.
+            # about it. On the warehouse-control path it also covers a Docker daemon this process
+            # cannot reach, which `ManagedWarehouseRefused` reports as the socket to mount rather
+            # than as the classification the orchestrator recorded.
             _LOGGER.error("the demonstration's warehouse is not ready: %s", unavailable)
             return _UNAVAILABLE
         except OSError as refused:

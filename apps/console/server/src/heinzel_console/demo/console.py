@@ -50,6 +50,7 @@ from .collaborators import (
     demo_clock,
 )
 from .cursor_cipher import DemoCursorCipher
+from .managed_warehouse import ManagedWarehouseOption, provision_demo_managed_warehouse
 from .publication import DEMO_TENANT_ID, build_demo_publication
 from .seed import seed_demo_request
 from .stores import DemoStores
@@ -84,7 +85,13 @@ class DemoConsole:
     through protocols and keeps no reference of its own to the repository underneath.
     """
 
-    def __init__(self, state_dir: Path, *, warehouse_dsn: str | None = None) -> None:
+    def __init__(
+        self,
+        state_dir: Path,
+        *,
+        warehouse_dsn: str | None = None,
+        managed_warehouse: ManagedWarehouseOption | None = None,
+    ) -> None:
         """Assemble the console, and its governed answer when it is given a warehouse.
 
         `warehouse_dsn` is a superuser connection to an otherwise empty database. Given one, the
@@ -97,7 +104,23 @@ class DemoConsole:
         The DSN is a parameter rather than an argument of the command that starts the console,
         because it carries a password and a command's arguments are readable from the process
         table.
+
+        `managed_warehouse` is the other way to have a warehouse, and the only one that produces
+        a binding warehouse-control owns: given it, the console provisions a warehouse through
+        warehouse-control and reports the binding, so the setup surface answers and its
+        `foundation` stage completes. Given neither, the console is what it was.
+
+        The two are exclusive. Each is a complete statement about where the demonstration's
+        warehouse comes from, and a console given both would provision one warehouse through
+        warehouse-control and answer out of another -- so the setup surface and the answer would
+        describe different databases, with nothing saying which the demonstration is about.
         """
+        if warehouse_dsn is not None and managed_warehouse is not None:
+            raise ValueError(
+                "the demonstration takes a warehouse connection or provisions a warehouse "
+                "through warehouse-control, not both: they are two answers to where its "
+                "warehouse comes from, and nothing here can reconcile them"
+            )
         # The cipher is named here rather than inside `DemoStores`, because which cipher
         # seals a deployment's cursors is the deployment's answer and not the store's. This
         # demonstration's answer is a key beside its own state; a deployment names the one
@@ -163,6 +186,20 @@ class DemoConsole:
             )
             self.governed_answer = governed_answer
             runtime = None if governed_answer is None else governed_answer.runtime
+            # Provisioned before the backend is built, because the binding the reader projects
+            # has to be `ready` by the time the setup surface can be asked for it: a reader over
+            # a binding still being provisioned would report the foundation stage incomplete for
+            # a warehouse that was on its way, and no console read would ever revisit it.
+            managed = (
+                None
+                if managed_warehouse is None
+                else self._closing.enter_context(
+                    provision_demo_managed_warehouse(
+                        state_dir, option=managed_warehouse, clock=demo_clock
+                    )
+                )
+            )
+            self.managed_warehouse = managed
             self.backend = GovernedConsoleBackend(
                 identity=GovernedWorkspaceIdentity(
                     tenant_ref=DEMO_TENANT_ID,
@@ -171,6 +208,12 @@ class DemoConsole:
                     workspace_display_name="Demonstration workspace",
                 ),
                 operation_handles=InMemoryOperationHandleRepository(),
+                # The managed warehouse, read back out of warehouse-control itself. Offered only
+                # on that path: on the DSN path the demonstration provisions a database
+                # warehouse-control never saw, and a reader there would have to report either
+                # nothing or a binding nobody made -- so the capability stays `not_delivered`,
+                # which is the honest answer about a warehouse no governing service owns.
+                warehouse_bindings=None if managed is None else managed.bindings,
                 requests=self._requests,
                 request_commands=self._requests,
                 fulfillment=self._fulfillment_reads,

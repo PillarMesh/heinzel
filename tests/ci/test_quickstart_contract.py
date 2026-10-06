@@ -21,6 +21,9 @@ from heinzel_console.cli import _DEFAULT_PORT
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deploy/quickstart/compose.yaml"
 DOCKERFILE = ROOT / "deploy/quickstart/Dockerfile"
+# The opt-in warehouse-control path's own project, which the console never publishes and
+# an operator never starts by hand: the PostgreSQL warehouse provider drives it.
+WAREHOUSE_CONTROL_COMPOSE = ROOT / "deploy/quickstart/warehouse-control/compose.yaml"
 
 # The pattern shapes `_excludes` reasons about: a literal path of one or more segments,
 # optionally at any depth (`**/`) and optionally ending in `*`. Anything else -- another
@@ -453,3 +456,45 @@ def test_both_volumes_are_named_so_one_command_discards_both() -> None:
     compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
     assert set(compose["volumes"]) == {"heinzel-state", "heinzel-warehouse"}
     assert _warehouse_service()["volumes"] == ["heinzel-warehouse:/var/lib/postgresql/data"]
+
+
+def test_the_quickstart_does_not_mount_the_docker_socket_or_select_warehouse_control() -> None:
+    """The opt-in path needs the Docker socket, which is root on the host.
+
+    This console has no authentication, so a socket mounted here would put root on the host
+    behind the published port. The path is therefore selected by an operator who read what it
+    costs, from a checkout, and never by this file. Asserted rather than left to review because
+    it is one line to add and the consequence is not visible in it.
+    """
+    compose = COMPOSE.read_text(encoding="utf-8")
+    assert "docker.sock" not in compose
+    assert "HEINZEL_DEMO_WAREHOUSE_CONTROL" not in compose
+
+
+def test_the_warehouse_control_project_pins_the_image_its_provider_verifies() -> None:
+    """The opt-in path's own compose file, which `test_every_quickstart_image_is_digest_pinned`
+    does not read because it is a separate project one directory down.
+
+    `PostgreSQLWarehouseProvider` inspects the container it started against
+    `POSTGRESQL_WAREHOUSE_IMAGE` and refuses anything else, so this is not a preference about
+    pinning: a different image here is a provisioning that fails after it has created a
+    container, a network and a volume.
+    """
+    from heinzel_provider_postgresql.warehouse_settings import POSTGRESQL_WAREHOUSE_IMAGE
+
+    project = yaml.safe_load(WAREHOUSE_CONTROL_COMPOSE.read_text(encoding="utf-8"))
+    images = {service["image"] for service in project["services"].values()}
+    assert images == {POSTGRESQL_WAREHOUSE_IMAGE}
+    assert "@sha256:" in POSTGRESQL_WAREHOUSE_IMAGE
+
+
+def test_dependabot_watches_the_warehouse_control_project() -> None:
+    """An unwatched compose file pins a digest no update ever reaches."""
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text(encoding="utf-8"))
+    watched = {
+        directory
+        for update in config["updates"]
+        if update["package-ecosystem"] == "docker-compose"
+        for directory in update["directories"]
+    }
+    assert "/deploy/quickstart/warehouse-control" in watched, sorted(watched)

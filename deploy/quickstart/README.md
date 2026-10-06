@@ -51,6 +51,65 @@ path, no uppercase, no default port (a console published on port 80 is `http://1
 `http://127.0.0.1:80`) — and the console refuses to start on any other spelling rather than
 adjusting it, naming the spelling to use instead.
 
+## Provisioning the warehouse through warehouse-control, and what it costs
+
+By default the demonstration is *given* a warehouse: `HEINZEL_DEMO_WAREHOUSE_DSN` names the
+`warehouse` container above, the console provisions schemas, roles and grants inside it, and
+warehouse-control never sees it. That is why the workspace card reports **Managed warehouse —
+Not delivered** and the setup surface answers `503 capability_not_delivered`: no governing
+service owns that database, and reporting a binding for it would claim a managed warehouse where
+a temporary local database is.
+
+Setting `HEINZEL_DEMO_WAREHOUSE_CONTROL=1` instead takes the other path. warehouse-control holds
+a binding, drives it from `draft` to `ready`, and `PostgreSQLWarehouseProvider` creates the
+warehouse itself by driving the Compose project at
+[`warehouse-control/compose.yaml`](warehouse-control/compose.yaml) — a PostgreSQL container over
+TLS with client certificates, eight separated principal classes with positive and denial probes,
+and a backup restored into a second instance and verified before the binding is admitted. The
+console then reports that binding, so the setup surface answers and its `foundation` stage
+completes. The two settings are exclusive; a console given both refuses to start.
+
+**This is opt-in, and it has to be.** Creating containers means this process runs `docker`, so:
+
+- It needs a reachable Docker daemon. A console running in a container needs that daemon's
+  socket bind-mounted into it (`/var/run/docker.sock`), and **access to the Docker socket is
+  root on the host**. Anything that reaches the console — and the console has no authentication,
+  so that is anyone who reaches the published port — could start a container that mounts the
+  host's filesystem. The quickstart's `compose.yaml` therefore does not mount it, and this
+  setting is not part of the quickstart's own environment.
+- Compose bind-mounts are resolved by the daemon, on the host. The provider mounts its private
+  directory — TLS key, client certificate, bootstrap password — into the warehouse container by
+  path, so that path has to mean the same thing to the daemon as it does to the console. It does
+  when the console runs from a checkout on the host. It does not when the console runs in a
+  container whose state directory is a named volume, because the host has no such path.
+- The compose project has to be on disk beside the console. The quickstart image does not carry
+  `deploy/`, so this path is for running `heinzel-console serve` from a checkout.
+
+Run it from a checkout, where all three hold:
+
+```sh
+HEINZEL_DEMO_WAREHOUSE_CONTROL=1 uv run heinzel-console serve --state-dir ./.heinzel-state
+```
+
+Without a reachable daemon the console refuses to start and says so, naming the socket and the
+setting to unset. It is the same refusal if `docker` is not installed at all.
+
+Two things this path does not do. It does not answer the seeded question: the governed answer is
+composed over the warehouse `HEINZEL_DEMO_WAREHOUSE_DSN` names, and these two settings are
+exclusive, so a console on this path reports a managed warehouse and still reports every answer
+capability as not delivered. And it cannot resume a provisioning that stopped half-way: the
+warehouse's credentials are minted per start and written nowhere, so a start that died partway
+through holds none of them, and the next start refuses to adopt that binding rather than
+connecting with credentials the warehouse never had. It names the Compose project to remove and
+the state directory to discard.
+
+[docs/demonstration-gaps.md](../../docs/demonstration-gaps.md) records what is proved about this
+path and what is not. The offline suite proves the Compose operations it issues and their order,
+that a failure at each one is classified and reported rather than swallowed, and that the setup
+surface answers from a binding already carried to `ready`. It does not prove the live
+provisioning, which needs a daemon; what proves that provider is the warehouse-lifecycle
+acceptance run, against the same provider over its own Compose project.
+
 ## What it shows
 
 One stakeholder question is waiting in the inbox: *What is the daily order value?*, asked by

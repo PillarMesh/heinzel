@@ -49,26 +49,49 @@ offering one would assert a grain the publication never stated.
 
 | Gap | Kind | Established by |
 | --- | --- | --- |
-| The demonstration wires no warehouse-binding reader, so the warehouse capability reports `not_delivered` and the setup surface refuses. The workspace still summarises as `active`, deliberately: routing to a setup surface that answers 503 would name work the deployment cannot offer. | Unbuilt | `GovernedConsoleBackend` construction in `demo/console.py` passes no `warehouse_bindings`; `_warehouse_capability` and `_workspace_state` in `governed_backend.py` |
-| The demonstration provisions its own PostgreSQL rather than one warehouse-control provisioned, so its setup never advances past `foundation`. Passing a reader would not change that: a binding reported here has to be one warehouse-control made. | Unbuilt | `demo/warehouse.py` |
+| On its default path the demonstration is given a warehouse rather than creating one, so it wires no warehouse-binding reader: the warehouse capability reports `not_delivered` and the setup surface refuses. The workspace still summarises as `active`, deliberately: routing to a setup surface that answers 503 would name work the deployment cannot offer. | Unbuilt on the default path, delivered on the opt-in one | `GovernedConsoleBackend` construction in `demo/console.py` passes `warehouse_bindings` only on the warehouse-control path; `_warehouse_capability` and `_workspace_state` in `governed_backend.py` |
+| The opt-in path's live provisioning is proved by no test in this repository. The offline suite proves the Compose operations it issues and their order, that a failure at each one is classified and reported, and that the setup surface answers from a binding already `ready`; it does not start a container. | Unbuilt | `apps/console/server/tests/test_demo_managed_warehouse.py` |
+| The opt-in path and the answering path are exclusive, so no single console both reports a managed warehouse and answers a question over it. The governed answer is composed over the database `HEINZEL_DEMO_WAREHOUSE_DSN` names, and deriving one from a warehouse-control binding means reading the provider's own private file layout for a host port, a client certificate and an administration password. | Unbuilt | the refusal in `DemoConsole.__init__`; `_warehouse_identity` and `_connection_target` in `providers/postgresql/src/heinzel_provider_postgresql/warehouse.py` |
+| The opt-in path cannot resume a provisioning that stopped part-way. Credentials are minted per start and written nowhere, so the next start holds none of the ones the warehouse was created with and refuses to adopt the binding instead of connecting with credentials it never had. | Unbuilt | `_resumable_binding` in `demo/managed_warehouse.py` |
 | The `meaning`, `data_product` and `activation` setup stages are reported blocked unconditionally. `sources` no longer is: its state derives from the connection-broker read, and it reports blocked with its own dependency named when no reader is wired. | Unbuilt | `_UNDELIVERED_STAGES` and `_stage_states` in `governed_backend.py` |
 | The engine options carry a fixed region and one capacity profile. | Unbuilt | `WarehouseOptionView` construction in `governed_backend.py` |
 
 warehouse-control itself provisions, validates, backs up, restores, suspends, resumes and retires
 on PostgreSQL and ClickHouse with signed evidence, and CI runs that acceptance whenever a change
 touches it. It provisions by driving a Compose project: `PostgreSQLWarehouseProvider` takes a
-`ComposeProjectControl` alongside nine secret capabilities and TLS material. A console that
-reports a real binding is therefore a console that creates warehouses, and the quickstart
-declares its warehouse as a sibling service the console cannot create. Reporting a binding here
-without that is worse than reporting none, because `WarehouseBinding.deployment_mode` admits
-only `heinzel_cloud`: the record would say a managed warehouse exists where a temporary local
-database does. Closing this is a deployment-shape change, not a reader.
+`ComposeProjectControl` alongside nine secret capabilities and TLS material.
+
+An earlier revision of this page said closing this was a deployment-shape change rather than a
+reader, and that is what it turned out to be. `HEINZEL_DEMO_WAREHOUSE_CONTROL` now selects that
+shape: `demo/managed_warehouse.py` composes `WarehouseControlService`,
+`WarehouseLifecycleOrchestrator`, `PostgreSQLWarehouseProvider` and `DockerComposeProcess` over
+`deploy/quickstart/warehouse-control/compose.yaml`, and the console reports the binding
+warehouse-control made. The default path is unchanged, and still reports `not_delivered`, because
+`WarehouseBinding.deployment_mode` admits only `heinzel_cloud`: a binding for the database the
+demonstration provisions beside warehouse-control would say a managed warehouse exists where a
+temporary local one does.
+
+### Why that path is opt-in rather than default
+
+Creating containers means the console process runs `docker`, and a console in a container needs
+that daemon's socket bind-mounted into it. **Access to the Docker socket is root on the host.**
+This console has no authentication, so anyone who reaches its published port would reach a
+process that can start a container mounting the host's filesystem. The quickstart's
+`compose.yaml` therefore does not mount the socket and does not set this variable. Two further
+constraints follow from the same fact: Compose bind-mounts are resolved by the daemon on the
+host, so the provider's private directory has to mean the same path to both — which holds for a
+console run from a checkout and not for one whose state directory is a named volume — and the
+compose project has to be on disk, which the quickstart image does not carry.
+
+The second reason is evidence. The live path cannot be run where there is no daemon, so making it
+the only path would have replaced a startup this repository proves with one it cannot. The
+[quickstart README](../deploy/quickstart/README.md) states all of this where an operator reads it.
 
 ## 2. Populate it
 
 | Gap | Kind | Established by |
 | --- | --- | --- |
-| The console registers a source, and the demonstration cannot reach that surface. It lists the bindings the broker holds for a tenant, offers the enrolled connections no binding names yet, and registers one by driving `draft -> validating -> ready` through `SourceBindingService`. It is reached through `GET /api/v1/setup` and `POST /api/v1/setup/sources`, and the demonstration answers both `capability_not_delivered` for the warehouse-binding reason in section 1 above. | Wiring | `register_source` in `governed_backend.py`; `_require_warehouse_binding_reader` refuses `get_setup` at `governed_backend.py:864` |
+| The console registers a source, and the demonstration reaches that surface only on the opt-in warehouse-control path. It lists the bindings the broker holds for a tenant, offers the enrolled connections no binding names yet, and registers one by driving `draft -> validating -> ready` through `SourceBindingService`. It is reached through `GET /api/v1/setup` and `POST /api/v1/setup/sources`; on the default path both answer `capability_not_delivered` for the warehouse-binding reason in section 1 above, and on the opt-in path `get_setup` answers and the next row is what is still missing. | Wiring | `register_source` in `governed_backend.py`; `_require_warehouse_binding_reader` refuses `get_setup` at `governed_backend.py:864` |
 | The demonstration enrols no source connection, so it would offer nothing to register even past the setup refusal. Its role passwords are minted fresh on every start and written nowhere, and enrolment is immutable per handle -- so a handle enrolled on one start is refused on the next, and enrolling at all would put a credential on the state volume the demonstration deliberately keeps clear of one. | Unbuilt | `_fresh_passwords` in `demo/bootstrap.py:86-96`, applied again at `:303-305`; `enroll_connection` in `demo/source_secrets.py:151-173` |
 | The demonstration acquires one seeded source at startup under a source binding it constructs by hand, rather than one the broker registered. | Unbuilt | `_DemoSourceBindingReader` and `_source_binding` in `demo/generation.py`, `demo/seed.py` |
 | The Stripe provider reads object snapshots and events against a mocked API, is not composed into acquisition, and has no live test. | Unbuilt | `providers/stripe`, [status.md](status.md) |
@@ -191,9 +214,14 @@ and the other two sit with the deployment-shape work.
    below. A requester composes a question from the terms the publication carries, the selection
    travels with the request as structured data, and the interpreter resolves it or refuses. What is
    left of this item is free-text interpretation, which is deliberately still absent.
-5. **The deployment shape**, which is what the warehouse binding and the dashboards are. Either
-   the demonstration gains a warehouse it created and a Superset to publish to, or those two
-   stages stay honestly absent. Neither is a reader.
+5. **The deployment shape**, which is what the warehouse binding and the dashboards are. Half of
+   this is now delivered and opt-in: the demonstration can create a warehouse through
+   warehouse-control, which is what makes the binding real, and the cost is the Docker socket —
+   root on the host — which is why it is not the default. What is left of it is the two paths
+   being exclusive, so one console does not yet both report that warehouse and answer over it,
+   and the live provisioning being proved by the warehouse-lifecycle acceptance run rather than
+   by the demonstration's own. Dashboards still need a Superset to publish to. Neither was a
+   reader.
 
 On the fourth: a constrained question builder was worth preferring to free-text interpretation, on
 three grounds rather than on cost alone.

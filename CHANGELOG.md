@@ -24,6 +24,18 @@ All notable changes to Heinzel are recorded here. The format follows
   Without that variable the console is unchanged: every answer capability reports itself as not
   delivered. `deploy/quickstart/README.md` records what the answer went through and where it
   stops.
+- The demonstration can provision its warehouse through warehouse-control, behind
+  `HEINZEL_DEMO_WAREHOUSE_CONTROL`. Given it, `WarehouseControlService` holds a binding,
+  `WarehouseLifecycleOrchestrator` drives it from `draft` to `ready`, and
+  `PostgreSQLWarehouseProvider` creates the warehouse by driving the Compose project at
+  `deploy/quickstart/warehouse-control/compose.yaml` -- so the console reports a binding
+  warehouse-control made, `GET /api/v1/setup` answers instead of refusing, and the `foundation`
+  stage completes. It is opt-in and exclusive with `HEINZEL_DEMO_WAREHOUSE_DSN`, which stays the
+  default and is unchanged: driving Compose means the console needs a reachable Docker daemon,
+  and a console in a container needs that daemon's socket, which is root on the host. The
+  quickstart README and `docs/demonstration-gaps.md` state that posture and what is proved about
+  this path -- the Compose operations and their order, and the classification of a failure at
+  each of them -- as against what is not, which is the live provisioning itself.
 - A constrained question builder. A stakeholder question now carries the governed terms it was
   composed from -- an approved metric and at least one approved dimension, as
   `QuestionTermSelection` -- and the demonstration's interpreter resolves that selection instead

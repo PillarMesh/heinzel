@@ -272,3 +272,32 @@ def test_the_console_serves_the_receipts_its_acquisition_recorded(
         refused = _Browser(dry).get("/api/v1/acquisition-receipts", actor=DEMO_ARCHITECT_ID)
         assert refused.status_code == 503, refused.text
         assert refused.json()["error"]["code"] == "capability_not_delivered"
+
+
+def test_a_console_given_a_connection_reports_no_managed_warehouse(
+    tmp_path: Path, warehouse: str
+) -> None:
+    """The DSN path provisions a database no governing service owns, and says exactly that.
+
+    This is the half of the opt-in that cannot be proved offline: a console given a connection
+    answers every question from the product it materialized, and still reports the managed
+    warehouse as not delivered, because the warehouse it used is one it provisioned beside
+    warehouse-control rather than through it. Reporting a binding here would claim a managed
+    warehouse where a temporary local database is, and `WarehouseBinding.deployment_mode` admits
+    only `heinzel_cloud`.
+
+    The opt-in path is what reports a binding, and it needs a Docker daemon; the offline suite
+    pins its refusals and the setup surface it answers from a binding already carried to
+    `ready`. See `apps/console/server/tests/test_demo_managed_warehouse.py`.
+    """
+    with DemoConsole(tmp_path / "state", warehouse_dsn=warehouse) as console:
+        browser = _Browser(console)
+        workspace = browser.data(browser.get("/api/v1/workspace", actor=DEMO_ARCHITECT_ID))
+        refused = browser.get("/api/v1/setup", actor=DEMO_ARCHITECT_ID)
+
+    managed = next(
+        item for item in workspace["capabilities"] if item["capability_id"] == "warehouse-binding"
+    )
+    assert managed["state"] == "not_delivered"
+    assert refused.status_code == 503, refused.text
+    assert refused.json()["error"]["code"] == "capability_not_delivered"

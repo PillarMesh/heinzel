@@ -19,11 +19,13 @@ from pathlib import Path
 
 import pytest
 from heinzel_console import cli
+from heinzel_console.demo import ManagedWarehouseOption
 from starlette.applications import Starlette
 
 _ORIGIN_VARIABLE = "HEINZEL_CONSOLE_ALLOWED_ORIGIN"
 _DIST_VARIABLE = "HEINZEL_CONSOLE_DIST"
 _WAREHOUSE_VARIABLE = "HEINZEL_DEMO_WAREHOUSE_DSN"
+_WAREHOUSE_CONTROL_VARIABLE = "HEINZEL_DEMO_WAREHOUSE_CONTROL"
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +34,7 @@ def _no_configured_origin(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     monkeypatch.delenv(_ORIGIN_VARIABLE, raising=False)
     monkeypatch.delenv(_DIST_VARIABLE, raising=False)
     monkeypatch.delenv(_WAREHOUSE_VARIABLE, raising=False)
+    monkeypatch.delenv(_WAREHOUSE_CONTROL_VARIABLE, raising=False)
     yield
 
 
@@ -212,6 +215,7 @@ def test_every_serve_option_reaches_the_console(
                 "origin": "http://127.0.0.1:9111",
                 "dist": dist,
                 "warehouse_dsn": None,
+                "managed_warehouse": None,
             },
         )
     ]
@@ -231,6 +235,7 @@ def test_the_demonstration_is_seeded_unless_it_is_refused(
                 "origin": "http://127.0.0.1:8000",
                 "dist": None,
                 "warehouse_dsn": None,
+                "managed_warehouse": None,
             },
         )
     ]
@@ -251,6 +256,7 @@ def test_the_container_takes_its_origin_from_the_environment_not_the_bind_addres
                 "origin": "http://127.0.0.1:8000",
                 "dist": None,
                 "warehouse_dsn": None,
+                "managed_warehouse": None,
             },
         )
     ]
@@ -285,6 +291,52 @@ def test_a_blank_warehouse_connection_reads_as_no_warehouse(
     assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 0
 
     assert console.built[0][1]["warehouse_dsn"] is None
+
+
+@pytest.mark.parametrize("value", ["1", "true", "TRUE", "yes", "on", " on "])
+def test_the_warehouse_control_path_is_selected_by_its_own_variable(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, value: str
+) -> None:
+    """Provisioning through warehouse-control is opt-in, and this is the opt-in.
+
+    It is a separate variable from the DSN rather than a spelling of it, because the two
+    deployments differ: this one drives Docker Compose and so needs a reachable daemon, which
+    from inside a container means that daemon's socket.
+    """
+    monkeypatch.setenv(_WAREHOUSE_CONTROL_VARIABLE, value)
+    console, _ = _served(monkeypatch)
+
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 0
+
+    option = console.built[0][1]["managed_warehouse"]
+    assert isinstance(option, ManagedWarehouseOption)
+    assert option.compose_file.is_file()
+
+
+@pytest.mark.parametrize("value", ["", "   ", "0", "false", "no", "off"])
+def test_an_absent_or_negative_warehouse_control_setting_leaves_the_demonstration_as_it_was(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, value: str
+) -> None:
+    monkeypatch.setenv(_WAREHOUSE_CONTROL_VARIABLE, value)
+    console, _ = _served(monkeypatch)
+
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 0
+
+    assert console.built[0][1]["managed_warehouse"] is None
+
+
+def test_a_warehouse_control_setting_nobody_can_read_is_refused_rather_than_ignored(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _no_server: None
+) -> None:
+    """A typo must not start the other path quietly.
+
+    Read as unset, `HEINZEL_DEMO_WAREHOUSE_CONTROL=flase` would serve a console that reports the
+    managed warehouse as not delivered to an operator who asked for it, with nothing anywhere
+    naming the setting that was ignored.
+    """
+    monkeypatch.setenv(_WAREHOUSE_CONTROL_VARIABLE, "flase")
+
+    assert cli.main(["serve", "--state-dir", str(tmp_path), "--no-seed"]) == 2
 
 
 def test_the_origin_option_is_preferred_over_the_environment(
