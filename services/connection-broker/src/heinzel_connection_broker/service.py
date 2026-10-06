@@ -96,6 +96,16 @@ class SourceBindingService:
     def get(self, tenant_id: str, binding_id: str) -> SourceConnectionBinding:
         return self._repository.load(tenant_id, binding_id)
 
+    def list_for_tenant(self, tenant_id: str) -> tuple[SourceConnectionBinding, ...]:
+        """Every binding registered for this tenant, each at its current revision.
+
+        A read of the register itself, so a caller that must show what is registered does not
+        have to keep a list of identifiers of its own and ask for each one. Nothing private is
+        reachable through it: a binding carries references, and the capability behind them is
+        loaded separately and only by the probe path.
+        """
+        return self._repository.list_for_tenant(tenant_id)
+
     def transition(
         self,
         tenant_id: str,

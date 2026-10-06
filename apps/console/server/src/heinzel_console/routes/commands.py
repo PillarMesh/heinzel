@@ -39,6 +39,7 @@ from ..contracts import (
     RetryOperationCommand,
     ReviewView,
     SetupView,
+    SourceRegistrationCommand,
     WarehouseBindingCommand,
 )
 from ..errors import ConsoleInvalidRequest
@@ -181,6 +182,24 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
             context,
             key,
             lambda: dependencies.backend.submit_process_package(context, command),
+        )
+        return envelope_response(
+            request,
+            dependencies,
+            result,
+            _OPERATION_RESPONSE,
+            status_code=_command_status(result),
+        )
+
+    async def register_source(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        key = _validate_command_request(request, dependencies, context)
+        command = await _parse_command(request, SourceRegistrationCommand)
+        result = await _invoke_command(
+            dependencies,
+            context,
+            key,
+            lambda: dependencies.backend.register_source(context, command),
         )
         return envelope_response(
             request,
@@ -407,6 +426,7 @@ def command_routes(dependencies: RouteDependencies) -> list[Route]:
         ),
         Route("/api/v1/setup/warehouse-binding", warehouse_binding, methods=["POST"]),
         Route("/api/v1/setup/process-packages", process_package, methods=["POST"]),
+        Route("/api/v1/setup/sources", register_source, methods=["POST"]),
         Route("/api/v1/reviews/{review_id}/decisions", review_decision, methods=["POST"]),
         Route("/api/v1/inbox/{request_id}/decisions", request_decision, methods=["POST"]),
         Route(

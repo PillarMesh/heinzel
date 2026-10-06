@@ -45,6 +45,7 @@ import type {
   RequestWithdrawalCommand,
   ResetCommand,
   RetryOperationCommand,
+  SourceRegistrationCommand,
   WarehouseBindingCommand,
 } from "./generated"
 import {validateConsoleResponse} from "./schema"
@@ -507,6 +508,13 @@ export class ConsoleApiClient {
     context: MutationRequestContext,
   ): Promise<OperationSubmissionResult> {
     return this.#operationMutation("/api/v1/setup/process-packages", command, context)
+  }
+
+  registerSource(
+    command: SourceRegistrationCommand,
+    context: MutationRequestContext,
+  ): Promise<OperationSubmissionResult> {
+    return this.#operationMutation("/api/v1/setup/sources", command, context)
   }
 
   async decideReview(

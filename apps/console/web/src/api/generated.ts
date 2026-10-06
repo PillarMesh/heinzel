@@ -339,6 +339,9 @@ export type SetupStage =
   | "meaning"
   | "data_product"
   | "activation"
+export type SourceAccountModeView = "not_applicable" | "test" | "live"
+export type SourceProviderKind = "postgresql" | "stripe"
+export type JsonTuple_EnrollableSourceHandleView_ = EnrollableSourceHandleView[]
 export type Service = "warehouse" | "openmetadata" | "superset"
 export type JsonTuple_ManagedServiceView_ = ManagedServiceView[]
 export type JsonTuple_PublicId_2 = PublicId[]
@@ -346,7 +349,9 @@ export type Version3 = number
 export type Revision8 = number
 export type JsonTuple_NonEmptyText_12 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_13 = NonEmptyText[]
-export type SourceType = "postgresql" | "stripe"
+export type JsonTuple_NonEmptyText_14 = NonEmptyText[]
+export type SourceBindingStateView =
+  "draft" | "validating" | "ready" | "suspended" | "failed" | "retired"
 export type JsonTuple_SourceConnectionView_ = SourceConnectionView[]
 /**
  * @minItems 1
@@ -359,7 +364,9 @@ export type Immutable = true
  * @minItems 1
  */
 export type NonEmptyJsonTuple_WarehouseOptionView_ = [WarehouseOptionView, ...WarehouseOptionView[]]
+export type ActiveRole9 = "data_architect"
 export type ExpectedRevision14 = number
+export type ExpectedRevision15 = number
 export type ConsoleEnvelopeWorkspaceView = ConsoleEnvelope_WorkspaceView_
 export type JsonTuple_CapabilityView_ = CapabilityView[]
 export type WorkspaceState = "setup" | "pending_activation" | "active" | "unavailable"
@@ -408,6 +415,7 @@ export interface ConsoleApiSchema {
   selectable_answer_terms_response: ConsoleEnvelopeSelectableAnswerTermsView
   session_response: ConsoleEnvelopeSessionView
   setup_response: ConsoleEnvelopeSetupView
+  source_registration_command: SourceRegistrationCommand
   warehouse_binding_command: WarehouseBindingCommand
   workspace_response: ConsoleEnvelopeWorkspaceView
 }
@@ -1232,6 +1240,7 @@ export interface ConsoleEnvelope_SetupView_ {
 }
 export interface SetupView {
   active_stage: SetupStage
+  enrollable_sources?: JsonTuple_EnrollableSourceHandleView_
   managed_services?: JsonTuple_ManagedServiceView_
   pending_review_refs?: JsonTuple_PublicId_2
   process_package?: ProcessPackageView | null
@@ -1243,6 +1252,25 @@ export interface SetupView {
   warehouse_binding?: WarehouseBindingView | null
   warehouse_options: NonEmptyJsonTuple_WarehouseOptionView_
   workspace_ref: PublicId
+}
+/**
+ * One connection an operator enrolled that no binding names yet.
+ *
+ * This is an offer to register, not a connection: a handle, the provider that would read it,
+ * the account mode the credential behind it is for, and the logical objects the deployment
+ * declares for that handle. No endpoint, no credential and no reference to either -- the
+ * console never receives a connection detail, and registering does not send it one.
+ *
+ * The declared objects come from the deployment's own declaration rather than from the
+ * browser, because the probe requires the declaration it validates against to equal the
+ * binding's approved objects: a set typed into a form would be refused by the probe at best,
+ * and would be an unapproved declaration reaching a registration at worst.
+ */
+export interface EnrollableSourceHandleView {
+  account_mode: SourceAccountModeView
+  connection_handle: NonEmptyText
+  declared_object_refs: NonEmptyJsonTuple_NonEmptyText_
+  source_type: SourceProviderKind
 }
 export interface ManagedServiceView {
   detail: NonEmptyText
@@ -1258,12 +1286,31 @@ export interface ProcessPackageView {
   state: CapabilityState
   version: Version3
 }
+/**
+ * One source the connection broker holds a binding for, as an architect reads it.
+ *
+ * `connection_handle` is the name an operator enrolled the connection under, and is the whole
+ * of what the console knows about reaching the source: the connection detail itself is held by
+ * whatever secret custody the deployment injected into the broker, and never travels here.
+ * The handle is free text rather than a console public identifier because the deployment names
+ * its own handles.
+ *
+ * `capability_authority_digest` is present exactly when the binding is `ready`, because
+ * `record_validation` is the only writer of that state and it requires the two-probe evidence
+ * this digest comes from. So the digest is the console's evidence that the source was probed,
+ * rather than a claim this projection makes about it.
+ */
 export interface SourceConnectionView {
-  denied_checks?: JsonTuple_NonEmptyText_12
+  account_mode?: SourceAccountModeView | null
+  approved_object_refs?: JsonTuple_NonEmptyText_12
+  capability_authority_digest?: Digest | null
+  connection_handle?: NonEmptyText | null
+  denied_checks?: JsonTuple_NonEmptyText_13
   display_name: NonEmptyText
-  intended_checks?: JsonTuple_NonEmptyText_13
+  intended_checks?: JsonTuple_NonEmptyText_14
+  lifecycle_state?: SourceBindingStateView | null
   source_ref: PublicId
-  source_type: SourceType
+  source_type: SourceProviderKind
   state: CapabilityState
 }
 export interface SetupStageView {
@@ -1286,11 +1333,27 @@ export interface WarehouseOptionView {
   label: NonEmptyText
   supported_region: NonEmptyText
 }
+/**
+ * Register the source behind one already enrolled connection handle.
+ *
+ * The handle is the only subject the browser names. Everything the broker needs beyond it --
+ * the provider kind, the account mode and the approved objects -- is taken from the offering
+ * the server read, so the browser cannot widen a declaration or name a provider for a handle
+ * the deployment declared differently. There is deliberately no connection field of any kind:
+ * a browser form that accepted a connection string would be a credential-handling surface, and
+ * `DemoSourceSecretStore.enroll_connection` is an operator action that happens before any
+ * binding exists.
+ */
+export interface SourceRegistrationCommand {
+  active_role: ActiveRole9
+  connection_handle: NonEmptyText
+  expected_revision: ExpectedRevision14
+}
 export interface WarehouseBindingCommand {
   active_role: ActorRole
   capacity: NonEmptyText
   engine: WarehouseEngine
-  expected_revision: ExpectedRevision14
+  expected_revision: ExpectedRevision15
   region: NonEmptyText
   reviewed_digest: Digest
 }

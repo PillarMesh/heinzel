@@ -724,3 +724,75 @@ def test_an_invalid_stored_payload_is_reported_as_corruption(tmp_path: Path) -> 
 
     with pytest.raises(SourceBindingIntegrityError, match="invalid"):
         repository.load("tenant-a", "source-binding-a")
+
+
+def test_a_tenant_listing_returns_each_binding_at_its_current_revision_only() -> None:
+    """One row per binding, the latest, and nothing of another tenant's.
+
+    The listing is what a console shows as registered, so a stale revision appearing beside the
+    current one would show the same source twice in two different states.
+    """
+    repository = SQLiteSourceBindingRepository(":memory:")
+    repository.create(binding(), capability())
+    repository.append(
+        binding(revision=2, state=SourceConnectionBindingState.VALIDATING),
+        expected_revision=1,
+    )
+    second = binding().model_copy(
+        update={"binding_id": "source-binding-b", "connection_handle": "connection-handle-b"}
+    )
+    repository.create(
+        second,
+        capability().model_copy(
+            update={"binding_id": "source-binding-b", "connection_handle": "connection-handle-b"}
+        ),
+    )
+    other_tenant = binding().model_copy(update={"tenant_id": "tenant-b"})
+    repository.create(other_tenant, capability().model_copy(update={"tenant_id": "tenant-b"}))
+
+    listed = repository.list_for_tenant("tenant-a")
+
+    assert [(item.binding_id, item.revision) for item in listed] == [
+        ("source-binding-a", 2),
+        ("source-binding-b", 1),
+    ]
+    assert listed[0].lifecycle_state is SourceConnectionBindingState.VALIDATING
+    assert repository.list_for_tenant("tenant-b") == (other_tenant,)
+    assert repository.list_for_tenant("tenant-unknown") == ()
+
+
+def test_a_tenant_listing_refuses_a_stored_payload_that_contradicts_its_row(
+    tmp_path: Path,
+) -> None:
+    """Corruption fails the listing rather than being returned inside it.
+
+    A listing that skipped an unreadable row would answer "these are your sources" while holding
+    one back, which is the one answer a register must never give.
+    """
+    database_path = str(tmp_path / "binding-listing-corruption.sqlite")
+    repository = SQLiteSourceBindingRepository(database_path)
+    repository.create(binding(), capability())
+    connection = sqlite3.connect(database_path)
+    connection.execute(
+        "UPDATE source_bindings SET payload = ? WHERE tenant_id = ? AND binding_id = ?",
+        (
+            canonical_bytes(binding().model_copy(update={"binding_id": "source-binding-z"})),
+            "tenant-a",
+            "source-binding-a",
+        ),
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(SourceBindingIntegrityError, match="identity"):
+        repository.list_for_tenant("tenant-a")
+
+
+def test_a_closed_repository_reports_a_listing_failure_as_transient() -> None:
+    repository = SQLiteSourceBindingRepository(":memory:")
+    repository.close()
+
+    with pytest.raises(SourceBindingPersistenceError) as captured:
+        repository.list_for_tenant("tenant-a")
+
+    assert not isinstance(captured.value, SourceBindingIntegrityError)

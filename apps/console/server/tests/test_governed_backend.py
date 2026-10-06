@@ -14,12 +14,19 @@ from heinzel_access_control import (
 )
 from heinzel_bi_control import DashboardPublication
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_connection_broker import (
+    SourceBindingPersistenceError,
+    SourceConnectionBinding,
+    SourceConnectionBindingState,
+)
 from heinzel_console import fixture_backend, fixture_data
 from heinzel_console.auth import TrustedActorContext
 from heinzel_console.contracts import (
     AccessRevocationCommand,
     ActorRole,
     ResetCommand,
+    SetupStageView,
+    SetupView,
     WorkspaceView,
 )
 from heinzel_console.errors import ConsoleConflict, ConsoleNotFound, ConsoleUnavailable
@@ -31,6 +38,8 @@ from heinzel_console.governed_adapters import (
     CatalogSearchHealthReader,
     DashboardPublicationReader,
     DataProductReferenceReader,
+    EnrolledSourceConnection,
+    EnrolledSourceConnectionReader,
     FulfillmentViewReader,
     GovernedWorkspaceIdentity,
     InMemoryWorkspacePrincipalDirectory,
@@ -39,6 +48,8 @@ from heinzel_console.governed_adapters import (
     RequestImpactReader,
     RequestInboxReader,
     SelectableAnswerTermReader,
+    SourceBindingReader,
+    SourceRegistrationCommands,
     TenantAcquisitionReceiptReader,
     TenantRunLifecycleReader,
     TenantRunReader,
@@ -458,6 +469,9 @@ def _backend(
     runs: TenantRunReader | None = None,
     run_lifecycle: TenantRunLifecycleReader | None = None,
     acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
+    source_bindings: SourceBindingReader | None = None,
+    enrolled_source_connections: EnrolledSourceConnectionReader | None = None,
+    source_registration_commands: SourceRegistrationCommands | None = None,
     selectable_answer_terms: SelectableAnswerTermReader | None = None,
     data_products: DataProductReferenceReader | None = None,
     product_publications: ProductPublicationDefinitionReader | None = None,
@@ -487,6 +501,9 @@ def _backend(
         runs=runs,
         run_lifecycle=run_lifecycle,
         acquisition_receipts=acquisition_receipts,
+        source_bindings=source_bindings,
+        enrolled_source_connections=enrolled_source_connections,
+        source_registration_commands=source_registration_commands,
         selectable_answer_terms=selectable_answer_terms,
         data_products=data_products,
         product_publications=product_publications,
@@ -2321,3 +2338,241 @@ def test_the_question_term_builder_capability_follows_the_wiring() -> None:
 
     assert state(unwired, "question-term-builder") == "not_delivered"
     assert state(wired, "question-term-builder") == "ready"
+
+
+class _StaticSourceBindingReader:
+    """The broker's tenant listing, for one tenant and no other."""
+
+    def __init__(self, *bindings: SourceConnectionBinding) -> None:
+        self._bindings = bindings
+        self.asked: list[str] = []
+
+    def list_for_tenant(self, tenant_id: str) -> tuple[SourceConnectionBinding, ...]:
+        self.asked.append(tenant_id)
+        return self._bindings if tenant_id == _TENANT else ()
+
+
+class _StaticEnrolledSourceConnections:
+    def __init__(self, *connections: EnrolledSourceConnection) -> None:
+        self._connections = connections
+
+    def list_enrolled_source_connections(
+        self, tenant_id: str
+    ) -> tuple[EnrolledSourceConnection, ...]:
+        return self._connections if tenant_id == _TENANT else ()
+
+
+class _RefusingSourceRegistrationCommands:
+    def register_source(
+        self,
+        *,
+        tenant_id: str,
+        connection_handle: str,
+        provider_kind: str,
+        account_mode: str,
+        approved_object_refs: tuple[str, ...],
+    ) -> Never:
+        raise AssertionError("a setup read must not register a source")
+
+
+def _source_binding(
+    *,
+    state: SourceConnectionBindingState = SourceConnectionBindingState.READY,
+    handle: str = "enrolled-orders",
+) -> SourceConnectionBinding:
+    validated = state is SourceConnectionBindingState.READY
+    return SourceConnectionBinding(
+        binding_id="src-0123456789abcdef01234567",
+        tenant_id=_TENANT,
+        provider_kind="postgresql",
+        connection_handle=handle,
+        account_mode="not_applicable",
+        lifecycle_state=state,
+        approved_object_refs=("customer_orders",),
+        capability_profile_digest="d" * 64 if validated else None,
+        source_observation_ref="source-observation:postgresql:" + "1" * 64 if validated else None,
+        credential_revision=1,
+        revision=3,
+        created_at=_FIXED_TIME,
+        updated_at=_FIXED_TIME,
+    )
+
+
+def _enrolled(handle: str = "enrolled-billing") -> EnrolledSourceConnection:
+    return EnrolledSourceConnection(
+        connection_handle=handle,
+        provider_kind="postgresql",
+        account_mode="live",
+        declared_object_refs=("invoices",),
+    )
+
+
+def _sources_stage(setup: object) -> SetupStageView:
+    assert isinstance(setup, SetupView)
+    return next(item for item in setup.stages if item.stage == "sources")
+
+
+def test_the_sources_stage_waits_on_its_prerequisites_before_it_is_the_current_work() -> None:
+    """A wired reader with nothing registered is not started until the stages before it are done.
+
+    The same shape `managed_services` derives: a stage cannot be the work in front of an architect
+    while the warehouse and the managed catalog it needs are still unresolved.
+    """
+    reader = _StaticSourceBindingReader()
+    without_catalog = _backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()), source_bindings=reader
+    ).get_setup(_architect_context())
+
+    assert _sources_stage(without_catalog).state == "not_started"
+
+    ready = _backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        catalog_bindings=_CatalogReader(),
+        source_bindings=reader,
+    ).get_setup(_architect_context())
+
+    assert _sources_stage(ready).state == "current"
+    assert reader.asked == [_TENANT, _TENANT]
+
+
+def test_the_sources_stage_is_complete_only_once_a_registered_source_is_ready() -> None:
+    """A draft is work started, not a registered source.
+
+    `record_validation` is the only writer of `ready`, so every other state means no probe
+    evidence exists -- and a stage reported complete over one would claim a source the broker
+    never admitted.
+    """
+    for state in (
+        SourceConnectionBindingState.DRAFT,
+        SourceConnectionBindingState.VALIDATING,
+        SourceConnectionBindingState.FAILED,
+    ):
+        setup = _backend(
+            warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+            catalog_bindings=_CatalogReader(),
+            source_bindings=_StaticSourceBindingReader(_source_binding(state=state)),
+        ).get_setup(_architect_context())
+
+        assert _sources_stage(setup).state == "current"
+
+    complete = _backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        catalog_bindings=_CatalogReader(),
+        source_bindings=_StaticSourceBindingReader(_source_binding()),
+    ).get_setup(_architect_context())
+
+    assert _sources_stage(complete).state == "complete"
+
+
+def test_another_tenants_registered_source_is_not_readable_as_this_workspaces() -> None:
+    reader = _StaticSourceBindingReader(_source_binding())
+    backend = _backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        catalog_bindings=_CatalogReader(),
+        source_bindings=reader,
+        enrolled_source_connections=_StaticEnrolledSourceConnections(_enrolled()),
+    )
+    other_tenant = TrustedActorContext(
+        tenant_id="tenant-beta",
+        actor_id=_ACTOR,
+        roles=("data_architect",),
+        active_role="data_architect",
+        session_id="session-architect",
+    )
+
+    setup = backend.get_setup(other_tenant)
+
+    assert setup.sources == ()
+    assert setup.enrollable_sources == ()
+    assert reader.asked == ["tenant-beta"]
+
+
+def test_an_enrolled_connection_already_registered_is_not_offered_again() -> None:
+    """The subtraction is by handle, so the one source behind a handle is registered once."""
+    backend = _backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        catalog_bindings=_CatalogReader(),
+        source_bindings=_StaticSourceBindingReader(_source_binding(handle="enrolled-orders")),
+        enrolled_source_connections=_StaticEnrolledSourceConnections(
+            _enrolled("enrolled-orders"), _enrolled("enrolled-billing")
+        ),
+    )
+
+    setup = backend.get_setup(_architect_context())
+
+    assert [item.connection_handle for item in setup.enrollable_sources] == ["enrolled-billing"]
+    offered = setup.enrollable_sources[0]
+    assert offered.source_type == "postgresql"
+    assert offered.account_mode == "live"
+    assert offered.declared_object_refs == ("invoices",)
+
+
+def test_the_source_registration_capability_follows_the_wiring() -> None:
+    """Read alone is degraded, not ready: nothing can be registered through it."""
+
+    def state(view: WorkspaceView) -> str:
+        return next(
+            capability.state
+            for capability in view.capabilities
+            if capability.capability_id == "source-registration"
+        )
+
+    unwired = _backend().get_workspace(_architect_context())
+    read_only = _backend(source_bindings=_StaticSourceBindingReader()).get_workspace(
+        _architect_context()
+    )
+    wired = _backend(
+        source_bindings=_StaticSourceBindingReader(),
+        enrolled_source_connections=_StaticEnrolledSourceConnections(),
+        source_registration_commands=_RefusingSourceRegistrationCommands(),
+    ).get_workspace(_architect_context())
+
+    assert state(unwired) == "not_delivered"
+    assert state(read_only) == "degraded"
+    assert state(wired) == "ready"
+
+
+def test_a_registered_source_projection_carries_no_connection_detail() -> None:
+    """Asserted over the serialized view, because that is what reaches a browser.
+
+    A binding carries a handle and, privately in the broker, the reference pair that opens its
+    credential. The projection must carry the handle and neither reference, and nothing shaped
+    like a connection string.
+    """
+    backend = _backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        catalog_bindings=_CatalogReader(),
+        source_bindings=_StaticSourceBindingReader(_source_binding()),
+        enrolled_source_connections=_StaticEnrolledSourceConnections(_enrolled()),
+    )
+
+    payload = backend.get_setup(_architect_context()).model_dump_json()
+
+    assert "enrolled-orders" in payload
+    assert "postgresql://" not in payload
+    assert "endpoint-ref:" not in payload
+    assert "credential-ref:" not in payload
+    assert "password" not in payload
+
+
+def test_a_broker_whose_register_is_unreadable_reports_retry_rather_than_an_empty_register(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An unreadable register is not a workspace with no sources."""
+
+    class _FailingSourceBindingReader:
+        def list_for_tenant(self, tenant_id: str) -> Never:
+            raise SourceBindingPersistenceError(operation="list source bindings")
+
+    _forbid_fixture_data(monkeypatch)
+    backend = _backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        source_bindings=_FailingSourceBindingReader(),
+    )
+
+    with pytest.raises(ConsoleUnavailable) as failure:
+        backend.get_setup(_architect_context())
+
+    assert failure.value.code == "downstream_unavailable"
+    assert failure.value.recovery_action == "retry"
+    assert "sqlite" not in failure.value.safe_message.lower()

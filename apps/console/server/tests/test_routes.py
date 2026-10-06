@@ -132,6 +132,7 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/links/{link_ref}", "GET"),
         ("/api/v1/setup/warehouse-binding", "POST"),
         ("/api/v1/setup/process-packages", "POST"),
+        ("/api/v1/setup/sources", "POST"),
         ("/api/v1/reviews/{review_id}/decisions", "POST"),
         ("/api/v1/inbox/{request_id}/decisions", "POST"),
         ("/api/v1/inbox/{request_id}/product-intent/approval", "POST"),
@@ -735,6 +736,52 @@ def test_run_now_route_requires_a_composed_acquisition_application() -> None:
 
     assert response.status_code == 503
     assert response.json()["error"]["code"] == "capability_not_delivered"
+
+
+def test_the_source_registration_route_requires_a_governed_connection_broker() -> None:
+    """Demo mode has no broker and no enrolled connection, so it registers nothing.
+
+    Answering with a recorded registration would claim a source had been probed against a server
+    this console never reached.
+    """
+    with _client() as client:
+        response = client.post(
+            "/api/v1/setup/sources",
+            headers=_command_headers(client, "idem-source-registration"),
+            json={
+                "expected_revision": 1,
+                "active_role": "data_architect",
+                "connection_handle": "enrolled-orders",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "capability_not_delivered"
+
+
+def test_the_source_registration_route_refuses_a_body_carrying_a_connection_string() -> None:
+    """The command model rejects an unknown field, so a DSN cannot ride along with the handle.
+
+    This is the wire-level half of the design decision: even a browser that tried to send one is
+    refused by the contract rather than having it silently ignored.
+    """
+    with _client() as client:
+        response = client.post(
+            "/api/v1/setup/sources",
+            headers=_command_headers(client, "idem-source-registration-dsn"),
+            json={
+                "expected_revision": 1,
+                "active_role": "data_architect",
+                "connection_handle": "enrolled-orders",
+                "dsn": "host=source.invalid port=5432 user=acquisition password=canary-password dbname=orders",
+            },
+        )
+
+    assert response.status_code == 422
+    body = response.text
+    assert response.json()["error"]["code"] == "invalid_request"
+    assert "canary-password" not in body
+    assert "postgresql://" not in body
 
 
 def test_fixture_preview_and_authorized_link_use_opaque_references() -> None:

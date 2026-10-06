@@ -333,3 +333,71 @@ def test_the_probe_authority_refuses_a_reference_pair_it_was_not_minted(tmp_path
             endpoint_reference="endpoint-ref:" + "0" * 64,
             credential_reference="credential-ref:" + "0" * 64,
         )
+
+
+def test_the_enrolled_handles_are_listed_without_any_connection_detail(tmp_path: Path) -> None:
+    """A surface can ask which handles exist and learn nothing else.
+
+    The listing has to open each record to answer, because a connection's file is named by a
+    digest of its handle. What it returns is the handles alone, and this holds it to that: the
+    DSN, its password and the reference pair minted over it appear nowhere in the answer.
+    """
+    store = _enrolled(tmp_path / "state")
+    store.enroll_connection(connection_handle=OTHER_HANDLE, dsn=SecretStr(DSN + "-other"))
+    store.resolve(
+        tenant_id=TENANT,
+        binding_id=BINDING,
+        provider_kind="postgresql",
+        connection_handle=HANDLE,
+        account_mode="not_applicable",
+        credential_revision=1,
+    )
+
+    handles = store.enrolled_connection_handles()
+
+    assert handles == (OTHER_HANDLE, HANDLE)
+    rendered = repr(handles)
+    assert "correct-horse" not in rendered
+    assert "postgresql://" not in rendered
+    assert "endpoint-ref:" not in rendered
+    assert "credential-ref:" not in rendered
+
+
+def test_an_empty_store_lists_no_handle_rather_than_failing(tmp_path: Path) -> None:
+    assert DemoSourceSecretStore(tmp_path / "state").enrolled_connection_handles() == ()
+
+
+def test_a_connection_filed_under_another_handles_name_fails_the_listing(tmp_path: Path) -> None:
+    """A handle this store could not then resolve is never offered.
+
+    The file name is a digest of the handle inside it. A record moved under another name would
+    otherwise be listed as an enrollable handle whose connection no resolve can find.
+    """
+    store = _enrolled(tmp_path / "state")
+    store.enroll_connection(connection_handle=OTHER_HANDLE, dsn=SecretStr(DSN + "-other"))
+    directory = tmp_path / "state" / DEMO_SOURCE_SECRET_DIRNAME
+    first, second = sorted(directory.iterdir())
+    # Swapped rather than renamed to an invented name, so each record is certainly filed under
+    # the other handle's digest instead of under one that might coincide with its own.
+    held = directory / "swap"
+    first.rename(held)
+    second.rename(first)
+    held.rename(second)
+
+    with pytest.raises(DemoSourceSecretError) as refusal:
+        store.enrolled_connection_handles()
+
+    assert "filed under a different handle" in str(refusal.value)
+    assert "correct-horse" not in str(refusal.value)
+
+
+def test_a_file_that_is_not_a_connection_record_fails_the_listing(tmp_path: Path) -> None:
+    store = _enrolled(tmp_path / "state")
+    directory = tmp_path / "state" / DEMO_SOURCE_SECRET_DIRNAME
+    (connection_file,) = list(directory.iterdir())
+    connection_file.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(DemoSourceSecretError) as refusal:
+        store.enrolled_connection_handles()
+
+    assert "not readable as one" in str(refusal.value)

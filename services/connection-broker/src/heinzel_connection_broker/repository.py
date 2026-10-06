@@ -119,6 +119,8 @@ class SourceBindingRepository(Protocol):
 
     def load(self, tenant_id: str, binding_id: str) -> SourceConnectionBinding: ...
 
+    def list_for_tenant(self, tenant_id: str) -> tuple[SourceConnectionBinding, ...]: ...
+
     def load_capability(
         self, tenant_id: str, binding_id: str, credential_revision: int
     ) -> PrivateSourceCapability: ...
@@ -290,6 +292,31 @@ class SQLiteSourceBindingRepository:
         with _translate_sqlite_errors("load source binding"):
             return self._load_current(tenant_id, binding_id)
 
+    def list_for_tenant(self, tenant_id: str) -> tuple[SourceConnectionBinding, ...]:
+        """Every binding this tenant has, each at its current revision, by identifier.
+
+        One statement rather than a listing of identifiers followed by a load each, so the
+        answer describes one read of the table instead of a sequence a concurrent append could
+        land between. The join selects the highest revision per binding, which is what
+        `_load_current` means by current, and both the subquery and the outer query are scoped
+        by tenant so a row belonging to another tenant cannot be reached through either.
+        """
+        with _translate_sqlite_errors("list source bindings"):
+            rows = self._connection.execute(
+                "SELECT stored.tenant_id, stored.binding_id, stored.revision, stored.payload "
+                "FROM source_bindings stored JOIN ("
+                "SELECT binding_id, MAX(revision) AS revision FROM source_bindings "
+                "WHERE tenant_id = ? GROUP BY binding_id"
+                ") current ON current.binding_id = stored.binding_id "
+                "AND current.revision = stored.revision "
+                "WHERE stored.tenant_id = ? ORDER BY stored.binding_id",
+                (tenant_id, tenant_id),
+            ).fetchall()
+        return tuple(
+            _validated_binding_row(row, tenant_id=tenant_id, operation="list source bindings")
+            for row in rows
+        )
+
     def load_capability(
         self, tenant_id: str, binding_id: str, credential_revision: int
     ) -> PrivateSourceCapability:
@@ -362,18 +389,8 @@ class SQLiteSourceBindingRepository:
         ).fetchone()
         if row is None:
             raise SourceBindingNotFoundError()
-        binding = _revalidate_payload(
-            SourceConnectionBinding,
-            row[3],
-            operation="load source binding",
-        )
-        if (
-            binding.tenant_id != str(row[0])
-            or binding.binding_id != str(row[1])
-            or binding.revision != int(row[2])
-            or binding.tenant_id != tenant_id
-            or binding.binding_id != binding_id
-        ):
+        binding = _validated_binding_row(row, tenant_id=tenant_id, operation="load source binding")
+        if binding.binding_id != binding_id:
             raise SourceBindingIntegrityError(
                 operation="load source binding",
                 detail="stored row identity mismatch",
@@ -462,6 +479,43 @@ def _initialize_schema(connection: sqlite3.Connection) -> None:
             "VALUES (1, ?, ?)",
             (_SCHEMA_VERSION, _SCHEMA_CHECKSUM),
         )
+
+
+def _validated_binding_row(
+    row: tuple[object, ...], *, tenant_id: str, operation: str
+) -> SourceConnectionBinding:
+    """The binding one row holds, once the payload agrees with the row that carried it.
+
+    The row's own columns are the index; the payload is the artifact. A payload that names a
+    different tenant, binding or revision than the row it was stored under is corruption, and a
+    read that returned it would hand a caller an artifact its own key contradicts.
+
+    `operation` is the caller's, so a failure names the read that met it rather than the one this
+    helper happens to be shared with.
+    """
+    stored_tenant, stored_binding, stored_revision, payload = row
+    if (
+        not isinstance(stored_tenant, str)
+        or not isinstance(stored_binding, str)
+        or type(stored_revision) is not int
+        or not isinstance(payload, (str, bytes))
+    ):
+        raise SourceBindingIntegrityError(
+            operation=operation,
+            detail="stored row columns are not readable as one",
+        )
+    binding = _revalidate_payload(SourceConnectionBinding, payload, operation=operation)
+    if (
+        binding.tenant_id != stored_tenant
+        or binding.binding_id != stored_binding
+        or binding.revision != stored_revision
+        or binding.tenant_id != tenant_id
+    ):
+        raise SourceBindingIntegrityError(
+            operation=operation,
+            detail="stored row identity mismatch",
+        )
+    return binding
 
 
 def _revalidate_payload[Model: BaseModel](

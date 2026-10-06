@@ -3054,6 +3054,32 @@
       "title": "DisplayReferenceView",
       "type": "object"
     },
+    "EnrollableSourceHandleView": {
+      "additionalProperties": false,
+      "description": "One connection an operator enrolled that no binding names yet.\n\nThis is an offer to register, not a connection: a handle, the provider that would read it,\nthe account mode the credential behind it is for, and the logical objects the deployment\ndeclares for that handle. No endpoint, no credential and no reference to either -- the\nconsole never receives a connection detail, and registering does not send it one.\n\nThe declared objects come from the deployment's own declaration rather than from the\nbrowser, because the probe requires the declaration it validates against to equal the\nbinding's approved objects: a set typed into a form would be refused by the probe at best,\nand would be an unapproved declaration reaching a registration at worst.",
+      "properties": {
+        "account_mode": {
+          "$ref": "#/$defs/SourceAccountModeView"
+        },
+        "connection_handle": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "declared_object_refs": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_NonEmptyText_"
+        },
+        "source_type": {
+          "$ref": "#/$defs/SourceProviderKind"
+        }
+      },
+      "required": [
+        "connection_handle",
+        "source_type",
+        "account_mode",
+        "declared_object_refs"
+      ],
+      "title": "EnrollableSourceHandleView",
+      "type": "object"
+    },
     "EvidenceContextView": {
       "additionalProperties": false,
       "properties": {
@@ -3564,6 +3590,12 @@
     "JsonTuple_Decision_": {
       "items": {
         "$ref": "#/$defs/Decision"
+      },
+      "type": "array"
+    },
+    "JsonTuple_EnrollableSourceHandleView_": {
+      "items": {
+        "$ref": "#/$defs/EnrollableSourceHandleView"
       },
       "type": "array"
     },
@@ -5617,6 +5649,10 @@
         "active_stage": {
           "$ref": "#/$defs/SetupStage"
         },
+        "enrollable_sources": {
+          "$ref": "#/$defs/JsonTuple_EnrollableSourceHandleView_",
+          "default": []
+        },
         "managed_services": {
           "$ref": "#/$defs/JsonTuple_ManagedServiceView_",
           "default": []
@@ -5684,9 +5720,66 @@
       "title": "SetupView",
       "type": "object"
     },
+    "SourceAccountModeView": {
+      "enum": [
+        "not_applicable",
+        "test",
+        "live"
+      ],
+      "type": "string"
+    },
+    "SourceBindingStateView": {
+      "enum": [
+        "draft",
+        "validating",
+        "ready",
+        "suspended",
+        "failed",
+        "retired"
+      ],
+      "type": "string"
+    },
     "SourceConnectionView": {
       "additionalProperties": false,
+      "description": "One source the connection broker holds a binding for, as an architect reads it.\n\n`connection_handle` is the name an operator enrolled the connection under, and is the whole\nof what the console knows about reaching the source: the connection detail itself is held by\nwhatever secret custody the deployment injected into the broker, and never travels here.\nThe handle is free text rather than a console public identifier because the deployment names\nits own handles.\n\n`capability_authority_digest` is present exactly when the binding is `ready`, because\n`record_validation` is the only writer of that state and it requires the two-probe evidence\nthis digest comes from. So the digest is the console's evidence that the source was probed,\nrather than a claim this projection makes about it.",
       "properties": {
+        "account_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceAccountModeView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "approved_object_refs": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_",
+          "default": []
+        },
+        "capability_authority_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "connection_handle": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "denied_checks": {
           "$ref": "#/$defs/JsonTuple_NonEmptyText_",
           "default": []
@@ -5698,16 +5791,22 @@
           "$ref": "#/$defs/JsonTuple_NonEmptyText_",
           "default": []
         },
+        "lifecycle_state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceBindingStateView"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "source_ref": {
           "$ref": "#/$defs/PublicId"
         },
         "source_type": {
-          "enum": [
-            "postgresql",
-            "stripe"
-          ],
-          "title": "Source Type",
-          "type": "string"
+          "$ref": "#/$defs/SourceProviderKind"
         },
         "state": {
           "$ref": "#/$defs/CapabilityState"
@@ -5720,6 +5819,39 @@
         "state"
       ],
       "title": "SourceConnectionView",
+      "type": "object"
+    },
+    "SourceProviderKind": {
+      "enum": [
+        "postgresql",
+        "stripe"
+      ],
+      "type": "string"
+    },
+    "SourceRegistrationCommand": {
+      "additionalProperties": false,
+      "description": "Register the source behind one already enrolled connection handle.\n\nThe handle is the only subject the browser names. Everything the broker needs beyond it --\nthe provider kind, the account mode and the approved objects -- is taken from the offering\nthe server read, so the browser cannot widen a declaration or name a provider for a handle\nthe deployment declared differently. There is deliberately no connection field of any kind:\na browser form that accepted a connection string would be a credential-handling surface, and\n`DemoSourceSecretStore.enroll_connection` is an operator action that happens before any\nbinding exists.",
+      "properties": {
+        "active_role": {
+          "const": "data_architect",
+          "title": "Active Role",
+          "type": "string"
+        },
+        "connection_handle": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "active_role",
+        "connection_handle"
+      ],
+      "title": "SourceRegistrationCommand",
       "type": "object"
     },
     "StakeholderAnswerProposalView": {
@@ -6108,6 +6240,9 @@
     "setup_response": {
       "$ref": "#/$defs/ConsoleEnvelope_SetupView_"
     },
+    "source_registration_command": {
+      "$ref": "#/$defs/SourceRegistrationCommand"
+    },
     "warehouse_binding_command": {
       "$ref": "#/$defs/WarehouseBindingCommand"
     },
@@ -6147,6 +6282,7 @@
     "error_response",
     "warehouse_binding_command",
     "process_package_command",
+    "source_registration_command",
     "decision_command",
     "product_intent_approval_command",
     "admission_command",

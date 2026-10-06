@@ -55,6 +55,34 @@ All notable changes to Heinzel are recorded here. The format follows
   role reaches outside its declaration in `validating` with no evidence at all. What this does not
   add is a console surface for registering a source, or the demonstration switching its hand-built
   binding over to this path.
+- The console's source onboarding surface. `GET /api/v1/setup` now reports which sources a tenant
+  has registered -- each binding's handle, provider, lifecycle state, approved objects and, for a
+  `ready` one, the capability profile digest the probe measured -- alongside the connections an
+  operator has enrolled that no binding names yet. `POST /api/v1/setup/sources` registers one of
+  those, driving `draft -> validating -> ready` through `SourceBindingService` so the binding that
+  results carries the two-probe evidence or no `ready` state at all. The `sources` setup stage is
+  no longer blocked unconditionally: it derives from whether a connection-broker read is wired and
+  whether a registered source reached `ready`, and reports blocked with its own dependency named
+  when no reader is wired rather than borrowing the sentence an unbuilt stage carries.
+
+  The surface deliberately accepts no connection string. Enrolling a connection is an operator
+  action in whatever secret custody the deployment injected into the broker, which happens before
+  any binding exists; the console works over handles that are already enrolled, and the provider,
+  account mode and approved objects a registration uses come from the deployment's own offering
+  rather than from the browser -- so nothing a form sends can widen the declaration the probe
+  proves least privilege over. A browser form taking a DSN would be a credential-handling surface
+  needing its own review, and the stage says where the connection came from instead of implying
+  the console holds it. Tests assert the absence rather than describing it: the command model
+  carries no field that could hold an endpoint, a credential or a reference to either, a body
+  carrying one is refused by the contract, no serialized view or error message contains a
+  connection detail, and a custodian that puts a DSN in its own failure message does not get it
+  printed by anything the console raises.
+
+  `DemoSourceSecretStore` can now list the handles it holds, and nothing else about them. The
+  demonstration is not wired to this surface and cannot be yet: it wires no warehouse-binding
+  reader, so `/api/v1/setup` and this command both answer `capability_not_delivered`, and it
+  enrols no connection because its role passwords are minted fresh on every start and written
+  nowhere while enrolment is immutable per handle. `docs/demonstration-gaps.md` records both.
 - `PostgreSQLRelationSizeQueryEstimator`, which bounds a restricted statement's scan by the
   measured size of the one relation it reads. `PostgreSQLQueryEstimator` beside it declines to
   report PostgreSQL's planner output as scan bytes and is right to, which left policy admission

@@ -27,6 +27,7 @@ from typing import Literal, Never
 from heinzel_access_control import AccessGrant, AccessGrantDenied, AccessGrantIntegrityError
 from heinzel_bi_control import DashboardPublication
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
 from heinzel_contract_model import ArtifactReference, digest
 from heinzel_contract_service import BusinessProcessManifest
 from heinzel_evidence import AcquisitionEvidenceReceipt
@@ -112,6 +113,7 @@ from .contracts import (
     DeliveredAnswerView,
     DisclosureDenialProposalView,
     DisplayReferenceView,
+    EnrollableSourceHandleView,
     EvidenceContextView,
     EvidenceView,
     FreshnessState,
@@ -161,6 +163,8 @@ from .contracts import (
     SetupStageState,
     SetupStageView,
     SetupView,
+    SourceConnectionView,
+    SourceRegistrationCommand,
     StakeholderAnswerProposalView,
     WarehouseBindingCommand,
     WarehouseBindingView,
@@ -192,6 +196,8 @@ from .governed_adapters import (
     CatalogSearchHealthReader,
     DashboardPublicationReader,
     DataProductReferenceReader,
+    EnrolledSourceConnection,
+    EnrolledSourceConnectionReader,
     FulfillmentAccessExecutionCommands,
     FulfillmentDecisionCommands,
     FulfillmentExecutionCommands,
@@ -209,6 +215,8 @@ from .governed_adapters import (
     SelectableAnswerTermReader,
     SemanticReviewCommands,
     SemanticReviewReader,
+    SourceBindingReader,
+    SourceRegistrationCommands,
     TenantAcquisitionReceiptReader,
     TenantIncidentReader,
     TenantRunLifecycleReader,
@@ -243,9 +251,23 @@ _SETUP_STAGES: tuple[SetupStage, ...] = (
     "data_product",
     "activation",
 )
-_UNDELIVERED_STAGES: frozenset[SetupStage] = frozenset(
-    {"sources", "meaning", "data_product", "activation"}
-)
+# Stages with no governed implementation at all. `sources` is deliberately not here: its state
+# is derived from whether a connection-broker read is wired and what that read answers, and a
+# console with no reader still reports it blocked -- with the dependency named rather than with
+# the same sentence an unbuilt stage carries.
+_UNDELIVERED_STAGES: frozenset[SetupStage] = frozenset({"meaning", "data_product", "activation"})
+# The lifecycle states a registered source can be in, as a capability an architect reads. A
+# binding is only usable at `ready`, which `record_validation` is the only writer of, so every
+# other state is work in progress or a refusal rather than a degraded source -- except
+# `suspended`, which is a source that was ready and was taken out of use.
+_SOURCE_BINDING_STATES: dict[SourceConnectionBindingState, CapabilityState] = {
+    SourceConnectionBindingState.DRAFT: "blocked",
+    SourceConnectionBindingState.VALIDATING: "blocked",
+    SourceConnectionBindingState.READY: "ready",
+    SourceConnectionBindingState.SUSPENDED: "degraded",
+    SourceConnectionBindingState.FAILED: "blocked",
+    SourceConnectionBindingState.RETIRED: "blocked",
+}
 _REQUEST_STATES: dict[RequestState, ConsoleRequestState] = {
     RequestState.SUBMITTED: "submitted",
     RequestState.CLARIFYING: "clarifying",
@@ -349,6 +371,59 @@ def _not_delivered(dependency: str) -> ConsoleUnavailable:
     )
 
 
+def _stage_detail(stage: SetupStage, *, source_reader_available: bool) -> str | None:
+    """What an architect is told about a stage beyond its state.
+
+    `sources` names its own dependency rather than borrowing the sentence an unbuilt stage
+    carries: a wired reader that has found nothing registered is a different situation from a
+    stage with no implementation behind it, and the two must not read alike. When the reader is
+    wired, the detail says where a connection comes from, because the console never holds one
+    and must not leave an architect guessing that it does.
+    """
+    if stage in _UNDELIVERED_STAGES:
+        return "No governed implementation is wired for this stage."
+    if stage == "sources":
+        if not source_reader_available:
+            return "No connection broker read is wired for this stage."
+        return (
+            "An operator enrols a connection in this deployment's secret custody before it can "
+            "be registered. Registering validates the enrolled handle against the source; the "
+            "console never receives the connection detail behind it."
+        )
+    return None
+
+
+def _source_connection_view(binding: SourceConnectionBinding) -> SourceConnectionView:
+    """One registered binding as an architect reads it, carrying no connection detail.
+
+    `display_name` is the handle, because the handle is the name an operator gave this
+    connection and the console has no other name for it; inventing a prettier one would name
+    something nobody enrolled. The probe's own evidence is not read here -- the console has no
+    reader for it -- so `intended_checks` and `denied_checks` stay empty rather than restating in
+    prose what `capability_authority_digest` already attests.
+    """
+    return SourceConnectionView(
+        source_ref=binding.binding_id,
+        source_type=binding.provider_kind,
+        display_name=binding.connection_handle,
+        state=_SOURCE_BINDING_STATES[binding.lifecycle_state],
+        lifecycle_state=binding.lifecycle_state.value,
+        connection_handle=binding.connection_handle,
+        account_mode=binding.account_mode,
+        approved_object_refs=binding.approved_object_refs,
+        capability_authority_digest=binding.capability_profile_digest,
+    )
+
+
+def _enrollable_source_view(connection: EnrolledSourceConnection) -> EnrollableSourceHandleView:
+    return EnrollableSourceHandleView(
+        connection_handle=connection.connection_handle,
+        source_type=connection.provider_kind,
+        account_mode=connection.account_mode,
+        declared_object_refs=connection.declared_object_refs,
+    )
+
+
 def _catalog_classification_label(
     reference: str,
     *,
@@ -400,6 +475,9 @@ class GovernedConsoleBackend:
         incident_recovery_commands: IncidentRecoveryCommands | None = None,
         acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
         acquisition_commands: AcquisitionRunNowCommands | None = None,
+        source_bindings: SourceBindingReader | None = None,
+        enrolled_source_connections: EnrolledSourceConnectionReader | None = None,
+        source_registration_commands: SourceRegistrationCommands | None = None,
         selectable_answer_terms: SelectableAnswerTermReader | None = None,
         data_products: DataProductReferenceReader | None = None,
         product_publications: ProductPublicationDefinitionReader | None = None,
@@ -447,6 +525,9 @@ class GovernedConsoleBackend:
         self._incident_recovery_commands = incident_recovery_commands
         self._acquisition_receipts = acquisition_receipts
         self._acquisition_commands = acquisition_commands
+        self._source_bindings = source_bindings
+        self._enrolled_source_connections = enrolled_source_connections
+        self._source_registration_commands = source_registration_commands
         self._selectable_answer_terms = selectable_answer_terms
         self._data_products = data_products
         self._product_publications = product_publications
@@ -516,6 +597,17 @@ class GovernedConsoleBackend:
         )
         operation_recovery_available = (
             self._incidents is not None and self._incident_recovery_commands is not None
+        )
+        # Registering needs all three: the register to read, an offering of enrolled connections
+        # to choose from, and the broker to drive. With the read alone the architect can see what
+        # is registered and cannot register anything, which is `degraded` rather than absent.
+        source_registration_available = all(
+            collaborator is not None
+            for collaborator in (
+                self._source_bindings,
+                self._enrolled_source_connections,
+                self._source_registration_commands,
+            )
         )
         capabilities: list[CapabilityView] = [
             CapabilityView(
@@ -624,6 +716,31 @@ class GovernedConsoleBackend:
                     None
                     if self._selectable_answer_terms is not None
                     else "a published set of approved metric and dimension terms"
+                ),
+            ),
+            CapabilityView(
+                capability_id="source-registration",
+                label="Source registration",
+                state=(
+                    "ready"
+                    if source_registration_available
+                    else "degraded"
+                    if self._source_bindings is not None
+                    else "not_delivered"
+                ),
+                detail=(
+                    "An enrolled connection can be registered as a source binding the broker "
+                    "validated against the source itself."
+                    if source_registration_available
+                    else "Registered sources can be read, but nothing offers an enrolled "
+                    "connection to register or carries out the registration."
+                    if self._source_bindings is not None
+                    else "No connection broker read offers the sources this workspace registered."
+                ),
+                dependency=(
+                    None
+                    if source_registration_available
+                    else "a connection broker, and secret custody that enrolled a connection"
                 ),
             ),
             CapabilityView(
@@ -757,11 +874,23 @@ class GovernedConsoleBackend:
             if process_package_commands is None
             else self._guarded(lambda: process_package_commands.latest(context.tenant_id))
         )
+        source_reader = self._source_bindings
+        source_bindings = (
+            ()
+            if source_reader is None
+            else self._guarded(lambda: source_reader.list_for_tenant(context.tenant_id))
+        )
+        enrollable_sources = self._enrollable_sources(context, registered=source_bindings)
         stage_states = self._stage_states(
             binding,
             catalog_binding,
             process_package_available=process_package_commands is not None,
             process_package_recorded=process_package is not None,
+            source_reader_available=source_reader is not None,
+            source_registered=any(
+                item.lifecycle_state is SourceConnectionBindingState.READY
+                for item in source_bindings
+            ),
         )
         active_stage = next(
             (stage for stage in _SETUP_STAGES if stage_states[stage] == "current"),
@@ -780,11 +909,7 @@ class GovernedConsoleBackend:
                     stage=stage,
                     label=stage.replace("_", " ").capitalize(),
                     state=stage_states[stage],
-                    detail=(
-                        "No governed implementation is wired for this stage."
-                        if stage in _UNDELIVERED_STAGES
-                        else None
-                    ),
+                    detail=_stage_detail(stage, source_reader_available=source_reader is not None),
                 )
                 for stage in _SETUP_STAGES
             ),
@@ -797,6 +922,8 @@ class GovernedConsoleBackend:
                 )
                 for engine in EngineKind
             ),
+            "sources": tuple(_source_connection_view(item) for item in source_bindings),
+            "enrollable_sources": enrollable_sources,
             "warehouse_binding": (
                 None
                 if binding is None
@@ -823,6 +950,31 @@ class GovernedConsoleBackend:
         unbound = SetupView.model_validate(payload | {"setup_digest": "0" * 64})
         return SetupView.model_validate(
             unbound.model_dump(mode="python") | {"setup_digest": setup_snapshot_digest(unbound)}
+        )
+
+    def _enrollable_sources(
+        self,
+        context: TrustedActorContext,
+        *,
+        registered: tuple[SourceConnectionBinding, ...],
+    ) -> tuple[EnrollableSourceHandleView, ...]:
+        """The enrolled connections this tenant has not registered a source for yet.
+
+        The subtraction is done here rather than asked of the custodian: the broker's register is
+        what says whether a handle is taken, and a custodian that answered the question itself
+        would have to read a register it does not own. A handle whose binding was retired stays
+        out of the offering, because the broker derives the binding identifier from the handle
+        and would refuse a second draft for it as a conflict rather than register it again.
+        """
+        reader = self._enrolled_source_connections
+        if reader is None:
+            return ()
+        enrolled = self._guarded(lambda: reader.list_enrolled_source_connections(context.tenant_id))
+        taken = {item.connection_handle for item in registered}
+        return tuple(
+            _enrollable_source_view(connection)
+            for connection in enrolled
+            if connection.connection_handle not in taken
         )
 
     def get_review(self, context: TrustedActorContext, review_id: str) -> ReviewView:
@@ -1893,6 +2045,68 @@ class GovernedConsoleBackend:
             state="succeeded",
             phase="process_package_persisted",
             summary="Business process package saved.",
+        )
+
+    def register_source(
+        self, context: TrustedActorContext, command: SourceRegistrationCommand
+    ) -> OperationView:
+        """Register one already enrolled connection as a validated source binding.
+
+        The command names a handle and nothing else about reaching the source. Everything the
+        broker is given beyond the handle is taken from the offering this read just composed, so
+        the provider kind, the account mode and the approved objects are the deployment's
+        declaration rather than values a browser chose -- which matters because the probe
+        validates the declaration against the binding's approved objects and would otherwise be
+        proving least privilege over a declaration the browser widened.
+
+        A handle that is not on the offering is refused here, before the broker is asked. It is
+        the same refusal for a handle nobody enrolled and for one already registered, because
+        both mean "not yours to register now" and distinguishing them would let a browser
+        enumerate the custodian's handles by submitting guesses.
+        """
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        setup = self.get_setup(context)
+        self._require_current_revision(command.expected_revision, setup.revision)
+        commands = self._source_registration_commands
+        if commands is None:
+            raise _not_delivered("command delegation to the connection broker")
+        offered = next(
+            (
+                item
+                for item in setup.enrollable_sources
+                if item.connection_handle == command.connection_handle
+            ),
+            None,
+        )
+        if offered is None:
+            raise ConsoleInvalidRequest(
+                code="source_handle_not_enrollable",
+                safe_message="That connection is not available to register. Reload the sources "
+                "stage and choose one of the enrolled connections it offers.",
+                recovery_action="reload",
+                field="connection_handle",
+            )
+        binding = self._guarded(
+            lambda: commands.register_source(
+                tenant_id=context.tenant_id,
+                connection_handle=offered.connection_handle,
+                provider_kind=offered.source_type,
+                account_mode=offered.account_mode,
+                approved_object_refs=offered.declared_object_refs,
+            )
+        )
+        if binding.lifecycle_state is not SourceConnectionBindingState.READY:
+            # `validate` returns `ready` or raises, so this is a collaborator that did not do
+            # what the protocol says. Reporting the registration as succeeded would tell the
+            # architect a source was validated when the broker never recorded that it was.
+            raise _not_delivered("a connection broker that validates what it registers")
+        return OperationView(
+            operation_id=binding.binding_id,
+            revision=binding.revision,
+            state="succeeded",
+            phase="source_binding_validated",
+            summary="Source connection registered and validated against the source.",
         )
 
     def decide_review(
@@ -3430,6 +3644,8 @@ class GovernedConsoleBackend:
         *,
         process_package_available: bool,
         process_package_recorded: bool,
+        source_reader_available: bool,
+        source_registered: bool,
     ) -> dict[SetupStage, SetupStageState]:
         foundation: SetupStageState = (
             "complete"
@@ -3448,6 +3664,20 @@ class GovernedConsoleBackend:
         for stage in _UNDELIVERED_STAGES:
             states[stage] = "blocked"
         prerequisites_ready = foundation == "complete" and managed == "complete"
+        # A registered source is one the broker drove to `ready`, which only recorded two-probe
+        # validation evidence reaches. A draft or a binding still validating leaves the stage
+        # where it was: work started is not work done, and the stage must not read complete over
+        # a source nothing has probed. Without a reader the stage stays blocked, because the
+        # console cannot tell a tenant that has registered nothing from a register it cannot see.
+        states["sources"] = (
+            "blocked"
+            if not source_reader_available
+            else "complete"
+            if source_registered
+            else "current"
+            if prerequisites_ready
+            else "not_started"
+        )
         states["business_process"] = (
             "complete"
             if process_package_recorded

@@ -149,6 +149,7 @@ const setupClient = {
   getReview: vi.fn(async () => activationEnvelope),
   ...featureClientStubs(),
   getSetup: vi.fn(async () => setupEnvelope),
+  registerSource: vi.fn(),
   submitProcessPackage: vi.fn(),
 }
 

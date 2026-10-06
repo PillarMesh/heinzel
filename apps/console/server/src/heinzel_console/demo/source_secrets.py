@@ -172,6 +172,51 @@ class DemoSourceSecretStore:
                 detail=f"{connection_handle} is already enrolled with a different detail",
             )
 
+    def enrolled_connection_handles(self) -> tuple[str, ...]:
+        """Every handle an operator has enrolled a connection under, and nothing else.
+
+        A handle is a name, not a connection: holding one tells a caller nothing about the
+        endpoint or the credential behind it, which is the whole point of the reference
+        discipline this store keeps. So this is the one read a console surface can be built on,
+        and it returns handles alone.
+
+        The record has to be opened to answer, because a connection's file is named by a digest
+        of its handle and a digest does not invert. That is this store reading its own records,
+        which it already does to resolve one; what is new is only that a caller can ask which
+        handles exist. The DSN is read into this method and never leaves it -- not in the return
+        value, not in a log, and not in anything raised from here.
+
+        Sorted, so two reads of an unchanged store agree and a surface built on it is stable.
+        A file that is not one of these records fails here rather than being skipped: a store
+        holding something unreadable is a store whose answer cannot be trusted to be complete.
+        """
+        handles: list[str] = []
+        try:
+            entries = tuple(self._directory.iterdir())
+        except OSError as error:
+            raise DemoSourceSecretError(
+                operation="list enrolled source connections",
+                detail="the store cannot be read",
+            ) from error
+        for path in entries:
+            if not path.name.startswith("connection-"):
+                continue
+            record = _read(
+                path,
+                _StoredSourceConnection,
+                operation="list enrolled source connections",
+            )
+            if self._connection_path(record.connection_handle) != path:
+                # The file is named by a digest of the handle it holds. A record found under
+                # another handle's name is corruption, and returning its handle would offer a
+                # handle whose connection this store could not then resolve.
+                raise DemoSourceSecretError(
+                    operation="list enrolled source connections",
+                    detail="a stored connection is filed under a different handle",
+                )
+            handles.append(record.connection_handle)
+        return tuple(sorted(handles))
+
     def resolve(
         self,
         *,

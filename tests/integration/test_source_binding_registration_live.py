@@ -1,5 +1,8 @@
 """A source is registered through the connection broker, against a real PostgreSQL source.
 
+The last test here walks the same registration from the console's own command, so the surface an
+architect uses is held to the same evidence as the broker underneath it.
+
 `SourceBindingService` can drive a binding `draft -> validating -> ready`, but only on evidence a
 `SourceCapabilityProbe` returned, over a capability a `SourceSecretResolver` resolved. This walks
 that whole path with both collaborators real: the demonstration's secret store holds the connection
@@ -26,6 +29,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
+from heinzel_catalog_control import CatalogBinding, CatalogBindingState
 from heinzel_connection_broker import (
     SourceBindingBoundaryError,
     SourceBindingNotFoundError,
@@ -33,16 +37,26 @@ from heinzel_connection_broker import (
     SourceConnectionBindingState,
     SQLiteSourceBindingRepository,
 )
+from heinzel_console.auth import TrustedActorContext
+from heinzel_console.contracts import SourceRegistrationCommand
 from heinzel_console.demo.source_secrets import (
     DemoPostgreSQLSourceCapabilityAuthority,
     DemoSourceSecretStore,
 )
+from heinzel_console.governed_adapters import (
+    BrokerSourceRegistrationCommands,
+    EnrolledSourceConnection,
+    GovernedWorkspaceIdentity,
+)
+from heinzel_console.governed_backend import GovernedConsoleBackend
+from heinzel_console.operation_handles import InMemoryOperationHandleRepository
 from heinzel_provider_postgresql import (
     PostgreSQLAcquisitionSettings,
     PostgreSQLSourceCapabilityProbe,
     PostgreSQLSourceObjectDeclaration,
 )
 from heinzel_provider_sdk import AcquisitionProviderError
+from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
 from psycopg import sql
 from pydantic import SecretStr
 
@@ -312,3 +326,163 @@ def test_a_source_whose_role_reaches_outside_its_declaration_is_never_recorded_r
     with pytest.raises(SourceBindingNotFoundError):
         repository.load_validation(_TENANT, draft.binding_id, 2)
     repository.close()
+
+
+def _console_identity() -> GovernedWorkspaceIdentity:
+    return GovernedWorkspaceIdentity(
+        tenant_ref=_TENANT,
+        tenant_display_name="Live tenant",
+        workspace_ref="workspace-live",
+        workspace_display_name="Live workspace",
+    )
+
+
+def _warehouse_binding() -> WarehouseBinding:
+    """A ready managed warehouse, because the setup read refuses without a binding reader.
+
+    Local to this test and not the demonstration's: what is under test is the sources stage, and
+    it is reached through a setup projection that will not compose until the stage before it has a
+    binding to report.
+    """
+    return WarehouseBinding(
+        binding_id="whb-0123456789abcdef01234567",
+        tenant_id=_TENANT,
+        engine_kind=EngineKind.POSTGRESQL,
+        region="local",
+        capacity_profile="mvp-fixed",
+        capability_profile_digest="a" * 64,
+        lifecycle_state=WarehouseBindingState.READY,
+        revision=4,
+        created_at=_FIRST,
+        updated_at=_FIRST,
+    )
+
+
+class _StaticWarehouseBindings:
+    def current_binding(self, tenant_id: str) -> WarehouseBinding | None:
+        return _warehouse_binding() if tenant_id == _TENANT else None
+
+
+class _StaticCatalogBindings:
+    def current_binding(self, tenant_id: str) -> CatalogBinding | None:
+        if tenant_id != _TENANT:
+            return None
+        return CatalogBinding(
+            binding_id="cat-0123456789abcdef01234567",
+            tenant_id=_TENANT,
+            capability_profile_digest="b" * 64,
+            lifecycle_state=CatalogBindingState.READY,
+            revision=2,
+            created_at=_FIRST,
+            updated_at=_FIRST,
+            provisioned_at=_FIRST,
+        )
+
+
+class _StoreBackedEnrolledConnections:
+    """The deployment's offering: the store's own handles, under the deployment's declaration.
+
+    The handles come from `DemoSourceSecretStore.enrolled_connection_handles`, which reads its
+    records and returns names; the declaration is this deployment's, the same one `_settings`
+    composes the acquisition from. Nothing here reaches a connection detail.
+    """
+
+    def __init__(self, store: DemoSourceSecretStore) -> None:
+        self._store = store
+
+    def list_enrolled_source_connections(
+        self, tenant_id: str
+    ) -> tuple[EnrolledSourceConnection, ...]:
+        if tenant_id != _TENANT:
+            return ()
+        return tuple(
+            EnrolledSourceConnection(
+                connection_handle=handle,
+                provider_kind="postgresql",
+                account_mode="not_applicable",
+                declared_object_refs=(_LOGICAL_OBJECT,),
+            )
+            for handle in self._store.enrolled_connection_handles()
+        )
+
+
+def _architect() -> TrustedActorContext:
+    return TrustedActorContext(
+        tenant_id=_TENANT,
+        actor_id="actor-architect",
+        roles=("data_architect",),
+        active_role="data_architect",
+        session_id="session-architect",
+    )
+
+
+def test_an_architect_registers_a_real_source_through_the_console_and_sees_its_evidence(
+    tmp_path: Path, cluster: str
+) -> None:
+    """The console's own surface, over a real source, with no connection detail passing through it.
+
+    The architect reads the sources stage, sees one enrolled connection offered and none
+    registered, registers it by naming the handle alone, and reads the stage again. What makes
+    this evidence rather than a rendering: the binding behind the shown source is read back out of
+    the broker's repository at `ready`, carrying the capability profile the probe measured, and the
+    serialized projection is asserted to contain neither the DSN nor either reference.
+    """
+    password = secrets.token_urlsafe(32)
+    _provision_source(cluster, role="acquisition_runtime", password=password)
+    clock = _Clock(_FIRST)
+    registry = _registry(tmp_path, clock=clock)
+    dsn = _role_dsn(cluster, "acquisition_runtime", password)
+    registry.store.enroll_connection(connection_handle=_CONNECTION_HANDLE, dsn=SecretStr(dsn))
+    backend = GovernedConsoleBackend(
+        identity=_console_identity(),
+        operation_handles=InMemoryOperationHandleRepository(),
+        warehouse_bindings=_StaticWarehouseBindings(),
+        catalog_bindings=_StaticCatalogBindings(),
+        source_bindings=registry.service,
+        enrolled_source_connections=_StoreBackedEnrolledConnections(registry.store),
+        source_registration_commands=BrokerSourceRegistrationCommands(registry.service),
+        clock=clock,
+    )
+
+    before = backend.get_setup(_architect())
+    assert before.sources == ()
+    assert [item.connection_handle for item in before.enrollable_sources] == [_CONNECTION_HANDLE]
+    assert next(item for item in before.stages if item.stage == "sources").state == "current"
+
+    clock.advance(1)
+    operation = backend.register_source(
+        _architect(),
+        SourceRegistrationCommand(
+            expected_revision=before.revision,
+            active_role="data_architect",
+            connection_handle=_CONNECTION_HANDLE,
+        ),
+    )
+
+    assert operation.state == "succeeded"
+    stored = registry.repository.load(_TENANT, operation.operation_id)
+    assert stored.lifecycle_state is SourceConnectionBindingState.READY
+    assert stored.revision == 3
+    evidence = registry.repository.load_validation(_TENANT, stored.binding_id, 2)
+    assert evidence.positive_probe_succeeded is True
+    assert evidence.denial_probe_succeeded is True
+
+    after = backend.get_setup(_architect())
+    (shown,) = after.sources
+    assert shown.source_ref == stored.binding_id
+    assert shown.connection_handle == _CONNECTION_HANDLE
+    assert shown.lifecycle_state == "ready"
+    assert shown.state == "ready"
+    assert shown.approved_object_refs == (_LOGICAL_OBJECT,)
+    assert shown.capability_authority_digest == stored.capability_profile_digest
+    assert after.enrollable_sources == ()
+    assert next(item for item in after.stages if item.stage == "sources").state == "complete"
+
+    payload = after.model_dump_json()
+    assert _CONNECTION_HANDLE in payload
+    assert dsn not in payload
+    assert password not in payload
+    assert "postgresql://" not in payload
+    assert "endpoint-ref:" not in payload
+    assert "credential-ref:" not in payload
+    registry.repository.close()

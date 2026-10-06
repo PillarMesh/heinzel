@@ -487,3 +487,46 @@ def test_source_binding_transition_table_is_exact_and_retired_is_terminal() -> N
         "failed": frozenset({"validating", "retired"}),
         "retired": frozenset(),
     }
+
+
+def test_the_register_lists_only_the_asking_tenants_bindings_at_their_current_state() -> None:
+    """A tenant's register, after one binding reached ready and another stayed a draft.
+
+    The listing is the read a surface showing registered sources is built on, so what it must
+    guarantee is that every binding appears once, in the state the broker last recorded, and that
+    no other tenant's binding is reachable through it.
+    """
+    control = service()
+    draft = create(control)
+    validating = control.transition(
+        "tenant-a",
+        draft.binding_id,
+        SourceConnectionBindingState.VALIDATING,
+        expected_revision=draft.revision,
+    )
+    control.validate("tenant-a", draft.binding_id, expected_revision=validating.revision)
+    second = control.create_draft(
+        tenant_id="tenant-a",
+        provider_kind="postgresql",
+        connection_handle="connection-handle-b",
+        account_mode="not_applicable",
+        approved_object_refs=("order",),
+    )
+    control.create_draft(
+        tenant_id="tenant-b",
+        provider_kind="postgresql",
+        connection_handle="connection-handle-a",
+        account_mode="not_applicable",
+        approved_object_refs=("order",),
+    )
+
+    listed = control.list_for_tenant("tenant-a")
+
+    assert {item.binding_id for item in listed} == {draft.binding_id, second.binding_id}
+    by_identity = {item.binding_id: item for item in listed}
+    assert by_identity[draft.binding_id].lifecycle_state is SourceConnectionBindingState.READY
+    assert by_identity[draft.binding_id].capability_profile_digest == "3" * 64
+    assert by_identity[second.binding_id].lifecycle_state is SourceConnectionBindingState.DRAFT
+    assert by_identity[second.binding_id].capability_profile_digest is None
+    assert {item.tenant_id for item in listed} == {"tenant-a"}
+    assert [item.binding_id for item in control.list_for_tenant("tenant-b")] != [draft.binding_id]

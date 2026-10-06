@@ -762,3 +762,44 @@ def test_a_question_selection_mirrors_the_artifacts_own_fields_minus_its_schema_
     assert set(contracts.QuestionTermSelectionInput.model_fields) == set(
         QuestionTermSelection.model_fields
     ) - {"schema_version"}
+
+
+def test_the_source_vocabularies_mirror_the_connection_brokers_own() -> None:
+    """A provider, an account mode or a lifecycle state the console did not mirror is a defect.
+
+    Each one would be silently unprojectable: a binding carrying it would make the setup read
+    raise rather than show a registered source, and the architect would see a register missing
+    the very source they had just registered.
+    """
+    from heinzel_connection_broker import SourceAccountMode, SourceConnectionBindingState
+    from heinzel_provider_sdk.errors import AcquisitionProviderKind
+
+    assert set(get_args(contracts.SourceProviderKind.__value__)) == set(
+        get_args(AcquisitionProviderKind.__value__)
+    )
+    assert set(get_args(contracts.SourceAccountModeView.__value__)) == set(
+        get_args(SourceAccountMode.__value__)
+    )
+    assert set(get_args(contracts.SourceBindingStateView.__value__)) == {
+        state.value for state in SourceConnectionBindingState
+    }
+
+
+def test_the_source_registration_command_carries_no_connection_field() -> None:
+    """The design decision, as a check rather than as a comment.
+
+    A console that accepted a connection string would be a credential-handling surface. The
+    command names the handle an operator already enrolled, and this fails if a field that could
+    carry an endpoint, a credential or a reference to either is ever added to it.
+    """
+    fields = set(contracts.SourceRegistrationCommand.model_fields)
+
+    assert fields == {"expected_revision", "active_role", "connection_handle"}
+    forbidden = ("dsn", "connection_string", "password", "secret", "endpoint", "credential", "uri")
+    for model in (
+        contracts.SourceRegistrationCommand,
+        contracts.SourceConnectionView,
+        contracts.EnrollableSourceHandleView,
+    ):
+        for field_name in model.model_fields:
+            assert not any(term in field_name for term in forbidden), (model, field_name)

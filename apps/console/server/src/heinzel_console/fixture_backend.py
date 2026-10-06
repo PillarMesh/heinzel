@@ -69,6 +69,7 @@ from .contracts import (
     SelectableAnswerTermsView,
     SessionView,
     SetupView,
+    SourceRegistrationCommand,
     WarehouseBindingCommand,
     WarehouseBindingView,
     WorkspaceView,
@@ -856,6 +857,23 @@ class FixtureConsoleBackend:
             )
             self._commit(next_state)
             return operation
+
+    def register_source(
+        self, context: TrustedActorContext, command: SourceRegistrationCommand
+    ) -> OperationView:
+        """Refused: registering a source is a real connection being probed.
+
+        The fixture console has no connection broker and no enrolled connection, so there is
+        nothing here to register and nothing to probe. Recording a registration from seeded data
+        would claim a source had been validated against a server this console never reached.
+        """
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        raise ConsoleUnavailable(
+            code="capability_not_delivered",
+            safe_message="Registering a source requires a governed workspace.",
+            recovery_action="none",
+        )
 
     def decide_review(
         self, context: TrustedActorContext, review_id: str, command: DecisionCommand

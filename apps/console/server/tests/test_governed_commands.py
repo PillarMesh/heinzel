@@ -11,12 +11,24 @@ from __future__ import annotations
 import hashlib
 import threading
 from collections.abc import Iterator
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal, Never
 
 import pytest
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
+from heinzel_connection_broker import (
+    PrivateSourceCapability,
+    SourceAccountMode,
+    SourceBindingBoundaryError,
+    SourceBindingService,
+    SourceBindingValidationEvidence,
+    SourceCapabilityProbe,
+    SourceConnectionBinding,
+    SourceConnectionBindingState,
+    SQLiteSourceBindingRepository,
+)
 from heinzel_console.auth import InFlightCommandKeys, TrustedActorContext
 from heinzel_console.contracts import (
     AcquisitionRunNowCommand,
@@ -31,15 +43,19 @@ from heinzel_console.contracts import (
     ProposalPreparationCommand,
     ResetCommand,
     RetryOperationCommand,
+    SourceRegistrationCommand,
     WarehouseBindingCommand,
 )
 from heinzel_console.errors import (
     ConsoleConflict,
+    ConsoleError,
     ConsoleInvalidRequest,
     ConsoleNotFound,
     ConsoleUnavailable,
 )
 from heinzel_console.governed_adapters import (
+    BrokerSourceRegistrationCommands,
+    EnrolledSourceConnection,
     GovernedWorkspaceIdentity,
     InMemoryWorkspacePrincipalDirectory,
     WarehouseConfirmation,
@@ -62,6 +78,7 @@ from heinzel_contract_service import (
 )
 from heinzel_evidence import AcquisitionEvidenceReceipt
 from heinzel_provider_sdk import AcquisitionNoValidPlan
+from heinzel_provider_sdk.errors import AcquisitionProviderError, AcquisitionProviderKind
 from heinzel_request_management import (
     ArchitectRequestView,
     ClarifiedOutcomeStatement,
@@ -1956,3 +1973,522 @@ def test_run_now_does_not_reveal_a_contract_owned_by_another_tenant(stack: _Stac
         stack.backend(acquisition_commands=_ForeignAcquisitionCommands()).run_acquisition_now(
             _architect_context(), command
         )
+
+
+# A DSN shaped like one a deployment's secret custody holds. It is given to a resolver that
+# leaks it in its own exception message, so every assertion below that the console's answer does
+# not contain it is a real check of the path a connection detail could travel.
+_SOURCE_DSN_CANARY = (
+    "host=source.invalid port=5432 user=acquisition password=canary-password dbname=orders"
+)
+_SOURCE_HANDLE = "enrolled-orders"
+_SOURCE_OBJECT = "customer_orders"
+
+
+class _SourceSecretResolver:
+    """Mints a reference pair per binding and credential revision, holding no detail in it.
+
+    Stands in for the deployment's custodian in exactly the shape `SourceBindingService` takes.
+    The references are derived from the identity asked for rather than drawn randomly, so a test
+    can assert what was persisted, and they carry nothing of the DSN -- which is the property the
+    real store keeps by drawing them from the operating system's generator.
+    """
+
+    def __init__(self, *, enrolled: frozenset[str] = frozenset({_SOURCE_HANDLE})) -> None:
+        self._enrolled = enrolled
+
+    def resolve(
+        self,
+        *,
+        tenant_id: str,
+        binding_id: str,
+        provider_kind: AcquisitionProviderKind,
+        connection_handle: str,
+        account_mode: SourceAccountMode,
+        credential_revision: int,
+    ) -> PrivateSourceCapability:
+        if connection_handle not in self._enrolled:
+            # The real store names the operation and the handle and never the detail. This one
+            # puts the DSN in the message deliberately: it is the worst a custodian could do, and
+            # the console's answer must still carry none of it.
+            raise RuntimeError(
+                f"no connection enrolled for {connection_handle}: {_SOURCE_DSN_CANARY}"
+            )
+        return PrivateSourceCapability(
+            tenant_id=tenant_id,
+            binding_id=binding_id,
+            provider_kind=provider_kind,
+            connection_handle=connection_handle,
+            account_mode=account_mode,
+            credential_revision=credential_revision,
+            endpoint_reference=f"endpoint-ref:{credential_revision:064x}",
+            credential_reference=f"credential-ref:{credential_revision:064x}",
+        )
+
+
+class _SourceCapabilityProbe:
+    """Returns the evidence a passing two-probe validation would, for one declared object.
+
+    A double that is never more permissive than the real probe: it refuses a declaration that is
+    not the binding's approved objects, which is what `PostgreSQLSourceCapabilityProbe` refuses
+    `permanent_configuration` for, and the evidence it returns is the real artifact so the
+    service's own checks on it still run.
+    """
+
+    def __init__(self, *, declared: tuple[str, ...] = (_SOURCE_OBJECT,)) -> None:
+        self._declared = declared
+        self.calls: list[tuple[str, int]] = []
+
+    def validate(
+        self,
+        *,
+        binding: SourceConnectionBinding,
+        capability: PrivateSourceCapability,
+        observed_at: datetime,
+    ) -> SourceBindingValidationEvidence:
+        self.calls.append((binding.connection_handle, binding.revision))
+        if binding.approved_object_refs != self._declared:
+            raise AssertionError("the probe was asked to validate an undeclared declaration")
+        return SourceBindingValidationEvidence(
+            evidence_id=f"source-validation:{binding.binding_id}:{binding.revision}",
+            tenant_id=binding.tenant_id,
+            binding_id=binding.binding_id,
+            binding_revision=binding.revision,
+            credential_revision=capability.credential_revision,
+            provider_kind=binding.provider_kind,
+            positive_probe_succeeded=True,
+            positive_probe_digest="1" * 64,
+            denial_probe_succeeded=True,
+            denial_probe_digest="2" * 64,
+            source_observation_ref="source-observation:postgresql:" + "1" * 64,
+            capability_profile_digest="3" * 64,
+            observed_at=observed_at,
+        )
+
+
+class _RefusingSourceCapabilityProbe:
+    """A source whose connecting role reaches outside its declaration.
+
+    The error is the provider SDK's own, which composes its message from the provider and the
+    reason code and admits no free text: a probe cannot put a connection detail into it even by
+    mistake. The leak path this suite exercises with a canary is therefore the secret resolver's,
+    which raises whatever the deployment's custodian raises.
+    """
+
+    def validate(
+        self,
+        *,
+        binding: SourceConnectionBinding,
+        capability: PrivateSourceCapability,
+        observed_at: datetime,
+    ) -> Never:
+        raise AcquisitionProviderError(
+            provider_kind="postgresql",
+            classification="authorization_denied",
+            reason_code="authorization_denied",
+        )
+
+
+class _EnrolledSourceConnections:
+    """The deployment's offering of enrolled connections, for one tenant and no other."""
+
+    def __init__(self, *connections: EnrolledSourceConnection) -> None:
+        self._connections = connections
+        self.asked: list[str] = []
+
+    def list_enrolled_source_connections(
+        self, tenant_id: str
+    ) -> tuple[EnrolledSourceConnection, ...]:
+        self.asked.append(tenant_id)
+        return self._connections if tenant_id == _TENANT else ()
+
+
+def _enrolled_connection(
+    handle: str = _SOURCE_HANDLE, *, objects: tuple[str, ...] = (_SOURCE_OBJECT,)
+) -> EnrolledSourceConnection:
+    return EnrolledSourceConnection(
+        connection_handle=handle,
+        provider_kind="postgresql",
+        account_mode="not_applicable",
+        declared_object_refs=objects,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class _SourceRegistry:
+    repository: SQLiteSourceBindingRepository
+    service: SourceBindingService
+
+
+def _source_registry(
+    tmp_path: Path,
+    *,
+    probe: SourceCapabilityProbe | None = None,
+    resolver: _SourceSecretResolver | None = None,
+) -> _SourceRegistry:
+    """A real broker over a real repository, with the two collaborators it cannot run without.
+
+    `probe` is annotated as the broker's own protocol rather than as either double, so the type
+    checker answers for each double satisfying what `SourceBindingService` takes.
+    """
+    repository = SQLiteSourceBindingRepository(str(tmp_path / "source-bindings.sqlite3"))
+    return _SourceRegistry(
+        repository=repository,
+        service=SourceBindingService(
+            repository,
+            secret_resolver=resolver or _SourceSecretResolver(),
+            capability_probes={"postgresql": probe or _SourceCapabilityProbe()},
+            clock=_clock,
+        ),
+    )
+
+
+def _source_backend(
+    stack: _Stack,
+    registry: _SourceRegistry | None,
+    *,
+    enrolled: _EnrolledSourceConnections | None = None,
+    warehouse_revision: int = 3,
+) -> GovernedConsoleBackend:
+    return stack.backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding(revision=warehouse_revision)),
+        catalog_bindings=_StaticCatalogBindingReader(),
+        source_bindings=None if registry is None else registry.service,
+        enrolled_source_connections=enrolled,
+        source_registration_commands=(
+            None if registry is None else BrokerSourceRegistrationCommands(registry.service)
+        ),
+    )
+
+
+def _registration(handle: str = _SOURCE_HANDLE, *, revision: int = 3) -> SourceRegistrationCommand:
+    return SourceRegistrationCommand(
+        expected_revision=revision,
+        active_role="data_architect",
+        connection_handle=handle,
+    )
+
+
+def test_registering_a_source_drives_the_broker_to_a_probed_ready_binding(
+    stack: _Stack, tmp_path: Path
+) -> None:
+    """One console command, three broker transactions, and evidence at the end of them.
+
+    The binding is read back out of the repository rather than trusted from the returned view:
+    `ready` is only real if `record_validation` committed it with the evidence beside it.
+    """
+    probe = _SourceCapabilityProbe()
+    registry = _source_registry(tmp_path, probe=probe)
+    backend = _source_backend(
+        stack, registry, enrolled=_EnrolledSourceConnections(_enrolled_connection())
+    )
+
+    operation = backend.register_source(_architect_context(), _registration())
+
+    assert operation.state == "succeeded"
+    assert operation.phase == "source_binding_validated"
+    (stored,) = registry.repository.list_for_tenant(_TENANT)
+    assert stored.lifecycle_state is SourceConnectionBindingState.READY
+    assert stored.revision == 3
+    assert stored.connection_handle == _SOURCE_HANDLE
+    assert stored.approved_object_refs == (_SOURCE_OBJECT,)
+    assert stored.capability_profile_digest == "3" * 64
+    evidence = registry.repository.load_validation(_TENANT, stored.binding_id, 2)
+    assert evidence.positive_probe_succeeded is True
+    assert evidence.denial_probe_succeeded is True
+    assert probe.calls == [(_SOURCE_HANDLE, 2)]
+    registry.repository.close()
+
+
+def test_a_registered_source_is_shown_and_stops_being_offered_for_registration(
+    stack: _Stack, tmp_path: Path
+) -> None:
+    """The setup read is the register: what is registered, and what is still enrollable."""
+    registry = _source_registry(tmp_path)
+    enrolled = _EnrolledSourceConnections(
+        _enrolled_connection(), _enrolled_connection("enrolled-billing")
+    )
+    backend = _source_backend(stack, registry, enrolled=enrolled)
+
+    before = backend.get_setup(_architect_context())
+
+    assert before.sources == ()
+    assert [item.connection_handle for item in before.enrollable_sources] == [
+        _SOURCE_HANDLE,
+        "enrolled-billing",
+    ]
+    assert next(item for item in before.stages if item.stage == "sources").state == "current"
+
+    backend.register_source(_architect_context(), _registration())
+    after = backend.get_setup(_architect_context())
+
+    (registered,) = after.sources
+    assert registered.connection_handle == _SOURCE_HANDLE
+    assert registered.source_type == "postgresql"
+    assert registered.lifecycle_state == "ready"
+    assert registered.state == "ready"
+    assert registered.account_mode == "not_applicable"
+    assert registered.approved_object_refs == (_SOURCE_OBJECT,)
+    assert registered.capability_authority_digest == "3" * 64
+    assert [item.connection_handle for item in after.enrollable_sources] == ["enrolled-billing"]
+    assert next(item for item in after.stages if item.stage == "sources").state == "complete"
+    assert enrolled.asked == [_TENANT, _TENANT, _TENANT]
+    registry.repository.close()
+
+
+def test_the_sources_stage_reports_its_missing_reader_rather_than_an_empty_register(
+    stack: _Stack,
+) -> None:
+    """No broker read wired: blocked, with the dependency named and nothing offered.
+
+    The sentence has to differ from the one an unbuilt stage carries, because a wired reader with
+    nothing registered and no reader at all are different situations.
+    """
+    backend = _source_backend(stack, None)
+
+    setup = backend.get_setup(_architect_context())
+
+    stage = next(item for item in setup.stages if item.stage == "sources")
+    assert stage.state == "blocked"
+    assert stage.detail == "No connection broker read is wired for this stage."
+    assert setup.sources == ()
+    assert setup.enrollable_sources == ()
+    unbuilt = next(item for item in setup.stages if item.stage == "meaning")
+    assert unbuilt.detail == "No governed implementation is wired for this stage."
+
+
+def test_the_registration_command_stays_undelivered_with_its_dependency_named(
+    stack: _Stack,
+) -> None:
+    backend = stack.backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        catalog_bindings=_StaticCatalogBindingReader(),
+    )
+
+    with pytest.raises(ConsoleUnavailable) as failure:
+        backend.register_source(_architect_context(), _registration())
+
+    assert failure.value.code == CAPABILITY_NOT_DELIVERED
+    assert "connection broker" in failure.value.safe_message
+
+
+def test_registering_a_source_is_not_a_requesters_to_make(stack: _Stack, tmp_path: Path) -> None:
+    """A requester is answered exactly as for an unknown resource, and nothing is registered."""
+    registry = _source_registry(tmp_path)
+    backend = _source_backend(
+        stack, registry, enrolled=_EnrolledSourceConnections(_enrolled_connection())
+    )
+
+    with pytest.raises(ConsoleNotFound):
+        backend.register_source(
+            _requester_context(),
+            SourceRegistrationCommand(
+                expected_revision=3, active_role="data_architect", connection_handle=_SOURCE_HANDLE
+            ),
+        )
+
+    assert registry.repository.list_for_tenant(_TENANT) == ()
+    registry.repository.close()
+
+
+def test_a_stale_setup_revision_never_reaches_the_broker(stack: _Stack, tmp_path: Path) -> None:
+    """The guard is the setup revision the browser read, as it is for the process package."""
+    registry = _source_registry(tmp_path)
+    backend = _source_backend(
+        stack, registry, enrolled=_EnrolledSourceConnections(_enrolled_connection())
+    )
+
+    with pytest.raises(ConsoleConflict) as refusal:
+        backend.register_source(_architect_context(), _registration(revision=2))
+
+    assert refusal.value.code == "stale_revision"
+    assert refusal.value.recovery_action == "reload"
+    assert registry.repository.list_for_tenant(_TENANT) == ()
+    registry.repository.close()
+
+
+def test_a_handle_that_is_not_enrolled_is_refused_before_the_broker_is_asked(
+    stack: _Stack, tmp_path: Path
+) -> None:
+    """Nothing is drafted for a handle nobody enrolled, and the refusal discloses nothing.
+
+    The same refusal answers a handle that does not exist and one that is already registered, so
+    submitting guesses cannot enumerate the custodian's handles.
+    """
+    registry = _source_registry(tmp_path)
+    backend = _source_backend(
+        stack, registry, enrolled=_EnrolledSourceConnections(_enrolled_connection())
+    )
+
+    with pytest.raises(ConsoleInvalidRequest) as refusal:
+        backend.register_source(_architect_context(), _registration("never-enrolled"))
+
+    assert refusal.value.code == "source_handle_not_enrollable"
+    assert refusal.value.field == "connection_handle"
+    assert registry.repository.list_for_tenant(_TENANT) == ()
+
+    backend.register_source(_architect_context(), _registration())
+    with pytest.raises(ConsoleInvalidRequest) as already:
+        backend.register_source(_architect_context(), _registration())
+
+    assert already.value.code == refusal.value.code
+    assert already.value.safe_message == refusal.value.safe_message
+    registry.repository.close()
+
+
+def _rendered_failure_chain(error: BaseException) -> tuple[str, ...]:
+    """Everything a traceback or a response would print from this failure, chain included.
+
+    The whole chain rather than the outermost exception: a console error carries the owning
+    failure as its cause, and a traceback prints every link, so reading only the top one would
+    pass while a detail sat one `raise ... from` away.
+
+    The walk follows the links a traceback follows: the cause, and the context only while the
+    raising code did not suppress it. `raise ... from None` leaves `__context__` set and tells
+    every printer to stop there, which is how the broker drops what a resolver raised -- so a
+    suppressed context is not something a log or a response can reach, and treating it as one
+    here would assert against Python's own rule rather than against this code.
+    """
+    rendered: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        rendered.extend((repr(current), str(current), repr(current.args)))
+        if isinstance(current, ConsoleError):
+            rendered.extend((current.code, current.safe_message, str(current.field)))
+        if current.__cause__ is not None:
+            current = current.__cause__
+        elif current.__suppress_context__:
+            current = None
+        else:
+            current = current.__context__
+    return tuple(rendered)
+
+
+def test_a_custodian_that_cannot_resolve_a_handle_never_leaks_what_it_was_resolving(
+    stack: _Stack, tmp_path: Path
+) -> None:
+    """The one path a connection detail could travel, held shut.
+
+    The resolver is offered a handle it has no connection for and raises with the DSN in its own
+    message. The broker drops that cause, and this asserts the console's answer -- its code, its
+    message, and everything reachable from the exception -- carries none of it.
+    """
+    registry = _source_registry(tmp_path, resolver=_SourceSecretResolver(enrolled=frozenset()))
+    backend = _source_backend(
+        stack, registry, enrolled=_EnrolledSourceConnections(_enrolled_connection())
+    )
+
+    with pytest.raises(ConsoleUnavailable) as failure:
+        backend.register_source(_architect_context(), _registration())
+
+    # The property the walk above relies on, asserted rather than assumed: the broker raises its
+    # boundary error with the resolver's own exception suppressed, so nothing that prints a
+    # traceback reaches the message the custodian wrote.
+    boundary = failure.value.__cause__
+    assert isinstance(boundary, SourceBindingBoundaryError)
+    assert boundary.__cause__ is None
+    assert boundary.__suppress_context__ is True
+
+    rendered = " ".join(_rendered_failure_chain(failure.value))
+    assert _SOURCE_DSN_CANARY not in rendered
+    assert "canary-password" not in rendered
+    assert "postgresql://" not in rendered
+    assert failure.value.recovery_action == "contact_support"
+    registry.repository.close()
+
+
+def test_a_source_that_reaches_outside_its_declaration_is_never_shown_as_registered(
+    stack: _Stack, tmp_path: Path
+) -> None:
+    """A refused probe leaves a binding validating, and the console says so rather than ready."""
+    registry = _source_registry(tmp_path, probe=_RefusingSourceCapabilityProbe())
+    backend = _source_backend(
+        stack, registry, enrolled=_EnrolledSourceConnections(_enrolled_connection())
+    )
+
+    with pytest.raises(ConsoleUnavailable) as failure:
+        backend.register_source(_architect_context(), _registration())
+
+    assert _SOURCE_DSN_CANARY not in failure.value.safe_message
+    (stored,) = registry.repository.list_for_tenant(_TENANT)
+    assert stored.lifecycle_state is SourceConnectionBindingState.VALIDATING
+    assert stored.capability_profile_digest is None
+    setup = backend.get_setup(_architect_context())
+    (projected,) = setup.sources
+    assert projected.lifecycle_state == "validating"
+    assert projected.state == "blocked"
+    assert projected.capability_authority_digest is None
+    registry.repository.close()
+
+
+def test_no_setup_projection_of_a_registered_source_carries_a_connection_detail(
+    stack: _Stack, tmp_path: Path
+) -> None:
+    """The whole serialized view, checked rather than reasoned about.
+
+    A registered binding carries a handle and two references the broker persisted privately. The
+    references are not in the projection either: holding one is holding the thing that opens the
+    credential, and the console has no business with it.
+    """
+    registry = _source_registry(tmp_path)
+    backend = _source_backend(
+        stack, registry, enrolled=_EnrolledSourceConnections(_enrolled_connection())
+    )
+    backend.register_source(_architect_context(), _registration())
+
+    payload = backend.get_setup(_architect_context()).model_dump_json()
+
+    assert _SOURCE_HANDLE in payload
+    assert _SOURCE_DSN_CANARY not in payload
+    assert "canary-password" not in payload
+    assert "postgresql://" not in payload
+    assert "endpoint-ref:" not in payload
+    assert "credential-ref:" not in payload
+    registry.repository.close()
+
+
+def test_a_broker_that_hands_back_an_unvalidated_binding_is_not_reported_as_registered(
+    stack: _Stack, tmp_path: Path
+) -> None:
+    """A collaborator that returns a draft has not registered anything.
+
+    `validate` returns `ready` or raises, so this is a collaborator breaking the protocol. The
+    console must not turn that into a success view: an architect would be told a source had been
+    probed when nothing recorded that it was.
+    """
+
+    class _UnvalidatingCommands:
+        def register_source(
+            self,
+            *,
+            tenant_id: str,
+            connection_handle: str,
+            provider_kind: AcquisitionProviderKind,
+            account_mode: SourceAccountMode,
+            approved_object_refs: tuple[str, ...],
+        ) -> SourceConnectionBinding:
+            return service.create_draft(
+                tenant_id=tenant_id,
+                provider_kind=provider_kind,
+                connection_handle=connection_handle,
+                account_mode=account_mode,
+                approved_object_refs=approved_object_refs,
+            )
+
+    registry = _source_registry(tmp_path)
+    service = registry.service
+    backend = stack.backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        catalog_bindings=_StaticCatalogBindingReader(),
+        source_bindings=service,
+        enrolled_source_connections=_EnrolledSourceConnections(_enrolled_connection()),
+        source_registration_commands=_UnvalidatingCommands(),
+    )
+
+    with pytest.raises(ConsoleUnavailable) as failure:
+        backend.register_source(_architect_context(), _registration())
+
+    assert failure.value.code == CAPABILITY_NOT_DELIVERED
+    registry.repository.close()

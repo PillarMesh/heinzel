@@ -8,6 +8,7 @@ import type {
   ProcessPackageCommand,
   SessionView,
   SetupStage,
+  SourceRegistrationCommand,
   WarehouseBindingCommand,
 } from "../../api/generated"
 import type {MutationRequestContext, OperationSubmissionResult} from "../../api/client"
@@ -34,6 +35,10 @@ export interface SetupClient {
   getOperation(operationId: string): Promise<ConsoleEnvelopeOperationView>
   getReview(reviewId: string): Promise<ConsoleEnvelopeReviewView>
   getSetup(): Promise<ConsoleEnvelopeSetupView>
+  registerSource(
+    command: SourceRegistrationCommand,
+    context: MutationRequestContext,
+  ): Promise<OperationSubmissionResult>
   submitProcessPackage(
     command: ProcessPackageCommand,
     context: MutationRequestContext,
@@ -126,7 +131,14 @@ export function SetupWorkbench({
         ) : visibleStage === "managed_services" ? (
           <ServicesStage setup={setup} />
         ) : visibleStage === "sources" ? (
-          <SourcesStage setup={setup} />
+          <SourcesStage
+            client={client}
+            idempotencyKeyFactory={idempotencyKeyFactory}
+            onProjectionsChanged={onProjectionsChanged}
+            pollTimer={pollTimer}
+            session={session}
+            setup={setup}
+          />
         ) : visibleStage === "business_process" ? (
           <ProcessStage
             client={client}

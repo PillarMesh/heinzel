@@ -46,6 +46,7 @@ from .contracts import (
     SelectableAnswerTermsView,
     SessionView,
     SetupView,
+    SourceRegistrationCommand,
     WarehouseBindingCommand,
     WorkspaceView,
 )
@@ -155,6 +156,10 @@ class ConsoleBackend(Protocol):
 
     def submit_process_package(
         self, context: TrustedActorContext, command: ProcessPackageCommand
+    ) -> OperationView: ...
+
+    def register_source(
+        self, context: TrustedActorContext, command: SourceRegistrationCommand
     ) -> OperationView: ...
 
     def decide_review(

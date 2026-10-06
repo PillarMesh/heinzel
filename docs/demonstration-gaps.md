@@ -51,7 +51,7 @@ offering one would assert a grain the publication never stated.
 | --- | --- | --- |
 | The demonstration wires no warehouse-binding reader, so the warehouse capability reports `not_delivered` and the setup surface refuses. The workspace still summarises as `active`, deliberately: routing to a setup surface that answers 503 would name work the deployment cannot offer. | Unbuilt | `GovernedConsoleBackend` construction in `demo/console.py` passes no `warehouse_bindings`; `_warehouse_capability` and `_workspace_state` in `governed_backend.py` |
 | The demonstration provisions its own PostgreSQL rather than one warehouse-control provisioned, so its setup never advances past `foundation`. Passing a reader would not change that: a binding reported here has to be one warehouse-control made. | Unbuilt | `demo/warehouse.py` |
-| The `sources`, `meaning`, `data_product` and `activation` setup stages are reported blocked unconditionally. | Unbuilt | `_UNDELIVERED_STAGES` in `governed_backend.py` |
+| The `meaning`, `data_product` and `activation` setup stages are reported blocked unconditionally. `sources` no longer is: its state derives from the connection-broker read, and it reports blocked with its own dependency named when no reader is wired. | Unbuilt | `_UNDELIVERED_STAGES` and `_stage_states` in `governed_backend.py` |
 | The engine options carry a fixed region and one capacity profile. | Unbuilt | `WarehouseOptionView` construction in `governed_backend.py` |
 
 warehouse-control itself provisions, validates, backs up, restores, suspends, resumes and retires
@@ -68,7 +68,9 @@ database does. Closing this is a deployment-shape change, not a reader.
 
 | Gap | Kind | Established by |
 | --- | --- | --- |
-| No surface registers a source; the demonstration acquires one seeded source at startup. | Unbuilt | `demo/seed.py`, `_UNDELIVERED_STAGES` |
+| The console registers a source, and the demonstration cannot reach that surface. It lists the bindings the broker holds for a tenant, offers the enrolled connections no binding names yet, and registers one by driving `draft -> validating -> ready` through `SourceBindingService`. It is reached through `GET /api/v1/setup` and `POST /api/v1/setup/sources`, and the demonstration answers both `capability_not_delivered` for the warehouse-binding reason in section 1 above. | Wiring | `register_source` in `governed_backend.py`; `_require_warehouse_binding_reader` refuses `get_setup` at `governed_backend.py:864` |
+| The demonstration enrols no source connection, so it would offer nothing to register even past the setup refusal. Its role passwords are minted fresh on every start and written nowhere, and enrolment is immutable per handle -- so a handle enrolled on one start is refused on the next, and enrolling at all would put a credential on the state volume the demonstration deliberately keeps clear of one. | Unbuilt | `_fresh_passwords` in `demo/bootstrap.py:86-96`, applied again at `:303-305`; `enroll_connection` in `demo/source_secrets.py:151-173` |
+| The demonstration acquires one seeded source at startup under a source binding it constructs by hand, rather than one the broker registered. | Unbuilt | `_DemoSourceBindingReader` and `_source_binding` in `demo/generation.py`, `demo/seed.py` |
 | The Stripe provider reads object snapshots and events against a mocked API, is not composed into acquisition, and has no live test. | Unbuilt | `providers/stripe`, [status.md](status.md) |
 | No owning service binds a contract to its destination; LAND routing is deployment configuration. | Unbuilt | [status.md](status.md) |
 | One generation, materialized once. No refresh, no second generation, and no scheduler: `services/trigger` holds trigger policies and nothing runs them. | Unbuilt | `services/trigger`, [quickstart README](../deploy/quickstart/README.md) |

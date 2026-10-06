@@ -128,6 +128,16 @@ type AccessMode = Literal["query", "dashboard", "export"]
 # name. A test pins the two together, so a third kind fails there rather than being dropped from
 # what a requester is offered.
 type AnswerTermKind = Literal["dimension", "metric"]
+# Mirror the connection broker's own source vocabularies: which provider reads a source, which
+# kind of account the credential is for, and where the binding stands in its lifecycle. Restated
+# rather than imported, as the acquisition vocabularies above are, and a contract test pins each
+# one to the owning model so a mirror that drifts fails there instead of dropping a registered
+# source out of what an architect is shown.
+type SourceProviderKind = Literal["postgresql", "stripe"]
+type SourceAccountModeView = Literal["not_applicable", "test", "live"]
+type SourceBindingStateView = Literal[
+    "draft", "validating", "ready", "suspended", "failed", "retired"
+]
 type ProductAggregation = Literal["sum", "count", "minimum", "maximum", "average"]
 type ProductFilterOperator = Literal["equals", "not_equals", "in", "greater_than", "less_than"]
 type ProductDeliveryOutput = Literal["dataset", "table", "dashboard"]
@@ -358,12 +368,51 @@ class ManagedServiceView(StrictModel):
 
 
 class SourceConnectionView(StrictModel):
+    """One source the connection broker holds a binding for, as an architect reads it.
+
+    `connection_handle` is the name an operator enrolled the connection under, and is the whole
+    of what the console knows about reaching the source: the connection detail itself is held by
+    whatever secret custody the deployment injected into the broker, and never travels here.
+    The handle is free text rather than a console public identifier because the deployment names
+    its own handles.
+
+    `capability_authority_digest` is present exactly when the binding is `ready`, because
+    `record_validation` is the only writer of that state and it requires the two-probe evidence
+    this digest comes from. So the digest is the console's evidence that the source was probed,
+    rather than a claim this projection makes about it.
+    """
+
     source_ref: PublicId
-    source_type: Literal["postgresql", "stripe"]
+    source_type: SourceProviderKind
     display_name: NonEmptyText
     state: CapabilityState
+    lifecycle_state: SourceBindingStateView | None = None
+    connection_handle: NonEmptyText | None = None
+    account_mode: SourceAccountModeView | None = None
+    approved_object_refs: JsonTuple[NonEmptyText] = Field(default=())
+    capability_authority_digest: Digest | None = None
     intended_checks: JsonTuple[NonEmptyText] = Field(default=())
     denied_checks: JsonTuple[NonEmptyText] = Field(default=())
+
+
+class EnrollableSourceHandleView(StrictModel):
+    """One connection an operator enrolled that no binding names yet.
+
+    This is an offer to register, not a connection: a handle, the provider that would read it,
+    the account mode the credential behind it is for, and the logical objects the deployment
+    declares for that handle. No endpoint, no credential and no reference to either -- the
+    console never receives a connection detail, and registering does not send it one.
+
+    The declared objects come from the deployment's own declaration rather than from the
+    browser, because the probe requires the declaration it validates against to equal the
+    binding's approved objects: a set typed into a form would be refused by the probe at best,
+    and would be an unapproved declaration reaching a registration at worst.
+    """
+
+    connection_handle: NonEmptyText
+    source_type: SourceProviderKind
+    account_mode: SourceAccountModeView
+    declared_object_refs: NonEmptyJsonTuple[NonEmptyText]
 
 
 class ProcessPackageView(StrictModel):
@@ -385,6 +434,7 @@ class SetupView(StrictModel):
     warehouse_binding: WarehouseBindingView | None = None
     managed_services: JsonTuple[ManagedServiceView] = Field(default=())
     sources: JsonTuple[SourceConnectionView] = Field(default=())
+    enrollable_sources: JsonTuple[EnrollableSourceHandleView] = Field(default=())
     process_package: ProcessPackageView | None = None
     pending_review_refs: JsonTuple[PublicId] = Field(default=())
 
@@ -1197,6 +1247,23 @@ class ProcessPackageCommand(StrictModel):
     manifest: BusinessProcessManifestCommand
 
 
+class SourceRegistrationCommand(StrictModel):
+    """Register the source behind one already enrolled connection handle.
+
+    The handle is the only subject the browser names. Everything the broker needs beyond it --
+    the provider kind, the account mode and the approved objects -- is taken from the offering
+    the server read, so the browser cannot widen a declaration or name a provider for a handle
+    the deployment declared differently. There is deliberately no connection field of any kind:
+    a browser form that accepted a connection string would be a credential-handling surface, and
+    `DemoSourceSecretStore.enroll_connection` is an operator action that happens before any
+    binding exists.
+    """
+
+    expected_revision: int = Field(ge=1)
+    active_role: Literal["data_architect"]
+    connection_handle: NonEmptyText
+
+
 class DecisionCommand(StrictModel):
     """One decision, against the exact revision and content the browser displayed.
 
@@ -1401,6 +1468,7 @@ class ConsoleApiSchema(StrictModel):
     error_response: ConsoleErrorEnvelope
     warehouse_binding_command: WarehouseBindingCommand
     process_package_command: ProcessPackageCommand
+    source_registration_command: SourceRegistrationCommand
     decision_command: DecisionCommand
     product_intent_approval_command: ProductIntentApprovalCommand
     admission_command: AdmissionCommand

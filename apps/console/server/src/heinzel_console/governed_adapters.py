@@ -32,6 +32,18 @@ from heinzel_catalog_control import (
     CatalogControlService,
     CatalogPersistenceError,
 )
+from heinzel_connection_broker import (
+    SourceAccountMode,
+    SourceBindingBoundaryError,
+    SourceBindingConflictError,
+    SourceBindingIntegrityError,
+    SourceBindingNotFoundError,
+    SourceBindingPersistenceError,
+    SourceBindingService,
+    SourceConnectionBinding,
+    SourceConnectionBindingState,
+    StaleSourceBindingRevisionError,
+)
 from heinzel_contract_model import (
     ApprovedSemanticVersion,
     ArtifactModel,
@@ -51,6 +63,7 @@ from heinzel_contract_service import (
 )
 from heinzel_evidence import AcquisitionEvidenceReceipt, RunRecord
 from heinzel_provider_sdk import CatalogProductDefinition
+from heinzel_provider_sdk.errors import AcquisitionProviderKind
 from heinzel_request_management import (
     ApprovedProductIntent,
     ArchitectRequestView,
@@ -337,6 +350,79 @@ class ApprovedSemanticVersionReader(Protocol):
 
 class SourceObservationReader(Protocol):
     def load(self, tenant_id: str, observation_id: str, version: int) -> SourceObservation: ...
+
+
+class SourceBindingReader(Protocol):
+    """Which sources the connection broker holds a binding for, for one tenant.
+
+    `SourceBindingService` and `SQLiteSourceBindingRepository` both satisfy this directly, so
+    nothing stands between the console and the register the broker keeps.
+
+    Absent, the console reports the sources stage as blocked rather than as having none: a
+    console with no broker read behind it cannot tell a tenant that registered nothing from one
+    whose register it cannot see.
+    """
+
+    def list_for_tenant(self, tenant_id: str) -> tuple[SourceConnectionBinding, ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class EnrolledSourceConnection:
+    """One connection an operator enrolled, and the declaration the deployment reads it under.
+
+    Deliberately not a connection: a handle, the provider that reads it, the account mode the
+    credential is for, and the logical objects declared for it. No endpoint, no credential, and
+    no reference to either -- a reference is what the broker persists and what a probe presents,
+    and the console has no business holding one.
+
+    The declaration travels with the handle because the probe requires the settings it validates
+    against to declare exactly the binding's approved objects
+    (`PostgreSQLSourceCapabilityProbe._resolved_settings`). Registering therefore cannot invent
+    one, and nothing the browser sends can widen it.
+    """
+
+    connection_handle: str
+    provider_kind: AcquisitionProviderKind
+    account_mode: SourceAccountMode
+    declared_object_refs: tuple[str, ...]
+
+
+class EnrolledSourceConnectionReader(Protocol):
+    """Which already enrolled connections this tenant could register a source for.
+
+    Enrolment is an operator action that happens before any binding exists, in whatever secret
+    custody the deployment injected into the broker, so this read is the deployment's answer and
+    not a service's. It is tenant-qualified like every other console read even though a
+    custodian need not be: which tenant may register which handle is the deployment's answer
+    too, and a console that asked for every handle a custodian holds would offer one workspace
+    the handles of another.
+
+    Absent, the console reports that it cannot register a source rather than offering nothing to
+    register: those are different answers, and only one of them is honest about the wiring.
+    """
+
+    def list_enrolled_source_connections(
+        self, tenant_id: str
+    ) -> tuple[EnrolledSourceConnection, ...]: ...
+
+
+class SourceRegistrationCommands(Protocol):
+    """Register one enrolled connection as a validated source binding.
+
+    One call rather than the broker's three, for the same reason
+    `WarehouseLifecycleCommands.confirm_binding` is one: the three transactions belong to the
+    broker, and the console orders them without owning the lifecycle between them.
+    """
+
+    def register_source(
+        self,
+        *,
+        tenant_id: str,
+        connection_handle: str,
+        provider_kind: AcquisitionProviderKind,
+        account_mode: SourceAccountMode,
+        approved_object_refs: tuple[str, ...],
+    ) -> SourceConnectionBinding: ...
 
 
 # The Integration Contract trigger vocabulary is the platform's only source of cadence. A product
@@ -1147,6 +1233,55 @@ class WarehouseControlLifecycleCommands:
         )
 
 
+class BrokerSourceRegistrationCommands:
+    """Drives one source registration through the broker's three owning transactions.
+
+    `create_draft`, `transition` and `validate` all belong to the connection broker; the console
+    only orders them, and each step is held to the revision the previous one returned so a
+    concurrent change to the same binding is refused by the broker rather than overwritten here.
+
+    Nothing is forced to `ready`: `validate` reaches it only on evidence the provider's probe
+    returned, and a probe that refuses raises `SourceBindingBoundaryError` out of this method
+    with the binding left where the broker left it. So a registration that fails leaves a
+    binding in `validating` with no capability authority, which is the state the broker records
+    and not one this adapter decides.
+
+    The registration is deliberately not idempotent over an existing binding: the broker derives
+    the binding identifier from the tenant, provider and handle, so a second registration of the
+    same handle is refused by `create_draft` as a conflict instead of silently re-probing a
+    binding that already exists.
+    """
+
+    def __init__(self, service: SourceBindingService) -> None:
+        self._service = service
+
+    def register_source(
+        self,
+        *,
+        tenant_id: str,
+        connection_handle: str,
+        provider_kind: AcquisitionProviderKind,
+        account_mode: SourceAccountMode,
+        approved_object_refs: tuple[str, ...],
+    ) -> SourceConnectionBinding:
+        draft = self._service.create_draft(
+            tenant_id=tenant_id,
+            provider_kind=provider_kind,
+            connection_handle=connection_handle,
+            account_mode=account_mode,
+            approved_object_refs=approved_object_refs,
+        )
+        validating = self._service.transition(
+            tenant_id,
+            draft.binding_id,
+            SourceConnectionBindingState.VALIDATING,
+            expected_revision=draft.revision,
+        )
+        return self._service.validate(
+            tenant_id, draft.binding_id, expected_revision=validating.revision
+        )
+
+
 def classify_downstream_failure(error: Exception) -> DownstreamClassification:
     """Classify an owning component's failure without flattening it.
 
@@ -1165,8 +1300,13 @@ def classify_downstream_failure(error: Exception) -> DownstreamClassification:
             StaleIncidentRevisionError,
             IncidentConflictError,
             RecoveryActionNotAllowedError,
+            StaleSourceBindingRevisionError,
+            SourceBindingConflictError,
         ),
     ):
+        # A source binding that already exists, or whose revision moved under a registration,
+        # is a conflict the architect resolves by reloading -- never a transient failure, and
+        # never a verdict about the source itself.
         return "conflict"
     if isinstance(
         error,
@@ -1179,11 +1319,21 @@ def classify_downstream_failure(error: Exception) -> DownstreamClassification:
             AcquisitionAuthorizationError,
             PermissionError,
             IncidentNotFoundError,
+            SourceBindingNotFoundError,
         ),
     ):
         # An authority failure answers exactly as an unknown object does, so a probe
         # cannot learn that the object exists.
         return "not_visible"
+    if isinstance(error, (SourceBindingIntegrityError, SourceBindingBoundaryError)):
+        # Before the transient arm below, because `SourceBindingIntegrityError` subclasses
+        # `SourceBindingPersistenceError`: corruption reported as a momentary failure would be
+        # retried forever. `SourceBindingBoundaryError` is the broker refusing what crossed its
+        # private boundary -- a resolver that could not resolve, or a probe that refused the
+        # source -- which retrying cannot change either, and which the console must not describe
+        # any further than this: the broker drops the cause deliberately, because a resolver's
+        # own message may quote the connection detail it was resolving.
+        return "integrity"
     if isinstance(
         error,
         (
@@ -1195,6 +1345,7 @@ def classify_downstream_failure(error: Exception) -> DownstreamClassification:
             IncidentPersistenceError,
             AcquisitionTransientError,
             AcquisitionThrottledError,
+            SourceBindingPersistenceError,
         ),
     ):
         return "unavailable"

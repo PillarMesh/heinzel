@@ -116,6 +116,7 @@ const setupClient = {
   getReview: vi.fn(async () => meaningEnvelope),
   getOperation: vi.fn(),
   confirmWarehouseBinding: vi.fn(),
+  registerSource: vi.fn(),
   submitProcessPackage: vi.fn(),
   decideReview: vi.fn(),
 }

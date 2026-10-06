@@ -113,6 +113,7 @@ const setupClient = {
   getReview: vi.fn(async () => ({meta: setupEnvelope.meta, data: review})),
   getOperation: vi.fn(async () => ({meta: setupEnvelope.meta, data: terminalOperation})),
   confirmWarehouseBinding: vi.fn(),
+  registerSource: vi.fn(),
   submitProcessPackage: vi.fn(),
   decideReview: vi.fn(),
 }
@@ -313,7 +314,7 @@ test("renders typed source intents with intended and denial probes", () => {
     />,
   )
 
-  expect(screen.getByRole("heading", {name: "Source boundaries"})).toBeVisible()
+  expect(screen.getByRole("heading", {name: "Registered sources"})).toBeVisible()
   expect(screen.getByRole("article", {name: "Orders PostgreSQL"})).toHaveTextContent(
     "Read approved order tables",
   )
