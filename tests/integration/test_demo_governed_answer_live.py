@@ -21,6 +21,7 @@ from pathlib import Path
 
 import pytest
 from heinzel_console.demo.answer_runtime import demo_governed_answer
+from heinzel_console.demo.answers import demo_question_selection
 from heinzel_console.demo.bootstrap import ensure_demo_generation
 from heinzel_console.demo.collaborators import (
     DEMO_REQUESTER_ID,
@@ -33,8 +34,11 @@ from heinzel_console.demo.seed import seed_demo_request
 from heinzel_console.demo.stores import DemoStores
 from heinzel_console.demo.warehouse import DEMO_SOURCE_DAYS
 from heinzel_console.governed_adapters import InMemoryWorkspacePrincipalDirectory
-from heinzel_contract_model import digest
-from heinzel_request_management import RequestManagementService, RequestState
+from heinzel_request_management import (
+    RequestManagementService,
+    RequestState,
+    StakeholderQuestion,
+)
 
 from tests.integration.test_postgresql_answer_query_live import _fresh_postgresql_cluster
 
@@ -104,10 +108,14 @@ def test_the_demonstration_answers_its_own_seeded_question(tmp_path: Path) -> No
                 principal_ref=DEMO_REQUESTER_PRINCIPAL_REF,
                 clock=_clock,
             ) as governed:
+                # The seeded question itself, selection included: the interpreter resolves the
+                # governed terms the request carries and refuses a question that names none.
+                assert isinstance(seeded.payload, StakeholderQuestion)
+                assert seeded.payload.selection == demo_question_selection()
                 admission = governed.preparation.prepare(
                     request_id=seeded.request_id,
                     request_revision=investigating.revision,
-                    question_digest=digest(seeded.payload),
+                    question=seeded.payload,
                     actor_id="architect-demo",
                 )
 

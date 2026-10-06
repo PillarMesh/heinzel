@@ -20,7 +20,11 @@ from heinzel_console.demo.collaborators import DEMO_ARCHITECT_ID, DEMO_REQUESTER
 from heinzel_console.demo.publication import DEMO_QUESTION
 from heinzel_contract_model import digest
 from heinzel_request_management import RequestIntakeContent
-from heinzel_request_management.models import DataAccessRequest, StakeholderQuestion
+from heinzel_request_management.models import (
+    DataAccessRequest,
+    QuestionTermSelection,
+    StakeholderQuestion,
+)
 from starlette.testclient import TestClient
 
 ORIGIN = "http://127.0.0.1:8000"
@@ -193,14 +197,19 @@ def test_the_seeded_question_travels_the_whole_journey_to_execution_ready(
     assert admitted.json()["data"]["state"] == "execution_ready"
 
 
-@pytest.mark.parametrize("path", ["/api/v1/runs", "/api/v1/acquisition-receipts"])
+@pytest.mark.parametrize(
+    "path", ["/api/v1/runs", "/api/v1/acquisition-receipts", "/api/v1/answer-terms"]
+)
 def test_the_capabilities_outside_the_demonstration_answer_not_delivered(
     console: _Console, path: str
 ) -> None:
-    """Runs and answer delivery are absent, and say so rather than looking empty.
+    """Runs, acquisition evidence and the governed terms are absent, and say so rather than
+    looking empty.
 
     A 503 naming the missing dependency is the honest answer; an empty list would read as a
-    working capability with nothing in it.
+    working capability with nothing in it. The governed terms are the clearest case: a console
+    with no composed answer behind it can resolve a question composed from no term at all, so
+    offering a list would be offering a form that produces an unanswerable request.
     """
     response = console.get(path, actor=DEMO_ARCHITECT_ID)
     assert response.status_code == 503, response.text
@@ -365,3 +374,78 @@ def test_the_seeded_question_is_not_refused_where_an_ungrounded_one_is(
     assert proposed["state"] != "no_valid_plan"
     assert proposed["preparation_notes"] == []
     assert proposed["proposal"] is not None
+
+
+def test_a_question_submitted_with_its_governed_terms_is_accepted_and_reaches_the_inbox(
+    console: _Console,
+) -> None:
+    """The browser digests the selection with the question, and the service rebuilds both.
+
+    The digest sent here is computed from the artifact the service will rebuild, so a console
+    that dropped the selection, reordered it or left out its schema version would be refused
+    `request_digest_mismatch` instead of recording a request.
+    """
+    selection = QuestionTermSelection(metric_ref="daily-order-value", dimension_refs=("order_day",))
+    question = "What is the daily order value by day?"
+    payload = StakeholderQuestion(purpose=PURPOSE, question=question, selection=selection)
+
+    created = console.post(
+        "/api/v1/requests",
+        {
+            "expected_revision": 1,
+            "request_digest": digest(RequestIntakeContent(title=question, payload=payload)),
+            "active_role": "requester",
+            "title": question,
+            "request": {
+                "kind": "stakeholder_question",
+                "purpose": PURPOSE,
+                "question": question,
+                "selection": {
+                    "metric_ref": "daily-order-value",
+                    "dimension_refs": ["order_day"],
+                },
+            },
+        },
+        key="selected-intake",
+        actor=DEMO_REQUESTER_ID,
+    )
+
+    assert created.status_code == 200, created.text
+    request_id = created.json()["data"]["request_id"]
+    opened = console.get(f"/api/v1/inbox/{request_id}", actor=DEMO_ARCHITECT_ID)
+    assert opened.status_code == 200, opened.text
+    assert opened.json()["data"]["question"] == question
+
+
+def test_a_selection_the_term_artifact_refuses_never_reaches_the_inbox(console: _Console) -> None:
+    """One term named as both the measure and its breakdown is refused at intake.
+
+    The console rebuilds the payload through `QuestionTermSelection`, so the artifact's own
+    refusal is what answers: the browser is not trusted to have offered a valid pair.
+    """
+    question = "What is the daily order value by itself?"
+
+    refused = console.post(
+        "/api/v1/requests",
+        {
+            "expected_revision": 1,
+            "request_digest": "0" * 64,
+            "active_role": "requester",
+            "title": question,
+            "request": {
+                "kind": "stakeholder_question",
+                "purpose": PURPOSE,
+                "question": question,
+                "selection": {
+                    "metric_ref": "daily-order-value",
+                    "dimension_refs": ["daily-order-value"],
+                },
+            },
+        },
+        key="self-selected-intake",
+        actor=DEMO_REQUESTER_ID,
+    )
+
+    assert refused.status_code >= 400, refused.text
+    inbox = console.get("/api/v1/inbox", actor=DEMO_ARCHITECT_ID)
+    assert question not in [item["title"] for item in inbox.json()["data"]["items"]]

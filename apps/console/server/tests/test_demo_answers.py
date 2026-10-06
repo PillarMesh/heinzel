@@ -17,12 +17,16 @@ import pytest
 from heinzel_console.demo.answers import (
     DEMO_ANSWER_POLICY_ID,
     DemoAnswerInterpreter,
+    DemoAnswerSelectionRefused,
     activate_demo_answer_scope_policy,
     demo_answer_bindings,
     demo_entitlement_body,
     demo_product_reference,
+    demo_question_selection,
 )
 from heinzel_console.demo.catalog import (
+    DEMO_DIMENSION_TERM_ID,
+    DEMO_METRIC_TERM_ID,
     demo_dimension_reference,
     demo_metric_reference,
     demo_semantic_version_reference,
@@ -39,6 +43,7 @@ from heinzel_console.demo.stores import DemoStores
 from heinzel_contract_model import ApprovedSemanticVersion, ArtifactReference, digest
 from heinzel_request_management import (
     AnswerQuestion,
+    QuestionTermSelection,
     SQLiteAnswerScopePolicyRepository,
     StakeholderQuestion,
 )
@@ -72,14 +77,33 @@ def _product_ref(published: DemoPublication) -> ArtifactReference:
     )
 
 
-def _question() -> AnswerQuestion:
+def _question(selection: QuestionTermSelection | None = None) -> AnswerQuestion:
+    """The reading the demonstration asks for, about the question its seed submits.
+
+    The default selection is the seed's own, because that is the question the demonstration
+    answers; a case that wants no selection, or a different one, passes it.
+    """
+    payload = StakeholderQuestion(
+        question=DEMO_QUESTION,
+        purpose=DEMO_PURPOSE,
+        selection=demo_question_selection() if selection is None else selection,
+    )
     return AnswerQuestion(
         tenant_id=DEMO_TENANT_ID,
         request_id="request-demo-1",
         request_revision=2,
-        question_digest=digest(StakeholderQuestion(question=DEMO_QUESTION, purpose=DEMO_PURPOSE)),
+        question_digest=digest(payload),
         interpreter="form",
         interpreter_ref=DemoAnswerInterpreter.interpreter_ref,
+        selection=payload.selection,
+    )
+
+
+def _interpreter(published: DemoPublication) -> DemoAnswerInterpreter:
+    return DemoAnswerInterpreter(
+        published=demo_answer_bindings(
+            published.semantic_version, product_ref=_product_ref(published)
+        )
     )
 
 
@@ -89,7 +113,7 @@ def test_the_interpreter_names_terms_the_bindings_resolve(published: DemoPublica
     A mismatch is not a type error anywhere: the intent compiles, validation refuses it, and the
     refusal names an unresolved reference rather than the disagreement that caused it.
     """
-    candidate = DemoAnswerInterpreter().interpret(_question())
+    candidate = _interpreter(published).interpret(_question())
     bindings = demo_answer_bindings(published.semantic_version, product_ref=_product_ref(published))
 
     assert {binding.canonical_ref for binding in bindings if binding.kind == "metric"} == set(
@@ -98,6 +122,99 @@ def test_the_interpreter_names_terms_the_bindings_resolve(published: DemoPublica
     assert {binding.canonical_ref for binding in bindings if binding.kind == "dimension"} == set(
         candidate.dimension_refs
     )
+
+
+def test_the_interpreter_names_the_terms_the_question_selected(
+    published: DemoPublication,
+) -> None:
+    """The intent is the requester's selection, not a list this interpreter holds.
+
+    The demonstration publishes one metric and one dimension, so the selection and the whole
+    publication name the same two terms. Asserting against the selection rather than against the
+    bindings is what distinguishes an interpreter that read the choice from one that returned
+    everything it knew.
+    """
+    selection = demo_question_selection()
+
+    candidate = _interpreter(published).interpret(_question(selection))
+
+    assert candidate.intent_kind == "metric_value"
+    assert candidate.metric_refs == (selection.metric_ref,)
+    assert candidate.dimension_refs == selection.dimension_refs
+    assert candidate.filters == ()
+    assert candidate.time_window is None
+
+
+def test_the_interpreter_refuses_a_question_that_selected_no_terms(
+    published: DemoPublication,
+) -> None:
+    """It does not read the question's words, so a question with no selection names nothing.
+
+    Naming the publication's own terms instead would answer a question nobody composed, which is
+    the substitution this interpreter exists to stop.
+    """
+    with pytest.raises(DemoAnswerSelectionRefused, match="names no governed terms"):
+        _interpreter(published).interpret(_question().model_copy(update={"selection": None}))
+
+
+def test_the_interpreter_refuses_a_term_the_publication_does_not_carry(
+    published: DemoPublication,
+) -> None:
+    """The builder offers published terms alone, and this refuses one anyway.
+
+    A reference the publication never approved has no meaning to resolve, so there is nothing to
+    substitute for it: the validation would refuse the intent as an unknown reference, and
+    refusing here keeps the refusal attributable to the term that caused it.
+    """
+    invented = QuestionTermSelection(
+        metric_ref="margin-nobody-approved", dimension_refs=(DEMO_DIMENSION_TERM_ID,)
+    )
+
+    with pytest.raises(DemoAnswerSelectionRefused, match="no approved term named"):
+        _interpreter(published).interpret(_question(invented))
+
+
+def test_the_interpreter_refuses_a_dimension_selected_as_the_metric(
+    published: DemoPublication,
+) -> None:
+    """Both terms are published, so only their kinds make this selection wrong.
+
+    A dimension has no aggregate and no measure column behind it. Compiled as the metric it would
+    produce a statement over a grouping column, which is not the question's measure at all.
+    """
+    inverted = QuestionTermSelection(
+        metric_ref=DEMO_DIMENSION_TERM_ID, dimension_refs=(DEMO_METRIC_TERM_ID,)
+    )
+
+    with pytest.raises(DemoAnswerSelectionRefused, match="approved dimension, not a metric"):
+        _interpreter(published).interpret(_question(inverted))
+
+
+def test_the_interpreter_refuses_a_metric_selected_as_a_dimension(
+    published: DemoPublication,
+) -> None:
+    """The mirror of the case above, checked separately because it is a separate guard.
+
+    A selection naming the published metric as its breakdown passes the metric check, because its
+    own metric is a real metric; only the dimension check can catch it.
+
+    This demonstration publishes one metric, so such a selection names one term twice, and
+    `QuestionTermSelection` refuses that itself -- no request can carry it. The question is
+    therefore built past the artifact to reach the interpreter's own guard: a deployment
+    publishing two metrics could compose this from two distinct approved terms, and the guard
+    must not depend on the artifact having caught it first.
+    """
+    valid = _question()
+    selection = valid.selection
+    assert selection is not None
+    past_the_artifact = valid.model_copy(
+        update={
+            "selection": selection.model_copy(update={"dimension_refs": (DEMO_METRIC_TERM_ID,)})
+        }
+    )
+
+    with pytest.raises(DemoAnswerSelectionRefused, match="approved metric, not a dimension"):
+        _interpreter(published).interpret(past_the_artifact)
 
 
 def test_the_bindings_carry_the_publications_own_term_digests(published: DemoPublication) -> None:
@@ -110,12 +227,12 @@ def test_the_bindings_carry_the_publications_own_term_digests(published: DemoPub
     assert by_kind["dimension"].version_ref == demo_dimension_reference(published.semantic_version)
 
 
-def test_the_interpreter_refuses_another_tenants_question() -> None:
+def test_the_interpreter_refuses_another_tenants_question(published: DemoPublication) -> None:
     """An intent built for one tenant would be validated against this one's policy."""
     foreign = _question().model_copy(update={"tenant_id": "tenant-somebody-else"})
 
     with pytest.raises(ValueError, match="another tenant"):
-        DemoAnswerInterpreter().interpret(foreign)
+        _interpreter(published).interpret(foreign)
 
 
 def test_the_entitlement_names_the_product_and_its_approved_terms(

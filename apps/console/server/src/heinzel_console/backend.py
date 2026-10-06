@@ -43,6 +43,7 @@ from .contracts import (
     RetryOperationCommand,
     ReviewView,
     RunsView,
+    SelectableAnswerTermsView,
     SessionView,
     SetupView,
     WarehouseBindingCommand,
@@ -129,6 +130,10 @@ class ConsoleBackend(Protocol):
     def run_acquisition_now(
         self, context: TrustedActorContext, command: AcquisitionRunNowCommand
     ) -> AcquisitionReceiptView: ...
+
+    def get_selectable_answer_terms(
+        self, context: TrustedActorContext
+    ) -> SelectableAnswerTermsView: ...
 
     def get_catalog_asset(
         self, context: TrustedActorContext, asset_ref: str

@@ -9,6 +9,7 @@ import type {
   ConsoleEnvelopeConversationView,
   ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView,
   ConsoleEnvelopeRequesterRequestView,
+  ConsoleEnvelopeSelectableAnswerTermsView,
   ConversationView,
   RequesterRequestView,
   SessionView,
@@ -172,6 +173,37 @@ const createdEnvelope: ConsoleEnvelopeRequesterRequestView = {
   },
 }
 
+// A workspace whose publication carries no approved terms. That is the default here because it is
+// what the console offered before the builder existed: the question goes as text alone. The cases
+// that exercise the builder publish terms of their own.
+const noAnswerTermsEnvelope: ConsoleEnvelopeSelectableAnswerTermsView = {
+  meta: {correlation_id: "correlation-answer-terms", data_provenance: "demo_fixture"},
+  data: {terms: []},
+}
+
+const answerTermsEnvelope: ConsoleEnvelopeSelectableAnswerTermsView = {
+  meta: {correlation_id: "correlation-answer-terms", data_provenance: "demo_fixture"},
+  data: {
+    terms: [
+      {
+        term_ref: "net-revenue",
+        kind: "metric",
+        approved_version: {artifact_id: "net-revenue", version: 2, digest: "a".repeat(64)},
+      },
+      {
+        term_ref: "region",
+        kind: "dimension",
+        approved_version: {artifact_id: "region", version: 2, digest: "b".repeat(64)},
+      },
+      {
+        term_ref: "order_day",
+        kind: "dimension",
+        approved_version: {artifact_id: "order_day", version: 2, digest: "c".repeat(64)},
+      },
+    ],
+  },
+}
+
 const client = {
   acceptClarifiedOutcome: vi.fn(),
   appendConversationMessage: vi.fn(),
@@ -179,6 +211,7 @@ const client = {
   getClarifiedOutcome: vi.fn(),
   getConversation: vi.fn(),
   getRequesterRequests: vi.fn(),
+  getSelectableAnswerTerms: vi.fn(),
   revokeAccess: vi.fn(),
   withdrawRequest: vi.fn(),
   // Reviewer projections this surface must never reach for.
@@ -214,6 +247,7 @@ beforeEach(() => {
   client.getRequesterRequests.mockResolvedValue(requestsEnvelope)
   client.getConversation.mockResolvedValue(conversationEnvelope)
   client.getClarifiedOutcome.mockResolvedValue(outcomeEnvelope)
+  client.getSelectableAnswerTerms.mockResolvedValue(noAnswerTermsEnvelope)
 })
 
 test("labels data access unavailable when the governed runtime cannot fulfill it", async () => {
@@ -903,4 +937,146 @@ test("offers a result page only when the service authorizes it", async () => {
   expect(await screen.findByRole("link", {name: "View results"})).toHaveAttribute(
     "href", `/requests/${deliveredRequest.request_id}/result`,
   )
+})
+
+
+test("offers only the governed terms the workspace publishes, and invents none", async () => {
+  const user = userEvent.setup()
+  client.getSelectableAnswerTerms.mockResolvedValue(answerTermsEnvelope)
+  renderSurface()
+
+  await user.click(await screen.findByRole("radio", {name: "Stakeholder question"}))
+
+  const measure = await screen.findByRole("combobox", {name: "Measure"})
+  expect(
+    within(measure)
+      .getAllByRole("option")
+      .map((option) => option.textContent),
+  ).toEqual(["Choose a governed measure", "net-revenue (approved version 2)"])
+  expect(screen.getByRole("checkbox", {name: "region (approved version 2)"})).toBeInTheDocument()
+  expect(screen.getByRole("checkbox", {name: "order_day (approved version 2)"})).toBeInTheDocument()
+  // A dimension is never offered as the measure and a metric is never offered as a breakdown.
+  expect(screen.queryByRole("option", {name: /region/})).not.toBeInTheDocument()
+  expect(screen.queryByRole("checkbox", {name: /net-revenue/})).not.toBeInTheDocument()
+})
+
+test("refuses to submit a question whose governed terms the requester has not chosen", async () => {
+  const user = userEvent.setup()
+  client.getSelectableAnswerTerms.mockResolvedValue(answerTermsEnvelope)
+  renderSurface()
+
+  await user.click(await screen.findByRole("radio", {name: "Stakeholder question"}))
+  await user.type(screen.getByRole("textbox", {name: "Request title"}), "Weekly revenue")
+  await user.type(screen.getByRole("textbox", {name: "Purpose"}), "Weekly review.")
+  await user.type(screen.getByRole("textbox", {name: "Question"}), "Why did revenue move?")
+  await user.click(screen.getByRole("button", {name: "Submit request"}))
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Choose the governed measure the question asks for.",
+  )
+  expect(client.createRequest).not.toHaveBeenCalled()
+
+  await user.selectOptions(
+    screen.getByRole("combobox", {name: "Measure"}),
+    "net-revenue",
+  )
+  await user.click(screen.getByRole("button", {name: "Submit request"}))
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Choose at least one governed term to break the measure down by.",
+  )
+  expect(client.createRequest).not.toHaveBeenCalled()
+})
+
+test("submits the governed terms the requester composed, digesting them with the question", async () => {
+  const user = userEvent.setup()
+  client.getSelectableAnswerTerms.mockResolvedValue(answerTermsEnvelope)
+  client.createRequest.mockResolvedValue(createdEnvelope)
+  renderSurface()
+
+  await user.click(await screen.findByRole("radio", {name: "Stakeholder question"}))
+  await user.type(screen.getByRole("textbox", {name: "Request title"}), "Weekly revenue")
+  await user.type(screen.getByRole("textbox", {name: "Purpose"}), "Weekly review.")
+  await user.type(screen.getByRole("textbox", {name: "Question"}), "Why did revenue move?")
+  await user.selectOptions(screen.getByRole("combobox", {name: "Measure"}), "net-revenue")
+  await user.click(screen.getByRole("checkbox", {name: "region (approved version 2)"}))
+  await user.click(screen.getByRole("button", {name: "Submit request"}))
+
+  await waitFor(() => expect(client.createRequest).toHaveBeenCalledTimes(1))
+  expect(client.createRequest.mock.calls[0]![0].request).toEqual({
+    kind: "stakeholder_question",
+    purpose: "Weekly review.",
+    question: "Why did revenue move?",
+    selection: {metric_ref: "net-revenue", dimension_refs: ["region"]},
+  })
+  // The selection is content, so the digest the browser binds covers it -- including the nested
+  // artifact's own schema version, which the service supplies when it rebuilds the payload.
+  expect(digestText).toHaveBeenCalledWith(
+    '{"payload":{"purpose":"Weekly review.","question":"Why did revenue move?",' +
+      '"request_type":"stakeholder_question",' +
+      '"selection":{"dimension_refs":["region"],"metric_ref":"net-revenue",' +
+      '"schema_version":"1"}},"title":"Weekly revenue"}',
+  )
+})
+
+test("submits the breakdown in publication order however the requester ticked it", async () => {
+  const user = userEvent.setup()
+  client.getSelectableAnswerTerms.mockResolvedValue(answerTermsEnvelope)
+  client.createRequest.mockResolvedValue(createdEnvelope)
+  renderSurface()
+
+  await user.click(await screen.findByRole("radio", {name: "Stakeholder question"}))
+  await user.type(screen.getByRole("textbox", {name: "Request title"}), "Weekly revenue")
+  await user.type(screen.getByRole("textbox", {name: "Purpose"}), "Weekly review.")
+  await user.type(screen.getByRole("textbox", {name: "Question"}), "Why did revenue move?")
+  await user.selectOptions(screen.getByRole("combobox", {name: "Measure"}), "net-revenue")
+  await user.click(screen.getByRole("checkbox", {name: "order_day (approved version 2)"}))
+  await user.click(screen.getByRole("checkbox", {name: "region (approved version 2)"}))
+  await user.click(screen.getByRole("button", {name: "Submit request"}))
+
+  await waitFor(() => expect(client.createRequest).toHaveBeenCalledTimes(1))
+  // The order of a breakdown changes the digest, so it is the publication's order and not the
+  // order of clicks: two requesters who chose the same terms submit the same content.
+  expect(client.createRequest.mock.calls[0]![0].request).toEqual({
+    kind: "stakeholder_question",
+    purpose: "Weekly review.",
+    question: "Why did revenue move?",
+    selection: {metric_ref: "net-revenue", dimension_refs: ["region", "order_day"]},
+  })
+})
+
+test("says a workspace publishes no governed terms rather than offering an empty builder", async () => {
+  const user = userEvent.setup()
+  client.getSelectableAnswerTerms.mockRejectedValue(
+    new ConsoleApiError(503, {
+      meta: {correlation_id: "correlation-answer-terms", data_provenance: "governed_local"},
+      error: {
+        code: "capability_not_delivered",
+        safe_message: "No publication offers approved terms.",
+        recovery_action: "none",
+      },
+    }),
+  )
+  renderSurface()
+
+  await user.click(await screen.findByRole("radio", {name: "Stakeholder question"}))
+
+  expect(
+    await screen.findByText(/publishes no governed terms yet/i),
+  ).toBeInTheDocument()
+  expect(screen.queryByRole("combobox", {name: "Measure"})).not.toBeInTheDocument()
+})
+
+test("reports a failed governed-terms read as a failure, never as an absent capability", async () => {
+  const user = userEvent.setup()
+  client.getSelectableAnswerTerms.mockRejectedValue(new Error("transport"))
+  renderSurface()
+
+  await user.click(await screen.findByRole("radio", {name: "Stakeholder question"}))
+
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "The governed terms could not be displayed safely.",
+  )
+  expect(screen.queryByText(/publishes no governed terms yet/i)).not.toBeInTheDocument()
+  expect(screen.queryByRole("combobox", {name: "Measure"})).not.toBeInTheDocument()
 })

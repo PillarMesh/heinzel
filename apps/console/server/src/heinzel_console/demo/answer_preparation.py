@@ -48,6 +48,7 @@ from heinzel_request_management import (
     AnswerValidationContext,
     BoundSemanticReference,
     PolicyAdmissionReceipt,
+    StakeholderQuestion,
 )
 
 from ..answers import (
@@ -147,9 +148,20 @@ class DemoAnswerPreparation:
     clock: Callable[[], datetime]
 
     def prepare(
-        self, *, request_id: str, request_revision: int, question_digest: str, actor_id: str
+        self,
+        *,
+        request_id: str,
+        request_revision: int,
+        question: StakeholderQuestion,
+        actor_id: str,
     ) -> PolicyAdmissionReceipt:
         """Reach an admitted plan for this request, or refuse saying which step would not.
+
+        The whole question rather than its digest, because the interpreter resolves the governed
+        terms the question selected and the validation binds the digest of the content those terms
+        were selected in. A caller that passed the two separately could hand over a digest of one
+        question and the selection of another, and the intent would name terms the request never
+        carried.
 
         The order is not free. The entitlement has to be resolved before the question is
         validated, because the validation records the snapshot it was resolved against; the
@@ -182,9 +194,10 @@ class DemoAnswerPreparation:
                 tenant_id=DEMO_TENANT_ID,
                 request_id=request_id,
                 request_revision=request_revision,
-                question_digest=question_digest,
+                question_digest=digest(question),
                 interpreter="form",
                 interpreter_ref=DemoAnswerInterpreter.interpreter_ref,
+                selection=question.selection,
             ),
             policy=self.policy,
             context=AnswerValidationContext(
@@ -213,16 +226,15 @@ class DemoAnswerPreparation:
                 latest_policy_revision=self.policy.revision,
             ),
         )
+        # The terms the validated intent names, not every term the product carries: the statement
+        # has to be the statement the admitted intent describes. Reading the whole binding would
+        # compile a query over terms the requester did not select and the validation did not admit.
         projection = self.query_bindings.read(
             tenant_id=DEMO_TENANT_ID,
             product_ref=self.product_ref,
             generation=self.generation,
-            metric_refs=tuple(
-                binding.version_ref for binding in self.bindings if binding.kind == "metric"
-            ),
-            dimension_refs=tuple(
-                binding.version_ref for binding in self.bindings if binding.kind == "dimension"
-            ),
+            metric_refs=self._version_refs(validated.intent.metric_refs),
+            dimension_refs=self._version_refs(validated.intent.dimension_refs),
         )
         compiled = compile_governed_query(
             GovernedQueryInput(
@@ -292,6 +304,25 @@ class DemoAnswerPreparation:
                 f"{admission.evaluation.reason_codes}"
             )
         return admission.receipt
+
+    def _version_refs(self, canonical_refs: tuple[str, ...]) -> tuple[ArtifactReference, ...]:
+        """The approved version each canonical reference resolves to, in the order named.
+
+        The validation has already refused an intent naming a term the bindings do not carry, so
+        an unresolved reference here is a composition mistake rather than a requester's: it is
+        raised as the demonstration's own unavailability rather than compiled around.
+        """
+        by_canonical_ref = {binding.canonical_ref: binding for binding in self.bindings}
+        resolved: list[ArtifactReference] = []
+        for canonical_ref in canonical_refs:
+            binding = by_canonical_ref.get(canonical_ref)
+            if binding is None:
+                raise DemoGovernedAnswerUnavailable(
+                    f"the admitted intent names {canonical_ref!r}, which this product's approved "
+                    "terms do not carry"
+                )
+            resolved.append(binding.version_ref)
+        return tuple(resolved)
 
     def _input_watermarks(self, input_generation_digests: tuple[str, ...]) -> tuple[datetime, ...]:
         """The measured watermark of every input the product reads."""

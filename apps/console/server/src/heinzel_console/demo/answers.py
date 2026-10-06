@@ -4,7 +4,7 @@ The governed answer does not run on the product alone. It resolves the requester
 from a connected policy authority, checks the question against an approved answer scope policy,
 and refuses when either is absent. This module is the demonstration's own: the entitlement it
 publishes into its local authority, the scope policy it activates, and the interpreter that
-turns its one question into an intent naming approved terms.
+resolves the governed terms a question selected into an intent naming approved terms.
 
 This is demonstration data, not a deployment's. The entitlement is published by the
 demonstration rather than resolved from an enterprise directory, and the policy's approvals
@@ -17,8 +17,9 @@ Nothing in this package imports from `tests/`, and no test module is executed at
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import ClassVar, Literal
 
 from heinzel_access_control import SignedEntitlementBody
 from heinzel_contract_model import ApprovedSemanticVersion, ArtifactReference, digest
@@ -32,6 +33,7 @@ from heinzel_request_management import (
     AnswerScopePolicyRepository,
     BoundSemanticReference,
     ProductOwnerAuthority,
+    QuestionTermSelection,
 )
 
 from .catalog import (
@@ -48,10 +50,12 @@ __all__ = [
     "DEMO_ANSWER_POLICY_ID",
     "DEMO_ENTITLEMENT_PERMISSIONS",
     "DemoAnswerInterpreter",
+    "DemoAnswerSelectionRefused",
     "activate_demo_answer_scope_policy",
     "demo_answer_bindings",
     "demo_entitlement_body",
     "demo_product_reference",
+    "demo_question_selection",
 ]
 
 DEMO_ANSWER_POLICY_ID = "answer-policy-demo"
@@ -93,7 +97,11 @@ _PERIOD_SCAN_BUDGET_THRESHOLD = 2_000_000
 
 _STATEMENT_TIMEOUT_SECONDS = 15
 _RESULT_RETENTION_SECONDS = 3600
-_INTERPRETER_REF = "answer-form-v1"
+# The form of reading this interpreter performs, recorded in every intent it produces. It names
+# the term selection rather than a form, because that is what it now resolves: an intent recorded
+# under the old name was produced by a reading that did not look at the question at all, and the
+# two must stay distinguishable in the evidence.
+_INTERPRETER_REF = "answer-term-selection-v1"
 _ROW_LIMIT = 10
 
 
@@ -133,6 +141,23 @@ def demo_answer_bindings(
             version_ref=demo_dimension_reference(semantic_version),
             product_version_ref=product_ref,
         ),
+    )
+
+
+def demo_question_selection() -> QuestionTermSelection:
+    """The governed terms the demonstration's own question is composed from.
+
+    The same two identifiers `demo_answer_bindings` binds, and the same two the catalog's query
+    binding declares: `demo_metric_reference` and `demo_dimension_reference` resolve them out of
+    the approved semantic version and raise when it publishes no such term, so a selection naming
+    something the publication dropped fails where the publication is read rather than here.
+
+    A function rather than a constant, because `QuestionTermSelection` is frozen but a module
+    constant shared between the seed and the tests would still read as one object two callers
+    pass around; building it per call keeps each caller's selection its own.
+    """
+    return QuestionTermSelection(
+        metric_ref=DEMO_METRIC_TERM_ID, dimension_refs=(DEMO_DIMENSION_TERM_ID,)
     )
 
 
@@ -260,30 +285,84 @@ def activate_demo_answer_scope_policy(
     )
 
 
-class DemoAnswerInterpreter:
-    """The demonstration's one reading of its one question.
+class DemoAnswerSelectionRefused(ValueError):
+    """A question selected terms this publication does not carry, or carries differently.
 
-    Demonstration-grade and deliberately so: it does not read the question's words at all. A
-    real deployment resolves a question against the governed semantic layer, and that resolution
-    is a capability this demonstration does not deliver. What it does instead is name the two
-    approved terms the product carries, so everything downstream -- the validation, the
-    compilation and the ceilings -- is asked the same question a real interpreter would produce.
+    Raised rather than resolved around: substituting the terms the product happens to publish
+    would answer a question nobody asked, which is the whole failure this interpreter exists to
+    stop. The console classifies it as an integrity refusal, because it is a reading the console
+    cannot attribute to a revision the requester could reload.
+    """
+
+
+@dataclass(frozen=True, slots=True)
+class DemoAnswerInterpreter:
+    """Resolve the terms a question selected, against the terms the publication carries.
+
+    It still reads none of the question's words -- a question's words are a label, and resolving
+    prose against a governed vocabulary is a capability this demonstration does not deliver. What
+    it reads instead is the selection the requester composed from the published terms, so the
+    intent names what they chose rather than what this module happens to know about.
+
+    `published` is the same `demo_answer_bindings` tuple the validation is given, so a term that
+    is not in the publication is not in here either. The builder in the console offers exactly
+    these terms and nothing else, which makes a refusal below unreachable from a browser; it is
+    checked anyway, because an interpreter that trusted its caller to have offered the right
+    options would be the authority for a reading it never verified.
 
     The tenant is checked rather than assumed, because an intent built for another tenant would
     be validated against this one's policy.
     """
 
-    interpreter_ref: str = _INTERPRETER_REF
+    published: tuple[BoundSemanticReference, ...]
+
+    interpreter_ref: ClassVar[str] = _INTERPRETER_REF
 
     def interpret(self, question: AnswerQuestion) -> AnswerIntentCandidate:
         if question.tenant_id != DEMO_TENANT_ID:
             raise ValueError("the demonstration's interpreter received another tenant's question")
+        selection = question.selection
+        if selection is None:
+            raise DemoAnswerSelectionRefused(
+                "the question names no governed terms, and this interpreter does not read its "
+                "words: compose the question from the published terms and ask again"
+            )
+        metrics = self._refs_of_kind("metric")
+        dimensions = self._refs_of_kind("dimension")
+        carried = metrics | dimensions
+        unpublished = tuple(
+            reference
+            for reference in (selection.metric_ref, *selection.dimension_refs)
+            if reference not in carried
+        )
+        if unpublished:
+            raise DemoAnswerSelectionRefused(
+                f"the publication carries no approved term named {', '.join(sorted(unpublished))}"
+            )
+        if selection.metric_ref not in metrics:
+            raise DemoAnswerSelectionRefused(
+                f"{selection.metric_ref!r} is an approved dimension, not a metric, so it cannot "
+                "be what the question measures"
+            )
+        not_dimensions = tuple(
+            reference for reference in selection.dimension_refs if reference not in dimensions
+        )
+        if not_dimensions:
+            raise DemoAnswerSelectionRefused(
+                f"{', '.join(sorted(not_dimensions))} names an approved metric, not a dimension, "
+                "so it cannot be what the question is broken down over"
+            )
         return AnswerIntentCandidate(
             intent_kind="metric_value",
-            metric_refs=(DEMO_METRIC_TERM_ID,),
-            dimension_refs=(DEMO_DIMENSION_TERM_ID,),
+            metric_refs=(selection.metric_ref,),
+            dimension_refs=selection.dimension_refs,
             filters=(),
             time_window=None,
             ordering=(),
             row_limit=_ROW_LIMIT,
+        )
+
+    def _refs_of_kind(self, kind: Literal["dimension", "metric"]) -> frozenset[str]:
+        return frozenset(
+            binding.canonical_ref for binding in self.published if binding.kind == kind
         )

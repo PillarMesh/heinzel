@@ -8,6 +8,7 @@ import type {
   ConsoleEnvelopeConversationView,
   ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView,
   ConsoleEnvelopeRequesterRequestView,
+  ConsoleEnvelopeSelectableAnswerTermsView,
   ConsoleEnvelopeAccessLifecycleView,
   ConversationMessageCommand,
   CreateRequestCommand,
@@ -43,6 +44,8 @@ export interface RequesterClient {
   getClarifiedOutcome(requestId: string): Promise<ConsoleEnvelopeClarifiedOutcomeView>
   getConversation(requestId: string): Promise<ConsoleEnvelopeConversationView>
   getRequesterRequests(): Promise<ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView>
+  /** The governed terms a question may be composed from; the builder offers exactly these. */
+  getSelectableAnswerTerms(): Promise<ConsoleEnvelopeSelectableAnswerTermsView>
   revokeAccess(
     requestId: string,
     command: AccessRevocationCommand,

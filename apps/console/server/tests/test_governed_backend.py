@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Never
+from typing import Literal, Never
 
 import pytest
 from heinzel_access_control import (
@@ -38,6 +38,7 @@ from heinzel_console.governed_adapters import (
     ProductPublicationDefinitionReader,
     RequestImpactReader,
     RequestInboxReader,
+    SelectableAnswerTermReader,
     TenantAcquisitionReceiptReader,
     TenantRunLifecycleReader,
     TenantRunReader,
@@ -72,6 +73,7 @@ from heinzel_provider_sdk import (
 from heinzel_request_management import (
     ApprovalRequirement,
     ArchitectRequestView,
+    BoundSemanticReference,
     ClarifiedOutcomeStatement,
     FulfillmentPolicySnapshot,
     FulfillmentProposal,
@@ -456,6 +458,7 @@ def _backend(
     runs: TenantRunReader | None = None,
     run_lifecycle: TenantRunLifecycleReader | None = None,
     acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
+    selectable_answer_terms: SelectableAnswerTermReader | None = None,
     data_products: DataProductReferenceReader | None = None,
     product_publications: ProductPublicationDefinitionReader | None = None,
     impact_reader: RequestImpactReader | None = None,
@@ -484,6 +487,7 @@ def _backend(
         runs=runs,
         run_lifecycle=run_lifecycle,
         acquisition_receipts=acquisition_receipts,
+        selectable_answer_terms=selectable_answer_terms,
         data_products=data_products,
         product_publications=product_publications,
         impact_reader=impact_reader,
@@ -2227,3 +2231,93 @@ def test_distinct_terminal_outcomes_keep_distinct_console_states() -> None:
     assert _REQUEST_STATES[RequestState.FAILED] == "failed"
     assert _REQUEST_STATES[RequestState.RETIRED] == "closed"
     assert set(_REQUEST_STATES) == set(RequestState)
+
+
+class _StubSelectableAnswerTermReader:
+    """Mirrors the composed answer's own read, and answers with the real artifact.
+
+    `DemoGovernedAnswer.list_selectable_answer_terms` is what the console is given in
+    governed-local mode, so the double keeps that name and returns `BoundSemanticReference`
+    itself rather than a looser shape: a projection that accepted a bare string here would not
+    notice the console asking for a field the binding does not carry.
+    """
+
+    def __init__(self, terms: dict[str, tuple[BoundSemanticReference, ...]]) -> None:
+        self._terms = terms
+        self.asked: list[str] = []
+
+    def list_selectable_answer_terms(self, tenant_id: str) -> tuple[BoundSemanticReference, ...]:
+        self.asked.append(tenant_id)
+        return self._terms.get(tenant_id, ())
+
+
+def _bound_term(canonical_ref: str, kind: Literal["dimension", "metric"]) -> BoundSemanticReference:
+    return BoundSemanticReference(
+        canonical_ref=canonical_ref,
+        kind=kind,
+        aliases=(),
+        version_ref=ArtifactReference(artifact_id=canonical_ref, version=3, digest="a" * 64),
+        product_version_ref=ArtifactReference(
+            artifact_id="product-revenue", version=2, digest="b" * 64
+        ),
+    )
+
+
+def test_selectable_answer_terms_are_the_publications_own_terms_for_the_calling_tenant() -> None:
+    """What a requester may compose from is read, never listed by the console.
+
+    The console projects the canonical reference, the kind and the approved version the binding
+    carries. Inventing a term, a label or a version here would offer a question the answer
+    validation then refuses as an unknown reference.
+    """
+    reader = _StubSelectableAnswerTermReader(
+        {
+            _TENANT: (
+                _bound_term("daily-order-value", "metric"),
+                _bound_term("order_day", "dimension"),
+            )
+        }
+    )
+    backend = _backend(selectable_answer_terms=reader)
+
+    view = backend.get_selectable_answer_terms(_requester_context())
+
+    assert reader.asked == [_TENANT]
+    assert [(term.term_ref, term.kind) for term in view.terms] == [
+        ("daily-order-value", "metric"),
+        ("order_day", "dimension"),
+    ]
+    assert view.terms[0].approved_version.version == 3
+    assert view.terms[0].approved_version.digest == "a" * 64
+
+
+def test_a_tenant_whose_publication_carries_no_terms_reads_an_empty_offering() -> None:
+    """Delivered-and-empty is a different answer from not-delivered."""
+    backend = _backend(selectable_answer_terms=_StubSelectableAnswerTermReader({}))
+
+    assert backend.get_selectable_answer_terms(_requester_context()).terms == ()
+
+
+def test_reading_selectable_answer_terms_without_a_publication_is_not_delivered() -> None:
+    """A builder with nothing published behind it would be a form nothing can answer."""
+    with pytest.raises(ConsoleUnavailable) as raised:
+        _backend().get_selectable_answer_terms(_requester_context())
+
+    assert raised.value.code == CAPABILITY_NOT_DELIVERED
+
+
+def test_the_question_term_builder_capability_follows_the_wiring() -> None:
+    unwired = _backend().get_workspace(_architect_context())
+    wired = _backend(selectable_answer_terms=_StubSelectableAnswerTermReader({})).get_workspace(
+        _architect_context()
+    )
+
+    def state(view: WorkspaceView, capability_id: str) -> str:
+        return next(
+            capability.state
+            for capability in view.capabilities
+            if capability.capability_id == capability_id
+        )
+
+    assert state(unwired, "question-term-builder") == "not_delivered"
+    assert state(wired, "question-term-builder") == "ready"

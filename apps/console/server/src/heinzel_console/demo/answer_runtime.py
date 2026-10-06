@@ -33,7 +33,11 @@ from heinzel_provider_postgresql import (
     PostgreSQLRelationSizeQueryEstimator,
     PostgreSQLRelationSizeQueryEstimatorSettings,
 )
-from heinzel_request_management import RequestManagementService
+from heinzel_request_management import (
+    BoundSemanticReference,
+    RequestManagementService,
+    StakeholderQuestion,
+)
 from pydantic import SecretStr
 
 from ..answers import (
@@ -101,13 +105,16 @@ class DemoAnswerAdmission:
     ) -> object:
         if tenant_id != DEMO_TENANT_ID:
             raise ValueError("the demonstration admits answers for its own tenant alone")
-        # The question digest is read from the request rather than taken on trust: the intent the
-        # admission binds must be an intent about the question the request actually carries.
+        # The question is read from the request rather than taken on trust: the intent the
+        # admission binds must be an intent about the question the request actually carries,
+        # composed from the terms that request actually selected.
         request = self.requests.get(tenant_id, request_id)
+        if not isinstance(request.payload, StakeholderQuestion):
+            raise ValueError("the demonstration admits answers for stakeholder questions alone")
         return self.preparation.prepare(
             request_id=request_id,
             request_revision=expected_revision,
-            question_digest=digest(request.payload),
+            question=request.payload,
             actor_id=actor_id,
         )
 
@@ -122,6 +129,21 @@ class DemoGovernedAnswer:
     def admission_commands(self, requests: RequestManagementService) -> DemoAnswerAdmission:
         """The console seam that admits a question's plan, over this preparation."""
         return DemoAnswerAdmission(preparation=self.preparation, requests=requests)
+
+    def list_selectable_answer_terms(self, tenant_id: str) -> tuple[BoundSemanticReference, ...]:
+        """The approved terms a question may be composed from, for one tenant.
+
+        The preparation's own bindings, which are the publication's: the same tuple the
+        interpreter resolves a selection against and the validation binds the intent against. A
+        separate list here could offer a term the validation would then refuse.
+
+        Another tenant gets nothing rather than an error, because this demonstration publishes for
+        one tenant and a tenant with no publication has no terms to offer -- which is what the
+        empty tuple says.
+        """
+        if tenant_id != DEMO_TENANT_ID:
+            return ()
+        return self.preparation.bindings
 
 
 @contextmanager
@@ -146,6 +168,11 @@ def demo_governed_answer(
     product_ref = demo_product_reference(
         publication.contract.version, digest(publication.contract.destination_product)
     )
+    # One tuple, read by two collaborators: the interpreter resolves a requester's selection
+    # against it and the validation binds the intent against it. Building it twice would let the
+    # two disagree, and the disagreement would read as an unresolved reference rather than as a
+    # composition mistake.
+    bindings = demo_answer_bindings(publication.semantic_version, product_ref=product_ref)
     entitlement = demo_entitlement_body(
         principal_ref=principal_ref,
         purpose=DEMO_PURPOSE,
@@ -181,7 +208,7 @@ def demo_governed_answer(
             configuration=GovernedAnswerRuntimeConfiguration(
                 connected_authority=authority.reader,
                 connected_authority_ref=LOCAL_CONNECTED_AUTHORITY_REF,
-                interpreter=DemoAnswerInterpreter(),
+                interpreter=DemoAnswerInterpreter(published=bindings),
                 materializations=stores.materialization_receipts,
                 freshness=stores.source_freshness,
                 product_metadata=stores.product_versions,
@@ -231,9 +258,7 @@ def demo_governed_answer(
                         clock=clock,
                         valid_for=_AUTHORITY_VALIDITY,
                     ),
-                    bindings=demo_answer_bindings(
-                        publication.semantic_version, product_ref=product_ref
-                    ),
+                    bindings=bindings,
                     product_ref=product_ref,
                     generation=generation.generation,
                     purpose=DEMO_PURPOSE,

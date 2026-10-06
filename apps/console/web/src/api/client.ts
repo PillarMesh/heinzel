@@ -28,6 +28,7 @@ import type {
   ConsoleEnvelopeAcquisitionReceiptView,
   ConsoleEnvelopeAccessLifecycleView,
   ConsoleEnvelopeRunsView,
+  ConsoleEnvelopeSelectableAnswerTermsView,
   ConsoleEnvelopeSessionView,
   ConsoleEnvelopeSetupView,
   ConsoleEnvelopeWorkspaceView,
@@ -452,6 +453,10 @@ export class ConsoleApiClient {
         context,
       )
     ).envelope
+  }
+
+  getSelectableAnswerTerms(): Promise<ConsoleEnvelopeSelectableAnswerTermsView> {
+    return this.#request("/api/v1/answer-terms", "selectable_answer_terms_response")
   }
 
   getCatalogAsset(assetRef: string): Promise<ConsoleEnvelopeCatalogAssetView> {

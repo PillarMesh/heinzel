@@ -29,6 +29,7 @@ from ..contracts import (
     RequesterRequestView,
     ReviewView,
     RunsView,
+    SelectableAnswerTermsView,
     SessionView,
     SetupView,
     WorkspaceView,
@@ -58,6 +59,7 @@ _DATA_PRODUCTS_RESPONSE = TypeAdapter(ConsoleEnvelope[DataProductsView])
 _RUNS_RESPONSE = TypeAdapter(ConsoleEnvelope[RunsView])
 _INCIDENTS_RESPONSE = TypeAdapter(ConsoleEnvelope[IncidentsView])
 _ACQUISITION_RECEIPTS_RESPONSE = TypeAdapter(ConsoleEnvelope[AcquisitionReceiptsView])
+_SELECTABLE_ANSWER_TERMS_RESPONSE = TypeAdapter(ConsoleEnvelope[SelectableAnswerTermsView])
 _ANSWER_RESULT_RESPONSE = TypeAdapter(ConsoleEnvelope[AnswerResultPageView])
 _CATALOG_ASSET_RESPONSE = TypeAdapter(ConsoleEnvelope[CatalogAssetView])
 _CATALOG_ASSETS_RESPONSE = TypeAdapter(ConsoleEnvelope[CatalogAssetsView])
@@ -255,6 +257,15 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
             _CATALOG_ASSETS_RESPONSE,
         )
 
+    async def selectable_answer_terms(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        return envelope_response(
+            request,
+            dependencies,
+            dependencies.backend.get_selectable_answer_terms(context),
+            _SELECTABLE_ANSWER_TERMS_RESPONSE,
+        )
+
     async def dashboard(request: Request) -> Response:
         context = trusted_context(request, dependencies)
         dashboard_ref = path_parameter(request, "dashboard_ref")
@@ -372,6 +383,7 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
         Route("/api/v1/runs", runs, methods=["GET"]),
         Route("/api/v1/incidents", incidents, methods=["GET"]),
         Route("/api/v1/acquisition-receipts", acquisition_receipts, methods=["GET"]),
+        Route("/api/v1/answer-terms", selectable_answer_terms, methods=["GET"]),
         Route("/api/v1/catalog", catalog_assets, methods=["GET"]),
         Route("/api/v1/catalog/{asset_ref}", catalog_asset, methods=["GET"]),
         Route("/api/v1/dashboards", dashboards, methods=["GET"]),

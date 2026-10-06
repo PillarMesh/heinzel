@@ -195,6 +195,14 @@ class DemoConsole:
                 acquisition_receipts=(
                     None if governed_answer is None else self._stores.acquisition_evidence
                 ),
+                # The approved terms a question may be composed from, read from the composed
+                # answer's own bindings so what the builder offers is exactly what the
+                # interpreter resolves and the validation admits.
+                #
+                # Offered only once there is a composed answer, for the same reason the receipts
+                # are: without one, nothing can answer a question composed from these terms, and
+                # a builder in front of nothing is a form that produces an unanswerable request.
+                selectable_answer_terms=governed_answer,
                 fulfillment_execution_commands=runtime,
                 incidents=None if runtime is None else runtime.incidents,
                 answer_results=None if runtime is None else runtime.results,

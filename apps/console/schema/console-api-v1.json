@@ -557,6 +557,13 @@
       ],
       "type": "string"
     },
+    "AnswerTermKind": {
+      "enum": [
+        "dimension",
+        "metric"
+      ],
+      "type": "string"
+    },
     "ApiError": {
       "additionalProperties": false,
       "properties": {
@@ -2148,6 +2155,57 @@
       "title": "ConsoleEnvelope[RunsView]",
       "type": "object"
     },
+    "ConsoleEnvelope_SelectableAnswerTermsView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/SelectableAnswerTermsView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[SelectableAnswerTermsView]",
+      "type": "object"
+    },
     "ConsoleEnvelope_SessionView_": {
       "additionalProperties": false,
       "allOf": [
@@ -3645,6 +3703,12 @@
       },
       "type": "array"
     },
+    "JsonTuple_SelectableAnswerTermView_": {
+      "items": {
+        "$ref": "#/$defs/SelectableAnswerTermView"
+      },
+      "type": "array"
+    },
     "JsonTuple_SourceConnectionView_": {
       "items": {
         "$ref": "#/$defs/SourceConnectionView"
@@ -4547,6 +4611,24 @@
       "pattern": "^[a-z][a-z0-9_-]{2,127}$",
       "type": "string"
     },
+    "QuestionTermSelectionInput": {
+      "additionalProperties": false,
+      "description": "The governed terms a requester composed their question from.\n\nMirrors request-management's `QuestionTermSelection`, minus its `schema_version`: the console\ndoes not let a browser choose which version of that artifact it is writing. The model the\npayload is built with supplies it, and `request_intake_content` rebuilds the payload through\nthat model, so a selection that artifact would reject never reaches the request store.",
+      "properties": {
+        "dimension_refs": {
+          "$ref": "#/$defs/NonEmptyJsonTuple_NonEmptyText_"
+        },
+        "metric_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "metric_ref",
+        "dimension_refs"
+      ],
+      "title": "QuestionTermSelectionInput",
+      "type": "object"
+    },
     "RecordedDecisionView": {
       "additionalProperties": false,
       "properties": {
@@ -5279,6 +5361,40 @@
       "title": "RunsView",
       "type": "object"
     },
+    "SelectableAnswerTermView": {
+      "additionalProperties": false,
+      "description": "One approved term a stakeholder question may be composed from.\n\n`term_ref` is the term's own canonical identifier -- what an answer intent names and what the\nquery binding resolves to a column -- rather than a console-side label, and `approved_version`\nis the exact approved revision it resolves to. Offering a name without its version would offer\na meaning that could have changed since the publication approved it.\n\n`term_ref` is text rather than a console public identifier because the publication names its\nown terms: a console that refused to display a term whose identifier did not match its own\npattern would hide a term the semantic layer will happily resolve.",
+      "properties": {
+        "approved_version": {
+          "$ref": "#/$defs/ArtifactReferenceView"
+        },
+        "kind": {
+          "$ref": "#/$defs/AnswerTermKind"
+        },
+        "term_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "term_ref",
+        "kind",
+        "approved_version"
+      ],
+      "title": "SelectableAnswerTermView",
+      "type": "object"
+    },
+    "SelectableAnswerTermsView": {
+      "additionalProperties": false,
+      "description": "Exactly the terms this tenant's publication carries, in canonical order.\n\nAn empty tuple is a publication that carries no approved term, which is distinct from the\nread refusing: a console with nothing published answers that it has nothing to offer.",
+      "properties": {
+        "terms": {
+          "$ref": "#/$defs/JsonTuple_SelectableAnswerTermView_",
+          "default": []
+        }
+      },
+      "title": "SelectableAnswerTermsView",
+      "type": "object"
+    },
     "SessionView": {
       "additionalProperties": false,
       "allOf": [
@@ -5690,6 +5806,17 @@
         },
         "question": {
           "$ref": "#/$defs/NonEmptyText"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/QuestionTermSelectionInput"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -5972,6 +6099,9 @@
     "runs_response": {
       "$ref": "#/$defs/ConsoleEnvelope_RunsView_"
     },
+    "selectable_answer_terms_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_SelectableAnswerTermsView_"
+    },
     "session_response": {
       "$ref": "#/$defs/ConsoleEnvelope_SessionView_"
     },
@@ -6001,6 +6131,7 @@
     "data_products_response",
     "data_product_response",
     "catalog_assets_response",
+    "selectable_answer_terms_response",
     "runs_response",
     "incidents_response",
     "incident_response",

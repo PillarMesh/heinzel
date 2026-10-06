@@ -21,3 +21,25 @@ test.each([
     requested_fields: ["total", "date"], access_mode: "export", expires_at,
   })).toBe(`{"payload":{"access_mode":"export","data_product_id":"product-revenue","expires_at":"${canonicalExpiry}","purpose":"Review café ☕","request_type":"data_access","requested_fields":["total","date"]},"title":"Weekly 📊"}`)
 })
+
+test("binds the selected governed terms, including the artifact's own schema version", () => {
+  expect(canonicalRequestIntakeContent("Weekly 📊", {
+    kind: "stakeholder_question", purpose: "Review café ☕", question: 'Why?\n"Revenue"',
+    selection: {metric_ref: "daily-order-value", dimension_refs: ["order_day", "order_region"]},
+  })).toBe('{"payload":{"purpose":"Review café ☕","question":"Why?\\n\\"Revenue\\"","request_type":"stakeholder_question","selection":{"dimension_refs":["order_day","order_region"],"metric_ref":"daily-order-value","schema_version":"1"}},"title":"Weekly 📊"}')
+})
+
+const unselectedQuestion = '{"payload":{"purpose":"Review café ☕","question":"Why?\\n\\"Revenue\\"","request_type":"stakeholder_question"},"title":"Weekly 📊"}'
+
+test("omits an absent selection entirely, as the artifact does", () => {
+  expect(canonicalRequestIntakeContent("Weekly 📊", {
+    kind: "stakeholder_question", purpose: "Review café ☕", question: 'Why?\n"Revenue"',
+  })).toBe(unselectedQuestion)
+})
+
+test("omits a null selection entirely, so an unset builder digests as it always did", () => {
+  expect(canonicalRequestIntakeContent("Weekly 📊", {
+    kind: "stakeholder_question", purpose: "Review café ☕", question: 'Why?\n"Revenue"',
+    selection: null,
+  })).toBe(unselectedQuestion)
+})

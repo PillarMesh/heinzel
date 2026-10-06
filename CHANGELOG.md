@@ -24,6 +24,17 @@ All notable changes to Heinzel are recorded here. The format follows
   Without that variable the console is unchanged: every answer capability reports itself as not
   delivered. `deploy/quickstart/README.md` records what the answer went through and where it
   stops.
+- A constrained question builder. A stakeholder question now carries the governed terms it was
+  composed from -- an approved metric and at least one approved dimension, as
+  `QuestionTermSelection` -- and the demonstration's interpreter resolves that selection instead
+  of naming fixed terms whatever was asked. The console offers exactly the terms the tenant's
+  publication carries, read through `GET /api/v1/answer-terms`, so the form cannot drift from what
+  the semantic layer will resolve; the interpreter refuses a selection naming an unpublished term,
+  a term of the wrong kind, or no term at all, rather than substituting one. The selection is
+  optional and excluded from serialization when absent, so every question recorded before it
+  existed still validates and still digests to what it digested to -- and is refused at the answer
+  rather than answered about something else. A question's words remain its label: nothing reads
+  them, and free-text interpretation is still not delivered.
 - `PostgreSQLRelationSizeQueryEstimator`, which bounds a restricted statement's scan by the
   measured size of the one relation it reads. `PostgreSQLQueryEstimator` beside it declines to
   report PostgreSQL's planner output as scan bytes and is right to, which left policy admission

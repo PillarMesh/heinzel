@@ -54,6 +54,7 @@ from heinzel_provider_sdk import CatalogProductDefinition
 from heinzel_request_management import (
     ApprovedProductIntent,
     ArchitectRequestView,
+    BoundSemanticReference,
     ClarifiedOutcomeStatement,
     ConversationAuthorRole,
     ConversationEntry,
@@ -75,6 +76,7 @@ from heinzel_request_management import (
     ProductIntentCandidate,
     ProductIntentConstraints,
     ProductIntentNoValidPlan,
+    QuestionTermSelection,
     RequesterRequestView,
     ReviewerRequestView,
     TransitionEvent,
@@ -460,6 +462,24 @@ class TenantRunLifecycleReader(Protocol):
     def describe_runs(self, tenant_id: str) -> tuple[RunLifecycleSnapshot, ...]: ...
 
 
+class SelectableAnswerTermReader(Protocol):
+    """Which approved terms a tenant's publication carries, as the answer path binds them.
+
+    The same `BoundSemanticReference` tuple an `AnswerValidationContext` is given, so what a
+    requester is offered to compose a question from cannot drift from what the semantic layer
+    will resolve it against. A console that listed terms of its own would offer a question the
+    validation then refuses as an unknown reference.
+
+    Absent, the console reports the capability as not delivered rather than offering a list: a
+    builder with nothing published behind it would be a form that cannot produce an answerable
+    question.
+    """
+
+    def list_selectable_answer_terms(
+        self, tenant_id: str
+    ) -> tuple[BoundSemanticReference, ...]: ...
+
+
 class TenantAcquisitionReceiptReader(Protocol):
     """The evidence store's own acquisition read, named as the store names it.
 
@@ -800,6 +820,7 @@ class RequestIntakeCommands(Protocol):
         requester_id: str,
         purpose: str,
         question: str,
+        selection: QuestionTermSelection | None = None,
         title: str | None = None,
         request_digest: str | None = None,
     ) -> InboxRequest: ...

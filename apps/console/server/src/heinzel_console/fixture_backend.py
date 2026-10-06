@@ -66,6 +66,7 @@ from .contracts import (
     RetryOperationCommand,
     ReviewView,
     RunsView,
+    SelectableAnswerTermsView,
     SessionView,
     SetupView,
     WarehouseBindingCommand,
@@ -615,6 +616,12 @@ class FixtureConsoleBackend:
             safe_message="Source acquisition is not delivered in demo mode.",
             recovery_action="none",
         )
+
+    def get_selectable_answer_terms(
+        self, context: TrustedActorContext
+    ) -> SelectableAnswerTermsView:
+        self._authorize(context, ("requester", "data_architect", "data_owner"))
+        return self._seed.selectable_answer_terms
 
     def get_catalog_asset(self, context: TrustedActorContext, asset_ref: str) -> CatalogAssetView:
         self._authorize(context, ("requester", "data_architect", "data_owner"))

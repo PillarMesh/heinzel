@@ -320,6 +320,9 @@ export type JsonTuple_LeasedRunView_ = LeasedRunView[]
 export type LeasedRunsAvailable = boolean
 export type RunLifecycleState = "created" | "running" | "succeeded" | "failed" | "non_conforming"
 export type JsonTuple_RunView_ = RunView[]
+export type ConsoleEnvelopeSelectableAnswerTermsView = ConsoleEnvelope_SelectableAnswerTermsView_
+export type AnswerTermKind = "dimension" | "metric"
+export type JsonTuple_SelectableAnswerTermView_ = SelectableAnswerTermView[]
 export type ConsoleEnvelopeSessionView = ConsoleEnvelope_SessionView_
 export type SessionView = SessionView1
 export type CsrfToken = string
@@ -402,6 +405,7 @@ export interface ConsoleApiSchema {
   retry_operation_command: RetryOperationCommand
   review_response: ConsoleEnvelopeReviewView
   runs_response: ConsoleEnvelopeRunsView
+  selectable_answer_terms_response: ConsoleEnvelopeSelectableAnswerTermsView
   session_response: ConsoleEnvelopeSessionView
   setup_response: ConsoleEnvelopeSetupView
   warehouse_binding_command: WarehouseBindingCommand
@@ -596,6 +600,19 @@ export interface StakeholderQuestionInput {
   kind: Kind
   purpose: NonEmptyText
   question: NonEmptyText
+  selection?: QuestionTermSelectionInput | null
+}
+/**
+ * The governed terms a requester composed their question from.
+ *
+ * Mirrors request-management's `QuestionTermSelection`, minus its `schema_version`: the console
+ * does not let a browser choose which version of that artifact it is writing. The model the
+ * payload is built with supplies it, and `request_intake_content` rebuilds the payload through
+ * that model, so a selection that artifact would reject never reaches the request store.
+ */
+export interface QuestionTermSelectionInput {
+  dimension_refs: NonEmptyJsonTuple_NonEmptyText_
+  metric_ref: NonEmptyText
 }
 export interface DataAccessRequestInput {
   access_mode: AccessMode
@@ -1159,6 +1176,36 @@ export interface RunView {
   run_id: PublicId
   state: RunLifecycleState
   updated_at: UtcDatetime
+}
+export interface ConsoleEnvelope_SelectableAnswerTermsView_ {
+  data: SelectableAnswerTermsView
+  meta: ApiMeta
+}
+/**
+ * Exactly the terms this tenant's publication carries, in canonical order.
+ *
+ * An empty tuple is a publication that carries no approved term, which is distinct from the
+ * read refusing: a console with nothing published answers that it has nothing to offer.
+ */
+export interface SelectableAnswerTermsView {
+  terms?: JsonTuple_SelectableAnswerTermView_
+}
+/**
+ * One approved term a stakeholder question may be composed from.
+ *
+ * `term_ref` is the term's own canonical identifier -- what an answer intent names and what the
+ * query binding resolves to a column -- rather than a console-side label, and `approved_version`
+ * is the exact approved revision it resolves to. Offering a name without its version would offer
+ * a meaning that could have changed since the publication approved it.
+ *
+ * `term_ref` is text rather than a console public identifier because the publication names its
+ * own terms: a console that refused to display a term whose identifier did not match its own
+ * pattern would hide a term the semantic layer will happily resolve.
+ */
+export interface SelectableAnswerTermView {
+  approved_version: ArtifactReferenceView
+  kind: AnswerTermKind
+  term_ref: NonEmptyText
 }
 export interface ConsoleEnvelope_SessionView_ {
   data: SessionView

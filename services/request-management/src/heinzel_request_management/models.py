@@ -53,10 +53,56 @@ class DecisionKind(StrEnum):
     REQUEST_CHANGES = "request_changes"
 
 
+class QuestionTermSelection(ArtifactModel):
+    """The governed terms a stakeholder question names, as the publication names them.
+
+    These are canonical term references -- the approved metric and dimension identifiers an
+    `AnswerValidationContext` carries bindings for -- never column names and never prose. An
+    interpreter resolves this into an intent; it does not read the question's words.
+
+    One metric, because an answer about two measures is two answers and the restatement a
+    requester confirms would describe neither. At least one dimension, because the breakdown is
+    what a published query binding carries and a selection naming none would ask for a total no
+    binding offers.
+
+    There is no time window here. Nothing in the published vocabulary declares which dimension is
+    a time axis -- `SemanticObject` carries an identifier, a name, a definition and its sources,
+    and `BoundSemanticReference.kind` distinguishes only a metric from a dimension -- so a builder
+    that offered one would be asserting a grain the publication never stated.
+    """
+
+    schema_version: Literal["1"] = "1"
+    metric_ref: str = Field(min_length=1, max_length=512)
+    dimension_refs: tuple[str, ...] = Field(min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def references_are_distinct(self) -> Self:
+        if len(self.dimension_refs) != len(set(self.dimension_refs)):
+            raise ValueError("selected dimension references must not contain duplicates")
+        if any(not reference.strip() for reference in self.dimension_refs):
+            raise ValueError("a selected dimension reference cannot be blank")
+        if self.metric_ref in self.dimension_refs:
+            raise ValueError("a term cannot be selected as both the metric and a dimension")
+        return self
+
+
 class StakeholderQuestion(ArtifactModel):
+    """A question a stakeholder asked, and the governed terms they composed it from.
+
+    `selection` is optional and excluded from serialization when absent, so every record written
+    before it existed still validates and still digests to exactly what it digested to. The same
+    mechanism carries `InboxRequest.title` and `InboxRequest.delegated_agent`.
+
+    `question` stays as the human-readable label of what was asked. It is not what gets resolved:
+    a reader that interpreted these words rather than the selection would be guessing.
+    """
+
     request_type: Literal["stakeholder_question"] = "stakeholder_question"
     purpose: str = Field(min_length=1, max_length=512)
     question: str = Field(min_length=1, max_length=4000)
+    selection: QuestionTermSelection | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class DataAccessRequest(ArtifactModel):

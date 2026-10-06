@@ -8,6 +8,7 @@ from heinzel_contract_model import ArtifactModel, ArtifactReference
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .fulfillment_models import FreshnessDisposition, StakeholderAnswerDraft
+from .models import QuestionTermSelection
 
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
 
@@ -93,12 +94,24 @@ class AnswerIntentCandidate(ArtifactModel):
 
 
 class AnswerQuestion(ArtifactModel):
+    """What an interpreter is asked to interpret.
+
+    `question_digest` binds the exact request content this reading is about; `selection` carries
+    the governed terms that content named, so an interpreter resolves a structured choice rather
+    than prose it cannot read. It is optional and excluded when absent, because a question
+    recorded before the builder existed carries none, and an interpreter that needs one says so
+    itself rather than substituting terms nobody chose.
+    """
+
     tenant_id: str = Field(min_length=1)
     request_id: str = Field(min_length=1)
     request_revision: int = Field(gt=0)
     question_digest: str = Field(pattern=_DIGEST_PATTERN)
     interpreter: AnswerInterpreterKind
     interpreter_ref: str = Field(min_length=1)
+    selection: QuestionTermSelection | None = Field(
+        default=None, exclude_if=lambda value: value is None
+    )
 
 
 class AnswerQuestionIntent(ArtifactModel):

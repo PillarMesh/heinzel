@@ -16,6 +16,7 @@ from .models import (
     DecisionKind,
     DelegatedRequestProvenance,
     InboxRequest,
+    QuestionTermSelection,
     RequestState,
     SchemaSemanticChangeRequest,
     StakeholderQuestion,
@@ -57,11 +58,12 @@ class RequestManagementService:
         requester_id: str,
         purpose: str,
         question: str,
+        selection: QuestionTermSelection | None = None,
         title: str | None = None,
         request_digest: str | None = None,
         delegated_agent: DelegatedRequestProvenance | None = None,
     ) -> InboxRequest:
-        payload = StakeholderQuestion(purpose=purpose, question=question)
+        payload = StakeholderQuestion(purpose=purpose, question=question, selection=selection)
         content = RequestIntakeContent(title=title, payload=payload)
         if request_digest is not None:
             content.verify_digest(request_digest)

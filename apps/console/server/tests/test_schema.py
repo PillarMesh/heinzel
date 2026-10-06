@@ -147,6 +147,7 @@ def test_schema_exposes_every_modeled_response_and_command() -> None:
         "acquisition_receipt_response",
         "catalog_asset_response",
         "catalog_assets_response",
+        "selectable_answer_terms_response",
         "dashboard_response",
         "dashboards_response",
         "evidence_response",

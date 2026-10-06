@@ -60,6 +60,7 @@ export function featureClientStubs(
     getRequestDetail: unexpected("getRequestDetail"),
     getRequestImpact: unexpected("getRequestImpact"),
     getRequesterRequests: vi.fn(async () => ({meta, data: []})),
+    getSelectableAnswerTerms: vi.fn(async () => ({meta, data: {terms: []}})),
     getResult: unexpected("getResult"),
     getRuns: vi.fn(async () => ({meta, data: {runs: []}})),
     getIncidents: vi.fn(async () => ({meta, data: {incidents: []}})),

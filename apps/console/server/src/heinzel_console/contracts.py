@@ -124,6 +124,10 @@ type DashboardAccessViewState = Literal["active", "workspace_role"]
 type AnswerResultStatus = Literal["available", "expired", "failed"]
 type AnswerResultValueType = Literal["boolean", "decimal", "integer", "string", "timestamp"]
 type AccessMode = Literal["query", "dashboard", "export"]
+# Mirrors `BoundSemanticReference.kind`: the only two kinds of approved term an answer intent can
+# name. A test pins the two together, so a third kind fails there rather than being dropped from
+# what a requester is offered.
+type AnswerTermKind = Literal["dimension", "metric"]
 type ProductAggregation = Literal["sum", "count", "minimum", "maximum", "average"]
 type ProductFilterOperator = Literal["equals", "not_equals", "in", "greater_than", "less_than"]
 type ProductDeliveryOutput = Literal["dataset", "table", "dashboard"]
@@ -1102,6 +1106,34 @@ class CatalogAssetsView(StrictModel):
     assets: JsonTuple[CatalogAssetView] = Field(default=())
 
 
+class SelectableAnswerTermView(StrictModel):
+    """One approved term a stakeholder question may be composed from.
+
+    `term_ref` is the term's own canonical identifier -- what an answer intent names and what the
+    query binding resolves to a column -- rather than a console-side label, and `approved_version`
+    is the exact approved revision it resolves to. Offering a name without its version would offer
+    a meaning that could have changed since the publication approved it.
+
+    `term_ref` is text rather than a console public identifier because the publication names its
+    own terms: a console that refused to display a term whose identifier did not match its own
+    pattern would hide a term the semantic layer will happily resolve.
+    """
+
+    term_ref: NonEmptyText
+    kind: AnswerTermKind
+    approved_version: ArtifactReferenceView
+
+
+class SelectableAnswerTermsView(StrictModel):
+    """Exactly the terms this tenant's publication carries, in canonical order.
+
+    An empty tuple is a publication that carries no approved term, which is distinct from the
+    read refusing: a console with nothing published answers that it has nothing to offer.
+    """
+
+    terms: JsonTuple[SelectableAnswerTermView] = Field(default=())
+
+
 class DashboardView(StrictModel):
     dashboard_ref: PublicId
     display_name: NonEmptyText
@@ -1221,10 +1253,24 @@ class AdmissionCommand(StrictModel):
     active_role: ActorRole
 
 
+class QuestionTermSelectionInput(StrictModel):
+    """The governed terms a requester composed their question from.
+
+    Mirrors request-management's `QuestionTermSelection`, minus its `schema_version`: the console
+    does not let a browser choose which version of that artifact it is writing. The model the
+    payload is built with supplies it, and `request_intake_content` rebuilds the payload through
+    that model, so a selection that artifact would reject never reaches the request store.
+    """
+
+    metric_ref: NonEmptyText
+    dimension_refs: NonEmptyJsonTuple[NonEmptyText]
+
+
 class StakeholderQuestionInput(StrictModel):
     kind: Literal["stakeholder_question"]
     purpose: NonEmptyText
     question: NonEmptyText
+    selection: QuestionTermSelectionInput | None = None
 
 
 class DataAccessRequestInput(StrictModel):
@@ -1339,6 +1385,7 @@ class ConsoleApiSchema(StrictModel):
     data_products_response: ConsoleEnvelope[DataProductsView]
     data_product_response: ConsoleEnvelope[DataProductView]
     catalog_assets_response: ConsoleEnvelope[CatalogAssetsView]
+    selectable_answer_terms_response: ConsoleEnvelope[SelectableAnswerTermsView]
     runs_response: ConsoleEnvelope[RunsView]
     incidents_response: ConsoleEnvelope[IncidentsView]
     incident_response: ConsoleEnvelope[IncidentView]

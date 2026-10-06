@@ -737,3 +737,28 @@ def test_leased_run_status_mirrors_the_state_owned_lifecycle_vocabulary() -> Non
     assert set(get_args(contracts.LeasedRunStatusView.__value__)) == set(
         get_args(RunLifecycleStatus.__value__)
     )
+
+
+def test_answer_term_kind_mirrors_the_bound_semantic_reference_vocabulary() -> None:
+    """The builder offers one control per kind, so a third kind must fail here.
+
+    A kind the console did not mirror would be dropped from what a requester is offered: the term
+    would be published, selectable nowhere, and the builder would look complete without it.
+    """
+    from heinzel_request_management import BoundSemanticReference
+
+    kind_annotation = BoundSemanticReference.model_fields["kind"].annotation
+    assert set(get_args(contracts.AnswerTermKind.__value__)) == set(get_args(kind_annotation))
+
+
+def test_a_question_selection_mirrors_the_artifacts_own_fields_minus_its_schema_version() -> None:
+    """The browser must not choose which version of the stored artifact it is writing.
+
+    Everything else the artifact carries has to be expressible, or a requester could compose a
+    selection the console cannot send.
+    """
+    from heinzel_request_management import QuestionTermSelection
+
+    assert set(contracts.QuestionTermSelectionInput.model_fields) == set(
+        QuestionTermSelection.model_fields
+    ) - {"schema_version"}

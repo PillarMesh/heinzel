@@ -19,19 +19,31 @@ This page describes the demonstration console in `apps/console`, not a deploymen
 below are deliberate for a demonstration and would be defects in a deployment; they are listed
 because the flow above cannot be shown without closing them.
 
-## The demonstration answers one question
+## The demonstration answers the question that was composed, and only a composed one
 
-The console accepts a stakeholder question as free text (`request_intake_content` in
-`apps/console/server/src/heinzel_console/request_intake.py`). The words then stop: the
-demonstration's interpreter checks the tenant and returns a fixed metric and dimension reference,
-whatever was asked (`DemoAnswerInterpreter` in
-`apps/console/server/src/heinzel_console/demo/answers.py`). Its docstring says so, and the
-seeded question is the one it describes.
+This section used to say that any question admitted in the demonstration returned daily order
+value, under the full governed path, with correct evidence for an intent nobody expressed. That is
+closed. A stakeholder question now carries the governed terms it was composed from
+(`QuestionTermSelection` in
+`services/request-management/src/heinzel_request_management/models.py`), the console offers exactly
+the terms the publication carries (`GET /api/v1/answer-terms`, read through
+`SelectableAnswerTermReader`), and the interpreter resolves that selection
+(`DemoAnswerInterpreter` in `apps/console/server/src/heinzel_console/demo/answers.py`). A selection
+naming a term the publication does not carry, or naming a dimension where the measure belongs, is
+refused rather than substituted for — and so is a question that carries no selection at all, which
+is the case the old behaviour answered confidently.
 
-The consequence is that **any question admitted in the demonstration returns daily order value**,
-under the full governed path, with correct evidence for an intent nobody expressed. Resolving a
-question against the governed semantic layer is the capability that would close this, and it is
-unbuilt. Until it is, a question typed into the demonstration is a label on a fixed answer.
+What remains unbuilt is free-text interpretation: resolving the words of a question against the
+governed semantic layer. The words are kept as the label of what was asked and nothing reads them.
+A question with no selection is still accepted, stored, clarified and proposed exactly as before;
+it is the answer that refuses it, which is the honest place for the refusal.
+
+The selection carries no time window, because nothing in the published vocabulary declares which
+dimension is a time axis: `SemanticObject` carries an identifier, a name, a definition and its
+source references (`packages/contract-model/src/heinzel_contract_model/models.py`), and
+`BoundSemanticReference.kind` distinguishes only a metric from a dimension
+(`services/request-management/src/heinzel_request_management/answer_validation.py`). A builder
+offering one would assert a grain the publication never stated.
 
 ## 1. Pick a warehouse
 
@@ -93,7 +105,8 @@ Independent of those gates, the admitted shape is narrow:
 
 | Gap | Kind | Established by |
 | --- | --- | --- |
-| The question's words do not reach the answer (above). | Unbuilt | `DemoAnswerInterpreter` in `demo/answers.py` |
+| The question's words still do not reach the answer; the governed terms it was composed from do (above). Free-text interpretation is unbuilt. | Unbuilt | `DemoAnswerInterpreter` in `demo/answers.py` |
+| The builder offers one metric and one dimension, because that is all the demonstration's publication carries. A richer offering is a richer publication, not a wider form. | Unbuilt | `demo_answer_bindings` in `demo/answers.py` |
 | No authentication. An actor is a request header naming one of two fixed identities, which the console states is never a claim it trusts about a real identity. | Unbuilt | `DEMO_ACTOR_HEADER` in `demo/console.py` |
 | Deciding that a question is unsupported is done only by the test harness; no product component does it. | Unbuilt | [status.md](status.md) |
 | Retrying a failed operation from the console is not delivered. | Unbuilt | [status.md](status.md) |
@@ -143,7 +156,7 @@ demonstration.
 
 | Gap | Kind | Established by |
 | --- | --- | --- |
-| The entitlement authority, the catalog provider and the question interpreter are demonstration doubles. | Unbuilt | `demo/collaborators.py`, [quickstart README](../deploy/quickstart/README.md) |
+| The entitlement authority and the catalog provider are demonstration doubles. The question interpreter is demonstration-grade for a different reason: it resolves a governed term selection, which is real, and reads no prose, which a deployment's would. | Unbuilt | `demo/collaborators.py`, [quickstart README](../deploy/quickstart/README.md) |
 | The MCP agent interface cannot start as a production application: no authority adapters are implemented. | Unbuilt | [status.md](status.md) |
 | One request reaching a published data product end to end is not delivered. | Unbuilt | [status.md](status.md) |
 | ClickHouse parity: warehouse lifecycle, destination, access and statement conformance work; acquisition and the full journey do not. | Unbuilt | [status.md](status.md) |
@@ -172,12 +185,15 @@ and the other two sit with the deployment-shape work.
 3. **The compiler gates.** 15, 17 and 18, or a demonstration product that is admitted. This is
    the only item where the demonstration's headline claim rests on a step that refused, and it is
    the gap least likely to be forgiven on inspection.
-4. **A question that reaches its answer.**
+4. ~~**A question that reaches its answer.**~~ Delivered as the constrained builder argued for
+   below. A requester composes a question from the terms the publication carries, the selection
+   travels with the request as structured data, and the interpreter resolves it or refuses. What is
+   left of this item is free-text interpretation, which is deliberately still absent.
 5. **The deployment shape**, which is what the warehouse binding and the dashboards are. Either
    the demonstration gains a warehouse it created and a Superset to publish to, or those two
    stages stay honestly absent. Neither is a reader.
 
-On the fourth: a constrained question builder is worth preferring to free-text interpretation, on
+On the fourth: a constrained question builder was worth preferring to free-text interpretation, on
 three grounds rather than on cost alone.
 
 - The compiler admits one shape. Free text that accepts questions the compiler must refuse
@@ -185,7 +201,9 @@ three grounds rather than on cost alone.
   that offers only answerable questions.
 - A builder composed from the published semantic layer cannot express an intent the layer does
   not carry, so the class of confidently wrong answers described at the top of this page is closed
-  by construction rather than by a check.
+  by construction rather than by a check. It is closed by a check as well: the interpreter refuses
+  a selection the builder could not have offered, because an interpreter that trusted its caller
+  would be the authority for a reading it never verified.
 - A stakeholder composing a question nobody anticipated, from governed terms, is ad-hoc in the
   sense that matters, and the claim stays true.
 

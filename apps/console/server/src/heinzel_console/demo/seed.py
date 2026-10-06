@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from heinzel_request_management import RequestManagementService, StakeholderQuestion
 
+from .answers import demo_question_selection
 from .collaborators import DEMO_REQUESTER_ID
 from .publication import DEMO_PURPOSE, DEMO_QUESTION, DEMO_TENANT_ID
 
@@ -21,6 +22,10 @@ __all__ = ["seed_demo_request"]
 
 def seed_demo_request(requests: RequestManagementService) -> None:
     """Leave the demonstration's own stakeholder question waiting in the inbox.
+
+    The question carries the governed terms it is composed from, because that selection is what
+    the interpreter resolves. A selection-less question would still be accepted, stored and
+    clarified exactly as before -- it is the answer that would refuse it, which is the point.
 
     This returns without writing anything when that question is already there, so
     restarting the demonstration over an existing state directory does not pile up
@@ -33,6 +38,11 @@ def seed_demo_request(requests: RequestManagementService) -> None:
         requester_id=DEMO_REQUESTER_ID,
         purpose=DEMO_PURPOSE,
         question=DEMO_QUESTION,
+        # The question's words are its label; this is what gets resolved. Seeding the selection
+        # beside the text is what makes the seeded question answerable at all -- the interpreter
+        # reads the selection and refuses a question that carries none, rather than naming terms
+        # nobody chose.
+        selection=demo_question_selection(),
         title=DEMO_QUESTION,
     )
 

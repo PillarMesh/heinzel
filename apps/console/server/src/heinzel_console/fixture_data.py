@@ -11,6 +11,7 @@ from .contracts import (
     AcquisitionReceiptsView,
     AcquisitionReceiptView,
     ActorRole,
+    ArtifactReferenceView,
     AuthorityRequirementView,
     AuthorityStatusView,
     CapabilityView,
@@ -40,6 +41,8 @@ from .contracts import (
     ReviewView,
     RunsView,
     RunView,
+    SelectableAnswerTermsView,
+    SelectableAnswerTermView,
     SetupStage,
     SetupStageView,
     SetupView,
@@ -71,6 +74,7 @@ class FixtureSeed:
     data_products: Mapping[str, DataProductView]
     runs: RunsView
     acquisition_receipts: AcquisitionReceiptsView
+    selectable_answer_terms: SelectableAnswerTermsView
     catalog_assets: Mapping[str, CatalogAssetView]
     dashboards: Mapping[str, DashboardView]
 
@@ -519,6 +523,28 @@ def build_fixture_seed() -> FixtureSeed:
                     outcome="no_valid_plan",
                     reason_codes=("contract_not_activated",),
                     created_at=FIXED_TIME - timedelta(minutes=6),
+                ),
+            )
+        ),
+        # The terms the fixture's own synthetic publication would carry. A question composed in
+        # demo mode names these, and nothing in demo mode answers one: the fixture console
+        # delivers no interpreter, so the builder shows what a governed workspace would offer
+        # rather than claiming an answer behind it.
+        selectable_answer_terms=SelectableAnswerTermsView(
+            terms=(
+                SelectableAnswerTermView(
+                    term_ref="net-revenue",
+                    kind="metric",
+                    approved_version=ArtifactReferenceView(
+                        artifact_id="net-revenue", version=2, digest="a" * 64
+                    ),
+                ),
+                SelectableAnswerTermView(
+                    term_ref="region",
+                    kind="dimension",
+                    approved_version=ArtifactReferenceView(
+                        artifact_id="region", version=2, digest="b" * 64
+                    ),
                 ),
             )
         ),

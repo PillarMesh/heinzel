@@ -154,6 +154,8 @@ from .contracts import (
     RunAttemptView,
     RunsView,
     RunView,
+    SelectableAnswerTermsView,
+    SelectableAnswerTermView,
     SessionView,
     SetupStage,
     SetupStageState,
@@ -204,6 +206,7 @@ from .governed_adapters import (
     RequestImpactReader,
     RequestInboxReader,
     RequestIntakeCommands,
+    SelectableAnswerTermReader,
     SemanticReviewCommands,
     SemanticReviewReader,
     TenantAcquisitionReceiptReader,
@@ -397,6 +400,7 @@ class GovernedConsoleBackend:
         incident_recovery_commands: IncidentRecoveryCommands | None = None,
         acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
         acquisition_commands: AcquisitionRunNowCommands | None = None,
+        selectable_answer_terms: SelectableAnswerTermReader | None = None,
         data_products: DataProductReferenceReader | None = None,
         product_publications: ProductPublicationDefinitionReader | None = None,
         dashboards: DashboardPublicationReader | None = None,
@@ -443,6 +447,7 @@ class GovernedConsoleBackend:
         self._incident_recovery_commands = incident_recovery_commands
         self._acquisition_receipts = acquisition_receipts
         self._acquisition_commands = acquisition_commands
+        self._selectable_answer_terms = selectable_answer_terms
         self._data_products = data_products
         self._product_publications = product_publications
         self._dashboards = dashboards
@@ -603,6 +608,22 @@ class GovernedConsoleBackend:
                     None
                     if self._acquisition_receipts is not None
                     else "a durable acquisition evidence store"
+                ),
+            ),
+            CapabilityView(
+                capability_id="question-term-builder",
+                label="Governed question builder",
+                state="ready" if self._selectable_answer_terms is not None else "not_delivered",
+                detail=(
+                    "A question is composed from the approved terms this tenant's publication "
+                    "carries, which are the terms the answer validation resolves it against."
+                    if self._selectable_answer_terms is not None
+                    else "No publication offers approved terms a question could be composed from."
+                ),
+                dependency=(
+                    None
+                    if self._selectable_answer_terms is not None
+                    else "a published set of approved metric and dimension terms"
                 ),
             ),
             CapabilityView(
@@ -1467,6 +1488,35 @@ class GovernedConsoleBackend:
             receipts=tuple(self._acquisition_receipt_view(receipt) for receipt in receipts)
         )
 
+    def get_selectable_answer_terms(
+        self, context: TrustedActorContext
+    ) -> SelectableAnswerTermsView:
+        """The approved terms a requester may compose a question from, for their own tenant.
+
+        The requester reads it because the requester composes the question; the architect reads it
+        because the architect clarifies one. Nobody is offered another tenant's terms: the reader
+        is given the trusted context's tenant and nothing from the request.
+        """
+        self._authorize(context, ("requester", "data_architect", "data_owner"))
+        reader = self._selectable_answer_terms
+        if reader is None:
+            raise _not_delivered("a published set of approved metric and dimension terms")
+        terms = self._guarded(lambda: reader.list_selectable_answer_terms(context.tenant_id))
+        return SelectableAnswerTermsView(
+            terms=tuple(
+                SelectableAnswerTermView(
+                    term_ref=term.canonical_ref,
+                    kind=term.kind,
+                    approved_version=ArtifactReferenceView(
+                        artifact_id=term.version_ref.artifact_id,
+                        version=term.version_ref.version,
+                        digest=term.version_ref.digest,
+                    ),
+                )
+                for term in terms
+            )
+        )
+
     def run_acquisition_now(
         self, context: TrustedActorContext, command: AcquisitionRunNowCommand
     ) -> AcquisitionReceiptView:
@@ -2269,6 +2319,7 @@ class GovernedConsoleBackend:
                     request_digest=command.request_digest,
                     purpose=request_input.purpose,
                     question=request_input.question,
+                    selection=request_input.selection,
                 )
             )
         else:
