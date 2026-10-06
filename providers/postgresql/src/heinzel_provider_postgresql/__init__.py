@@ -55,6 +55,10 @@ from .query_estimator import (
     PostgreSQLRelationSizeQueryEstimatorSettings,
 )
 from .settings import PostgresSettings
+from .source_capability_probe import (
+    PostgreSQLSourceCapabilityAuthority,
+    PostgreSQLSourceCapabilityProbe,
+)
 from .warehouse import PostgreSQLBackupCommandBoundary, PostgreSQLWarehouseProvider
 from .warehouse_settings import (
     POSTGRESQL_SERVER_VERSION_NUM,
@@ -102,6 +106,8 @@ __all__ = [
     "PostgreSQLQueryEstimatorSettings",
     "PostgreSQLRelationSizeQueryEstimator",
     "PostgreSQLRelationSizeQueryEstimatorSettings",
+    "PostgreSQLSourceCapabilityAuthority",
+    "PostgreSQLSourceCapabilityProbe",
     "PostgreSQLSourceObjectDeclaration",
     "PostgreSQLWarehouseProvider",
     "PostgreSQLWarehouseSettings",

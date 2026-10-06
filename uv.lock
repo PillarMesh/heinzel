@@ -965,6 +965,7 @@ version = "0.1.0"
 source = { editable = "providers/postgresql" }
 dependencies = [
     { name = "heinzel-compiler" },
+    { name = "heinzel-connection-broker" },
     { name = "heinzel-contract-model" },
     { name = "heinzel-dbt-adapter" },
     { name = "heinzel-provider-sdk" },
@@ -978,6 +979,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "heinzel-compiler", editable = "services/compiler" },
+    { name = "heinzel-connection-broker", editable = "services/connection-broker" },
     { name = "heinzel-contract-model", editable = "packages/contract-model" },
     { name = "heinzel-dbt-adapter", editable = "services/dbt-adapter" },
     { name = "heinzel-provider-sdk", editable = "packages/provider-sdk" },

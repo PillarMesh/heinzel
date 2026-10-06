@@ -35,6 +35,26 @@ All notable changes to Heinzel are recorded here. The format follows
   existed still validates and still digests to what it digested to -- and is refused at the answer
   rather than answered about something else. A question's words remain its label: nothing reads
   them, and free-text interpretation is still not delivered.
+- A source can be registered through the connection broker. `SourceBindingService` could already
+  drive a binding `draft -> validating -> ready`, but both collaborators it needs to do it were
+  protocols with no implementation anywhere, so no source could be registered at all and the
+  demonstration built its ready binding by hand. `PostgreSQLSourceCapabilityProbe` is the missing
+  probe: it observes the declared objects through the acquisition provider's own `observe_source`,
+  and observes the server refusing the connecting role every relation in the schema the
+  declaration is held away from -- the same least-privilege property `PostgreSQLAcquisitionProvider`
+  refuses an acquisition for, against the same `unrelated_schema_name`. Each digest is taken over
+  what the server answered rather than over what was asked, and neither includes a clock reading,
+  so an unchanged source observes to the same digest twice. Because
+  `SourceBindingValidationEvidence` types both `*_succeeded` fields as `Literal[True]`, a probe
+  that fails raises rather than returning evidence that records the failure. The demonstration's
+  `DemoSourceSecretStore` is the missing resolver: references minted from the operating system's
+  generator rather than derived from the credential they name, kept in files mode 0600 under the
+  demonstration's state directory, with the connection detail in no `repr` and no error message.
+  A live journey registers a real PostgreSQL source end to end, reaching `ready` at revision 3
+  with the capability profile and source observation the probe measured, and leaves a binding whose
+  role reaches outside its declaration in `validating` with no evidence at all. What this does not
+  add is a console surface for registering a source, or the demonstration switching its hand-built
+  binding over to this path.
 - `PostgreSQLRelationSizeQueryEstimator`, which bounds a restricted statement's scan by the
   measured size of the one relation it reads. `PostgreSQLQueryEstimator` beside it declines to
   report PostgreSQL's planner output as scan bytes and is right to, which left policy admission

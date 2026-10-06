@@ -12,6 +12,7 @@ classifiers = [
 ]
 dependencies = [
   "heinzel-compiler",
+  "heinzel-connection-broker",
   "heinzel-dbt-adapter",
   "heinzel-contract-model",
   "heinzel-provider-sdk",
@@ -28,6 +29,7 @@ Issues = "https://github.com/PillarMesh/heinzel/issues"
 
 [tool.uv.sources]
 heinzel-compiler = { workspace = true }
+heinzel-connection-broker = { workspace = true }
 heinzel-dbt-adapter = { workspace = true }
 heinzel-contract-model = { workspace = true }
 heinzel-provider-sdk = { workspace = true }
