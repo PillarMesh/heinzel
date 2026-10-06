@@ -57,6 +57,12 @@ One stakeholder question is waiting in the inbox: *What is the daily order value
 `requester-demo` for a weekly operations review. You open the console as the architect,
 `architect-demo`.
 
+That question is not just its wording. It carries the governed terms it was composed from — the
+approved metric the answer measures and the approved dimension it is broken down by — and those
+terms are what the answer resolves. Asking a new one as `requester-demo` means composing it the
+same way: the submission form offers exactly the terms this workspace's publication carries, which
+here is one metric and one dimension, and a question composed from anything else cannot be built.
+
 From the inbox you can record a clarification, prepare an answer proposal — the demonstration
 grounds it in its own approved semantic publication and refuses anything that publication cannot
 ground — submit that proposal to the requester, and record your own approval of it.
@@ -136,19 +142,22 @@ process that signed it.
 
 The answer is the end of the demonstration. Beyond it:
 
-- `GET /api/v1/runs` and `GET /api/v1/acquisition-receipts` answer `503
-  capability_not_delivered` to the architect, who is the actor entitled to ask. The acquisition
-  does leave real evidence receipts in the demonstration's own evidence store, but the console
-  does not serve them: the demonstration acquires and lands its source once and never again —
-  the acknowledgement advances the source checkpoint, and from there the provider admits no
-  second snapshot — so it carries no run harness that would make either of those a list worth
-  showing.
+- `GET /api/v1/runs` answers `503 capability_not_delivered` to the architect, who is the actor
+  entitled to ask. `GET /api/v1/acquisition-receipts` now serves what the startup acquisition
+  recorded. What neither reflects is a second acquisition: the demonstration acquires and lands
+  its source once and never again — the acknowledgement advances the source checkpoint, and from
+  there the provider admits no second snapshot — so it carries no run harness that would make
+  runs a list worth showing.
 - The answer scope policy carries no disclosure classifications, though the demonstration's
   contract classifies its product `commercial`. Carrying one requires a policy authority's
   approval, and the demonstration has two actors: an architect and a requester. So it shows no
   disclosure control over a classified product.
 - The product is one generation of three rows, materialized once. There is no refresh, no second
   generation and no scheduled run.
+- Nothing reads a question's words. They are the label of what was asked; the governed terms
+  beside them are what is resolved. A question submitted without them — which the request model
+  still accepts, as every question did before the builder existed — is refused at the answer
+  rather than answered about something else.
 - Admitting a question is the governed answer's admission, not the fulfillment service's, and
   they are exclusive: each needs a request that has not been admitted yet, so whichever runs
   first makes the other refuse. The console still checks the actor's role, the revision, the
