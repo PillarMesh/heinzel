@@ -466,6 +466,39 @@ def test_the_demonstration_materializes_and_publishes_one_generation(tmp_path: P
             assert receipt.table_fully_qualified_name.endswith(
                 f".{database_name}.{materialized.target_schema}.{materialized.model_name}"
             )
+
+            # The dashboard reader a BI provider connects as reads the published product and
+            # nothing else. Asserted here rather than in a test of its own for the reason this
+            # one gives: reaching a materialized product costs a cluster and a dbt run.
+            #
+            # It is a separate login from `answer_runtime` on purpose. That role is the
+            # runtime's own service principal, which ADR-0007 states is not a requester grant,
+            # so a BI provider querying as it would make a database login stand in for an
+            # access decision.
+            dashboard = role_dsn(
+                bootstrap_dsn,
+                DEMO_WAREHOUSE_ROLES.dashboard,
+                passwords[DEMO_WAREHOUSE_ROLES.dashboard],
+            )
+            with psycopg.connect(dashboard) as connection:
+                published_rows = connection.execute(
+                    sql.SQL("SELECT count(*) FROM {}.{}").format(
+                        sql.Identifier(materialized.target_schema),
+                        sql.Identifier(materialized.model_name),
+                    )
+                ).fetchone()
+                assert published_rows is not None and published_rows[0] > 0
+                # Not the landed rows the product was built from, and not the ledger that says
+                # which generation is current: one relation, read-only.
+                for statement in (
+                    "SELECT count(*) FROM raw.raw_customer_orders",
+                    "SELECT count(*) FROM product_control.product_generations",
+                ):
+                    with (
+                        pytest.raises(psycopg.errors.InsufficientPrivilege),
+                        connection.transaction(),
+                    ):
+                        connection.execute(statement)
         finally:
             stores.close()
 

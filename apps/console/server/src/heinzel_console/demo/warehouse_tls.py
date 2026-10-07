@@ -18,12 +18,19 @@ from __future__ import annotations
 import ipaddress
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 
 from cryptography import x509
-from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+from cryptography.x509.oid import ExtendedKeyUsageOID
+
+from .tls_material import (
+    authority_certificate,
+    certificate_pem,
+    leaf_certificate,
+    private_key_pem,
+    utc_issue_time,
+)
 
 __all__ = ["DemoWarehouseTLSMaterial", "generate_demo_warehouse_tls_material"]
 
@@ -57,37 +64,13 @@ def generate_demo_warehouse_tls_material(*, now: datetime) -> DemoWarehouseTLSMa
     demonstration that spent a second generating RSA keys before it listened would be paying
     that second for nothing.
     """
-    if now.tzinfo is None or now.utcoffset() != timedelta(0):
-        raise ValueError("the TLS material's issue time must be timezone-aware UTC")
-    observed_at = now.astimezone(UTC)
+    observed_at = utc_issue_time(now)
     authority_key = ec.generate_private_key(ec.SECP256R1())
-    authority_name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, _AUTHORITY_COMMON_NAME)])
-    authority_certificate = (
-        _builder(
-            subject=authority_name,
-            issuer=authority_name,
-            public_key=authority_key.public_key(),
-            observed_at=observed_at,
-        )
-        .add_extension(x509.BasicConstraints(ca=True, path_length=0), critical=True)
-        .add_extension(
-            x509.KeyUsage(
-                digital_signature=True,
-                content_commitment=False,
-                key_encipherment=False,
-                data_encipherment=False,
-                key_agreement=False,
-                key_cert_sign=True,
-                crl_sign=True,
-                encipher_only=False,
-                decipher_only=False,
-            ),
-            critical=True,
-        )
-        .sign(authority_key, hashes.SHA256())
+    authority_name, authority = authority_certificate(
+        common_name=_AUTHORITY_COMMON_NAME, key=authority_key, observed_at=observed_at
     )
     server_key = ec.generate_private_key(ec.SECP256R1())
-    server_certificate = _leaf_certificate(
+    server_certificate = leaf_certificate(
         common_name=_SERVER_COMMON_NAME,
         public_key=server_key.public_key(),
         authority_name=authority_name,
@@ -102,7 +85,7 @@ def generate_demo_warehouse_tls_material(*, now: datetime) -> DemoWarehouseTLSMa
         ),
     )
     client_key = ec.generate_private_key(ec.SECP256R1())
-    client_certificate = _leaf_certificate(
+    client_certificate = leaf_certificate(
         common_name=_CLIENT_COMMON_NAME,
         public_key=client_key.public_key(),
         authority_name=authority_name,
@@ -115,80 +98,20 @@ def generate_demo_warehouse_tls_material(*, now: datetime) -> DemoWarehouseTLSMa
         private_key_bundle=_canonical_json(
             {
                 "schema_version": "1",
-                "server_private_key_pem": _private_key_pem(server_key),
-                "client_private_key_pem": _private_key_pem(client_key),
+                "server_private_key_pem": private_key_pem(server_key),
+                "client_private_key_pem": private_key_pem(client_key),
             }
         ),
         certificate_bundle=_canonical_json(
             {
                 "schema_version": "1",
-                "ca_certificate_pem": _certificate_pem(authority_certificate),
-                "server_certificate_pem": _certificate_pem(server_certificate),
-                "client_certificate_pem": _certificate_pem(client_certificate),
+                "ca_certificate_pem": certificate_pem(authority),
+                "server_certificate_pem": certificate_pem(server_certificate),
+                "client_certificate_pem": certificate_pem(client_certificate),
             }
         ),
     )
 
 
-def _builder(
-    *,
-    subject: x509.Name,
-    issuer: x509.Name,
-    public_key: ec.EllipticCurvePublicKey,
-    observed_at: datetime,
-) -> x509.CertificateBuilder:
-    return (
-        x509.CertificateBuilder()
-        .subject_name(subject)
-        .issuer_name(issuer)
-        .public_key(public_key)
-        .serial_number(x509.random_serial_number())
-        .not_valid_before(observed_at - _BACKDATE)
-        .not_valid_after(observed_at + _VALIDITY)
-        .add_extension(x509.SubjectKeyIdentifier.from_public_key(public_key), critical=False)
-    )
-
-
-def _leaf_certificate(
-    *,
-    common_name: str,
-    public_key: ec.EllipticCurvePublicKey,
-    authority_name: x509.Name,
-    authority_key: ec.EllipticCurvePrivateKey,
-    observed_at: datetime,
-    extended_usage: x509.ObjectIdentifier,
-    subject_alternative_name: x509.SubjectAlternativeName | None,
-) -> x509.Certificate:
-    builder = (
-        _builder(
-            subject=x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)]),
-            issuer=authority_name,
-            public_key=public_key,
-            observed_at=observed_at,
-        )
-        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-        .add_extension(x509.ExtendedKeyUsage([extended_usage]), critical=True)
-        .add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(authority_key.public_key()),
-            critical=False,
-        )
-    )
-    if subject_alternative_name is not None:
-        builder = builder.add_extension(subject_alternative_name, critical=False)
-    return builder.sign(authority_key, hashes.SHA256())
-
-
 def _canonical_json(payload: dict[str, str]) -> str:
     return json.dumps(payload, sort_keys=True, separators=(",", ":"))
-
-
-def _private_key_pem(key: ec.EllipticCurvePrivateKey) -> str:
-    return key.private_bytes(
-        serialization.Encoding.PEM,
-        serialization.PrivateFormat.PKCS8,
-        serialization.NoEncryption(),
-    ).decode("ascii")
-
-
-def _certificate_pem(certificate: x509.Certificate) -> str:
-    return certificate.public_bytes(serialization.Encoding.PEM).decode("ascii")

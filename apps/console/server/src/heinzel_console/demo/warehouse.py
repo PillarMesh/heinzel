@@ -135,10 +135,16 @@ class ProvisioningRefused(RuntimeError):
 class DemoWarehouseRoles:
     """The least-privilege logins the demonstration's providers connect as.
 
-    Five rather than three, because reading the product to answer a question is not the same
-    privilege as writing it. `answer` and `estimator` are granted `SELECT` on the materialized
-    product and nothing else, so neither can reach the landed rows the product was built from,
-    and neither can write anything at all.
+    Six rather than three, because reading the product to answer a question is not the same
+    privilege as writing it. `answer`, `estimator` and `dashboard` are granted `SELECT` on the
+    materialized product and nothing else, so none can reach the landed rows the product was built
+    from, and none can write anything at all.
+
+    `dashboard` is separate from `answer` on purpose. ADR-0007 states that `answer_runtime` is the
+    runtime's own service principal, not a requester grant, and that it reads approved consumption
+    objects only for an already admitted governed query. A BI provider querying as that role would
+    make a database login stand in for an access decision, which is the conflation that record
+    exists to prevent.
     """
 
     acquisition: str
@@ -146,11 +152,19 @@ class DemoWarehouseRoles:
     materialization: str
     answer: str
     estimator: str
+    dashboard: str
 
     def __iter__(self) -> Iterator[str]:
         """Every role name, so a caller that must cover all of them cannot miss one."""
         return iter(
-            (self.acquisition, self.landing, self.materialization, self.answer, self.estimator)
+            (
+                self.acquisition,
+                self.landing,
+                self.materialization,
+                self.answer,
+                self.estimator,
+                self.dashboard,
+            )
         )
 
 
@@ -165,6 +179,7 @@ DEMO_WAREHOUSE_ROLES = DemoWarehouseRoles(
     materialization="materialization_runtime",
     answer="answer_runtime",
     estimator="query_estimator",
+    dashboard="dashboard_reader",
 )
 
 
@@ -281,7 +296,7 @@ def _require_outside_the_lag_bound(
 def grant_demo_product_read(
     bootstrap_dsn: str, *, roles: DemoWarehouseRoles, namespace: str, relation_name: str
 ) -> None:
-    """Let the answer and estimator roles read the materialized product, and nothing more.
+    """Let the answer, estimator and dashboard roles read the materialized product, and no more.
 
     Granted once the product exists rather than at provisioning time, because the relation is
     named by the materialization. `GRANT` is idempotent, so a restart that found an earlier
@@ -300,7 +315,7 @@ def grant_demo_product_read(
     business knowing what else was ever materialized.
     """
     with psycopg.connect(bootstrap_dsn) as connection:
-        for role in (roles.answer, roles.estimator):
+        for role in (roles.answer, roles.estimator, roles.dashboard):
             connection.execute(
                 sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
                     sql.Identifier(namespace), sql.Identifier(role)
