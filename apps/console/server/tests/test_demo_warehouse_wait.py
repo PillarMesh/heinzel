@@ -17,7 +17,7 @@ from pathlib import Path
 
 import psycopg
 import pytest
-from heinzel_console.demo import bootstrap
+from heinzel_console.demo import bootstrap, warehouse
 from heinzel_console.demo.collaborators import demo_clock
 from heinzel_console.demo.publication import build_demo_publication
 from heinzel_console.demo.stores import DemoStores
@@ -208,3 +208,32 @@ def test_the_bootstrap_waits_before_it_connects_to_anything(
             )
     finally:
         stores.close()
+
+
+def test_a_derived_role_keeps_every_connection_parameter_but_the_login() -> None:
+    """A warehouse-control warehouse demands TLS and a client certificate it verifies.
+
+    Its `pg_hba.conf` carries `hostssl ... clientcert=verify-ca` and rejects plaintext, so a
+    role connection string rebuilt from host, port and database alone is refused before it
+    authenticates. The demonstration's own warehouse needs none of these parameters, which is
+    why dropping them is invisible until the managed path connects.
+    """
+    bootstrap_dsn = (
+        "postgresql://postgres:bootstrap@127.0.0.1:47369/heinzel_warehouse"
+        "?sslmode=verify-full&sslrootcert=/private/ca.crt"
+        "&sslcert=/private/client.crt&sslkey=/private/client.key"
+    )
+
+    derived = psycopg.conninfo.conninfo_to_dict(
+        warehouse.role_dsn(bootstrap_dsn, "dashboard_reader", "role-password")
+    )
+
+    assert derived["user"] == "dashboard_reader"
+    assert derived["password"] == "role-password"
+    assert derived["host"] == "127.0.0.1"
+    assert derived["port"] == "47369"
+    assert derived["dbname"] == "heinzel_warehouse"
+    assert derived["sslmode"] == "verify-full"
+    assert derived["sslrootcert"] == "/private/ca.crt"
+    assert derived["sslcert"] == "/private/client.crt"
+    assert derived["sslkey"] == "/private/client.key"

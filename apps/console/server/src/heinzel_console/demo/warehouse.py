@@ -221,15 +221,15 @@ def wait_for_demo_warehouse(
 
 
 def role_dsn(bootstrap_dsn: str, role: str, password: str) -> str:
-    """The bootstrap DSN with its login replaced, keeping host, port and database."""
-    parsed = psycopg.conninfo.conninfo_to_dict(bootstrap_dsn)
-    return psycopg.conninfo.make_conninfo(
-        host=str(parsed["host"]),
-        port=str(parsed["port"]),
-        dbname=str(parsed["dbname"]),
-        user=role,
-        password=password,
-    )
+    """The bootstrap DSN with its login replaced, and everything else it carries kept.
+
+    Merged onto the whole connection string rather than rebuilt from the few parameters a
+    warehouse reached by host, port and database happens to need. A warehouse-control
+    warehouse also demands TLS and a client certificate its own `pg_hba.conf` verifies, so a
+    DSN rebuilt from an enumerated subset loses `sslmode`, `sslrootcert`, `sslcert` and
+    `sslkey`, and every role derived from it is refused at connection time.
+    """
+    return psycopg.conninfo.make_conninfo(bootstrap_dsn, user=role, password=password)
 
 
 def _create_role(
