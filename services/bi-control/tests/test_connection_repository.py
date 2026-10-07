@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -84,3 +86,47 @@ def test_corrupt_connection_payload_is_rejected() -> None:
             engine_kind="postgresql",
             consumption_object_ref=binding.consumption_object_ref,
         )
+
+
+def test_connection_binding_resolves_from_the_thread_that_serves_the_read(
+    tmp_path: Path,
+) -> None:
+    """A console composes its stores on one thread and serves its reads on another.
+
+    The repository is opened where the console is assembled and read where a request is
+    handled, so a connection bound to its creating thread reports every authorization as
+    an unavailable authority and no dashboard can ever be published.
+    """
+    repository = SQLiteDashboardConnectionRepository(str(tmp_path / "connections.sqlite"))
+    binding = _binding()
+    repository.store(binding)
+
+    with ThreadPoolExecutor(max_workers=1) as elsewhere:
+        resolved = elsewhere.submit(
+            lambda: repository.resolve(
+                tenant_id=binding.tenant_id,
+                engine_kind="postgresql",
+                consumption_object_ref=binding.consumption_object_ref,
+            )
+        ).result()
+
+    assert resolved == binding
+
+
+def test_every_sqlite_store_in_this_service_is_readable_off_its_creating_thread() -> None:
+    """The console serves on a worker thread, so no store here may be thread-bound.
+
+    Asserted against the source rather than one store at a time, because the defect is
+    invisible until a console is wired and reports it as missing evidence instead.
+    """
+    source = Path(__file__).resolve().parents[1] / "src" / "heinzel_bi_control"
+    thread_bound = sorted(
+        module.name
+        for module in source.glob("*.py")
+        for statement in re.findall(
+            r"sqlite3\.connect\((?:[^()]|\([^()]*\))*\)", module.read_text()
+        )
+        if "check_same_thread" not in statement
+    )
+
+    assert thread_bound == []

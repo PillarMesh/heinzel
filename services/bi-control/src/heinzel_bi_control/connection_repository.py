@@ -22,7 +22,11 @@ class SQLiteDashboardConnectionRepository:
     """Persist the exact warehouse connection authorized for a consumption object."""
 
     def __init__(self, database_path: str) -> None:
-        self._connection = sqlite3.connect(database_path)
+        #
+        # A console serves its reads on a worker thread while composing its stores on the
+        # thread that started it, so a connection bound to its creating thread refuses every
+        # resolve as an unavailable authority. The sqlite3 module serializes access itself.
+        self._connection = sqlite3.connect(database_path, check_same_thread=False)
         self._connection.execute(
             "CREATE TABLE IF NOT EXISTS dashboard_dataset_connections_v1 ("
             "tenant_id TEXT NOT NULL, engine_kind TEXT NOT NULL, "
