@@ -25,11 +25,17 @@ from heinzel_access_control import (
 from heinzel_bi_control import (
     DashboardAccessAuthorityError,
     DashboardAccessAuthorization,
+    DashboardAnswerAuthorityReader,
     DashboardAuthorityUnavailable,
+    DashboardContractAuthorityError,
+    DashboardContractVerifier,
+    DashboardControlService,
     DashboardPublication,
     DashboardPublicationRecord,
     DashboardPublicationWorkflow,
     DeclareDashboardPublicationCommand,
+    InvalidDashboardContract,
+    SQLiteDashboardContractRepository,
 )
 from heinzel_catalog_control import (
     CatalogBinding,
@@ -309,6 +315,26 @@ class RepositoryCurrentGovernedAnswerReader:
     def current_answer_id(self, tenant_id: str, request_id: str) -> str | None:
         answers = self._answers.list_for_request(tenant_id, request_id)
         return answers[-1].answer_id if answers else None
+
+
+@dataclass(frozen=True, slots=True)
+class PublishableDashboard:
+    """A certified dashboard one delivered answer could be published to."""
+
+    dashboard_id: str
+    dashboard_version: int
+    owner: str
+    next_revision: int
+
+
+@dataclass(frozen=True, slots=True)
+class PublishableDashboardOffering:
+    answer_title: str | None
+    dashboards: tuple[PublishableDashboard, ...]
+
+
+class PublishableDashboardReader(Protocol):
+    def offering(self, *, tenant_id: str, request_id: str) -> PublishableDashboardOffering: ...
 
 
 class DashboardPublicationCommands(Protocol):
@@ -1355,6 +1381,90 @@ def _publication_intent_id(
             }
         )[:32]
     )
+
+
+class ContractPublishableDashboardReader:
+    """Offer the certified dashboards one request's delivered answer could be published to.
+
+    Every condition applied here is a refusal the composition already makes: a certified contract
+    naming exactly one data product, that product being the one the answer read, the contract's
+    metrics being the answer's metrics, a visual intent, and an answer current enough for the
+    contract's freshness requirement. Composition stays authoritative and re-checks all of it; this
+    reader exists so an architect is offered what will work rather than discovering it by refusal,
+    and so the publication command can be checked against an offering the server composed.
+
+    A stored contract that fails signature verification is never skipped. Dropping it would turn an
+    integrity failure into a shorter list, so the whole offering fails instead.
+    """
+
+    def __init__(
+        self,
+        *,
+        contracts: SQLiteDashboardContractRepository,
+        contract_verifier: DashboardContractVerifier,
+        answers: CurrentGovernedAnswerReader,
+        answer_authority: DashboardAnswerAuthorityReader,
+        dashboard_control: DashboardControlService,
+        clock: Callable[[], datetime],
+    ) -> None:
+        self._contracts = contracts
+        self._contract_verifier = contract_verifier
+        self._answers = answers
+        self._answer_authority = answer_authority
+        self._dashboard_control = dashboard_control
+        self._clock = clock
+
+    def offering(self, *, tenant_id: str, request_id: str) -> PublishableDashboardOffering:
+        answer_id = self._answers.current_answer_id(tenant_id, request_id)
+        if answer_id is None:
+            return PublishableDashboardOffering(answer_title=None, dashboards=())
+        answer = self._answer_authority.read_exact(
+            tenant_id=tenant_id, request_id=request_id, answer_id=answer_id
+        )
+        if answer is None or len(answer.product_generation_refs) != 1:
+            return PublishableDashboardOffering(answer_title=None, dashboards=())
+        product_ref = answer.product_generation_refs[0].product_ref
+        age_seconds = (self._clock() - answer.as_of).total_seconds()
+        offered: list[PublishableDashboard] = []
+        for signed in self._contracts.list_for_tenant(tenant_id):
+            try:
+                contract = self._contract_verifier.verify(signed)
+            except InvalidDashboardContract as error:
+                raise DashboardContractAuthorityError(
+                    "a stored dashboard contract failed verification"
+                ) from error
+            if (
+                contract.lifecycle_state != "certified"
+                or len(contract.data_product_versions) != 1
+                or contract.data_product_versions[0] != product_ref
+                or contract.metric_versions != answer.metric_version_refs
+                or not contract.visual_intents
+                or answer.freshness_disposition != "current"
+                or not 0 <= age_seconds <= contract.freshness_requirement.maximum_age_seconds
+            ):
+                continue
+            offered.append(
+                PublishableDashboard(
+                    dashboard_id=contract.dashboard_id,
+                    dashboard_version=contract.version,
+                    owner=contract.owner,
+                    next_revision=self._next_revision(
+                        tenant_id, contract.dashboard_id, contract.version
+                    ),
+                )
+            )
+        return PublishableDashboardOffering(answer_title=answer.title, dashboards=tuple(offered))
+
+    def _next_revision(self, tenant_id: str, dashboard_id: str, version: int) -> int:
+        current = self._dashboard_control.get_current_desired(tenant_id, dashboard_id, version)
+        if current is None:
+            return 1
+        #
+        # A desired revision whose apply never produced a receipt is republished as itself rather
+        # than superseded, so a publication that failed at the provider stays recoverable instead of
+        # leaving a revision nothing ever applied behind it.
+        published = self._dashboard_control.get_publication(tenant_id, dashboard_id, version)
+        return current.revision if published is None else current.revision + 1
 
 
 class WorkflowDashboardPublicationCommands:

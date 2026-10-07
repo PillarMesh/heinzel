@@ -17,24 +17,32 @@ def _reference(artifact_id: str) -> ArtifactReference:
     return ArtifactReference(artifact_id=artifact_id, version=1, digest="a" * 64)
 
 
-def _contract(*, owner: str = "principal:finance-owner") -> DashboardContract:
+def _contract(
+    *,
+    owner: str = "principal:finance-owner",
+    dashboard_id: str = "dashboard:revenue",
+    version: int = 1,
+    lifecycle_state: str = "certified",
+) -> DashboardContract:
     dimension = _reference("dimension:region")
-    return DashboardContract(
-        dashboard_id="dashboard:revenue",
-        version=1,
-        owner=owner,
-        audience=("group:finance",),
-        data_product_versions=(_reference("product:orders"),),
-        metric_versions=(_reference("metric:revenue"),),
-        dimensions=(dimension,),
-        filters=(),
-        visual_intents=("bar",),
-        drill_paths=((dimension,),),
-        freshness_requirement=FreshnessRequirement(maximum_age_seconds=3_600),
-        access_policy=_reference("access-policy:finance"),
-        report_delivery_policy=None,
-        acceptance_tests=(),
-        lifecycle_state="certified",
+    return DashboardContract.model_validate(
+        {
+            "dashboard_id": dashboard_id,
+            "version": version,
+            "owner": owner,
+            "audience": ("group:finance",),
+            "data_product_versions": (_reference("product:orders"),),
+            "metric_versions": (_reference("metric:revenue"),),
+            "dimensions": (dimension,),
+            "filters": (),
+            "visual_intents": ("bar",),
+            "drill_paths": ((dimension,),),
+            "freshness_requirement": FreshnessRequirement(maximum_age_seconds=3_600),
+            "access_policy": _reference("access-policy:finance"),
+            "report_delivery_policy": None,
+            "acceptance_tests": (),
+            "lifecycle_state": lifecycle_state,
+        }
     )
 
 
@@ -116,3 +124,37 @@ def test_repository_rejects_an_index_payload_identity_mismatch() -> None:
 
     with pytest.raises(ValueError, match="index does not match"):
         repository.read_exact(tenant_id="tenant-a", dashboard_id="dashboard:revenue", version=1)
+
+
+def test_listing_a_tenants_contracts_returns_every_state_in_a_stable_order() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    signer = DashboardContractSigner("dashboard-key-1", private_key)
+    repository = SQLiteDashboardContractRepository(":memory:")
+    for tenant_id, dashboard_id, version, lifecycle_state in (
+        ("tenant-a", "dashboard:revenue", 2, "certified"),
+        ("tenant-a", "dashboard:revenue", 1, "archived"),
+        ("tenant-a", "dashboard:costs", 1, "draft"),
+        ("tenant-b", "dashboard:other", 1, "certified"),
+    ):
+        repository.store(
+            signer.sign(
+                tenant_id=tenant_id,
+                contract=_contract(
+                    dashboard_id=dashboard_id, version=version, lifecycle_state=lifecycle_state
+                ),
+            )
+        )
+
+    listed = repository.list_for_tenant("tenant-a")
+
+    assert [(item.contract.dashboard_id, item.contract.version) for item in listed] == [
+        ("dashboard:costs", 1),
+        ("dashboard:revenue", 1),
+        ("dashboard:revenue", 2),
+    ]
+    assert {item.contract.lifecycle_state for item in listed} == {
+        "certified",
+        "archived",
+        "draft",
+    }
+    assert repository.list_for_tenant("tenant-c") == ()

@@ -36,6 +36,7 @@ from .contracts import (
     ProductIntentApprovalCommand,
     ProductIntentApprovalView,
     ProposalPreparationCommand,
+    PublishableDashboardsView,
     RequestClarificationCommand,
     RequestDetailView,
     RequesterRequestView,
@@ -162,6 +163,10 @@ class ConsoleBackend(Protocol):
     def register_source(
         self, context: TrustedActorContext, command: SourceRegistrationCommand
     ) -> OperationView: ...
+
+    def get_publishable_dashboards(
+        self, context: TrustedActorContext, request_id: str
+    ) -> PublishableDashboardsView: ...
 
     def publish_dashboard(
         self, context: TrustedActorContext, command: DashboardPublicationCommand

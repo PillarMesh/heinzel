@@ -25,6 +25,7 @@ from ..contracts import (
     IncidentsView,
     JsonTuple,
     OperationView,
+    PublishableDashboardsView,
     RequestDetailView,
     RequesterRequestView,
     ReviewView,
@@ -64,6 +65,7 @@ _ANSWER_RESULT_RESPONSE = TypeAdapter(ConsoleEnvelope[AnswerResultPageView])
 _CATALOG_ASSET_RESPONSE = TypeAdapter(ConsoleEnvelope[CatalogAssetView])
 _CATALOG_ASSETS_RESPONSE = TypeAdapter(ConsoleEnvelope[CatalogAssetsView])
 _DASHBOARD_RESPONSE = TypeAdapter(ConsoleEnvelope[DashboardView])
+_PUBLISHABLE_DASHBOARDS_RESPONSE = TypeAdapter(ConsoleEnvelope[PublishableDashboardsView])
 _DASHBOARDS_RESPONSE = TypeAdapter(ConsoleEnvelope[DashboardsView])
 _EVIDENCE_RESPONSE = TypeAdapter(ConsoleEnvelope[EvidenceView])
 _OPERATION_RESPONSE = TypeAdapter(ConsoleEnvelope[OperationView])
@@ -120,6 +122,16 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
             dependencies,
             dependencies.backend.get_request_detail(context, request_id),
             _REQUEST_DETAIL_RESPONSE,
+        )
+
+    async def publishable_dashboards(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        request_id = path_parameter(request, "request_id")
+        return envelope_response(
+            request,
+            dependencies,
+            dependencies.backend.get_publishable_dashboards(context, request_id),
+            _PUBLISHABLE_DASHBOARDS_RESPONSE,
         )
 
     async def request_impact(request: Request) -> Response:
@@ -364,6 +376,11 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
         Route("/api/v1/reviews/{review_id}", review, methods=["GET"]),
         Route("/api/v1/inbox", inbox, methods=["GET"]),
         Route("/api/v1/inbox/{request_id}", request_detail, methods=["GET"]),
+        Route(
+            "/api/v1/inbox/{request_id}/publishable-dashboards",
+            publishable_dashboards,
+            methods=["GET"],
+        ),
         Route("/api/v1/inbox/{request_id}/impact", request_impact, methods=["GET"]),
         Route("/api/v1/requests/mine", requester_requests, methods=["GET"]),
         Route("/api/v1/requests/{request_id}/conversation", conversation, methods=["GET"]),

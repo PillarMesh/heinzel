@@ -26,6 +26,10 @@ import {AccessPreviewReview} from "./access-preview-review"
 import {CatalogEvidence, type CatalogEvidenceClient} from "./catalog-evidence"
 import {ConversationPanel, type ConversationPanelClient} from "./conversation-panel"
 import {DashboardPreview, type DashboardPreviewClient} from "./dashboard-preview"
+import {
+  DashboardPublication,
+  type DashboardPublicationClient,
+} from "./dashboard-publication"
 import {ImpactPanel, type ImpactClient} from "../impact/impact-panel"
 import {DecisionQueue} from "./decision-queue"
 import {EvidenceDrawer, type EvidenceLayout} from "./evidence-drawer"
@@ -44,6 +48,7 @@ export interface InboxClient
     CatalogEvidenceClient,
     ConversationPanelClient,
     DashboardPreviewClient,
+    DashboardPublicationClient,
     ImpactClient {
   approveProductIntent(
     requestId: string,
@@ -933,6 +938,15 @@ export function DecisionWorkspace({
               />
             </>
           )}
+          <h3>Publish a dashboard</h3>
+          <DashboardPublication
+            client={client}
+            mutationContext={() => ({
+              csrfToken: session.csrf_token,
+              idempotencyKey: idempotencyKeyFactory(),
+            })}
+            requestId={currentDetail.request_id}
+          />
           <h3>Lifecycle</h3>
           <LifecycleTimeline events={currentDetail.lifecycle ?? []} />
         </EvidenceDrawer>

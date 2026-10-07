@@ -21,6 +21,7 @@ import type {
   ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView,
   ConsoleEnvelopeOperationView,
   ConsoleEnvelopeProductIntentApprovalView,
+  ConsoleEnvelopePublishableDashboardsView,
   ConsoleEnvelopeRequesterRequestView,
   ConsoleEnvelopeRequestDetailView,
   ConsoleEnvelopeReviewView,
@@ -392,6 +393,15 @@ export class ConsoleApiClient {
     return this.#request(
       `/api/v1/inbox/${encodePathSegment(requestId)}/impact`,
       "impact_response",
+    )
+  }
+
+  getPublishableDashboards(
+    requestId: string,
+  ): Promise<ConsoleEnvelopePublishableDashboardsView> {
+    return this.#request(
+      `/api/v1/inbox/${encodePathSegment(requestId)}/publishable-dashboards`,
+      "publishable_dashboards_response",
     )
   }
 

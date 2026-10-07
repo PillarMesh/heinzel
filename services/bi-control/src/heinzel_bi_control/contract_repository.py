@@ -80,6 +80,29 @@ class SQLiteDashboardContractRepository:
             return None
         return self._validate_stored(row[0], key)
 
+    def list_for_tenant(self, tenant_id: str) -> tuple[SignedDashboardContract, ...]:
+        """Every stored contract of one tenant, in a stable order.
+
+        Lifecycle is deliberately not filtered here. Which states may be published is the
+        composition's rule, and a repository that pre-filtered would quietly become a second place
+        that decides it.
+        """
+        try:
+            with self._lock:
+                rows = self._connection.execute(
+                    "SELECT dashboard_id, version, payload FROM signed_dashboard_contracts_v1 "
+                    "WHERE tenant_id = ? ORDER BY dashboard_id, version",
+                    (tenant_id,),
+                ).fetchall()
+        except sqlite3.Error as error:
+            raise DashboardContractAuthorityError(
+                "dashboard contract authority is unavailable"
+            ) from error
+        return tuple(
+            self._validate_stored(payload, (tenant_id, str(dashboard_id), int(version)))
+            for dashboard_id, version, payload in rows
+        )
+
     @staticmethod
     def _validate_stored(
         payload: bytes | str, expected_key: tuple[str, str, int]

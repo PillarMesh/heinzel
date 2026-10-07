@@ -35,7 +35,12 @@ from heinzel_console.contracts import (
     SetupView,
     WorkspaceView,
 )
-from heinzel_console.errors import ConsoleConflict, ConsoleNotFound, ConsoleUnavailable
+from heinzel_console.errors import (
+    ConsoleConflict,
+    ConsoleInvalidRequest,
+    ConsoleNotFound,
+    ConsoleUnavailable,
+)
 from heinzel_console.governed_adapters import (
     AccessGrantCommands,
     AccessGrantReader,
@@ -52,6 +57,9 @@ from heinzel_console.governed_adapters import (
     InMemoryWorkspacePrincipalDirectory,
     PolicyPermittedDataProductReader,
     ProductPublicationDefinitionReader,
+    PublishableDashboard,
+    PublishableDashboardOffering,
+    PublishableDashboardReader,
     RequestImpactReader,
     RequestInboxReader,
     SelectableAnswerTermReader,
@@ -488,6 +496,7 @@ def _backend(
     access_revocation_commands: AccessGrantRevocationCommands | None = None,
     dashboards: DashboardPublicationReader | None = None,
     dashboard_publication_commands: DashboardPublicationCommands | None = None,
+    publishable_dashboards: PublishableDashboardReader | None = None,
     principals: InMemoryWorkspacePrincipalDirectory | None = None,
 ) -> GovernedConsoleBackend:
     """Inject doubles under the backend's own parameter types.
@@ -521,6 +530,7 @@ def _backend(
         access_revocation_commands=access_revocation_commands,
         dashboards=dashboards,
         dashboard_publication_commands=dashboard_publication_commands,
+        publishable_dashboards=publishable_dashboards,
         principals=principals,
     )
 
@@ -2663,6 +2673,45 @@ class _PublicationCommands:
         return self._record
 
 
+class _PublishableReader:
+    def __init__(
+        self,
+        dashboards: tuple[PublishableDashboard, ...],
+        *,
+        answer_title: str | None = "Revenue by region",
+    ) -> None:
+        self._offering = PublishableDashboardOffering(
+            answer_title=answer_title, dashboards=dashboards
+        )
+        self.requests: list[tuple[str, str]] = []
+
+    def offering(self, *, tenant_id: str, request_id: str) -> PublishableDashboardOffering:
+        self.requests.append((tenant_id, request_id))
+        return self._offering
+
+
+def _offered(*, next_revision: int = 1) -> PublishableDashboard:
+    return PublishableDashboard(
+        dashboard_id="internal:revenue-dashboard",
+        dashboard_version=3,
+        owner="principal:finance-owner",
+        next_revision=next_revision,
+    )
+
+
+def _publishing_backend(
+    record: DashboardPublicationRecord | Exception,
+    *,
+    offered: tuple[PublishableDashboard, ...] | None = None,
+) -> tuple[GovernedConsoleBackend, _PublicationCommands]:
+    commands = _PublicationCommands(record)
+    backend = _backend(
+        dashboard_publication_commands=commands,
+        publishable_dashboards=_PublishableReader((_offered(),) if offered is None else offered),
+    )
+    return backend, commands
+
+
 def _publication_command(*, expected_revision: int = 1) -> DashboardPublicationCommand:
     return DashboardPublicationCommand(
         expected_revision=expected_revision,
@@ -2687,11 +2736,9 @@ def test_publishing_a_dashboard_without_a_bi_workflow_reports_the_capability_as_
 def test_the_dashboard_publication_capability_is_ready_only_with_a_wired_workflow() -> None:
     without = _backend().get_workspace(_architect_context()).capabilities
     with_workflow = (
-        _backend(
-            dashboard_publication_commands=_PublicationCommands(
-                _publication_record(state="published", outcome="published", dashboard_revision=1)
-            )
-        )
+        _publishing_backend(
+            _publication_record(state="published", outcome="published", dashboard_revision=1)
+        )[0]
         .get_workspace(_architect_context())
         .capabilities
     )
@@ -2707,10 +2754,9 @@ def test_the_dashboard_publication_capability_is_ready_only_with_a_wired_workflo
 
 
 def test_a_published_dashboard_reports_the_revision_the_provider_applied() -> None:
-    commands = _PublicationCommands(
+    backend, commands = _publishing_backend(
         _publication_record(state="published", outcome="published", dashboard_revision=2)
     )
-    backend = _backend(dashboard_publication_commands=commands)
 
     operation = backend.publish_dashboard(
         _architect_context(), _publication_command(expected_revision=2)
@@ -2732,11 +2778,7 @@ def test_a_published_dashboard_reports_the_revision_the_provider_applied() -> No
 
 
 def test_a_closed_publication_window_is_permanent_and_names_its_own_reason() -> None:
-    backend = _backend(
-        dashboard_publication_commands=_PublicationCommands(
-            _publication_record(state="expired", outcome="expired")
-        )
-    )
+    backend, _ = _publishing_backend(_publication_record(state="expired", outcome="expired"))
 
     operation = backend.publish_dashboard(_architect_context(), _publication_command())
 
@@ -2763,10 +2805,8 @@ def test_a_closed_publication_window_is_permanent_and_names_its_own_reason() -> 
 def test_each_publication_failure_is_reported_with_its_own_classification(
     failure_code: str, state: str, classification: str
 ) -> None:
-    backend = _backend(
-        dashboard_publication_commands=_PublicationCommands(
-            _publication_record(state=state, outcome="failed", failure_code=failure_code)
-        )
+    backend, _ = _publishing_backend(
+        _publication_record(state=state, outcome="failed", failure_code=failure_code)
     )
 
     operation = backend.publish_dashboard(_architect_context(), _publication_command())
@@ -2778,12 +2818,92 @@ def test_each_publication_failure_is_reported_with_its_own_classification(
 
 
 def test_only_a_data_architect_can_publish_a_dashboard() -> None:
-    backend = _backend(
-        dashboard_publication_commands=_PublicationCommands(
-            _publication_record(state="published", outcome="published", dashboard_revision=1)
-        )
+    backend, _ = _publishing_backend(
+        _publication_record(state="published", outcome="published", dashboard_revision=1)
     )
 
     # An unauthorized role is answered exactly as an unknown resource is, by design.
     with pytest.raises(ConsoleNotFound):
         backend.publish_dashboard(_requester_context(), _publication_command())
+
+
+def test_a_dashboard_not_on_the_offering_is_never_published() -> None:
+    backend, commands = _publishing_backend(
+        _publication_record(state="published", outcome="published", dashboard_revision=1),
+        offered=(),
+    )
+
+    with pytest.raises(ConsoleInvalidRequest) as refusal:
+        backend.publish_dashboard(_architect_context(), _publication_command())
+
+    assert refusal.value.code == "dashboard_not_publishable"
+    assert commands.calls == []
+
+
+def test_a_dashboard_offered_at_another_version_is_never_published() -> None:
+    backend, commands = _publishing_backend(
+        _publication_record(state="published", outcome="published", dashboard_revision=1),
+        offered=(
+            PublishableDashboard(
+                dashboard_id="internal:revenue-dashboard",
+                dashboard_version=4,
+                owner="principal:finance-owner",
+                next_revision=1,
+            ),
+        ),
+    )
+
+    with pytest.raises(ConsoleInvalidRequest):
+        backend.publish_dashboard(_architect_context(), _publication_command())
+
+    assert commands.calls == []
+
+
+def test_the_offering_is_read_for_the_request_the_command_names() -> None:
+    reader = _PublishableReader((_offered(),))
+    backend = _backend(
+        dashboard_publication_commands=_PublicationCommands(
+            _publication_record(state="published", outcome="published", dashboard_revision=1)
+        ),
+        publishable_dashboards=reader,
+    )
+
+    backend.publish_dashboard(_architect_context(), _publication_command())
+
+    assert reader.requests == [(_TENANT, "req-00000000000000000002")]
+
+
+def test_the_publishable_offering_carries_what_a_browser_needs_to_choose() -> None:
+    backend = _backend(publishable_dashboards=_PublishableReader((_offered(next_revision=2),)))
+
+    view = backend.get_publishable_dashboards(_architect_context(), "req-00000000000000000002")
+
+    assert view.request_id == "req-00000000000000000002"
+    assert view.answer_title == "Revenue by region"
+    assert [
+        (item.dashboard_id, item.dashboard_version, item.owner, item.next_revision)
+        for item in view.dashboards
+    ] == [("internal:revenue-dashboard", 3, "principal:finance-owner", 2)]
+
+
+def test_a_request_with_nothing_delivered_offers_nothing_rather_than_failing() -> None:
+    backend = _backend(publishable_dashboards=_PublishableReader((), answer_title=None))
+
+    view = backend.get_publishable_dashboards(_architect_context(), "req-00000000000000000002")
+
+    assert view.answer_title is None
+    assert view.dashboards == ()
+
+
+def test_the_publishable_offering_requires_a_wired_contract_reader() -> None:
+    with pytest.raises(ConsoleUnavailable) as refusal:
+        _backend().get_publishable_dashboards(_architect_context(), "req-00000000000000000002")
+
+    assert refusal.value.code == "capability_not_delivered"
+
+
+def test_only_a_data_architect_reads_the_publishable_offering() -> None:
+    backend = _backend(publishable_dashboards=_PublishableReader((_offered(),)))
+
+    with pytest.raises(ConsoleNotFound):
+        backend.get_publishable_dashboards(_requester_context(), "req-00000000000000000002")

@@ -1264,6 +1264,29 @@ class SourceRegistrationCommand(StrictModel):
     connection_handle: NonEmptyText
 
 
+class PublishableDashboardView(StrictModel):
+    """One certified dashboard a request's delivered answer could be published to."""
+
+    dashboard_id: NonEmptyText
+    dashboard_version: int = Field(ge=1)
+    owner: NonEmptyText
+    next_revision: int = Field(ge=1)
+
+
+class PublishableDashboardsView(StrictModel):
+    """What a request may be published to, and nothing about any other request.
+
+    The offering is computed per request because a dashboard is publishable only where its contract
+    names the product and the metrics the answer actually read. A request with no delivered answer
+    offers nothing, which is a complete answer rather than an error: not yet delivered is the
+    ordinary state of a request.
+    """
+
+    request_id: NonEmptyText
+    answer_title: NonEmptyText | None = None
+    dashboards: JsonTuple[PublishableDashboardView] = Field(default=())
+
+
 class DashboardPublicationCommand(StrictModel):
     """Publish one certified dashboard from the answer a request has already been delivered.
 
@@ -1480,6 +1503,7 @@ class ConsoleApiSchema(StrictModel):
     acquisition_receipt_response: ConsoleEnvelope[AcquisitionReceiptView]
     catalog_asset_response: ConsoleEnvelope[CatalogAssetView]
     dashboard_response: ConsoleEnvelope[DashboardView]
+    publishable_dashboards_response: ConsoleEnvelope[PublishableDashboardsView]
     dashboards_response: ConsoleEnvelope[DashboardsView]
     evidence_response: ConsoleEnvelope[EvidenceView]
     operation_response: ConsoleEnvelope[OperationView]

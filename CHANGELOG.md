@@ -62,8 +62,25 @@ All notable changes to Heinzel are recorded here. The format follows
   reason, and a failure bi-control left retryable is reported transient while one it settled is
   permanent. No deployment wires the commands, so the route answers `503
   capability_not_delivered` and the new `dashboard-publication` capability reports itself
-  undelivered; the browser has no publish control, which needs a read surface naming the certified
-  dashboards a delivered answer could be published to.
+  undelivered.
+- A read surface for publishable dashboards, at
+  `GET /api/v1/inbox/{request_id}/publishable-dashboards`, and the publish control it makes
+  possible. The offering names the certified dashboards one request's delivered answer could be
+  published to: each contract that names exactly one data product, that product being the one the
+  answer read, with the answer's metrics, a visual intent, and an answer current enough for that
+  contract's freshness requirement. Every one of those is a refusal the composition already makes,
+  so an architect is offered what will work instead of discovering it by refusal. A stored contract
+  that fails signature verification fails the whole offering rather than shortening it. Each entry
+  carries the revision publishing it would apply, and a revision whose apply never produced a
+  receipt is offered again as itself so a publication that failed at the provider stays
+  recoverable. The publication command is now checked against the same offering, which refuses a
+  dashboard the server did not offer with one message for a contract that does not exist, is not
+  certified, or does not match this answer -- distinguishing them would let a browser enumerate a
+  tenant's dashboard contracts by guessing. The decision workspace renders the offering with a
+  publish control per dashboard and no free-text field, because the browser never names a dashboard
+  from anything but what the server composed. `SQLiteDashboardContractRepository` gained
+  `list_for_tenant`, which does not filter by lifecycle: which states may be published is the
+  composition's rule.
 - `DashboardAnswerAuthority` carries `result_expires_at`, the expiry of the result snapshot the
   answer was read from, so a publication deadline comes from the same evidence the answer did. Its
   schema version is `3`.

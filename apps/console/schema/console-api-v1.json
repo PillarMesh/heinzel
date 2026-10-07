@@ -1951,6 +1951,57 @@
       "title": "ConsoleEnvelope[ProductIntentApprovalView]",
       "type": "object"
     },
+    "ConsoleEnvelope_PublishableDashboardsView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/PublishableDashboardsView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[PublishableDashboardsView]",
+      "type": "object"
+    },
     "ConsoleEnvelope_RequestDetailView_": {
       "additionalProperties": false,
       "allOf": [
@@ -3735,6 +3786,12 @@
       },
       "type": "array"
     },
+    "JsonTuple_PublishableDashboardView_": {
+      "items": {
+        "$ref": "#/$defs/PublishableDashboardView"
+      },
+      "type": "array"
+    },
     "JsonTuple_RecordedDecisionView_": {
       "items": {
         "$ref": "#/$defs/RecordedDecisionView"
@@ -4678,6 +4735,65 @@
     "PublicId": {
       "pattern": "^[a-z][a-z0-9_-]{2,127}$",
       "type": "string"
+    },
+    "PublishableDashboardView": {
+      "additionalProperties": false,
+      "description": "One certified dashboard a request's delivered answer could be published to.",
+      "properties": {
+        "dashboard_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "dashboard_version": {
+          "minimum": 1,
+          "title": "Dashboard Version",
+          "type": "integer"
+        },
+        "next_revision": {
+          "minimum": 1,
+          "title": "Next Revision",
+          "type": "integer"
+        },
+        "owner": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "dashboard_id",
+        "dashboard_version",
+        "owner",
+        "next_revision"
+      ],
+      "title": "PublishableDashboardView",
+      "type": "object"
+    },
+    "PublishableDashboardsView": {
+      "additionalProperties": false,
+      "description": "What a request may be published to, and nothing about any other request.\n\nThe offering is computed per request because a dashboard is publishable only where its contract\nnames the product and the metrics the answer actually read. A request with no delivered answer\noffers nothing, which is a complete answer rather than an error: not yet delivered is the\nordinary state of a request.",
+      "properties": {
+        "answer_title": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "dashboards": {
+          "$ref": "#/$defs/JsonTuple_PublishableDashboardView_",
+          "default": []
+        },
+        "request_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "request_id"
+      ],
+      "title": "PublishableDashboardsView",
+      "type": "object"
     },
     "QuestionTermSelectionInput": {
       "additionalProperties": false,
@@ -6243,6 +6359,9 @@
     "proposal_preparation_command": {
       "$ref": "#/$defs/ProposalPreparationCommand"
     },
+    "publishable_dashboards_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_PublishableDashboardsView_"
+    },
     "request_clarification_command": {
       "$ref": "#/$defs/RequestClarificationCommand"
     },
@@ -6313,6 +6432,7 @@
     "acquisition_receipt_response",
     "catalog_asset_response",
     "dashboard_response",
+    "publishable_dashboards_response",
     "dashboards_response",
     "evidence_response",
     "operation_response",

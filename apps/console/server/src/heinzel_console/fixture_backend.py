@@ -56,6 +56,7 @@ from .contracts import (
     ProductIntentApprovalCommand,
     ProductIntentApprovalView,
     ProposalPreparationCommand,
+    PublishableDashboardsView,
     RecordedDecisionView,
     RecoveryAction,
     RequestClarificationCommand,
@@ -875,6 +876,17 @@ class FixtureConsoleBackend:
             safe_message="Registering a source requires a governed workspace.",
             recovery_action="none",
         )
+
+    def get_publishable_dashboards(
+        self, context: TrustedActorContext, request_id: str
+    ) -> PublishableDashboardsView:
+        """Nothing is publishable: the fixture console holds no dashboard contracts.
+
+        An empty offering is the accurate answer, and it is what keeps the publish control absent
+        rather than present and refusing.
+        """
+        self._authorize(context, ("data_architect",))
+        return PublishableDashboardsView(request_id=request_id)
 
     def publish_dashboard(
         self, context: TrustedActorContext, command: DashboardPublicationCommand

@@ -17,14 +17,23 @@ from pathlib import Path
 from typing import Literal, Never
 
 import pytest
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from heinzel_bi_control import (
     DashboardAnswerAuthority,
     DashboardAuthorityUnavailable,
+    DashboardContract,
+    DashboardContractAuthorityError,
+    DashboardContractSigner,
+    DashboardContractVerifier,
+    DashboardControlService,
+    DashboardDesiredState,
     DashboardProductGenerationReference,
     DashboardProviderReceipt,
     DashboardPublicationWorkflow,
     PublishDashboardCommand,
+    SQLiteDashboardContractRepository,
     SQLiteDashboardPublicationRepository,
+    SQLiteDashboardRepository,
 )
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
 from heinzel_connection_broker import (
@@ -64,9 +73,11 @@ from heinzel_console.errors import (
 )
 from heinzel_console.governed_adapters import (
     BrokerSourceRegistrationCommands,
+    ContractPublishableDashboardReader,
     EnrolledSourceConnection,
     GovernedWorkspaceIdentity,
     InMemoryWorkspacePrincipalDirectory,
+    PublishableDashboardOffering,
     RepositoryCurrentGovernedAnswerReader,
     WarehouseConfirmation,
     WarehouseOperationIdentity,
@@ -81,7 +92,7 @@ from heinzel_console.operation_handles import (
     InMemoryOperationHandleRepository,
 )
 from heinzel_console.request_intake import request_intake_content
-from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_model import ArtifactReference, FreshnessRequirement, digest
 from heinzel_contract_service import (
     BusinessProcessManifest,
     ProcessPackageService,
@@ -89,6 +100,7 @@ from heinzel_contract_service import (
 )
 from heinzel_evidence import AcquisitionEvidenceReceipt
 from heinzel_provider_sdk import AcquisitionNoValidPlan
+from heinzel_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
 from heinzel_provider_sdk.errors import AcquisitionProviderError, AcquisitionProviderKind
 from heinzel_request_management import (
     ArchitectRequestView,
@@ -2683,3 +2695,286 @@ def test_the_current_answer_reader_names_only_the_newest_answer_of_a_request() -
 
     reader = RepositoryCurrentGovernedAnswerReader(_Records(()))
     assert reader.current_answer_id("tenant-a", "request-1") is None
+
+
+def _dashboard_contract(
+    *,
+    dashboard_id: str = "dashboard:revenue",
+    version: int = 1,
+    lifecycle_state: str = "certified",
+    product_ref: ArtifactReference | None = None,
+    metric_refs: tuple[ArtifactReference, ...] | None = None,
+    visual_intents: tuple[str, ...] = ("bar",),
+    maximum_age_seconds: int = 3_600,
+) -> DashboardContract:
+    dimension = ArtifactReference(artifact_id="dimension:region", version=1, digest="f" * 64)
+    return DashboardContract.model_validate(
+        {
+            "dashboard_id": dashboard_id,
+            "version": version,
+            "owner": "principal:finance-owner",
+            "audience": ("group:finance",),
+            "data_product_versions": (
+                product_ref
+                or ArtifactReference(artifact_id="product:orders", version=2, digest="a" * 64),
+            ),
+            "metric_versions": metric_refs
+            or (ArtifactReference(artifact_id="metric:revenue", version=3, digest="b" * 64),),
+            "dimensions": (dimension,),
+            "filters": (),
+            "visual_intents": visual_intents,
+            "drill_paths": ((dimension,),),
+            "freshness_requirement": FreshnessRequirement(maximum_age_seconds=maximum_age_seconds),
+            "access_policy": ArtifactReference(
+                artifact_id="access-policy:finance", version=1, digest="c" * 64
+            ),
+            "report_delivery_policy": None,
+            "acceptance_tests": (),
+            "lifecycle_state": lifecycle_state,
+        }
+    )
+
+
+class _PublishableProvider:
+    provider_kind: Literal["superset"] = "superset"
+
+    def apply(self, definition: BiDashboardDefinition) -> BiApplyResult:
+        return BiApplyResult(
+            stable_external_key=definition.stable_external_key,
+            desired_digest=definition.desired_digest,
+            lifecycle_state=definition.lifecycle_state,
+            external_url="https://superset.test/dashboard/revenue",
+            provider_version="4.1.1",
+        )
+
+
+def _publishable_reader(
+    *,
+    contracts: tuple[DashboardContract, ...],
+    answer_id: str | None = "answer-1",
+    freshness_disposition: str = "current",
+    answer_age: timedelta = timedelta(minutes=5),
+    now: datetime = _PUBLICATION_NOW,
+    signing_key: Ed25519PrivateKey | None = None,
+    verifying_key: Ed25519PrivateKey | None = None,
+) -> tuple[ContractPublishableDashboardReader, SQLiteDashboardRepository]:
+    private_key = signing_key or Ed25519PrivateKey.generate()
+    repository = SQLiteDashboardContractRepository(":memory:")
+    signer = DashboardContractSigner("dashboard-key-1", private_key)
+    for contract in contracts:
+        repository.store(signer.sign(tenant_id="tenant-a", contract=contract))
+    dashboards = SQLiteDashboardRepository(":memory:")
+    return (
+        ContractPublishableDashboardReader(
+            contracts=repository,
+            contract_verifier=DashboardContractVerifier(
+                {"dashboard-key-1": (verifying_key or private_key).public_key()}
+            ),
+            answers=_PublicationAnswers(answer_id),
+            answer_authority=_PublishableAuthorityReader(
+                freshness_disposition=freshness_disposition, answer_age=answer_age
+            ),
+            dashboard_control=DashboardControlService(
+                dashboards, _PublishableProvider(), clock=lambda: now
+            ),
+            clock=lambda: now,
+        ),
+        dashboards,
+    )
+
+
+class _PublishableAuthorityReader:
+    def __init__(self, *, freshness_disposition: str, answer_age: timedelta) -> None:
+        self._freshness_disposition = freshness_disposition
+        self._answer_age = answer_age
+
+    def read_exact(
+        self, *, tenant_id: str, request_id: str, answer_id: str
+    ) -> DashboardAnswerAuthority:
+        return DashboardAnswerAuthority.model_validate(
+            {
+                "tenant_id": tenant_id,
+                "request_id": request_id,
+                "request_revision": 6,
+                "answer_id": answer_id,
+                "title": "Revenue by region",
+                "execution_receipt_ref": "execution-1",
+                "result_ref": "result-1",
+                "result_digest": "c" * 64,
+                "product_generation_refs": (
+                    DashboardProductGenerationReference(
+                        product_ref=ArtifactReference(
+                            artifact_id="product:orders", version=2, digest="a" * 64
+                        ),
+                        generation=7,
+                    ),
+                ),
+                "metric_version_refs": (
+                    ArtifactReference(artifact_id="metric:revenue", version=3, digest="b" * 64),
+                ),
+                "as_of": _PUBLICATION_NOW - self._answer_age,
+                "freshness_disposition": self._freshness_disposition,
+                "delivered_at": _PUBLICATION_NOW - timedelta(minutes=1),
+                "result_expires_at": _PUBLICATION_NOW + timedelta(hours=1),
+            }
+        )
+
+
+def test_only_a_certified_contract_over_this_answers_product_is_offered() -> None:
+    reader, _ = _publishable_reader(
+        contracts=(
+            _dashboard_contract(dashboard_id="dashboard:revenue"),
+            _dashboard_contract(dashboard_id="dashboard:draft", lifecycle_state="draft"),
+            _dashboard_contract(
+                dashboard_id="dashboard:other-product",
+                product_ref=ArtifactReference(
+                    artifact_id="product:costs", version=2, digest="a" * 64
+                ),
+            ),
+            _dashboard_contract(
+                dashboard_id="dashboard:other-metric",
+                metric_refs=(
+                    ArtifactReference(artifact_id="metric:margin", version=1, digest="b" * 64),
+                ),
+            ),
+        )
+    )
+
+    offering = reader.offering(tenant_id="tenant-a", request_id="request-1")
+
+    assert offering.answer_title == "Revenue by region"
+    assert [item.dashboard_id for item in offering.dashboards] == ["dashboard:revenue"]
+    assert offering.dashboards[0].next_revision == 1
+
+
+def test_an_answer_too_stale_for_a_contracts_freshness_is_not_offered_to_it() -> None:
+    reader, _ = _publishable_reader(
+        contracts=(_dashboard_contract(maximum_age_seconds=60),),
+        answer_age=timedelta(minutes=5),
+    )
+
+    assert reader.offering(tenant_id="tenant-a", request_id="request-1").dashboards == ()
+
+
+def test_an_answer_that_is_not_current_is_offered_to_nothing() -> None:
+    reader, _ = _publishable_reader(
+        contracts=(_dashboard_contract(),), freshness_disposition="stale"
+    )
+
+    assert reader.offering(tenant_id="tenant-a", request_id="request-1").dashboards == ()
+
+
+def test_a_request_with_no_answer_offers_nothing_and_names_no_title() -> None:
+    reader, _ = _publishable_reader(contracts=(_dashboard_contract(),), answer_id=None)
+
+    offering = reader.offering(tenant_id="tenant-a", request_id="request-1")
+
+    assert offering == PublishableDashboardOffering(answer_title=None, dashboards=())
+
+
+def test_a_contract_that_fails_verification_fails_the_whole_offering() -> None:
+    reader, _ = _publishable_reader(
+        contracts=(_dashboard_contract(),),
+        signing_key=Ed25519PrivateKey.generate(),
+        verifying_key=Ed25519PrivateKey.generate(),
+    )
+
+    with pytest.raises(DashboardContractAuthorityError):
+        reader.offering(tenant_id="tenant-a", request_id="request-1")
+
+
+def test_another_tenant_is_offered_none_of_these_contracts() -> None:
+    reader, _ = _publishable_reader(contracts=(_dashboard_contract(),))
+
+    assert reader.offering(tenant_id="tenant-b", request_id="request-1").dashboards == ()
+
+
+def _publishable_desired(*, revision: int = 1, prior: str | None = None) -> DashboardDesiredState:
+    product_ref = ArtifactReference(artifact_id="product:orders", version=2, digest="a" * 64)
+    metric_ref = ArtifactReference(artifact_id="metric:revenue", version=3, digest="b" * 64)
+    return DashboardDesiredState.model_validate(
+        {
+            "tenant_id": "tenant-a",
+            "dashboard_id": "dashboard:revenue",
+            "version": 1,
+            "revision": revision,
+            "prior_desired_digest": prior,
+            "title": "Revenue by region",
+            "contract_digest": "e" * 64,
+            "contract_key_id": "dashboard-key-1",
+            "contract_signature": "test-signature",
+            "source_answer": DashboardAnswerAuthority.model_validate(
+                {
+                    "tenant_id": "tenant-a",
+                    "request_id": "request-1",
+                    "request_revision": 6,
+                    "answer_id": "answer-1",
+                    "title": "Revenue by region",
+                    "execution_receipt_ref": "execution-1",
+                    "result_ref": "result-1",
+                    "result_digest": "1" * 64,
+                    "product_generation_refs": (
+                        DashboardProductGenerationReference(product_ref=product_ref, generation=7),
+                    ),
+                    "metric_version_refs": (metric_ref,),
+                    "as_of": _PUBLICATION_NOW,
+                    "freshness_disposition": "current",
+                    "delivered_at": _PUBLICATION_NOW,
+                    "result_expires_at": _PUBLICATION_NOW + timedelta(hours=1),
+                }
+            ),
+            "dataset_product_ref": product_ref,
+            "dataset_generation": 7,
+            "consumption_object_ref": ArtifactReference(
+                artifact_id="consumption:orders", version=7, digest="b" * 64
+            ),
+            "materialization_receipt_ref": ArtifactReference(
+                artifact_id="materialization:orders", version=7, digest="c" * 64
+            ),
+            "product_publication_ref": ArtifactReference(
+                artifact_id="product-publication-1", version=7, digest="6" * 64
+            ),
+            "dataset_namespace": "analytics",
+            "dataset_relation_name": "revenue_current",
+            "warehouse_binding_id": "warehouse-1",
+            "warehouse_binding_revision": 2,
+            "warehouse_binding_digest": "2" * 64,
+            "connection_secret_ref": "secret://tenant-a/superset-database",
+            "metric_refs": (metric_ref,),
+            "dimension_refs": (
+                ArtifactReference(artifact_id="dimension:region", version=1, digest="f" * 64),
+            ),
+            "filter_refs": (),
+            "visual_intents": ("bar",),
+            "lifecycle_state": "active",
+        }
+    )
+
+
+def test_a_dashboard_nobody_has_published_is_offered_its_first_revision() -> None:
+    reader, _ = _publishable_reader(contracts=(_dashboard_contract(),))
+
+    offering = reader.offering(tenant_id="tenant-a", request_id="request-1")
+
+    assert offering.dashboards[0].next_revision == 1
+
+
+def test_a_revision_that_never_reached_the_provider_is_offered_again_as_itself() -> None:
+    reader, dashboards = _publishable_reader(contracts=(_dashboard_contract(),))
+    dashboards.record_desired(_publishable_desired(revision=1))
+
+    offering = reader.offering(tenant_id="tenant-a", request_id="request-1")
+
+    assert offering.dashboards[0].next_revision == 1
+
+
+def test_a_published_revision_is_followed_by_the_next_one() -> None:
+    reader, dashboards = _publishable_reader(contracts=(_dashboard_contract(),))
+    control = DashboardControlService(
+        dashboards, _PublishableProvider(), clock=lambda: _PUBLICATION_NOW
+    )
+    control.apply(_publishable_desired(revision=1))
+
+    offering = reader.offering(tenant_id="tenant-a", request_id="request-1")
+
+    assert offering.dashboards[0].next_revision == 2

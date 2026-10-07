@@ -214,6 +214,11 @@ function createClient(overrides: Partial<InboxClient> = {}): InboxClient {
       return detailEnvelope(detail)
     }),
     revokeAccess: vi.fn(),
+    getPublishableDashboards: vi.fn(async () => ({
+      meta: {correlation_id: "correlation-publication", data_provenance: "demo_fixture" as const},
+      data: {request_id: "req-1", answer_title: null, dashboards: []},
+    })),
+    publishDashboard: vi.fn(),
     getRequestImpact: vi.fn(async () => {
       throw new Error("no impact analysis")
     }),

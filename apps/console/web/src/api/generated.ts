@@ -197,6 +197,10 @@ export type ArtifactId = string
 export type Version2 = number
 export type IntentRevision = number
 export type ExpectedRevision10 = number
+export type ConsoleEnvelopePublishableDashboardsView = ConsoleEnvelope_PublishableDashboardsView_
+export type DashboardVersion1 = number
+export type NextRevision = number
+export type JsonTuple_PublishableDashboardView_ = PublishableDashboardView[]
 export type ExpectedRevision11 = number
 export type InScopeSummary = string
 export type OutOfScopeSummary = string
@@ -407,6 +411,7 @@ export interface ConsoleApiSchema {
   product_intent_approval_command: ProductIntentApprovalCommand
   product_intent_approval_response: ConsoleEnvelopeProductIntentApprovalView
   proposal_preparation_command: ProposalPreparationCommand
+  publishable_dashboards_response: ConsoleEnvelopePublishableDashboardsView
   request_clarification_command: RequestClarificationCommand
   request_detail_response: ConsoleEnvelopeRequestDetailView
   request_withdrawal_command: RequestWithdrawalCommand
@@ -885,6 +890,32 @@ export interface ArtifactReferenceView {
 export interface ProposalPreparationCommand {
   active_role: ActorRole
   expected_revision: ExpectedRevision10
+}
+export interface ConsoleEnvelope_PublishableDashboardsView_ {
+  data: PublishableDashboardsView
+  meta: ApiMeta
+}
+/**
+ * What a request may be published to, and nothing about any other request.
+ *
+ * The offering is computed per request because a dashboard is publishable only where its contract
+ * names the product and the metrics the answer actually read. A request with no delivered answer
+ * offers nothing, which is a complete answer rather than an error: not yet delivered is the
+ * ordinary state of a request.
+ */
+export interface PublishableDashboardsView {
+  answer_title?: NonEmptyText | null
+  dashboards?: JsonTuple_PublishableDashboardView_
+  request_id: NonEmptyText
+}
+/**
+ * One certified dashboard a request's delivered answer could be published to.
+ */
+export interface PublishableDashboardView {
+  dashboard_id: NonEmptyText
+  dashboard_version: DashboardVersion1
+  next_revision: NextRevision
+  owner: NonEmptyText
 }
 export interface RequestClarificationCommand {
   active_role: ActorRole

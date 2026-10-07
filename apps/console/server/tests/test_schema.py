@@ -149,6 +149,7 @@ def test_schema_exposes_every_modeled_response_and_command() -> None:
         "catalog_assets_response",
         "selectable_answer_terms_response",
         "dashboard_response",
+        "publishable_dashboards_response",
         "dashboards_response",
         "evidence_response",
         "operation_response",

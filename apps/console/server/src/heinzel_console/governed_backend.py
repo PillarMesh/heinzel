@@ -142,6 +142,8 @@ from .contracts import (
     ProductIntentSourceCoverageView,
     ProposalApprovalView,
     ProposalPreparationCommand,
+    PublishableDashboardsView,
+    PublishableDashboardView,
     RequestClarificationCommand,
     RequestDetailView,
     RequesterRequestView,
@@ -211,6 +213,7 @@ from .governed_adapters import (
     ProductIntentApprovalCommands,
     ProductIntentReviewReader,
     ProductPublicationDefinitionReader,
+    PublishableDashboardReader,
     RequestImpactReader,
     RequestInboxReader,
     RequestIntakeCommands,
@@ -559,6 +562,7 @@ class GovernedConsoleBackend:
         product_publications: ProductPublicationDefinitionReader | None = None,
         dashboards: DashboardPublicationReader | None = None,
         dashboard_publication_commands: DashboardPublicationCommands | None = None,
+        publishable_dashboards: PublishableDashboardReader | None = None,
         data_access_intake_available: bool = True,
         actors: WorkspaceActorDirectory | None = None,
         principals: WorkspacePrincipalDirectory | None = None,
@@ -610,6 +614,7 @@ class GovernedConsoleBackend:
         self._product_publications = product_publications
         self._dashboards = dashboards
         self._dashboard_publication_commands = dashboard_publication_commands
+        self._publishable_dashboards = publishable_dashboards
         self._data_access_intake_available = data_access_intake_available
         self._actors = actors
         self._principals = principals
@@ -2002,6 +2007,36 @@ class GovernedConsoleBackend:
                     break
         return tuple(visible)
 
+    def get_publishable_dashboards(
+        self, context: TrustedActorContext, request_id: str
+    ) -> PublishableDashboardsView:
+        """What this request's delivered answer could be published to, and nothing else.
+
+        A request with no delivered answer offers nothing rather than failing: not yet delivered is
+        an ordinary state, and an architect reading the offering before delivery is asking a fair
+        question with an empty answer.
+        """
+        self._authorize(context, ("data_architect",))
+        reader = self._publishable_dashboards
+        if reader is None:
+            raise _not_delivered("a BI control dashboard contract read interface")
+        offering = self._guarded(
+            lambda: reader.offering(tenant_id=context.tenant_id, request_id=request_id)
+        )
+        return PublishableDashboardsView(
+            request_id=request_id,
+            answer_title=offering.answer_title,
+            dashboards=tuple(
+                PublishableDashboardView(
+                    dashboard_id=item.dashboard_id,
+                    dashboard_version=item.dashboard_version,
+                    owner=item.owner,
+                    next_revision=item.next_revision,
+                )
+                for item in offering.dashboards
+            ),
+        )
+
     @staticmethod
     def _dashboard_reference(tenant_id: str, dashboard_id: str, version: int) -> str:
         identity_digest = digest(
@@ -2223,6 +2258,27 @@ class GovernedConsoleBackend:
         commands = self._dashboard_publication_commands
         if commands is None:
             raise _not_delivered("a BI control publication workflow and a BI provider")
+        offered = next(
+            (
+                item
+                for item in self.get_publishable_dashboards(context, command.request_id).dashboards
+                if item.dashboard_id == command.dashboard_id
+                and item.dashboard_version == command.dashboard_version
+            ),
+            None,
+        )
+        if offered is None:
+            # The same refusal for a dashboard whose contract does not exist, is not certified, or
+            # does not match this answer's product and metrics. All three mean "not publishable from
+            # this request now", and distinguishing them would let a browser enumerate the tenant's
+            # dashboard contracts by submitting guesses.
+            raise ConsoleInvalidRequest(
+                code="dashboard_not_publishable",
+                safe_message="That dashboard cannot be published from this request. Reload the "
+                "publishable dashboards and choose one it offers.",
+                recovery_action="reload",
+                field="dashboard_id",
+            )
         record = self._guarded(
             lambda: commands.publish(
                 tenant_id=context.tenant_id,

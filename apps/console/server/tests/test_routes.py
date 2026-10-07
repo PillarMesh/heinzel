@@ -109,6 +109,7 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/reviews/{review_id}", "GET"),
         ("/api/v1/inbox", "GET"),
         ("/api/v1/inbox/{request_id}", "GET"),
+        ("/api/v1/inbox/{request_id}/publishable-dashboards", "GET"),
         ("/api/v1/inbox/{request_id}/impact", "GET"),
         ("/api/v1/requests/mine", "GET"),
         ("/api/v1/requests/{request_id}/conversation", "GET"),
