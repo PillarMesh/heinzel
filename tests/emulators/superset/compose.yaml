@@ -4,14 +4,17 @@ x-superset-environment: &superset-environment
   HEINZEL_SUPERSET_WAREHOUSE_PASSWORD: ${HEINZEL_SUPERSET_WAREHOUSE_PASSWORD:?required}
   SUPERSET_CONFIG_PATH: /app/pythonpath/superset_config.py
 
+# The image and the configuration are the quickstart's own, not a copy of them. These live
+# requirements exercise the artifact the demonstration ships, so a change that breaks publishing
+# fails here rather than only on a reader's first `--profile dashboards up`.
 x-superset-service: &superset-service
   build:
-    context: .
+    context: ../../../deploy/quickstart/superset
     dockerfile: Dockerfile
   environment: *superset-environment
   volumes:
     - superset_home:/app/superset_home
-    - ./superset_config.py:/app/pythonpath/superset_config.py:ro
+    - ../../../deploy/quickstart/superset/superset_config.py:/app/pythonpath/superset_config.py:ro
     - ${HEINZEL_SUPERSET_PRIVATE_DIRECTORY:?required}:/heinzel-private:ro
   networks:
     - governed_local

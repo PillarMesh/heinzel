@@ -10,6 +10,9 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[3]
 EMULATOR_ROOT = ROOT / "tests" / "emulators" / "superset"
 COMPOSE_FILE = EMULATOR_ROOT / "compose.yaml"
+# The image this builds is the quickstart's, so these requirements are about the shipped
+# artifact rather than a test-only copy of it.
+SUPERSET_IMAGE_ROOT = ROOT / "deploy" / "quickstart" / "superset"
 
 
 def _render_compose_config() -> dict[str, Any]:
@@ -82,7 +85,7 @@ def test_superset_stack_uses_pinned_images_and_private_secret_inputs() -> None:
 
     assert "@sha256:" in warehouse["image"]
     assert superset["build"]["dockerfile"] == "Dockerfile"
-    assert superset["build"]["context"] == str(EMULATOR_ROOT)
+    assert superset["build"]["context"] == str(SUPERSET_IMAGE_ROOT)
     assert superset["restart"] == "unless-stopped"
     assert warehouse["restart"] == "unless-stopped"
     assert int(superset["mem_limit"]) >= 1024 * 1024 * 1024
