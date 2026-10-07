@@ -1,6 +1,6 @@
 # ADR-0005: Own the Load Path, Tier the Acquisition Path
 
-- Status: Proposed
+- Status: Accepted on 2026-10-07
 - Date: 2026-08-27
 - Context: [Architecture](../../architecture.md)
 

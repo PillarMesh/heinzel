@@ -1,6 +1,6 @@
 # ADR-0004: Compile to a Restricted SQL Subset, Not a DSL and Not Spark
 
-- Status: Proposed
+- Status: Accepted on 2026-10-07
 - Date: 2026-08-27
 - Context: [Architecture](../../architecture.md), [legality rules](../../../services/compiler/legality/README.md)
 
