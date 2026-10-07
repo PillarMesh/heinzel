@@ -773,7 +773,10 @@ def test_the_source_registration_route_refuses_a_body_carrying_a_connection_stri
                 "expected_revision": 1,
                 "active_role": "data_architect",
                 "connection_handle": "enrolled-orders",
-                "dsn": "host=source.invalid port=5432 user=acquisition password=canary-password dbname=orders",
+                "dsn": (
+                    "host=source.invalid port=5432 user=acquisition "
+                    "password=canary-password dbname=orders"
+                ),
             },
         )
 
