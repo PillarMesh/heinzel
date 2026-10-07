@@ -1,6 +1,6 @@
 # ADR-0007: Separate Enterprise Entitlements from Applied Access Grants
 
-- Status: Proposed
+- Status: Accepted on 2026-10-07
 - Date: 2026-09-12
 - Context: [Architecture](../../architecture.md), [ADR-0003](ADR-0003-managed-data-engineering-platform.md)
 
