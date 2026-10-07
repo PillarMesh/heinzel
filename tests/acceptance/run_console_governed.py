@@ -55,6 +55,7 @@ from heinzel_console.governed_adapters import (
     CatalogBindingReader,
     CatalogControlBindingReader,
     CatalogSearchHealthReader,
+    DashboardPublicationCommands,
     DashboardPublicationReader,
     DerivedTenantRunReader,
     GovernedApprovedProductIntentSources,
@@ -65,6 +66,7 @@ from heinzel_console.governed_adapters import (
     InMemoryWorkspacePrincipalDirectory,
     PolicyPermittedDataProductReader,
     ProductPublicationDefinitionReader,
+    PublishableDashboardReader,
     WarehouseBindingReader,
     WarehouseControlBindingReader,
     WarehouseControlLifecycleCommands,
@@ -1266,6 +1268,8 @@ class GovernedConsoleDeployment:
         answer_runtime_configuration: GovernedAnswerRuntimeConfiguration | None = None,
         product_publications: ProductPublicationDefinitionReader | None = None,
         dashboards: DashboardPublicationReader | None = None,
+        publishable_dashboards: PublishableDashboardReader | None = None,
+        dashboard_publication_commands: DashboardPublicationCommands | None = None,
     ) -> None:
         directory.mkdir(parents=True, exist_ok=True)
         self.directory = directory
@@ -1703,6 +1707,8 @@ class GovernedConsoleDeployment:
             ),
             product_publications=product_publications,
             dashboards=dashboards,
+            publishable_dashboards=publishable_dashboards,
+            dashboard_publication_commands=dashboard_publication_commands,
             answer_results=(
                 self.answer_runtime.results if self.answer_runtime is not None else None
             ),

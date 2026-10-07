@@ -29,13 +29,14 @@ from heinzel_bi_control import (
     DashboardAuthorityUnavailable,
     DashboardContractAuthorityError,
     DashboardContractVerifier,
-    DashboardControlService,
+    DashboardDesiredState,
     DashboardPublication,
     DashboardPublicationRecord,
     DashboardPublicationWorkflow,
     DeclareDashboardPublicationCommand,
     InvalidDashboardContract,
     SQLiteDashboardContractRepository,
+    SQLiteDashboardRepository,
 )
 from heinzel_catalog_control import (
     CatalogBinding,
@@ -331,6 +332,41 @@ class PublishableDashboard:
 class PublishableDashboardOffering:
     answer_title: str | None
     dashboards: tuple[PublishableDashboard, ...]
+
+
+class DashboardRevisionReader(Protocol):
+    """The two reads a publishable offering needs to say which revision it would publish."""
+
+    def get_current_desired(
+        self, tenant_id: str, dashboard_id: str, version: int
+    ) -> DashboardDesiredState | None: ...
+
+    def get_publication(
+        self, tenant_id: str, dashboard_id: str, version: int
+    ) -> DashboardPublication | None: ...
+
+
+class RepositoryDashboardRevisionReader:
+    """Read revisions straight from bi-control's repository, with no BI provider in reach.
+
+    `DashboardControlService` satisfies the same protocol and is what a deployment with a provider
+    passes. A deployment without one still has to answer which revision would be published, and
+    constructing the control service to do it would mean holding a provider that must never be
+    called.
+    """
+
+    def __init__(self, repository: SQLiteDashboardRepository) -> None:
+        self._repository = repository
+
+    def get_current_desired(
+        self, tenant_id: str, dashboard_id: str, version: int
+    ) -> DashboardDesiredState | None:
+        return self._repository.load_current_desired(tenant_id, dashboard_id, version)
+
+    def get_publication(
+        self, tenant_id: str, dashboard_id: str, version: int
+    ) -> DashboardPublication | None:
+        return self._repository.load_current_publication(tenant_id, dashboard_id, version)
 
 
 class PublishableDashboardReader(Protocol):
@@ -1404,7 +1440,7 @@ class ContractPublishableDashboardReader:
         contract_verifier: DashboardContractVerifier,
         answers: CurrentGovernedAnswerReader,
         answer_authority: DashboardAnswerAuthorityReader,
-        dashboard_control: DashboardControlService,
+        dashboard_control: DashboardRevisionReader,
         clock: Callable[[], datetime],
     ) -> None:
         self._contracts = contracts

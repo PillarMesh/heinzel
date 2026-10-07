@@ -1285,6 +1285,11 @@ class PublishableDashboardsView(StrictModel):
     request_id: NonEmptyText
     answer_title: NonEmptyText | None = None
     dashboards: JsonTuple[PublishableDashboardView] = Field(default=())
+    # Whether anything could act on a choice from this offering. A deployment can know which
+    # dashboards an answer matches and still have no BI provider to publish to, and a control
+    # offered there would refuse every press. The browser is told which it is rather than finding
+    # out by pressing.
+    publication_available: bool = False
 
 
 class DashboardPublicationCommand(StrictModel):

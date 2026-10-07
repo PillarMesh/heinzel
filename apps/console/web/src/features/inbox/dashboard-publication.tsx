@@ -34,6 +34,7 @@ export function DashboardPublication({
   const [offering, setOffering] = useState<{
     readonly answerTitle: string | null
     readonly dashboards: readonly PublishableDashboardView[]
+    readonly publicationAvailable: boolean
   } | null>(null)
   const [outcome, setOutcome] = useState<OperationView | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
@@ -48,6 +49,7 @@ export function DashboardPublication({
         setOffering({
           answerTitle: envelope.data.answer_title ?? null,
           dashboards: envelope.data.dashboards ?? [],
+          publicationAvailable: envelope.data.publication_available ?? false,
         })
       })
       .catch((error: unknown) => {
@@ -112,6 +114,12 @@ export function DashboardPublication({
           Publishing titles the dashboard &ldquo;{offering.answerTitle}&rdquo;.
         </p>
       )}
+      {offering.publicationAvailable ? null : (
+        <p className="summary-page__guidance">
+          These dashboards match this answer. Publishing is not delivered in this deployment, so
+          there is nothing to publish to yet.
+        </p>
+      )}
       {failure === null ? null : <p role="alert">{failure}</p>}
       {outcome === null ? null : (
         <p role="status">
@@ -142,15 +150,17 @@ export function DashboardPublication({
                   </div>
                 </dl>
               </div>
-              <button
-                disabled={publishing !== null}
-                onClick={() => {
-                  publish(dashboard)
-                }}
-                type="button"
-              >
-                {publishing === key ? "Publishing…" : "Publish"}
-              </button>
+              {offering.publicationAvailable ? (
+                <button
+                  disabled={publishing !== null}
+                  onClick={() => {
+                    publish(dashboard)
+                  }}
+                  type="button"
+                >
+                  {publishing === key ? "Publishing…" : "Publish"}
+                </button>
+              ) : null}
             </li>
           )
         })}

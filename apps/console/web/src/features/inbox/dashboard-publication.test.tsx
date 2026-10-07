@@ -15,11 +15,13 @@ function offering(
     owner: string
   }[],
   answerTitle: string | null = "Revenue by region",
+  publicationAvailable = true,
 ): ConsoleEnvelopePublishableDashboardsView {
   return {
     data: {
       answer_title: answerTitle,
       dashboards,
+      publication_available: publicationAvailable,
       request_id: "req-1",
     },
     meta: {correlation_id: "correlation-publication", data_provenance: "demo_fixture"},
@@ -120,4 +122,29 @@ test("a refused publication shows the reason the server gave", async () => {
   expect(await screen.findByRole("status")).toHaveTextContent(
     "This answer's result is no longer readable.",
   )
+})
+
+test("an offering a deployment cannot publish shows the matches and no control", async () => {
+  const api = client({
+    getPublishableDashboards: vi.fn().mockResolvedValue(
+      offering(
+        [
+          {
+            dashboard_id: "dashboard:revenue",
+            dashboard_version: 3,
+            next_revision: 1,
+            owner: "principal:finance-owner",
+          },
+        ],
+        "Revenue by region",
+        false,
+      ),
+    ),
+  })
+  render(<DashboardPublication client={api} mutationContext={context} requestId="req-1" />)
+
+  expect(await screen.findByText("dashboard:revenue")).toBeInTheDocument()
+  expect(await screen.findByText(/Publishing is not delivered/)).toBeInTheDocument()
+  expect(screen.queryByRole("button", {name: "Publish"})).not.toBeInTheDocument()
+  expect(api.publishDashboard).not.toHaveBeenCalled()
 })

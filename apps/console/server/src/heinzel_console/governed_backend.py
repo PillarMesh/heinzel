@@ -2026,6 +2026,7 @@ class GovernedConsoleBackend:
         return PublishableDashboardsView(
             request_id=request_id,
             answer_title=offering.answer_title,
+            publication_available=self._dashboard_publication_commands is not None,
             dashboards=tuple(
                 PublishableDashboardView(
                     dashboard_id=item.dashboard_id,

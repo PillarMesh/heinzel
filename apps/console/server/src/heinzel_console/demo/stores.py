@@ -10,6 +10,10 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from heinzel_bi_control import (
+    SQLiteDashboardContractRepository,
+    SQLiteDashboardRepository,
+)
 from heinzel_catalog_control import SQLiteCatalogRepository
 from heinzel_contract_service import (
     SQLiteAcquisitionContractLifecycleRepository,
@@ -322,6 +326,18 @@ class DemoStores:
                 str(state_dir / "landed-generations.sqlite3"), check_same_thread=False
             )
             opened.append(self.landed_generations)
+            # The certified dashboard contracts a delivered answer may be published to, and
+            # the desired states and receipts a publication would record. Both open
+            # unconditionally: the contract store is what the publishable offering reads, and an
+            # offering is a fair question on a console that can never publish -- it answers which
+            # dashboards match, and the view says separately whether anything could act on the
+            # choice.
+            self.dashboard_contracts = SQLiteDashboardContractRepository(
+                str(state_dir / "dashboard-contracts.sqlite3")
+            )
+            opened.append(self.dashboard_contracts)
+            self.dashboards = SQLiteDashboardRepository(str(state_dir / "dashboards.sqlite3"))
+            opened.append(self.dashboards)
         except BaseException:
             # Best-effort clean-up: a failure to close must not replace the failure to open.
             _close_each(tuple(reversed(opened)))

@@ -257,6 +257,9 @@ class GovernedAnswerRuntime:
             authorization_rechecker=authority.delivery_rechecker(),
             clock=configuration.clock,
         )
+        # The answers of a request, for a caller that must name the newest one rather than take
+        # one it was handed: the dashboard answer authority refuses any other.
+        self.answer_records = answer_repository
         self.dashboard_answers = RequestManagementDashboardAnswerAuthorityReader(
             requests=requests,
             answers=answer_repository,

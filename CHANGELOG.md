@@ -81,6 +81,19 @@ All notable changes to Heinzel are recorded here. The format follows
   from anything but what the server composed. `SQLiteDashboardContractRepository` gained
   `list_for_tenant`, which does not filter by lifecycle: which states may be published is the
   composition's rule.
+- The demonstration seeds a certified dashboard contract, so its publishable offering names one.
+  The contract is composed over the answer's own product generation and the approved metric and
+  dimension the publication carries, which is what makes the offering name it for exactly the
+  answer this console delivers. Its signing key is persisted beside the demonstration's other
+  state, unlike the console's other in-process keys: a contract is committed to SQLite and read
+  back on the next start, so a key generated per run would leave every stored contract failing
+  verification. Seeding twice adopts the first contract rather than signing a second over it.
+  Publishing itself stays unwired because there is no BI provider to reach, and the offering now
+  carries whether publication is available at all, so the decision workspace shows which dashboard
+  matches and says publication is not delivered instead of offering a control that would refuse
+  every press. The acceptance harness publishes its dashboard through the workflow rather than by
+  calling composition directly, so the dashboard its reads are about was reached the way the
+  console reaches one.
 - `DashboardAnswerAuthority` carries `result_expires_at`, the expiry of the result snapshot the
   answer was read from, so a publication deadline comes from the same evidence the answer did. Its
   schema version is `3`.

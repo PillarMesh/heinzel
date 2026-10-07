@@ -18,6 +18,7 @@ from contextlib import ExitStack, suppress
 from pathlib import Path
 from types import TracebackType
 
+from heinzel_bi_control import DashboardContractVerifier
 from heinzel_request_management import (
     FulfillmentReadService,
     FulfillmentService,
@@ -30,9 +31,12 @@ from starlette.requests import Request
 from ..app import create_app
 from ..auth import TrustedActorContext
 from ..governed_adapters import (
+    ContractPublishableDashboardReader,
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceActorDirectory,
     InMemoryWorkspacePrincipalDirectory,
+    RepositoryCurrentGovernedAnswerReader,
+    RepositoryDashboardRevisionReader,
 )
 from ..governed_backend import GovernedConsoleBackend
 from ..operation_handles import InMemoryOperationHandleRepository
@@ -50,6 +54,12 @@ from .collaborators import (
     demo_clock,
 )
 from .cursor_cipher import DemoCursorCipher
+from .dashboard_contract import (
+    demo_access_policy_reference,
+    demo_dashboard_contract_keys,
+    resolve_dashboard_contract_key,
+    seed_demo_dashboard_contract,
+)
 from .managed_warehouse import ManagedWarehouseOption, provision_demo_managed_warehouse
 from .publication import DEMO_TENANT_ID, build_demo_publication
 from .seed import seed_demo_request
@@ -200,6 +210,14 @@ class DemoConsole:
                 )
             )
             self.managed_warehouse = managed
+            # The certified dashboard the delivered answer could be published to. Seeded only
+            # alongside a composed answer: with no answer there is no product generation for a
+            # contract to name, and a contract naming nothing would be offered to nothing.
+            publishable_dashboards = (
+                None
+                if governed_answer is None
+                else self._compose_publishable_dashboards(state_dir, answer=governed_answer)
+            )
             self.backend = GovernedConsoleBackend(
                 identity=GovernedWorkspaceIdentity(
                     tenant_ref=DEMO_TENANT_ID,
@@ -256,6 +274,12 @@ class DemoConsole:
                 # fail closed to match it: accepted, such a request clears intake and
                 # clarification and is then refused at preparation with advice to reload
                 # that cannot help, leaving a request in the inbox no action can move.
+                # The dashboards the delivered answer could be published to, read from the
+                # contracts the demonstration certified. Publishing itself stays unwired: that
+                # needs a BI provider, and there is none to reach -- so the offering names what
+                # matches and the view says publication is not available, rather than offering a
+                # control that refuses every press.
+                publishable_dashboards=publishable_dashboards,
                 data_access_intake_available=False,
                 actors=actors,
                 principals=principals,
@@ -307,6 +331,34 @@ class DemoConsole:
                 principal_ref=DEMO_REQUESTER_PRINCIPAL_REF,
                 clock=demo_clock,
             )
+        )
+
+    def _compose_publishable_dashboards(
+        self, state_dir: Path, *, answer: DemoGovernedAnswer
+    ) -> ContractPublishableDashboardReader:
+        """Seed the demonstration's certified dashboard contract and read the offering over it.
+
+        The contract is composed from the answer's own product generation and the approved terms
+        the publication carries, so the offering names it for exactly the answer this console
+        delivers. Composing it from anything else would seed a contract whose product the answer
+        never read, which the offering would then correctly never name.
+        """
+        signing_key = resolve_dashboard_contract_key(state_dir)
+        seed_demo_dashboard_contract(
+            self._stores.dashboard_contracts,
+            tenant_id=DEMO_TENANT_ID,
+            signing_key=signing_key,
+            semantic_version=self.publication.semantic_version,
+            product_ref=answer.preparation.product_ref,
+            access_policy_ref=demo_access_policy_reference(answer.preparation.policy),
+        )
+        return ContractPublishableDashboardReader(
+            contracts=self._stores.dashboard_contracts,
+            contract_verifier=DashboardContractVerifier(demo_dashboard_contract_keys(signing_key)),
+            answers=RepositoryCurrentGovernedAnswerReader(answer.runtime.answer_records),
+            answer_authority=answer.runtime.dashboard_answers,
+            dashboard_control=RepositoryDashboardRevisionReader(self._stores.dashboards),
+            clock=demo_clock,
         )
 
     def seed_demonstration_request(self) -> None:

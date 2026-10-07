@@ -201,6 +201,7 @@ export type ConsoleEnvelopePublishableDashboardsView = ConsoleEnvelope_Publishab
 export type DashboardVersion1 = number
 export type NextRevision = number
 export type JsonTuple_PublishableDashboardView_ = PublishableDashboardView[]
+export type PublicationAvailable = boolean
 export type ExpectedRevision11 = number
 export type InScopeSummary = string
 export type OutOfScopeSummary = string
@@ -906,6 +907,7 @@ export interface ConsoleEnvelope_PublishableDashboardsView_ {
 export interface PublishableDashboardsView {
   answer_title?: NonEmptyText | null
   dashboards?: JsonTuple_PublishableDashboardView_
+  publication_available?: PublicationAvailable
   request_id: NonEmptyText
 }
 /**

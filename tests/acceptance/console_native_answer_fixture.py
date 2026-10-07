@@ -25,9 +25,11 @@ from heinzel_bi_control import (
     DashboardContractVerifier,
     DashboardControlService,
     DashboardDatasetConnectionBinding,
-    PublishDashboardCommand,
+    DashboardPublicationWorkflow,
+    DeclareDashboardPublicationCommand,
     SQLiteDashboardConnectionRepository,
     SQLiteDashboardContractRepository,
+    SQLiteDashboardPublicationRepository,
     SQLiteDashboardRepository,
 )
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
@@ -1408,22 +1410,34 @@ def fresh_native_answer_deployment(
                     connection_secret_ref="secret://tenant-a/superset-database",
                 )
             )
-            DashboardCompositionService(
-                contracts=dashboard_contracts,
-                contract_verifier=DashboardContractVerifier(
-                    {"dashboard-native-1": dashboard_signing_key.public_key()}
+            # Published through the workflow rather than by calling composition directly, so the
+            # dashboard every read below is about was reached the way the console reaches one: a
+            # declared intent bounded by its answer's result snapshot, driven to a settled outcome.
+            publication_workflow = DashboardPublicationWorkflow(
+                repository=SQLiteDashboardPublicationRepository(
+                    str(root / "dashboard-publications.sqlite3")
+                ),
+                composition=DashboardCompositionService(
+                    contracts=dashboard_contracts,
+                    contract_verifier=DashboardContractVerifier(
+                        {"dashboard-native-1": dashboard_signing_key.public_key()}
+                    ),
+                    answers=runtime.dashboard_answers,
+                    query_bindings=_ThreadSafeQueryBindingReader(
+                        root / "product" / "approved-query-bindings.sqlite3"
+                    ),
+                    materializations=product.receipt_reader,
+                    product_publications=product_publications,
+                    connections=dashboard_connections,
+                    dashboard_control=dashboard_control,
+                    clock=lambda: datetime.now(UTC),
                 ),
                 answers=runtime.dashboard_answers,
-                query_bindings=_ThreadSafeQueryBindingReader(
-                    root / "product" / "approved-query-bindings.sqlite3"
-                ),
-                materializations=product.receipt_reader,
-                product_publications=product_publications,
-                connections=dashboard_connections,
-                dashboard_control=dashboard_control,
                 clock=lambda: datetime.now(UTC),
-            ).publish(
-                PublishDashboardCommand(
+            )
+            publication_workflow.declare(
+                DeclareDashboardPublicationCommand(
+                    intent_id="dashboard-publication-native-1",
                     tenant_id=TENANT,
                     dashboard_id=dashboard_contract.dashboard_id,
                     dashboard_version=dashboard_contract.version,
@@ -1432,6 +1446,11 @@ def fresh_native_answer_deployment(
                     expected_revision=1,
                 )
             )
+            published = publication_workflow.advance(
+                tenant_id=TENANT, intent_id="dashboard-publication-native-1"
+            )
+            if published.state != "published":
+                raise AssertionError(f"the acceptance dashboard did not publish: {published.state}")
             revoked_claims = entitlement.model_dump(
                 mode="python", exclude={"source_payload_digest"}
             ) | {

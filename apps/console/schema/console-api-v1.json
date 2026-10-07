@@ -4785,6 +4785,11 @@
           "$ref": "#/$defs/JsonTuple_PublishableDashboardView_",
           "default": []
         },
+        "publication_available": {
+          "default": false,
+          "title": "Publication Available",
+          "type": "boolean"
+        },
         "request_id": {
           "$ref": "#/$defs/NonEmptyText"
         }
