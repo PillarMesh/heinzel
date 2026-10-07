@@ -235,11 +235,18 @@ def role_dsn(bootstrap_dsn: str, role: str, password: str) -> str:
 def _create_role(
     connection: psycopg.Connection[tuple[object, ...]], role: str, password: str
 ) -> None:
-    """Create one login role.
+    """Create one login role, and let it reach this database.
 
     The password reaches PostgreSQL as a literal in the statement, so a failure here is
     reported without the driver's message: libpq puts the failing statement in it, and the
     demonstration's generated passwords would reach the container log with it.
+
+    `CONNECT` is granted rather than inherited from `PUBLIC`. A database nobody governs still
+    carries PostgreSQL's default grant to `PUBLIC`, so a new role can connect without being
+    given anything -- but a warehouse warehouse-control provisions revokes exactly that default,
+    and a role created here would be refused at connection time with no mention of a privilege.
+    Granting it explicitly is also the honest statement: these roles may reach this database
+    because this provisioning said so, not because PostgreSQL's default had not been removed.
     """
     try:
         connection.execute(
@@ -249,6 +256,22 @@ def _create_role(
         )
     except psycopg.Error:
         raise ProvisioningRefused(f"could not create the {role} role") from None
+    try:
+        connection.execute(
+            sql.SQL("GRANT CONNECT ON DATABASE {} TO {}").format(
+                sql.Identifier(_connected_database(connection)), sql.Identifier(role)
+            )
+        )
+    except psycopg.Error:
+        raise ProvisioningRefused(f"could not let the {role} role reach this database") from None
+
+
+def _connected_database(connection: psycopg.Connection[tuple[object, ...]]) -> str:
+    """The database this connection is on, which is the only one these roles are granted."""
+    name = connection.info.dbname
+    if not name:
+        raise ProvisioningRefused("the warehouse connection names no database")
+    return name
 
 
 def _require_unprovisioned(connection: psycopg.Connection[tuple[object, ...]]) -> None:

@@ -1483,6 +1483,34 @@ class PostgreSQLWarehouseProvider:
         self._fault_hook = fault_hook
         self._primary_resources: dict[str, PrivateWarehouseResource] = {}
 
+    def connection_target(self, binding: WarehouseBinding) -> PostgreSQLConnectionTarget:
+        """Where this warehouse answers, and the TLS material a client must present.
+
+        The provider owns the private file layout and the loopback port it allocated, so a
+        caller that needs to reach a warehouse this provider created asks for it rather than
+        deriving the paths again. Recomputing them elsewhere would couple that caller to a
+        layout it does not own, and a rename here would silently point it at absent files.
+
+        Coordinates only. The administering login's password is the `administration` operation
+        secret, held by whoever minted it and resolved from warehouse-control's secret store in
+        a deployment, so it is never handed out through this boundary.
+
+        `KeyError` while the warehouse has not been provisioned, because the port is allocated
+        and recorded by provisioning and there is no connection to describe before it.
+        """
+        identity = _warehouse_identity(binding, self._settings.private_operation_directory)
+        try:
+            port = _load_host_port(identity.host_port_file)
+        except FileNotFoundError:
+            raise KeyError("this PostgreSQL warehouse has not been provisioned") from None
+        return PostgreSQLConnectionTarget(
+            host="127.0.0.1",
+            port=port,
+            root_certificate=identity.root_certificate,
+            client_certificate=identity.client_certificate,
+            client_private_key=identity.client_private_key,
+        )
+
     def provision(
         self, binding: WarehouseBinding, operation: PrivateWarehouseOperation
     ) -> WarehouseProvisionResult:

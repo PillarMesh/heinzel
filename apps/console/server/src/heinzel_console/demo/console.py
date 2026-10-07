@@ -124,8 +124,16 @@ class DemoConsole:
 
         `managed_warehouse` is the other way to have a warehouse, and the only one that produces
         a binding warehouse-control owns: given it, the console provisions a warehouse through
-        warehouse-control and reports the binding, so the setup surface answers and its
-        `foundation` stage completes. Given neither, the console is what it was.
+        warehouse-control, reports the binding so the setup surface answers and its `foundation`
+        stage completes, and answers out of that warehouse. Given neither, the console is what it
+        was.
+
+        The managed path answers only in the start that provisioned it. Provisioning rotates the
+        administering login to the `administration` operation secret, this demonstration mints
+        that secret per start and stores it nowhere, so a later start adopts a `ready` binding it
+        holds no credential for. It reports the binding and reports every answer capability as
+        not delivered. Discard the state directory, and the containers and volumes named in the
+        refusal messages, to demonstrate the answer again.
 
         The two are exclusive. Each is a complete statement about where the demonstration's
         warehouse comes from, and a console given both would provision one warehouse through
@@ -174,12 +182,35 @@ class DemoConsole:
                 principal_ref=DEMO_REQUESTER_PRINCIPAL_REF,
             )
             self.publication = publication
+            # Provisioned before the answer, because on this path it is the warehouse the
+            # answer is composed over, and before the backend because the binding the reader
+            # projects has to be `ready` by the time the setup surface can be asked for it: a
+            # reader over a binding still being provisioned would report the foundation stage
+            # incomplete for a warehouse that was on its way, and no console read would ever
+            # revisit it.
+            managed = (
+                None
+                if managed_warehouse is None
+                else self._closing.enter_context(
+                    provision_demo_managed_warehouse(
+                        state_dir, option=managed_warehouse, clock=demo_clock
+                    )
+                )
+            )
+            self.managed_warehouse = managed
+            # Whichever path was taken, this is the warehouse the demonstration answers from.
+            # `None` on the managed path means the warehouse exists and this process cannot
+            # administer it: provisioning rotated the administering login to a secret an earlier
+            # start minted and kept nowhere. The answer capabilities then report themselves as
+            # not delivered, which is the same honest answer they give with no warehouse at all,
+            # rather than a connection failure during startup.
+            answering_dsn = warehouse_dsn if managed is None else managed.administration_dsn
             governed_answer = (
                 None
-                if warehouse_dsn is None
+                if answering_dsn is None
                 else self._compose_governed_answer(
                     state_dir,
-                    warehouse_dsn=warehouse_dsn,
+                    warehouse_dsn=answering_dsn,
                     principals=principals,
                 )
             )
@@ -231,20 +262,6 @@ class DemoConsole:
                 repository=fulfillment_repository,
                 authority_role_resolver=role_resolver,
             )
-            # Provisioned before the backend is built, because the binding the reader projects
-            # has to be `ready` by the time the setup surface can be asked for it: a reader over
-            # a binding still being provisioned would report the foundation stage incomplete for
-            # a warehouse that was on its way, and no console read would ever revisit it.
-            managed = (
-                None
-                if managed_warehouse is None
-                else self._closing.enter_context(
-                    provision_demo_managed_warehouse(
-                        state_dir, option=managed_warehouse, clock=demo_clock
-                    )
-                )
-            )
-            self.managed_warehouse = managed
             # The certified dashboard the delivered answer could be published to. Seeded only
             # alongside a composed answer: with no answer there is no product generation for a
             # contract to name, and a contract naming nothing would be offered to nothing.

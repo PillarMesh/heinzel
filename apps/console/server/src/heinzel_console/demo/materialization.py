@@ -17,7 +17,7 @@ from __future__ import annotations
 import base64
 import os
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -324,6 +324,13 @@ def write_demo_dbt_profile(directory: Path, bootstrap_dsn: str, *, target_schema
 
     The password is named rather than written: `DbtSubprocessSettings` passes the named
     variables through to dbt, so the profile on disk carries no credential.
+
+    The transport is taken from the connection the rest of the demonstration uses rather than
+    asserted here. A warehouse warehouse-control provisions serves `hostssl` with
+    `clientcert=verify-ca` and rejects plaintext, so a profile that named its own `sslmode` would
+    decide for dbt alone what every other client of the same warehouse was told -- and dbt would
+    be refused at connection time, which arrives as missing materialization evidence rather than
+    as a transport that was never going to be accepted.
     """
     parsed = psycopg.conninfo.conninfo_to_dict(bootstrap_dsn)
     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -339,10 +346,24 @@ def write_demo_dbt_profile(directory: Path, bootstrap_dsn: str, *, target_schema
         f"      user: {DEMO_WAREHOUSE_ROLES.materialization}\n"
         "      password: \"{{ env_var('" + _DBT_PASSWORD_VARIABLE + "') }}\"\n"
         f"      schema: {target_schema}\n"
-        "      threads: 1\n"
-        "      sslmode: disable\n",
+        "      threads: 1\n" + _dbt_transport(parsed),
         encoding="utf-8",
     )
+
+
+def _dbt_transport(parsed: Mapping[str, str | int | None]) -> str:
+    """The profile's transport lines, mirroring what the warehouse connection carries.
+
+    `disable` when the connection names no `sslmode`, which is the demonstration's own warehouse:
+    it is reached over a container network nothing else is on, and PostgreSQL's default
+    certificate would not verify against any name the console could use.
+    """
+    lines = [f"      sslmode: {parsed.get('sslmode') or 'disable'}\n"]
+    for setting in ("sslrootcert", "sslcert", "sslkey"):
+        value = parsed.get(setting)
+        if value:
+            lines.append(f"      {setting}: {value}\n")
+    return "".join(lines)
 
 
 def materialize_demo_generation(

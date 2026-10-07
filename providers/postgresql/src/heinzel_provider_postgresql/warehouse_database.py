@@ -14,7 +14,12 @@ from psycopg import sql
 
 from .warehouse_settings import POSTGRESQL_SERVER_VERSION_NUM
 
-_DATABASE_NAME = "heinzel_warehouse"
+# The one database a warehouse of this engine holds, and the role that administers it. Public
+# because a caller reaching a provisioned warehouse needs both to build a connection, and a
+# second spelling of either in another component is a silent mismatch rather than a failure.
+POSTGRESQL_WAREHOUSE_DATABASE_NAME = "heinzel_warehouse"
+POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE = "postgres"
+_DATABASE_NAME = POSTGRESQL_WAREHOUSE_DATABASE_NAME
 _PRINCIPALS = (
     "administration",
     "ingestion_runtime",
@@ -217,7 +222,10 @@ def assert_password_connection_denied(
 def rotate_bootstrap_password(connection: Any, administration_password: str) -> None:
     with connection.cursor() as cursor:
         cursor.execute(
-            sql.SQL("ALTER ROLE postgres PASSWORD {}").format(sql.Literal(administration_password))
+            sql.SQL("ALTER ROLE {} PASSWORD {}").format(
+                sql.Identifier(POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE),
+                sql.Literal(administration_password),
+            )
         )
 
 
@@ -1339,6 +1347,8 @@ def _restored_query_summary(connection: Any, plan: PostgreSQLGrantPlan) -> dict[
 
 
 __all__ = [
+    "POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE",
+    "POSTGRESQL_WAREHOUSE_DATABASE_NAME",
     "PostgreSQLConnectionTarget",
     "PostgreSQLDatabaseObservation",
     "PostgreSQLGrantPlan",

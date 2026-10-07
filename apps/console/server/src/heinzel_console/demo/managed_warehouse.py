@@ -42,7 +42,10 @@ from types import TracebackType
 from typing import Final
 
 import psycopg
+import psycopg.conninfo
 from heinzel_provider_postgresql import (
+    POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE,
+    POSTGRESQL_WAREHOUSE_DATABASE_NAME,
     PostgreSQLBackupCommandBoundary,
     PostgreSQLWarehouseProvider,
     PostgreSQLWarehouseSettings,
@@ -165,9 +168,21 @@ class DemoManagedWarehouse:
         binding: WarehouseBinding,
         bindings: WarehouseControlBindingReader,
         repository: SQLiteWarehouseRepository,
+        administration_dsn: str | None,
     ) -> None:
         self.binding = binding
         self.bindings = bindings
+        #
+        # How this process administers the warehouse, when this process is the one that created
+        # it. `None` otherwise, which is not a degraded form of the same thing: provisioning
+        # rotates the administering login's password to the `administration` operation secret,
+        # this demonstration mints that secret per start and stores it nowhere, so a start that
+        # adopted a warehouse an earlier start created holds no credential it will accept. A
+        # fabricated one would turn a refused connection into a wrong password.
+        #
+        # Not in a repr because it carries that password: `DemoManagedWarehouse` defines none,
+        # and this is the reason not to add one.
+        self.administration_dsn = administration_dsn
         self._repository = repository
 
     def close(self) -> None:
@@ -405,22 +420,67 @@ def _provision(
     bindings.bind_warehouse(tenant_id=DEMO_TENANT_ID, binding_id=binding.binding_id)
     reader = WarehouseControlBindingReader(service=control, directory=bindings)
     if binding.lifecycle_state is WarehouseBindingState.READY:
-        return DemoManagedWarehouse(binding=binding, bindings=reader, repository=repository)
+        # Adopted from an earlier start, which took the only copy of this warehouse's
+        # administration secret with it: the binding is reportable and the warehouse is not
+        # reachable from here. `administration_dsn` is `None` and says so.
+        return DemoManagedWarehouse(
+            binding=binding, bindings=reader, repository=repository, administration_dsn=None
+        )
+    operation_secrets = _operation_secrets(clock=clock)
+    provider = _build_provider(
+        directory,
+        compose_file=compose_file,
+        option=option,
+        repository=repository,
+        binding_id=binding.binding_id,
+        operation_secrets=operation_secrets,
+        clock=clock,
+    )
     orchestrator = WarehouseLifecycleOrchestrator(
         control=control,
         repository=repository,
-        provider=_build_provider(
-            directory,
-            compose_file=compose_file,
-            option=option,
-            repository=repository,
-            binding_id=binding.binding_id,
-            clock=clock,
-        ),
+        provider=provider,
         clock=clock,
     )
     ready = _provisioned(orchestrator, binding, compose_file=compose_file)
-    return DemoManagedWarehouse(binding=ready, bindings=reader, repository=repository)
+    return DemoManagedWarehouse(
+        binding=ready,
+        bindings=reader,
+        repository=repository,
+        administration_dsn=_administration_dsn(provider, ready, secrets=operation_secrets),
+    )
+
+
+def _administration_dsn(
+    provider: PostgreSQLWarehouseProvider,
+    binding: WarehouseBinding,
+    *,
+    secrets: WarehouseOperationSecrets,
+) -> str:
+    """Administer the warehouse this provider provisioned, as the login it rotated.
+
+    The coordinates come from the provider, which allocated the loopback port and owns the
+    private file layout the TLS material sits in. The password does not: provisioning rotates
+    the administering login to the `administration` operation secret, so the secret this start
+    minted is already the one the warehouse will accept, and nothing has to read it back out of
+    a file the provider keeps private.
+
+    TLS is not optional here. The warehouse's own `pg_hba.conf` serves `hostssl` with
+    `clientcert=verify-ca` and rejects plaintext, so every parameter below is a precondition of
+    connecting at all rather than a hardening choice this demonstration is making.
+    """
+    target = provider.connection_target(binding)
+    return psycopg.conninfo.make_conninfo(
+        host=target.host,
+        port=str(target.port),
+        dbname=POSTGRESQL_WAREHOUSE_DATABASE_NAME,
+        user=POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE,
+        password=secrets.administration_password.get_secret_value(),
+        sslmode="verify-full",
+        sslrootcert=str(target.root_certificate),
+        sslcert=str(target.client_certificate),
+        sslkey=str(target.client_private_key),
+    )
 
 
 def _provisioned(
@@ -623,14 +683,19 @@ def _build_provider(
     option: ManagedWarehouseOption,
     repository: SQLiteWarehouseRepository,
     binding_id: str,
+    operation_secrets: WarehouseOperationSecrets,
     clock: Callable[[], datetime],
 ) -> PostgreSQLWarehouseProvider:
     """Compose the real provider over the demonstration's Compose project.
 
     Nothing here is a fixture. The passwords become the warehouse's real roles, the TLS
     material becomes its real certificate, and the Compose project is the one in `deploy/`.
+
+    The secrets are the caller's rather than minted here, because the caller needs the same
+    `administration` secret to reach the warehouse afterwards: provisioning rotates the
+    administering login to it, so a second set minted here would leave the caller holding a
+    password this warehouse never had.
     """
-    operation_secrets = _operation_secrets(clock=clock)
     settings = PostgreSQLWarehouseSettings(
         private_operation_directory=directory,
         retention_period=_RETENTION_PERIOD,

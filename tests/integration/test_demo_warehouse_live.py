@@ -534,6 +534,40 @@ def test_provisioning_revokes_public_create_on_the_database_it_runs_in(tmp_path:
             connection.execute("CREATE SCHEMA escaped")
 
 
+def test_every_provisioned_role_may_reach_a_database_that_grants_public_nothing(
+    tmp_path: Path,
+) -> None:
+    """A role is granted CONNECT, rather than inheriting it from PUBLIC.
+
+    PostgreSQL grants PUBLIC CONNECT on every new database, so on a database nobody governs a
+    freshly created login can connect without being given anything -- and every live test here
+    runs on such a database. A warehouse warehouse-control provisions revokes that default, and a
+    role relying on it is then refused before it authenticates, with no mention of a privilege in
+    the message. So the revoke is done here first, giving each role's own grant something to be
+    proved by.
+    """
+    with _fresh_postgresql_cluster(tmp_path) as bootstrap_dsn:
+        with psycopg.connect(bootstrap_dsn, autocommit=True) as connection:
+            connection.execute("CREATE DATABASE heinzel")
+        governed_dsn = psycopg.conninfo.make_conninfo(bootstrap_dsn, dbname="heinzel")
+        with psycopg.connect(governed_dsn, autocommit=True) as connection:
+            connection.execute("REVOKE CONNECT ON DATABASE heinzel FROM PUBLIC")
+
+        passwords = _provisioned(governed_dsn)
+
+        for role in DEMO_WAREHOUSE_ROLES:
+            with psycopg.connect(role_dsn(governed_dsn, role, passwords[role])) as connection:
+                reached = connection.execute("SELECT current_database()").fetchone()
+                assert reached is not None and reached[0] == "heinzel", role
+
+        # The grant is each role's own, not PUBLIC's restored.
+        with psycopg.connect(governed_dsn) as connection:
+            public_may_connect = connection.execute(
+                "SELECT has_database_privilege('public', current_database(), 'CONNECT')"
+            ).fetchone()
+            assert public_may_connect is not None and public_may_connect[0] is False
+
+
 def test_a_seed_inside_the_acquisition_lag_bound_is_refused(tmp_path: Path) -> None:
     """Seeding at the current instant would make the acquisition read nothing, silently.
 
