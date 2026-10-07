@@ -449,3 +449,40 @@ def test_a_selection_the_term_artifact_refuses_never_reaches_the_inbox(console: 
     assert refused.status_code >= 400, refused.text
     inbox = console.get("/api/v1/inbox", actor=DEMO_ARCHITECT_ID)
     assert question not in [item["title"] for item in inbox.json()["data"]["items"]]
+
+
+def test_the_console_reads_its_published_dashboards_without_a_bi_provider(
+    console: _Console,
+) -> None:
+    """What was published is read from bi-control's repository, not through a provider.
+
+    A publication is recorded there only against a provider receipt, so the read answers the same
+    question a control service would. Wiring it over the control service instead would make the
+    surface go absent exactly when no Superset is configured -- reporting nothing published for a
+    deployment that published something and has since been given no instance to publish to.
+
+    This console has no warehouse and so has published nothing, which is the case that proves the
+    surface answers rather than refusing: an empty list, not `capability_not_delivered`.
+    """
+    listing = console.get("/api/v1/dashboards", actor=DEMO_ARCHITECT_ID)
+
+    assert listing.status_code == 200, listing.text
+    assert listing.json()["data"]["dashboards"] == []
+
+
+def test_the_analyst_dashboard_capability_is_delivered_rather_than_awaiting_a_provider(
+    console: _Console,
+) -> None:
+    """The capability list is what a deployment reads to find what is missing.
+
+    Reporting this one `not_delivered` while the read surface answers would name work nobody has to
+    do, and the dependency it named was a BI provider the read never needed.
+    """
+    workspace = console.get("/api/v1/workspace", actor=DEMO_ARCHITECT_ID)
+
+    assert workspace.status_code == 200, workspace.text
+    capabilities = {
+        item["capability_id"]: item for item in workspace.json()["data"]["capabilities"]
+    }
+    assert capabilities["analyst-dashboard"]["state"] == "ready"
+    assert capabilities["analyst-dashboard"]["dependency"] is None

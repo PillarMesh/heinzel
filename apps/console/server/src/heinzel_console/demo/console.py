@@ -43,6 +43,7 @@ from ..governed_adapters import (
     InMemoryWorkspaceActorDirectory,
     InMemoryWorkspacePrincipalDirectory,
     RepositoryCurrentGovernedAnswerReader,
+    RepositoryDashboardPublicationReader,
     RepositoryDashboardRevisionReader,
     WorkflowDashboardPublicationCommands,
 )
@@ -380,11 +381,17 @@ class DemoConsole:
                 verified_answers=None if runtime is None else runtime.answers,
                 answer_downloads=None if runtime is None else runtime.downloads,
                 # The dashboards the delivered answer could be published to, read from the
-                # contracts the demonstration certified. Publishing itself stays unwired: that
-                # needs a BI provider, and there is none to reach -- so the offering names what
-                # matches and the view says publication is not available, rather than offering a
-                # control that refuses every press.
+                # contracts the demonstration certified. Publication itself is wired only when the
+                # deployment named a Superset to publish to, so the offering names what matches and
+                # the view says publication is unavailable rather than offering a control that
+                # refuses every press.
                 publishable_dashboards=publishable_dashboards,
+                # What was published, read out of bi-control's own repository rather than through a
+                # provider. A publication is recorded there only against a provider receipt, so this
+                # answers the same question -- and it keeps answering it for a deployment that has
+                # since been given no Superset, where a reader built over the control service would
+                # report nothing published and something was.
+                dashboards=RepositoryDashboardPublicationReader(self._stores.dashboards),
                 dashboard_publication_commands=publication_commands,
                 # Access-control applies, verifies and revokes the grant an admitted data access
                 # request produces, so intake may accept one. All five move together: the

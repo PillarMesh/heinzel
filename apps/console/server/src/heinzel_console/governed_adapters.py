@@ -346,6 +346,27 @@ class DashboardRevisionReader(Protocol):
     ) -> DashboardPublication | None: ...
 
 
+class RepositoryDashboardPublicationReader:
+    """List published dashboards straight from bi-control's repository.
+
+    `DashboardControlService` satisfies the same protocol and is what a deployment with a provider
+    passes. A publication exists in that repository only because a provider receipted it -- the
+    query joins the receipt rather than reading the desired state alone -- so reading it here
+    answers the same question without holding a provider that must never be called.
+
+    Which matters for what the console can show. A dashboard published by an earlier start stays
+    published, and a deployment that has since been given no Superset can still say so: a read
+    surface that went absent whenever a provider was would report nothing published where something
+    was, and the record is the publication rather than the connection to the instance.
+    """
+
+    def __init__(self, repository: SQLiteDashboardRepository) -> None:
+        self._repository = repository
+
+    def list_publications(self, tenant_id: str) -> tuple[DashboardPublication, ...]:
+        return self._repository.list_current_publications(tenant_id)
+
+
 class RepositoryDashboardRevisionReader:
     """Read revisions straight from bi-control's repository, with no BI provider in reach.
 
