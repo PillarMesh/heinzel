@@ -17,6 +17,15 @@ from pathlib import Path
 from typing import Literal, Never
 
 import pytest
+from heinzel_bi_control import (
+    DashboardAnswerAuthority,
+    DashboardAuthorityUnavailable,
+    DashboardProductGenerationReference,
+    DashboardProviderReceipt,
+    DashboardPublicationWorkflow,
+    PublishDashboardCommand,
+    SQLiteDashboardPublicationRepository,
+)
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
 from heinzel_connection_broker import (
     PrivateSourceCapability,
@@ -58,8 +67,10 @@ from heinzel_console.governed_adapters import (
     EnrolledSourceConnection,
     GovernedWorkspaceIdentity,
     InMemoryWorkspacePrincipalDirectory,
+    RepositoryCurrentGovernedAnswerReader,
     WarehouseConfirmation,
     WarehouseOperationIdentity,
+    WorkflowDashboardPublicationCommands,
 )
 from heinzel_console.governed_backend import (
     CAPABILITY_NOT_DELIVERED,
@@ -87,6 +98,7 @@ from heinzel_request_management import (
     FreshnessObjective,
     FulfillmentApprovalBinding,
     FulfillmentProposal,
+    GovernedAnswer,
     Grain,
     InboxRequest,
     MeasureIntent,
@@ -2492,3 +2504,182 @@ def test_a_broker_that_hands_back_an_unvalidated_binding_is_not_reported_as_regi
 
     assert failure.value.code == CAPABILITY_NOT_DELIVERED
     registry.repository.close()
+
+
+_PUBLICATION_NOW = datetime(2026, 10, 7, 12, tzinfo=UTC)
+
+
+class _PublicationAnswers:
+    def __init__(self, answer_id: str | None) -> None:
+        self.answer_id = answer_id
+        self.calls: list[tuple[str, str]] = []
+
+    def current_answer_id(self, tenant_id: str, request_id: str) -> str | None:
+        self.calls.append((tenant_id, request_id))
+        return self.answer_id
+
+
+class _PublicationAuthorityReader:
+    def __init__(self, result_expires_at: datetime) -> None:
+        self._result_expires_at = result_expires_at
+
+    def read_exact(
+        self, *, tenant_id: str, request_id: str, answer_id: str
+    ) -> DashboardAnswerAuthority:
+        return DashboardAnswerAuthority(
+            tenant_id=tenant_id,
+            request_id=request_id,
+            request_revision=6,
+            answer_id=answer_id,
+            title="Revenue by region",
+            execution_receipt_ref="execution-1",
+            result_ref="result-1",
+            result_digest="c" * 64,
+            product_generation_refs=(
+                DashboardProductGenerationReference(
+                    product_ref=ArtifactReference(
+                        artifact_id="product:orders", version=2, digest="a" * 64
+                    ),
+                    generation=7,
+                ),
+            ),
+            metric_version_refs=(
+                ArtifactReference(artifact_id="metric:revenue", version=3, digest="b" * 64),
+            ),
+            as_of=_PUBLICATION_NOW - timedelta(minutes=5),
+            freshness_disposition="current",
+            delivered_at=_PUBLICATION_NOW - timedelta(minutes=1),
+            result_expires_at=self._result_expires_at,
+        )
+
+
+class _RecordingPublisher:
+    def __init__(self) -> None:
+        self.commands: list[PublishDashboardCommand] = []
+
+    def publish(self, command: PublishDashboardCommand) -> DashboardProviderReceipt:
+        self.commands.append(command)
+        return DashboardProviderReceipt(
+            tenant_id=command.tenant_id,
+            dashboard_id=command.dashboard_id,
+            version=command.dashboard_version,
+            revision=command.expected_revision,
+            stable_external_key="pm-dashboard-" + "d" * 24,
+            desired_digest="e" * 64,
+            lifecycle_state="active",
+            external_url="https://superset.test/dashboard/7",
+            provider_version="4.1.1",
+            applied_at=_PUBLICATION_NOW,
+        )
+
+
+def _publication_commands(
+    *, answer_id: str | None = "answer-1"
+) -> tuple[
+    WorkflowDashboardPublicationCommands,
+    _RecordingPublisher,
+    SQLiteDashboardPublicationRepository,
+]:
+    repository = SQLiteDashboardPublicationRepository(":memory:")
+    publisher = _RecordingPublisher()
+    workflow = DashboardPublicationWorkflow(
+        repository=repository,
+        composition=publisher,
+        answers=_PublicationAuthorityReader(_PUBLICATION_NOW + timedelta(hours=1)),
+        clock=lambda: _PUBLICATION_NOW,
+    )
+    return (
+        WorkflowDashboardPublicationCommands(workflow, _PublicationAnswers(answer_id)),
+        publisher,
+        repository,
+    )
+
+
+def test_the_console_publishes_the_answer_a_request_is_currently_delivered_on() -> None:
+    commands, publisher, _ = _publication_commands()
+
+    record = commands.publish(
+        tenant_id="tenant-a",
+        request_id="request-1",
+        dashboard_id="dashboard:revenue",
+        dashboard_version=1,
+        expected_revision=1,
+    )
+
+    assert record.state == "published"
+    assert record.intent.answer_id == "answer-1"
+    assert publisher.commands[0].answer_id == "answer-1"
+
+
+def test_asking_twice_for_one_publication_opens_one_window_rather_than_two() -> None:
+    commands, publisher, repository = _publication_commands()
+
+    first = commands.publish(
+        tenant_id="tenant-a",
+        request_id="request-1",
+        dashboard_id="dashboard:revenue",
+        dashboard_version=1,
+        expected_revision=1,
+    )
+    replay = commands.publish(
+        tenant_id="tenant-a",
+        request_id="request-1",
+        dashboard_id="dashboard:revenue",
+        dashboard_version=1,
+        expected_revision=1,
+    )
+
+    assert replay == first
+    assert len(publisher.commands) == 1
+    assert repository.load("tenant-a", first.intent.intent_id) == first
+
+
+def test_publishing_a_later_revision_is_a_different_window() -> None:
+    commands, publisher, _ = _publication_commands()
+
+    first = commands.publish(
+        tenant_id="tenant-a",
+        request_id="request-1",
+        dashboard_id="dashboard:revenue",
+        dashboard_version=1,
+        expected_revision=1,
+    )
+    second = commands.publish(
+        tenant_id="tenant-a",
+        request_id="request-1",
+        dashboard_id="dashboard:revenue",
+        dashboard_version=1,
+        expected_revision=2,
+    )
+
+    assert first.intent.intent_id != second.intent.intent_id
+    assert [command.expected_revision for command in publisher.commands] == [1, 2]
+
+
+def test_a_request_with_no_answer_declares_no_publication() -> None:
+    commands, publisher, repository = _publication_commands(answer_id=None)
+
+    with pytest.raises(DashboardAuthorityUnavailable):
+        commands.publish(
+            tenant_id="tenant-a",
+            request_id="request-1",
+            dashboard_id="dashboard:revenue",
+            dashboard_version=1,
+            expected_revision=1,
+        )
+
+    assert publisher.commands == []
+    assert repository.list_pending("tenant-a") == ()
+
+
+def test_the_current_answer_reader_names_only_the_newest_answer_of_a_request() -> None:
+    class _Records:
+        def __init__(self, answers: tuple[GovernedAnswer, ...]) -> None:
+            self._answers = answers
+
+        def list_for_request(self, tenant_id: str, request_id: str) -> tuple[GovernedAnswer, ...]:
+            del tenant_id, request_id
+            return self._answers
+
+    reader = RepositoryCurrentGovernedAnswerReader(_Records(()))
+    assert reader.current_answer_id("tenant-a", "request-1") is None

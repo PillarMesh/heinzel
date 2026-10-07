@@ -19,6 +19,7 @@ from .contracts import (
     ConversationMessageCommand,
     ConversationView,
     CreateRequestCommand,
+    DashboardPublicationCommand,
     DashboardsView,
     DashboardView,
     DataProductsView,
@@ -160,6 +161,10 @@ class ConsoleBackend(Protocol):
 
     def register_source(
         self, context: TrustedActorContext, command: SourceRegistrationCommand
+    ) -> OperationView: ...
+
+    def publish_dashboard(
+        self, context: TrustedActorContext, command: DashboardPublicationCommand
     ) -> OperationView: ...
 
     def decide_review(

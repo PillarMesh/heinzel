@@ -2547,6 +2547,42 @@
       ],
       "type": "string"
     },
+    "DashboardPublicationCommand": {
+      "additionalProperties": false,
+      "description": "Publish one certified dashboard from the answer a request has already been delivered.\n\nThe command names the request, never an answer. The server resolves which delivered answer is\ncurrent for that request, because the dashboard answer authority only projects the newest one\nand a browser naming an answer identifier could ask for a superseded reading to be published.\nNo answer identifier is exposed in any view for the same reason.\n\n`expected_revision` is the dashboard's own desired revision, not a setup stage's. It is how a\nrefresh is expressed -- publishing a later revision over the same contract -- and how two\narchitects publishing at once are kept from overwriting one another.",
+      "properties": {
+        "active_role": {
+          "const": "data_architect",
+          "title": "Active Role",
+          "type": "string"
+        },
+        "dashboard_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "dashboard_version": {
+          "minimum": 1,
+          "title": "Dashboard Version",
+          "type": "integer"
+        },
+        "expected_revision": {
+          "minimum": 1,
+          "title": "Expected Revision",
+          "type": "integer"
+        },
+        "request_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "expected_revision",
+        "active_role",
+        "dashboard_id",
+        "dashboard_version",
+        "request_id"
+      ],
+      "title": "DashboardPublicationCommand",
+      "type": "object"
+    },
     "DashboardView": {
       "additionalProperties": false,
       "properties": {
@@ -6153,6 +6189,9 @@
     "create_request_command": {
       "$ref": "#/$defs/CreateRequestCommand"
     },
+    "dashboard_publication_command": {
+      "$ref": "#/$defs/DashboardPublicationCommand"
+    },
     "dashboard_response": {
       "$ref": "#/$defs/ConsoleEnvelope_DashboardView_"
     },
@@ -6283,6 +6322,7 @@
     "warehouse_binding_command",
     "process_package_command",
     "source_registration_command",
+    "dashboard_publication_command",
     "decision_command",
     "product_intent_approval_command",
     "admission_command",

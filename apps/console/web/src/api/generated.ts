@@ -79,6 +79,9 @@ export type RequestInput = StakeholderQuestionInput | DataAccessRequestInput
 export type Kind = "stakeholder_question"
 export type AccessMode = "query" | "dashboard" | "export"
 export type Kind1 = "data_access"
+export type ActiveRole4 = "data_architect"
+export type DashboardVersion = number
+export type ExpectedRevision5 = number
 export type ConsoleEnvelopeDashboardView = ConsoleEnvelope_DashboardView_
 export type DashboardAccessViewState = "active" | "workspace_role"
 export type LifecycleState = "active" | "archived"
@@ -97,7 +100,7 @@ export type Version1 = number
 export type ConsoleEnvelopeDataProductsView = ConsoleEnvelope_DataProductsView_
 export type JsonTuple_DataProductView_ = DataProductView[]
 export type Decision1 = "approve" | "reject" | "request_changes"
-export type ExpectedRevision5 = number
+export type ExpectedRevision6 = number
 export type ReviewedDigest1 = string
 export type RecoveryAction =
   "correct_input" | "reauthenticate" | "reload" | "retry" | "contact_support" | "none"
@@ -134,8 +137,8 @@ export type RequestState =
 export type JsonTuple_InboxItemView_ = InboxItemView[]
 export type OperationalRecoveryAction =
   "retry_transient_attempt" | "cancel_unstarted_work" | "reconcile_external_effect"
-export type ActiveRole4 = "data_architect" | "data_owner"
-export type ExpectedRevision6 = number
+export type ActiveRole5 = "data_architect" | "data_owner"
+export type ExpectedRevision7 = number
 export type ConsoleEnvelopeIncidentView = ConsoleEnvelope_IncidentView_
 export type JsonTuple_OperationalRecoveryAction_ = OperationalRecoveryAction[]
 export type IncidentFailureClassification =
@@ -178,8 +181,8 @@ export type Classification = "transient" | "permanent" | "unknown"
 export type JsonTuple_RecoveryAction_ = RecoveryAction[]
 export type Revision4 = number
 export type OperationState = "accepted" | "running" | "succeeded" | "failed" | "outcome_unknown"
-export type ActiveRole5 = "data_architect"
-export type ExpectedRevision7 = number
+export type ActiveRole6 = "data_architect"
+export type ExpectedRevision8 = number
 export type FileName = string
 export type JsonTupleStr_ = string[]
 export type Owner = string
@@ -187,14 +190,14 @@ export type ProcessName = string
 export type SchemaVersion = "1"
 export type MediaType = "text/markdown; charset=utf-8"
 export type NarrativeMarkdown = string
-export type ActiveRole6 = "data_architect"
-export type ExpectedRevision8 = number
+export type ActiveRole7 = "data_architect"
+export type ExpectedRevision9 = number
 export type ConsoleEnvelopeProductIntentApprovalView = ConsoleEnvelope_ProductIntentApprovalView_
 export type ArtifactId = string
 export type Version2 = number
 export type IntentRevision = number
-export type ExpectedRevision9 = number
 export type ExpectedRevision10 = number
+export type ExpectedRevision11 = number
 export type InScopeSummary = string
 export type OutOfScopeSummary = string
 export type RestatedRequest = string
@@ -267,8 +270,8 @@ export type Kind4 = "disclosure_denial"
 export type JsonTuple_ProposalApprovalView_2 = ProposalApprovalView[]
 export type JsonTuple_AuthorityStatusView_2 = AuthorityStatusView[]
 export type Revision5 = number
-export type ActiveRole7 = "requester"
-export type ExpectedRevision11 = number
+export type ActiveRole8 = "requester"
+export type ExpectedRevision12 = number
 export type ConsoleEnvelopeRequesterRequestView = ConsoleEnvelope_RequesterRequestView_
 /**
  * @minItems 1
@@ -287,9 +290,9 @@ export type Revision6 = number
 export type ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView =
   ConsoleEnvelope_JsonTuple_RequesterRequestView__
 export type JsonTuple_RequesterRequestView_ = RequesterRequestView[]
-export type ActiveRole8 = "data_architect"
-export type ExpectedRevision12 = number
+export type ActiveRole9 = "data_architect"
 export type ExpectedRevision13 = number
+export type ExpectedRevision14 = number
 export type ConsoleEnvelopeReviewView = ConsoleEnvelope_ReviewView_
 export type CanDecide = boolean
 export type JsonTuple_ConstraintView_ = ConstraintView[]
@@ -364,9 +367,9 @@ export type Immutable = true
  * @minItems 1
  */
 export type NonEmptyJsonTuple_WarehouseOptionView_ = [WarehouseOptionView, ...WarehouseOptionView[]]
-export type ActiveRole9 = "data_architect"
-export type ExpectedRevision14 = number
+export type ActiveRole10 = "data_architect"
 export type ExpectedRevision15 = number
+export type ExpectedRevision16 = number
 export type ConsoleEnvelopeWorkspaceView = ConsoleEnvelope_WorkspaceView_
 export type JsonTuple_CapabilityView_ = CapabilityView[]
 export type WorkspaceState = "setup" | "pending_activation" | "active" | "unavailable"
@@ -386,6 +389,7 @@ export interface ConsoleApiSchema {
   conversation_message_command: ConversationMessageCommand
   conversation_response: ConsoleEnvelopeConversationView
   create_request_command: CreateRequestCommand
+  dashboard_publication_command: DashboardPublicationCommand
   dashboard_response: ConsoleEnvelopeDashboardView
   dashboards_response: ConsoleEnvelopeDashboardsView
   data_product_response: ConsoleEnvelopeDataProductView
@@ -630,6 +634,25 @@ export interface DataAccessRequestInput {
   purpose: NonEmptyText
   requested_fields: NonEmptyJsonTuple_NonEmptyText_
 }
+/**
+ * Publish one certified dashboard from the answer a request has already been delivered.
+ *
+ * The command names the request, never an answer. The server resolves which delivered answer is
+ * current for that request, because the dashboard answer authority only projects the newest one
+ * and a browser naming an answer identifier could ask for a superseded reading to be published.
+ * No answer identifier is exposed in any view for the same reason.
+ *
+ * `expected_revision` is the dashboard's own desired revision, not a setup stage's. It is how a
+ * refresh is expressed -- publishing a later revision over the same contract -- and how two
+ * architects publishing at once are kept from overwriting one another.
+ */
+export interface DashboardPublicationCommand {
+  active_role: ActiveRole4
+  dashboard_id: NonEmptyText
+  dashboard_version: DashboardVersion
+  expected_revision: ExpectedRevision5
+  request_id: NonEmptyText
+}
 export interface ConsoleEnvelope_DashboardView_ {
   data: DashboardView
   meta: ApiMeta
@@ -696,7 +719,7 @@ export interface DataProductsView {
 export interface DecisionCommand {
   active_role: ActorRole
   decision: Decision1
-  expected_revision: ExpectedRevision5
+  expected_revision: ExpectedRevision6
   review_item_id?: NonEmptyText | null
   reviewed_digest: ReviewedDigest1
   revised_content?: NonEmptyText | null
@@ -765,8 +788,8 @@ export interface InboxItemView {
 }
 export interface IncidentRecoveryCommand {
   action: OperationalRecoveryAction
-  active_role: ActiveRole4
-  expected_revision: ExpectedRevision6
+  active_role: ActiveRole5
+  expected_revision: ExpectedRevision7
   reason: NonEmptyText
 }
 export interface ConsoleEnvelope_IncidentView_ {
@@ -816,8 +839,8 @@ export interface OperationFailureView {
   safe_message: NonEmptyText
 }
 export interface ProcessPackageCommand {
-  active_role: ActiveRole5
-  expected_revision: ExpectedRevision7
+  active_role: ActiveRole6
+  expected_revision: ExpectedRevision8
   file_name: FileName
   manifest: BusinessProcessManifestCommand
   media_type: MediaType
@@ -838,8 +861,8 @@ export interface BusinessProcessManifestCommand {
   unresolved_questions: JsonTupleStr_
 }
 export interface ProductIntentApprovalCommand {
-  active_role: ActiveRole6
-  expected_revision: ExpectedRevision8
+  active_role: ActiveRole7
+  expected_revision: ExpectedRevision9
   reviewed_digest: Digest
 }
 export interface ConsoleEnvelope_ProductIntentApprovalView_ {
@@ -861,11 +884,11 @@ export interface ArtifactReferenceView {
 }
 export interface ProposalPreparationCommand {
   active_role: ActorRole
-  expected_revision: ExpectedRevision9
+  expected_revision: ExpectedRevision10
 }
 export interface RequestClarificationCommand {
   active_role: ActorRole
-  expected_revision: ExpectedRevision10
+  expected_revision: ExpectedRevision11
   in_scope_summary: InScopeSummary
   out_of_scope_summary: OutOfScopeSummary
   restated_request: RestatedRequest
@@ -1015,8 +1038,8 @@ export interface DisclosureDenialProposalView {
  * A requester withdraws their own request before any work has been admitted for it.
  */
 export interface RequestWithdrawalCommand {
-  active_role: ActiveRole7
-  expected_revision: ExpectedRevision11
+  active_role: ActiveRole8
+  expected_revision: ExpectedRevision12
 }
 export interface ConsoleEnvelope_RequesterRequestView_ {
   data: RequesterRequestView
@@ -1067,14 +1090,14 @@ export interface ConsoleEnvelope_JsonTuple_RequesterRequestView__ {
   meta: ApiMeta
 }
 export interface ResetCommand {
-  active_role: ActiveRole8
-  expected_revision: ExpectedRevision12
+  active_role: ActiveRole9
+  expected_revision: ExpectedRevision13
   reset_token: OpaqueToken
   setup_digest: Digest
 }
 export interface RetryOperationCommand {
   active_role: ActorRole
-  expected_revision: ExpectedRevision13
+  expected_revision: ExpectedRevision14
   operation_digest: Digest
   retry_token: OpaqueToken
 }
@@ -1345,15 +1368,15 @@ export interface WarehouseOptionView {
  * binding exists.
  */
 export interface SourceRegistrationCommand {
-  active_role: ActiveRole9
+  active_role: ActiveRole10
   connection_handle: NonEmptyText
-  expected_revision: ExpectedRevision14
+  expected_revision: ExpectedRevision15
 }
 export interface WarehouseBindingCommand {
   active_role: ActorRole
   capacity: NonEmptyText
   engine: WarehouseEngine
-  expected_revision: ExpectedRevision15
+  expected_revision: ExpectedRevision16
   region: NonEmptyText
   reviewed_digest: Digest
 }

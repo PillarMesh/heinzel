@@ -133,6 +133,7 @@ def test_app_registers_every_reviewed_read_command_preview_and_link_route() -> N
         ("/api/v1/setup/warehouse-binding", "POST"),
         ("/api/v1/setup/process-packages", "POST"),
         ("/api/v1/setup/sources", "POST"),
+        ("/api/v1/dashboards/publications", "POST"),
         ("/api/v1/reviews/{review_id}/decisions", "POST"),
         ("/api/v1/inbox/{request_id}/decisions", "POST"),
         ("/api/v1/inbox/{request_id}/product-intent/approval", "POST"),
@@ -1213,3 +1214,67 @@ def test_demo_reset_is_absent_when_backend_mode_is_not_fixture() -> None:
         response = client.post("/api/v1/demo/reset")
 
     assert response.status_code == 404
+
+
+def test_the_dashboard_publication_route_requires_a_bi_workflow_and_a_provider() -> None:
+    """The fixture console has no delivered answer and no provider, so it publishes nothing.
+
+    Answering with a recorded publication would claim a dashboard exists on a provider this
+    console never wrote to.
+    """
+    with _client() as client:
+        response = client.post(
+            "/api/v1/dashboards/publications",
+            headers=_command_headers(client, "idem-dashboard-publication"),
+            json={
+                "expected_revision": 1,
+                "active_role": "data_architect",
+                "dashboard_id": "internal:revenue-dashboard",
+                "dashboard_version": 3,
+                "request_id": "req-00000000000000000002",
+            },
+        )
+
+    assert response.status_code == 503
+    assert response.json()["error"]["code"] == "capability_not_delivered"
+
+
+def test_the_dashboard_publication_route_refuses_a_body_naming_an_answer() -> None:
+    """A browser cannot choose which answer is published; the server resolves the current one.
+
+    The command model rejects the unknown field rather than ignoring it, so an attempt to publish a
+    superseded reading is refused at the wire rather than deeper where it would be harder to see.
+    """
+    with _client() as client:
+        response = client.post(
+            "/api/v1/dashboards/publications",
+            headers=_command_headers(client, "idem-dashboard-publication-answer"),
+            json={
+                "expected_revision": 1,
+                "active_role": "data_architect",
+                "dashboard_id": "internal:revenue-dashboard",
+                "dashboard_version": 3,
+                "request_id": "req-00000000000000000002",
+                "answer_id": "answer-1",
+            },
+        )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_request"
+
+
+def test_the_dashboard_publication_route_refuses_a_role_the_context_does_not_hold() -> None:
+    with _client() as client:
+        response = client.post(
+            "/api/v1/dashboards/publications",
+            headers=_command_headers(client, "idem-dashboard-publication-role"),
+            json={
+                "expected_revision": 1,
+                "active_role": "requester",
+                "dashboard_id": "internal:revenue-dashboard",
+                "dashboard_version": 3,
+                "request_id": "req-00000000000000000002",
+            },
+        )
+
+    assert response.status_code == 422

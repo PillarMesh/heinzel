@@ -12,7 +12,12 @@ from heinzel_access_control import (
     AccessGrantIntegrityError,
     AccessGrantState,
 )
-from heinzel_bi_control import DashboardPublication
+from heinzel_bi_control import (
+    DashboardPublication,
+    DashboardPublicationAttempt,
+    DashboardPublicationIntent,
+    DashboardPublicationRecord,
+)
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
 from heinzel_connection_broker import (
     SourceBindingPersistenceError,
@@ -24,6 +29,7 @@ from heinzel_console.auth import TrustedActorContext
 from heinzel_console.contracts import (
     AccessRevocationCommand,
     ActorRole,
+    DashboardPublicationCommand,
     ResetCommand,
     SetupStageView,
     SetupView,
@@ -36,6 +42,7 @@ from heinzel_console.governed_adapters import (
     AccessGrantRevocationCommands,
     CatalogBindingReader,
     CatalogSearchHealthReader,
+    DashboardPublicationCommands,
     DashboardPublicationReader,
     DataProductReferenceReader,
     EnrolledSourceConnection,
@@ -480,6 +487,7 @@ def _backend(
     access_grant_commands: AccessGrantCommands | None = None,
     access_revocation_commands: AccessGrantRevocationCommands | None = None,
     dashboards: DashboardPublicationReader | None = None,
+    dashboard_publication_commands: DashboardPublicationCommands | None = None,
     principals: InMemoryWorkspacePrincipalDirectory | None = None,
 ) -> GovernedConsoleBackend:
     """Inject doubles under the backend's own parameter types.
@@ -512,6 +520,7 @@ def _backend(
         access_grant_commands=access_grant_commands,
         access_revocation_commands=access_revocation_commands,
         dashboards=dashboards,
+        dashboard_publication_commands=dashboard_publication_commands,
         principals=principals,
     )
 
@@ -2576,3 +2585,205 @@ def test_a_broker_whose_register_is_unreadable_reports_retry_rather_than_an_empt
     assert failure.value.code == "downstream_unavailable"
     assert failure.value.recovery_action == "retry"
     assert "sqlite" not in failure.value.safe_message.lower()
+
+
+def _publication_intent(
+    *, intent_id: str = "dashboard-publication-1", expected_revision: int = 1
+) -> DashboardPublicationIntent:
+    return DashboardPublicationIntent(
+        intent_id=intent_id,
+        tenant_id=_TENANT,
+        dashboard_id="internal:revenue-dashboard",
+        dashboard_version=3,
+        request_id="req-00000000000000000002",
+        answer_id="answer-1",
+        expected_revision=expected_revision,
+        command_digest="1" * 64,
+        result_expires_at=datetime(2026, 10, 7, 13, tzinfo=UTC),
+        declared_at=datetime(2026, 10, 7, 12, tzinfo=UTC),
+    )
+
+
+def _publication_record(
+    *,
+    state: str,
+    outcome: str | None = None,
+    failure_code: str | None = None,
+    dashboard_revision: int | None = None,
+) -> DashboardPublicationRecord:
+    intent = _publication_intent()
+    attempts: tuple[DashboardPublicationAttempt, ...] = ()
+    if outcome is not None:
+        # Built through validation so the closed vocabularies this test parametrizes over are
+        # checked against the owning model rather than asserted by the test's own annotations.
+        attempts = (
+            DashboardPublicationAttempt.model_validate(
+                {
+                    "intent_id": intent.intent_id,
+                    "intent_digest": intent.intent_digest,
+                    "attempt": 1,
+                    "outcome": outcome,
+                    "failure_code": failure_code,
+                    "dashboard_revision": dashboard_revision,
+                    "desired_digest": None if dashboard_revision is None else "e" * 64,
+                    "observed_at": datetime(2026, 10, 7, 12, 5, tzinfo=UTC),
+                }
+            ),
+        )
+    return DashboardPublicationRecord.model_validate(
+        {"intent": intent, "state": state, "attempts": attempts}
+    )
+
+
+class _PublicationCommands:
+    def __init__(self, record: DashboardPublicationRecord | Exception) -> None:
+        self._record = record
+        self.calls: list[dict[str, object]] = []
+
+    def publish(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        dashboard_id: str,
+        dashboard_version: int,
+        expected_revision: int,
+    ) -> DashboardPublicationRecord:
+        self.calls.append(
+            {
+                "tenant_id": tenant_id,
+                "request_id": request_id,
+                "dashboard_id": dashboard_id,
+                "dashboard_version": dashboard_version,
+                "expected_revision": expected_revision,
+            }
+        )
+        if isinstance(self._record, Exception):
+            raise self._record
+        return self._record
+
+
+def _publication_command(*, expected_revision: int = 1) -> DashboardPublicationCommand:
+    return DashboardPublicationCommand(
+        expected_revision=expected_revision,
+        active_role="data_architect",
+        dashboard_id="internal:revenue-dashboard",
+        dashboard_version=3,
+        request_id="req-00000000000000000002",
+    )
+
+
+def test_publishing_a_dashboard_without_a_bi_workflow_reports_the_capability_as_not_delivered() -> (
+    None
+):
+    backend = _backend()
+
+    with pytest.raises(ConsoleUnavailable) as refusal:
+        backend.publish_dashboard(_architect_context(), _publication_command())
+
+    assert refusal.value.code == "capability_not_delivered"
+
+
+def test_the_dashboard_publication_capability_is_ready_only_with_a_wired_workflow() -> None:
+    without = _backend().get_workspace(_architect_context()).capabilities
+    with_workflow = (
+        _backend(
+            dashboard_publication_commands=_PublicationCommands(
+                _publication_record(state="published", outcome="published", dashboard_revision=1)
+            )
+        )
+        .get_workspace(_architect_context())
+        .capabilities
+    )
+
+    assert (
+        next(item.state for item in without if item.capability_id == "dashboard-publication")
+        == "not_delivered"
+    )
+    assert (
+        next(item.state for item in with_workflow if item.capability_id == "dashboard-publication")
+        == "ready"
+    )
+
+
+def test_a_published_dashboard_reports_the_revision_the_provider_applied() -> None:
+    commands = _PublicationCommands(
+        _publication_record(state="published", outcome="published", dashboard_revision=2)
+    )
+    backend = _backend(dashboard_publication_commands=commands)
+
+    operation = backend.publish_dashboard(
+        _architect_context(), _publication_command(expected_revision=2)
+    )
+
+    assert operation.state == "succeeded"
+    assert operation.phase == "dashboard_published"
+    assert operation.revision == 2
+    assert operation.failure is None
+    assert commands.calls == [
+        {
+            "tenant_id": _TENANT,
+            "request_id": "req-00000000000000000002",
+            "dashboard_id": "internal:revenue-dashboard",
+            "dashboard_version": 3,
+            "expected_revision": 2,
+        }
+    ]
+
+
+def test_a_closed_publication_window_is_permanent_and_names_its_own_reason() -> None:
+    backend = _backend(
+        dashboard_publication_commands=_PublicationCommands(
+            _publication_record(state="expired", outcome="expired")
+        )
+    )
+
+    operation = backend.publish_dashboard(_architect_context(), _publication_command())
+
+    assert operation.state == "failed"
+    assert operation.failure is not None
+    assert operation.failure.code == "dashboard_publication_window_expired"
+    assert operation.failure.classification == "permanent"
+    assert "no longer readable" in operation.failure.safe_message
+    assert "retry" not in operation.recovery_actions
+
+
+@pytest.mark.parametrize(
+    ("failure_code", "state", "classification"),
+    [
+        ("authority_unavailable", "pending", "transient"),
+        ("provider_unavailable", "pending", "transient"),
+        ("no_valid_plan", "failed", "permanent"),
+        ("stale_revision", "failed", "permanent"),
+        ("provider_ambiguous", "failed", "permanent"),
+        ("provider_rejected", "failed", "permanent"),
+        ("authority_invalid", "failed", "permanent"),
+    ],
+)
+def test_each_publication_failure_is_reported_with_its_own_classification(
+    failure_code: str, state: str, classification: str
+) -> None:
+    backend = _backend(
+        dashboard_publication_commands=_PublicationCommands(
+            _publication_record(state=state, outcome="failed", failure_code=failure_code)
+        )
+    )
+
+    operation = backend.publish_dashboard(_architect_context(), _publication_command())
+
+    assert operation.state == "failed"
+    assert operation.failure is not None
+    assert operation.failure.code == f"dashboard_publication_{failure_code}"
+    assert operation.failure.classification == classification
+
+
+def test_only_a_data_architect_can_publish_a_dashboard() -> None:
+    backend = _backend(
+        dashboard_publication_commands=_PublicationCommands(
+            _publication_record(state="published", outcome="published", dashboard_revision=1)
+        )
+    )
+
+    # An unauthorized role is answered exactly as an unknown resource is, by design.
+    with pytest.raises(ConsoleNotFound):
+        backend.publish_dashboard(_requester_context(), _publication_command())

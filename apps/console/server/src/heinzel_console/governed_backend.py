@@ -25,7 +25,7 @@ from functools import partial
 from typing import Literal, Never
 
 from heinzel_access_control import AccessGrant, AccessGrantDenied, AccessGrantIntegrityError
-from heinzel_bi_control import DashboardPublication
+from heinzel_bi_control import DashboardPublication, DashboardPublicationRecord
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
 from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
 from heinzel_contract_model import ArtifactReference, digest
@@ -102,6 +102,7 @@ from .contracts import (
     ConversationMessageView,
     ConversationView,
     CreateRequestCommand,
+    DashboardPublicationCommand,
     DashboardsView,
     DashboardView,
     DataProductsView,
@@ -194,6 +195,7 @@ from .governed_adapters import (
     AnswerResultReader,
     CatalogBindingReader,
     CatalogSearchHealthReader,
+    DashboardPublicationCommands,
     DashboardPublicationReader,
     DataProductReferenceReader,
     EnrolledSourceConnection,
@@ -371,6 +373,80 @@ def _not_delivered(dependency: str) -> ConsoleUnavailable:
     )
 
 
+#
+# Each settled publication outcome maps to one operation state and one public reason. A failure that
+# bi-control left retryable is transient, and one it settled is permanent; the console does not
+# re-decide that, because the workflow owns which causes can clear within the window.
+_PUBLICATION_FAILURE_MESSAGES: dict[str, str] = {
+    "authority_unavailable": "A record this publication depends on could not be read. Nothing was "
+    "published; try again while the answer's result is still readable.",
+    "authority_invalid": "Evidence this publication depends on failed verification. Nothing was "
+    "published, and the answer remains delivered.",
+    "no_valid_plan": "This dashboard cannot be published as specified. Its contract must be "
+    "certified, name one data product, and declare a visual intent.",
+    "stale_revision": "Another publication of this dashboard happened first. Reload the dashboard "
+    "and publish against its current revision.",
+    "provider_unavailable": "The BI provider could not be reached. Nothing was published; try "
+    "again while the answer's result is still readable.",
+    "provider_ambiguous": "The BI provider's outcome is unknown, so the dashboard may or may not "
+    "exist there. An operator must reconcile it before publishing again.",
+    "provider_rejected": "The BI provider refused this dashboard. Nothing was published, and the "
+    "answer remains delivered.",
+}
+_TRANSIENT_PUBLICATION_FAILURES = frozenset({"authority_unavailable", "provider_unavailable"})
+
+
+def _publication_operation(record: DashboardPublicationRecord) -> OperationView:
+    attempt = record.attempts[-1] if record.attempts else None
+    revision = (
+        attempt.dashboard_revision
+        if attempt is not None and attempt.dashboard_revision is not None
+        else record.intent.expected_revision
+    )
+    if record.state == "published":
+        return OperationView(
+            operation_id=record.intent.intent_id,
+            revision=revision,
+            state="succeeded",
+            phase="dashboard_published",
+            summary="Dashboard published from its delivered answer.",
+        )
+    if record.state == "expired":
+        return OperationView(
+            operation_id=record.intent.intent_id,
+            revision=revision,
+            state="failed",
+            phase="dashboard_publication_window_closed",
+            summary="The window to publish this answer has closed.",
+            failure=OperationFailureView(
+                code="dashboard_publication_window_expired",
+                classification="permanent",
+                safe_message="This answer's result is no longer readable, so a dashboard can no "
+                "longer be built from it. Ask the question again to publish a new reading.",
+            ),
+        )
+    if attempt is None or attempt.failure_code is None:
+        # A record with no settling attempt is `pending` only before its first attempt, and
+        # `advance` always records one. Reporting success here would announce a dashboard nobody
+        # published.
+        raise _not_delivered("a BI control publication workflow that records its attempts")
+    failure_code = attempt.failure_code
+    return OperationView(
+        operation_id=record.intent.intent_id,
+        revision=revision,
+        state="failed",
+        phase="dashboard_publication_failed",
+        summary="The dashboard was not published.",
+        failure=OperationFailureView(
+            code=f"dashboard_publication_{failure_code}",
+            classification=(
+                "transient" if failure_code in _TRANSIENT_PUBLICATION_FAILURES else "permanent"
+            ),
+            safe_message=_PUBLICATION_FAILURE_MESSAGES[failure_code],
+        ),
+    )
+
+
 def _stage_detail(stage: SetupStage, *, source_reader_available: bool) -> str | None:
     """What an architect is told about a stage beyond its state.
 
@@ -482,6 +558,7 @@ class GovernedConsoleBackend:
         data_products: DataProductReferenceReader | None = None,
         product_publications: ProductPublicationDefinitionReader | None = None,
         dashboards: DashboardPublicationReader | None = None,
+        dashboard_publication_commands: DashboardPublicationCommands | None = None,
         data_access_intake_available: bool = True,
         actors: WorkspaceActorDirectory | None = None,
         principals: WorkspacePrincipalDirectory | None = None,
@@ -532,6 +609,7 @@ class GovernedConsoleBackend:
         self._data_products = data_products
         self._product_publications = product_publications
         self._dashboards = dashboards
+        self._dashboard_publication_commands = dashboard_publication_commands
         self._data_access_intake_available = data_access_intake_available
         self._actors = actors
         self._principals = principals
@@ -787,6 +865,24 @@ class GovernedConsoleBackend:
                     None
                     if self._dashboards is not None
                     else "a provider-receipted BI control publication read interface"
+                ),
+            ),
+            CapabilityView(
+                capability_id="dashboard-publication",
+                label="Dashboard publication",
+                state=(
+                    "ready" if self._dashboard_publication_commands is not None else "not_delivered"
+                ),
+                detail=(
+                    "A certified dashboard is published from a request's delivered answer, within "
+                    "the window that answer's result snapshot allows."
+                    if self._dashboard_publication_commands is not None
+                    else "No BI control publication command interface is wired."
+                ),
+                dependency=(
+                    None
+                    if self._dashboard_publication_commands is not None
+                    else "a BI control publication workflow and a BI provider to publish to"
                 ),
             ),
             CapabilityView(
@@ -2108,6 +2204,35 @@ class GovernedConsoleBackend:
             phase="source_binding_validated",
             summary="Source connection registered and validated against the source.",
         )
+
+    def publish_dashboard(
+        self, context: TrustedActorContext, command: DashboardPublicationCommand
+    ) -> OperationView:
+        """Publish one certified dashboard from the answer its request was delivered.
+
+        The outcome reported is the publication's own, not the request's: an answer stays delivered
+        and readable whatever happens here, which is why a failure is reported as this operation's
+        failure and never as a refusal of the delivery.
+
+        A window that closed is a permanent failure with its own reason rather than a transient one
+        to retry, because the result snapshot the dashboard would have been compiled from can no
+        longer be read back and no later attempt can change that.
+        """
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        commands = self._dashboard_publication_commands
+        if commands is None:
+            raise _not_delivered("a BI control publication workflow and a BI provider")
+        record = self._guarded(
+            lambda: commands.publish(
+                tenant_id=context.tenant_id,
+                request_id=command.request_id,
+                dashboard_id=command.dashboard_id,
+                dashboard_version=command.dashboard_version,
+                expected_revision=command.expected_revision,
+            )
+        )
+        return _publication_operation(record)
 
     def decide_review(
         self, context: TrustedActorContext, review_id: str, command: DecisionCommand

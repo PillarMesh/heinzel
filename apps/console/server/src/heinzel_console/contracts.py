@@ -1264,6 +1264,26 @@ class SourceRegistrationCommand(StrictModel):
     connection_handle: NonEmptyText
 
 
+class DashboardPublicationCommand(StrictModel):
+    """Publish one certified dashboard from the answer a request has already been delivered.
+
+    The command names the request, never an answer. The server resolves which delivered answer is
+    current for that request, because the dashboard answer authority only projects the newest one
+    and a browser naming an answer identifier could ask for a superseded reading to be published.
+    No answer identifier is exposed in any view for the same reason.
+
+    `expected_revision` is the dashboard's own desired revision, not a setup stage's. It is how a
+    refresh is expressed -- publishing a later revision over the same contract -- and how two
+    architects publishing at once are kept from overwriting one another.
+    """
+
+    expected_revision: int = Field(ge=1)
+    active_role: Literal["data_architect"]
+    dashboard_id: NonEmptyText
+    dashboard_version: int = Field(ge=1)
+    request_id: NonEmptyText
+
+
 class DecisionCommand(StrictModel):
     """One decision, against the exact revision and content the browser displayed.
 
@@ -1469,6 +1489,7 @@ class ConsoleApiSchema(StrictModel):
     warehouse_binding_command: WarehouseBindingCommand
     process_package_command: ProcessPackageCommand
     source_registration_command: SourceRegistrationCommand
+    dashboard_publication_command: DashboardPublicationCommand
     decision_command: DecisionCommand
     product_intent_approval_command: ProductIntentApprovalCommand
     admission_command: AdmissionCommand

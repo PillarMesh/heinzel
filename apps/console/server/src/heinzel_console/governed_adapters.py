@@ -25,7 +25,11 @@ from heinzel_access_control import (
 from heinzel_bi_control import (
     DashboardAccessAuthorityError,
     DashboardAccessAuthorization,
+    DashboardAuthorityUnavailable,
     DashboardPublication,
+    DashboardPublicationRecord,
+    DashboardPublicationWorkflow,
+    DeclareDashboardPublicationCommand,
 )
 from heinzel_catalog_control import (
     CatalogBinding,
@@ -278,6 +282,52 @@ class DashboardPublicationReader(Protocol):
     """Reads only dashboards whose desired state has a matching provider receipt."""
 
     def list_publications(self, tenant_id: str) -> tuple[DashboardPublication, ...]: ...
+
+
+class GovernedAnswerRecordReader(Protocol):
+    def list_for_request(self, tenant_id: str, request_id: str) -> tuple[GovernedAnswer, ...]: ...
+
+
+class CurrentGovernedAnswerReader(Protocol):
+    """Names the answer a request is currently delivered on, if it has one."""
+
+    def current_answer_id(self, tenant_id: str, request_id: str) -> str | None: ...
+
+
+class RepositoryCurrentGovernedAnswerReader:
+    """Name the newest answer of a request, which is the only one that can be published.
+
+    The dashboard answer authority refuses any answer that is not the last one recorded for its
+    request, so naming an earlier one would always be refused later. Resolving it here means the
+    refusal for a request with no answer at all is a clear one, rather than a publication that is
+    declared and then fails against an authority that answered nothing.
+    """
+
+    def __init__(self, answers: GovernedAnswerRecordReader) -> None:
+        self._answers = answers
+
+    def current_answer_id(self, tenant_id: str, request_id: str) -> str | None:
+        answers = self._answers.list_for_request(tenant_id, request_id)
+        return answers[-1].answer_id if answers else None
+
+
+class DashboardPublicationCommands(Protocol):
+    """Declare a publication and drive it to one settled outcome.
+
+    One call rather than two, for the same reason `SourceRegistrationCommands.register_source` is
+    one: the declaration and the attempt belong to bi-control's workflow, and the console orders
+    them without owning the lifecycle between them.
+    """
+
+    def publish(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        dashboard_id: str,
+        dashboard_version: int,
+        expected_revision: int,
+    ) -> DashboardPublicationRecord: ...
 
 
 class SemanticReviewReader(Protocol):
@@ -1280,6 +1330,82 @@ class BrokerSourceRegistrationCommands:
         return self._service.validate(
             tenant_id, draft.binding_id, expected_revision=validating.revision
         )
+
+
+def _publication_intent_id(
+    *,
+    tenant_id: str,
+    dashboard_id: str,
+    dashboard_version: int,
+    request_id: str,
+    answer_id: str,
+    expected_revision: int,
+) -> str:
+    return (
+        "dashboard-publication-"
+        + canonical_digest(
+            {
+                "domain": "heinzel-console-dashboard-publication-intent-v1",
+                "tenant_id": tenant_id,
+                "dashboard_id": dashboard_id,
+                "dashboard_version": dashboard_version,
+                "request_id": request_id,
+                "answer_id": answer_id,
+                "expected_revision": expected_revision,
+            }
+        )[:32]
+    )
+
+
+class WorkflowDashboardPublicationCommands:
+    """Order bi-control's declaration and its attempt for one console publication.
+
+    The intent identifier is derived from the publication the command describes, not from the
+    request's idempotency key. Two architects asking for the same publication therefore converge on
+    one intent and one window, instead of opening a second window over the same answer and giving
+    the publication more retries than its result retention allows.
+    """
+
+    def __init__(
+        self,
+        workflow: DashboardPublicationWorkflow,
+        answers: CurrentGovernedAnswerReader,
+    ) -> None:
+        self._workflow = workflow
+        self._answers = answers
+
+    def publish(
+        self,
+        *,
+        tenant_id: str,
+        request_id: str,
+        dashboard_id: str,
+        dashboard_version: int,
+        expected_revision: int,
+    ) -> DashboardPublicationRecord:
+        answer_id = self._answers.current_answer_id(tenant_id, request_id)
+        if answer_id is None:
+            raise DashboardAuthorityUnavailable("dashboard answer authority is unavailable")
+        intent_id = _publication_intent_id(
+            tenant_id=tenant_id,
+            dashboard_id=dashboard_id,
+            dashboard_version=dashboard_version,
+            request_id=request_id,
+            answer_id=answer_id,
+            expected_revision=expected_revision,
+        )
+        self._workflow.declare(
+            DeclareDashboardPublicationCommand(
+                intent_id=intent_id,
+                tenant_id=tenant_id,
+                dashboard_id=dashboard_id,
+                dashboard_version=dashboard_version,
+                request_id=request_id,
+                answer_id=answer_id,
+                expected_revision=expected_revision,
+            )
+        )
+        return self._workflow.advance(tenant_id=tenant_id, intent_id=intent_id)
 
 
 def classify_downstream_failure(error: Exception) -> DownstreamClassification:

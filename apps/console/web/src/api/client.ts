@@ -34,6 +34,7 @@ import type {
   ConsoleEnvelopeWorkspaceView,
   ConversationMessageCommand,
   CreateRequestCommand,
+  DashboardPublicationCommand,
   AdmissionCommand,
   IncidentRecoveryCommand,
   RequestClarificationCommand,
@@ -515,6 +516,13 @@ export class ConsoleApiClient {
     context: MutationRequestContext,
   ): Promise<OperationSubmissionResult> {
     return this.#operationMutation("/api/v1/setup/sources", command, context)
+  }
+
+  publishDashboard(
+    command: DashboardPublicationCommand,
+    context: MutationRequestContext,
+  ): Promise<OperationSubmissionResult> {
+    return this.#operationMutation("/api/v1/dashboards/publications", command, context)
   }
 
   async decideReview(

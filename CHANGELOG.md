@@ -49,8 +49,21 @@ All notable changes to Heinzel are recorded here. The format follows
   every retry; an ambiguous provider outcome is deliberately terminal, since the dashboard may
   already exist externally. Re-declaring one intent returns the first record rather than extending
   its window, and a publication that fails leaves the answer it came from delivered and readable.
-  Nothing yet declares an intent: the console has no publication surface and the demonstration still
-  has no Superset to publish to.
+- A console command for dashboard publication, at `POST /api/v1/dashboards/publications`. It names
+  a request and never an answer: the server resolves which delivered answer is current, because the
+  dashboard answer authority only projects the newest one and a browser naming an identifier could
+  ask for a superseded reading to be published. No view exposes an answer identifier for the same
+  reason. `expected_revision` is the dashboard's own desired revision, so a refresh is expressed by
+  publishing a later revision over the same contract and two architects publishing at once cannot
+  overwrite one another. The intent identifier is derived from the publication being asked for
+  rather than from the request's idempotency key, so asking twice converges on one window instead
+  of granting the publication more retries than its result retention allows. Each settled outcome
+  maps to one operation state: published succeeds, a closed window fails permanently with its own
+  reason, and a failure bi-control left retryable is reported transient while one it settled is
+  permanent. No deployment wires the commands, so the route answers `503
+  capability_not_delivered` and the new `dashboard-publication` capability reports itself
+  undelivered; the browser has no publish control, which needs a read surface naming the certified
+  dashboards a delivered answer could be published to.
 - `DashboardAnswerAuthority` carries `result_expires_at`, the expiry of the result snapshot the
   answer was read from, so a publication deadline comes from the same evidence the answer did. Its
   schema version is `3`.

@@ -32,6 +32,7 @@ from .contracts import (
     ConversationMessageView,
     ConversationView,
     CreateRequestCommand,
+    DashboardPublicationCommand,
     DashboardsView,
     DashboardView,
     DataProductsView,
@@ -872,6 +873,23 @@ class FixtureConsoleBackend:
         raise ConsoleUnavailable(
             code="capability_not_delivered",
             safe_message="Registering a source requires a governed workspace.",
+            recovery_action="none",
+        )
+
+    def publish_dashboard(
+        self, context: TrustedActorContext, command: DashboardPublicationCommand
+    ) -> OperationView:
+        """Refused: publishing a dashboard is a real effect on a real BI provider.
+
+        The fixture console has no delivered answer to compile from and no provider to publish to.
+        Reporting a publication from seeded data would claim a dashboard exists somewhere nobody
+        wrote to.
+        """
+        self._authorize(context, ("data_architect",))
+        self._require_command_role(context, command.active_role)
+        raise ConsoleUnavailable(
+            code="capability_not_delivered",
+            safe_message="Publishing a dashboard requires a governed workspace.",
             recovery_action="none",
         )
 
