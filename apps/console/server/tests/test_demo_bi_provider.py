@@ -14,6 +14,7 @@ needs a cold Superset and is marked `live`.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
@@ -24,19 +25,31 @@ from heinzel_bi_control import (
     DashboardControlService,
     DashboardProviderReceipt,
     PublishDashboardCommand,
+    SQLiteDashboardConnectionRepository,
     SQLiteDashboardRepository,
 )
 from heinzel_console.demo.bi_provider import (
     SUPERSET_ADMIN_PASSWORD_VARIABLE,
     SUPERSET_BASE_URL_VARIABLE,
     SUPERSET_TLS_DIRECTORY_VARIABLE,
+    demo_dashboard_connection_secret_ref,
     demo_dashboard_publication,
     demo_superset_connection,
     demo_superset_database_uri,
+    record_demo_dashboard_connection,
 )
 from heinzel_console.demo.superset_tls import ensure_demo_superset_tls_material
 from heinzel_console.demo.warehouse import DEMO_WAREHOUSE_ROLES, ProvisioningRefused
 from heinzel_console.governed_adapters import WorkflowDashboardPublicationCommands
+from heinzel_contract_model import ArtifactReference, digest
+from heinzel_semantic_registry import (
+    ApprovedProductQueryBinding,
+    ProductQueryBindingApproval,
+    ProductQueryBindingDeclaration,
+    ProductQueryDimensionBinding,
+    ProductQueryMetricBinding,
+)
+from heinzel_warehouse_control import EngineKind, WarehouseBinding, WarehouseBindingState
 
 NOW = datetime(2026, 10, 7, 12, tzinfo=UTC)
 
@@ -342,3 +355,213 @@ class _NoAnswerAuthority:
 
 def _never_composed(control: DashboardControlService) -> _RefusingPublisher:
     raise AssertionError("no publisher is composed without a Superset to publish to")
+
+
+_WAREHOUSE_NOW = datetime(2026, 9, 13, tzinfo=UTC)
+
+
+def _artifact(artifact_id: str, marker: str = "a") -> ArtifactReference:
+    return ArtifactReference(artifact_id=artifact_id, version=1, digest=marker * 64)
+
+
+def _warehouse_binding(*, revision: int = 2) -> WarehouseBinding:
+    """A binding shaped as warehouse-control hands one back, not a stand-in for one."""
+    return WarehouseBinding(
+        binding_id="whb-0123456789abcdef01234567",
+        tenant_id="tenant-demo",
+        engine_kind=EngineKind.POSTGRESQL,
+        region="local-acceptance",
+        capacity_profile="mvp-fixed",
+        capability_profile_digest="c" * 64,
+        lifecycle_state=WarehouseBindingState.READY,
+        revision=revision,
+        created_at=_WAREHOUSE_NOW,
+        updated_at=_WAREHOUSE_NOW,
+        provisioned_at=_WAREHOUSE_NOW,
+    )
+
+
+def _query_binding() -> ApprovedProductQueryBinding:
+    """The approved binding that says which relation the product is read through.
+
+    Built as the real model requires rather than with placeholder digests: it recomputes its
+    declaration digest, its approval digest and its own consumption object reference and refuses a
+    payload they do not match. The derivations are reproduced here, as bi-control's own tests do,
+    so what this hands back is an authority and not a shape resembling one.
+    """
+    product_ref = _artifact("orders_daily")
+    metric = ProductQueryMetricBinding(
+        semantic_ref=_artifact("metric:revenue", "4"),
+        aggregate="sum",
+        column_name="revenue_total",
+        output_name="revenue_total",
+    )
+    dimension = ProductQueryDimensionBinding(
+        semantic_ref=_artifact("dimension:customer", "5"),
+        semantic_kind="entity",
+        column_name="customer_id",
+        output_name="customer_id",
+    )
+    declaration = ProductQueryBindingDeclaration(
+        engine_kind="postgresql",
+        namespace="demo_product",
+        relation_name="orders_daily_g1",
+        metric_bindings=(metric,),
+        dimension_bindings=(dimension,),
+        disclosure_entity_ref=dimension.semantic_ref,
+        disclosure_entity_column=dimension.column_name,
+    )
+    approval = ProductQueryBindingApproval(
+        approval_id="apq-1",
+        tenant_id="tenant-demo",
+        product_ref=product_ref,
+        generation=1,
+        declaration_digest=digest(declaration),
+        authority_ref="authority:semantic",
+        actor_id="architect-demo",
+        decision="approve",
+        created_at=_WAREHOUSE_NOW,
+    )
+    materialization_ref = ArtifactReference(
+        artifact_id="materialization-run-1", version=1, digest="d" * 64
+    )
+    consumption_ref = ArtifactReference(
+        artifact_id=f"{product_ref.artifact_id}:consumption",
+        version=1,
+        digest=digest(
+            {
+                "domain": "heinzel-product-query-consumption-v1",
+                "tenant_id": "tenant-demo",
+                "product_ref": product_ref,
+                "generation": 1,
+                "materialization_receipt_ref": materialization_ref,
+                "engine_kind": declaration.engine_kind,
+                "namespace": declaration.namespace,
+                "relation_name": declaration.relation_name,
+            }
+        ),
+    )
+    return ApprovedProductQueryBinding(
+        tenant_id="tenant-demo",
+        product_ref=product_ref,
+        generation=1,
+        contract_ref=_artifact("contract:orders", "b"),
+        semantic_version_ref=_artifact("semantic:finance", "c"),
+        materialization_receipt_ref=materialization_ref,
+        lineage_digest="e" * 64,
+        declaration_digest=digest(declaration),
+        approval_digest=digest((approval,)),
+        consumption_object_ref=consumption_ref,
+        engine_kind="postgresql",
+        namespace=declaration.namespace,
+        relation_name=declaration.relation_name,
+        metric_bindings=declaration.metric_bindings,
+        dimension_bindings=declaration.dimension_bindings,
+        disclosure_entity_ref=declaration.disclosure_entity_ref,
+        disclosure_entity_column=declaration.disclosure_entity_column,
+        approvals=(approval,),
+        recorded_at=_WAREHOUSE_NOW,
+    )
+
+
+class _QueryBindings:
+    """Reads back one approved binding, or none at all."""
+
+    def __init__(self, binding: ApprovedProductQueryBinding | None) -> None:
+        self._binding = binding
+
+    def read_current(
+        self, *, tenant_id: str, product_ref: ArtifactReference, generation: int
+    ) -> ApprovedProductQueryBinding | None:
+        if self._binding is None:
+            return None
+        if (
+            self._binding.tenant_id != tenant_id
+            or self._binding.product_ref != product_ref
+            or self._binding.generation != generation
+        ):
+            return None
+        return self._binding
+
+
+def test_the_dashboard_connection_cites_the_warehouse_binding_that_authorized_it(
+    tmp_path: Path,
+) -> None:
+    """The citation is the whole point: bi-control carries it and verifies none of it.
+
+    Nothing downstream would catch an invented warehouse binding, so the identifier, revision and
+    digest have to come from the binding warehouse-control actually holds.
+    """
+    warehouse = _warehouse_binding()
+    with closing(
+        SQLiteDashboardConnectionRepository(str(tmp_path / "connections.sqlite"))
+    ) as connections:
+        stored = record_demo_dashboard_connection(
+            connections,
+            query_bindings=_QueryBindings(_query_binding()),
+            product_ref=_artifact("orders_daily"),
+            generation=1,
+            warehouse_binding=warehouse,
+        )
+
+        assert stored is not None
+        assert stored.warehouse_binding_id == warehouse.binding_id
+        assert stored.warehouse_binding_revision == warehouse.revision
+        assert stored.warehouse_binding_digest == digest(warehouse)
+        # The relation is the approved binding's, which is what bi-control publishes against.
+        assert stored.namespace == "demo_product"
+        assert stored.relation_name == "orders_daily_g1"
+        assert stored.engine_kind == "postgresql"
+        assert stored.consumption_object_ref == _query_binding().consumption_object_ref
+        # And it is readable back by the key the composition resolves it under.
+        assert (
+            connections.resolve(
+                tenant_id="tenant-demo",
+                engine_kind="postgresql",
+                consumption_object_ref=_query_binding().consumption_object_ref,
+            )
+            == stored
+        )
+
+
+def test_a_product_with_no_approved_query_binding_is_given_no_connection(tmp_path: Path) -> None:
+    """A product nothing approved a relation for is one that cannot be published.
+
+    Storing a connection anyway would name a relation no approval established, and the
+    publication would then be refused for naming the wrong one rather than for the missing
+    approval.
+    """
+    with closing(
+        SQLiteDashboardConnectionRepository(str(tmp_path / "connections.sqlite"))
+    ) as connections:
+        assert (
+            record_demo_dashboard_connection(
+                connections,
+                query_bindings=_QueryBindings(None),
+                product_ref=_artifact("orders_daily"),
+                generation=1,
+                warehouse_binding=_warehouse_binding(),
+            )
+            is None
+        )
+
+
+def test_the_connection_secret_reference_is_the_same_one_every_start() -> None:
+    """The Superset provider derives the database's own identity from this reference.
+
+    A reference carrying anything per-start would have each start create a second database
+    connection in Superset beside the one already there, rather than finding it.
+    """
+    first = demo_dashboard_connection_secret_ref(
+        tenant_id="tenant-demo", warehouse_binding_id="whb-1"
+    )
+    again = demo_dashboard_connection_secret_ref(
+        tenant_id="tenant-demo", warehouse_binding_id="whb-1"
+    )
+
+    assert first == again
+    assert first == "secret://tenant-demo/warehouse/whb-1/dashboard-reader"
+    assert (
+        demo_dashboard_connection_secret_ref(tenant_id="tenant-demo", warehouse_binding_id="whb-2")
+        != first
+    )

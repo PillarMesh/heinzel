@@ -42,17 +42,22 @@ import psycopg
 from heinzel_bi_control import (
     DashboardAnswerAuthorityReader,
     DashboardControlService,
+    DashboardDatasetConnectionBinding,
     DashboardPublicationWorkflow,
     DashboardPublisher,
+    DashboardQueryBindingReader,
+    SQLiteDashboardConnectionRepository,
     SQLiteDashboardPublicationRepository,
     SQLiteDashboardRepository,
 )
+from heinzel_contract_model import ArtifactReference, digest
 from heinzel_provider_superset import (
     HttpSupersetClient,
     HttpxSupersetTransport,
     SupersetCredentials,
     SupersetProvider,
 )
+from heinzel_warehouse_control import WarehouseBinding
 
 from ..governed_adapters import (
     CurrentGovernedAnswerReader,
@@ -185,6 +190,70 @@ def demo_superset_connection(
         credentials=credentials,
         tls_material=material,
         ssl_context=ssl.create_default_context(cafile=str(material.authority_path)),
+    )
+
+
+def demo_dashboard_connection_secret_ref(*, tenant_id: str, warehouse_binding_id: str) -> str:
+    """Where a deployment would resolve the credential Superset queries the product with.
+
+    A reference, never the credential. The demonstration holds the password in the process that
+    minted it and resolves nothing, so this names the custody a deployment would have rather than
+    one that exists here -- and `demo/bi_provider.py` hands Superset the URI directly, which is why
+    no resolver is wired behind it.
+
+    It also has to be stable across starts, because the Superset provider derives the database's
+    own identity from it: a reference carrying anything per-start would have each start create a
+    second database connection beside the first rather than finding the one already there.
+    """
+    return f"secret://{tenant_id}/warehouse/{warehouse_binding_id}/dashboard-reader"
+
+
+def record_demo_dashboard_connection(
+    connections: SQLiteDashboardConnectionRepository,
+    *,
+    query_bindings: DashboardQueryBindingReader,
+    product_ref: ArtifactReference,
+    generation: int,
+    warehouse_binding: WarehouseBinding,
+) -> DashboardDatasetConnectionBinding | None:
+    """Authorize Superset to reach the product's consumption object, citing the warehouse binding.
+
+    The relation comes from the approved query binding rather than from anything here: that is the
+    authority that says which consumption object the product is read through, and bi-control
+    refuses a connection naming a different namespace or relation than the binding it publishes
+    against.
+
+    The warehouse binding comes from warehouse-control, and this is why there is no equivalent on
+    the demonstration's other path. `warehouse_binding_id`, its revision and its digest assert that
+    this connection is the one that service authorized, at that revision; bi-control carries them
+    and verifies none of them, so nothing downstream would catch an assertion that was invented.
+    ADR-0003 keeps a warehouse warehouse-control never provisioned out of scope, so a database it
+    never saw has no binding to cite and gets no connection -- and the publication then fails as an
+    unavailable authority, which is the truth about it.
+
+    `None` when the product has no approved query binding yet, which is a product that cannot be
+    published rather than one to invent a connection for.
+    """
+    binding = query_bindings.read_current(
+        tenant_id=warehouse_binding.tenant_id, product_ref=product_ref, generation=generation
+    )
+    if binding is None:
+        return None
+    return connections.store(
+        DashboardDatasetConnectionBinding(
+            tenant_id=warehouse_binding.tenant_id,
+            engine_kind=binding.engine_kind,
+            consumption_object_ref=binding.consumption_object_ref,
+            namespace=binding.namespace,
+            relation_name=binding.relation_name,
+            warehouse_binding_id=warehouse_binding.binding_id,
+            warehouse_binding_revision=warehouse_binding.revision,
+            warehouse_binding_digest=digest(warehouse_binding),
+            connection_secret_ref=demo_dashboard_connection_secret_ref(
+                tenant_id=warehouse_binding.tenant_id,
+                warehouse_binding_id=warehouse_binding.binding_id,
+            ),
+        )
     )
 
 

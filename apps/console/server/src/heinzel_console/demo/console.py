@@ -42,12 +42,13 @@ from ..governed_adapters import (
     InMemoryWorkspacePrincipalDirectory,
     RepositoryCurrentGovernedAnswerReader,
     RepositoryDashboardRevisionReader,
+    WorkflowDashboardPublicationCommands,
 )
 from ..governed_backend import GovernedConsoleBackend
 from ..operation_handles import InMemoryOperationHandleRepository
 from .access import DemoAccessControl, build_demo_access_control
 from .answer_runtime import DemoGovernedAnswer, demo_governed_answer
-from .bi_provider import demo_dashboard_publication
+from .bi_provider import demo_dashboard_publication, record_demo_dashboard_connection
 from .bootstrap import ensure_demo_generation
 from .collaborators import (
     DEMO_ARCHITECT_ID,
@@ -67,7 +68,11 @@ from .dashboard_contract import (
     resolve_dashboard_contract_key,
     seed_demo_dashboard_contract,
 )
-from .managed_warehouse import ManagedWarehouseOption, provision_demo_managed_warehouse
+from .managed_warehouse import (
+    DemoManagedWarehouse,
+    ManagedWarehouseOption,
+    provision_demo_managed_warehouse,
+)
 from .publication import DEMO_TENANT_ID, build_demo_publication
 from .seed import seed_demo_request
 from .stores import DemoStores
@@ -273,7 +278,9 @@ class DemoConsole:
             publication_commands = (
                 None
                 if governed_answer is None
-                else self._compose_dashboard_publication(state_dir, answer=governed_answer)
+                else self._compose_dashboard_publication(
+                    state_dir, answer=governed_answer, managed=managed
+                )
             )
             self.backend = GovernedConsoleBackend(
                 identity=GovernedWorkspaceIdentity(
@@ -426,9 +433,18 @@ class DemoConsole:
         )
 
     def _compose_dashboard_publication(
-        self, state_dir: Path, *, answer: DemoGovernedAnswer
-    ) -> object:
-        """The publication commands, when the deployment named a Superset to publish to."""
+        self, state_dir: Path, *, answer: DemoGovernedAnswer, managed: DemoManagedWarehouse | None
+    ) -> WorkflowDashboardPublicationCommands | None:
+        """The publication commands, when the deployment named a Superset to publish to.
+
+        The dataset connection is recorded here, before any publication can be attempted, and only
+        on the managed path. It cites the warehouse binding warehouse-control holds, which is the
+        one thing the other path cannot produce: ADR-0003 keeps a warehouse that service never
+        provisioned out of scope, so a database it never saw has no binding to cite. Recording one
+        anyway would make the connection authority a rubber stamp -- bi-control carries that
+        citation and verifies none of it -- so the other path records nothing and its publication
+        fails as an unavailable authority, which is the truth about it.
+        """
         signing_key = resolve_dashboard_contract_key(state_dir)
         # Opened here rather than inside `compose_publisher`, so the console closes it: a store
         # the composition owns privately would outlive every caller able to close it.
@@ -439,6 +455,14 @@ class DemoConsole:
                 )
             )
         )
+        if managed is not None:
+            record_demo_dashboard_connection(
+                connections,
+                query_bindings=self._stores.query_bindings,
+                product_ref=answer.preparation.product_ref,
+                generation=answer.preparation.generation,
+                warehouse_binding=managed.binding,
+            )
         return self._closing.enter_context(
             demo_dashboard_publication(
                 os.environ,
