@@ -206,6 +206,7 @@ def test_fresh_request_reaches_a_live_dashboard_and_revocation_hides_it_immediat
                         as_of=now - timedelta(minutes=5),
                         freshness_disposition="current",
                         delivered_at=now - timedelta(minutes=1),
+                        result_expires_at=now + timedelta(hours=1),
                     ),
                     dataset_product_ref=grant.data_product_version_ref,
                     dataset_generation=1,

@@ -36,6 +36,24 @@ All notable changes to Heinzel are recorded here. The format follows
   quickstart README and `docs/demonstration-gaps.md` state that posture and what is proved about
   this path -- the Compose operations and their order, and the classification of a failure at
   each of them -- as against what is not, which is the live provisioning itself.
+- A publication workflow in bi-control, implementing
+  [ADR-0010](docs/architecture/decisions/ADR-0010-dashboard-publication-lifecycle.md). A
+  publication is now declared as a durable intent, and the intent carries the expiry of the result
+  snapshot its answer was read from -- taken from the answer authority when the intent is declared,
+  not stated by the caller, so a caller cannot grant itself a window the retention never allowed.
+  `DashboardPublicationWorkflow` drives that intent to one settled outcome: published, expired, or
+  failed. Past the deadline it settles as expired and the BI provider is never reached, because a
+  dashboard compiled from a snapshot that can no longer be read back could not produce its own
+  evidence. A failure is classified on the publication record and leaves the intent pending only
+  where its cause can clear, so the snapshot's retention is the whole budget for publishing and for
+  every retry; an ambiguous provider outcome is deliberately terminal, since the dashboard may
+  already exist externally. Re-declaring one intent returns the first record rather than extending
+  its window, and a publication that fails leaves the answer it came from delivered and readable.
+  Nothing yet declares an intent: the console has no publication surface and the demonstration still
+  has no Superset to publish to.
+- `DashboardAnswerAuthority` carries `result_expires_at`, the expiry of the result snapshot the
+  answer was read from, so a publication deadline comes from the same evidence the answer did. Its
+  schema version is `3`.
 - A constrained question builder. A stakeholder question now carries the governed terms it was
   composed from -- an approved metric and at least one approved dimension, as
   `QuestionTermSelection` -- and the demonstration's interpreter resolves that selection instead

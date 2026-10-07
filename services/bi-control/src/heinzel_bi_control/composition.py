@@ -33,6 +33,15 @@ class DashboardCompositionError(RuntimeError):
     pass
 
 
+class DashboardAuthorityUnavailable(DashboardCompositionError):
+    """An authority this publication depends on answered nothing.
+
+    Separate from the invalid case because the two refusals have different futures: evidence that
+    failed verification will fail it again, while an authority that answered nothing may answer on a
+    later attempt. A publication workflow classifies retries on that difference.
+    """
+
+
 class DashboardNoValidPlan(DashboardCompositionError):
     pass
 
@@ -117,7 +126,7 @@ class DashboardCompositionService:
         except DashboardContractAuthorityError as error:
             raise DashboardCompositionError("dashboard contract authority is invalid") from error
         if signed is None:
-            raise DashboardCompositionError("dashboard contract authority is unavailable")
+            raise DashboardAuthorityUnavailable("dashboard contract authority is unavailable")
         try:
             contract = self._contract_verifier.verify(signed)
         except InvalidDashboardContract as error:
@@ -202,7 +211,7 @@ class DashboardCompositionService:
         except GovernedAnswerVerificationError as error:
             raise DashboardCompositionError("dashboard answer authority is invalid") from error
         if raw is None:
-            raise DashboardCompositionError("dashboard answer authority is unavailable")
+            raise DashboardAuthorityUnavailable("dashboard answer authority is unavailable")
         try:
             answer = DashboardAnswerAuthority.model_validate(
                 raw.model_dump(mode="python"), strict=True
@@ -229,7 +238,7 @@ class DashboardCompositionService:
                 "dashboard query binding authority is invalid"
             ) from error
         if raw is None:
-            raise DashboardCompositionError("dashboard query binding authority is unavailable")
+            raise DashboardAuthorityUnavailable("dashboard query binding authority is unavailable")
         try:
             return ApprovedProductQueryBinding.model_validate(
                 raw.model_dump(mode="python"), strict=True
@@ -254,7 +263,9 @@ class DashboardCompositionService:
                 "dashboard materialization authority is invalid"
             ) from error
         if raw is None:
-            raise DashboardCompositionError("dashboard materialization authority is unavailable")
+            raise DashboardAuthorityUnavailable(
+                "dashboard materialization authority is unavailable"
+            )
         try:
             return ProductMaterializationReceipt.model_validate(
                 raw.model_dump(mode="python"), strict=True
@@ -276,7 +287,7 @@ class DashboardCompositionService:
         except DashboardConnectionAuthorityError as error:
             raise DashboardCompositionError("dashboard connection authority is invalid") from error
         if raw is None:
-            raise DashboardCompositionError("dashboard connection authority is unavailable")
+            raise DashboardAuthorityUnavailable("dashboard connection authority is unavailable")
         try:
             return DashboardDatasetConnectionBinding.model_validate(
                 raw.model_dump(mode="python"), strict=True
@@ -296,7 +307,7 @@ class DashboardCompositionService:
                 "dashboard product publication authority is invalid"
             ) from error
         if raw is None:
-            raise DashboardCompositionError(
+            raise DashboardAuthorityUnavailable(
                 "dashboard product publication authority is unavailable"
             )
         try:

@@ -316,3 +316,172 @@ class DashboardProviderReceipt(_BiControlModel):
         if value.tzinfo is None or value.utcoffset() != timedelta(0):
             raise ValueError("applied_at must be timezone-aware UTC")
         return value.astimezone(UTC)
+
+
+type DashboardPublicationState = Literal["pending", "published", "expired", "failed"]
+type DashboardPublicationAttemptOutcome = Literal["published", "expired", "failed"]
+type DashboardPublicationFailureCode = Literal[
+    "authority_unavailable",
+    "authority_invalid",
+    "no_valid_plan",
+    "stale_revision",
+    "provider_unavailable",
+    "provider_ambiguous",
+    "provider_rejected",
+]
+
+#
+# Only a failure whose cause can plausibly clear on its own is retried. An ambiguous provider
+# outcome is deliberately not retryable: the external effect may already have landed, and nothing
+# in the receipt distinguishes that from a call that never arrived, so resolving it is an operator's
+# decision rather than this workflow's.
+_RETRYABLE_FAILURE_CODES: frozenset[str] = frozenset(
+    {"authority_unavailable", "provider_unavailable"}
+)
+
+
+class DashboardPublicationIntent(_BiControlModel):
+    schema_version: Literal["1"] = "1"
+    intent_id: str = Field(min_length=1, max_length=256)
+    tenant_id: str = Field(min_length=1)
+    dashboard_id: DashboardId
+    dashboard_version: PositiveInt
+    request_id: str = Field(min_length=1)
+    answer_id: str = Field(min_length=1)
+    expected_revision: PositiveInt
+    command_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    result_expires_at: datetime
+    declared_at: datetime
+
+    @field_validator("result_expires_at", "declared_at")
+    @classmethod
+    def timestamps_are_utc(cls, value: datetime, info: object) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError(f"{getattr(info, 'field_name', 'timestamp')} must be UTC")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def deadline_follows_declaration(self) -> Self:
+        #
+        # An intent declared at or after its deadline could never run, and declaring one would
+        # record a publication that was expired before it existed. The deadline is the source
+        # snapshot's expiry, which the answer authority only projects while the snapshot is still
+        # readable, so a well-formed declaration always has a future deadline.
+        if self.result_expires_at <= self.declared_at:
+            raise ValueError("publication deadline must follow its declaration")
+        return self
+
+    @property
+    def intent_digest(self) -> str:
+        return digest(self)
+
+    def publish_command(self) -> PublishDashboardCommand:
+        return PublishDashboardCommand(
+            tenant_id=self.tenant_id,
+            dashboard_id=self.dashboard_id,
+            dashboard_version=self.dashboard_version,
+            request_id=self.request_id,
+            answer_id=self.answer_id,
+            expected_revision=self.expected_revision,
+        )
+
+
+class DeclareDashboardPublicationCommand(_BiControlModel):
+    """Ask for a dashboard to be published from a delivered answer.
+
+    The command deliberately carries no deadline. The window to publish is the source snapshot's
+    retention, which is read from the answer authority when the intent is declared; letting a caller
+    state it would let the caller grant itself a window the retention never allowed.
+    """
+
+    schema_version: Literal["1"] = "1"
+    intent_id: str = Field(min_length=1, max_length=256)
+    tenant_id: str = Field(min_length=1)
+    dashboard_id: DashboardId
+    dashboard_version: PositiveInt
+    request_id: str = Field(min_length=1)
+    answer_id: str = Field(min_length=1)
+    expected_revision: PositiveInt
+
+
+class DashboardPublicationAttempt(_BiControlModel):
+    schema_version: Literal["1"] = "1"
+    intent_id: str = Field(min_length=1, max_length=256)
+    intent_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    attempt: PositiveInt
+    outcome: DashboardPublicationAttemptOutcome
+    failure_code: DashboardPublicationFailureCode | None = None
+    dashboard_revision: PositiveInt | None = None
+    desired_digest: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    observed_at: datetime
+
+    @field_validator("observed_at")
+    @classmethod
+    def observed_at_is_utc(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() != timedelta(0):
+            raise ValueError("observed_at must be timezone-aware UTC")
+        return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def outcome_carries_its_own_evidence(self) -> Self:
+        if (self.dashboard_revision is None) != (self.desired_digest is None):
+            raise ValueError("an applied attempt records both its revision and desired digest")
+        applied = self.dashboard_revision is not None
+        if self.outcome == "published":
+            if self.failure_code is not None:
+                raise ValueError("a published attempt records no failure code")
+            if not applied:
+                raise ValueError("a published attempt records the revision it applied")
+            return self
+        if applied:
+            raise ValueError("only a published attempt records an applied revision")
+        if self.outcome == "failed":
+            if self.failure_code is None:
+                raise ValueError("a failed attempt records its failure code")
+            return self
+        if self.failure_code is not None:
+            raise ValueError("an expired attempt records no failure code")
+        return self
+
+    @property
+    def retryable(self) -> bool:
+        return self.failure_code in _RETRYABLE_FAILURE_CODES
+
+
+class DashboardPublicationRecord(_BiControlModel):
+    schema_version: Literal["1"] = "1"
+    intent: DashboardPublicationIntent
+    state: DashboardPublicationState
+    attempts: tuple[DashboardPublicationAttempt, ...] = ()
+
+    @model_validator(mode="after")
+    def state_matches_its_attempts(self) -> Self:
+        for position, attempt in enumerate(self.attempts, start=1):
+            if attempt.attempt != position:
+                raise ValueError("publication attempts must be contiguous from one")
+            if (
+                attempt.intent_id != self.intent.intent_id
+                or attempt.intent_digest != self.intent.intent_digest
+            ):
+                raise ValueError("publication attempt does not belong to its intent")
+        for attempt in self.attempts[:-1]:
+            #
+            # Only a failure that could clear is followed by a further attempt. Any other outcome
+            # settles the publication, so finding one mid-history means the record is not the
+            # history of one publication.
+            if attempt.outcome != "failed" or not attempt.retryable:
+                raise ValueError("only a retryable failure is followed by a further attempt")
+        last = self.attempts[-1] if self.attempts else None
+        if self.state == "pending":
+            if last is not None and not (last.outcome == "failed" and last.retryable):
+                raise ValueError("a pending publication's last attempt is a retryable failure")
+            return self
+        if last is None:
+            raise ValueError("a settled publication records the attempt that settled it")
+        if self.state == "failed":
+            if last.outcome != "failed" or last.retryable:
+                raise ValueError("a failed publication ends on a terminal failure")
+            return self
+        if last.outcome != self.state:
+            raise ValueError("publication state does not match its last attempt")
+        return self

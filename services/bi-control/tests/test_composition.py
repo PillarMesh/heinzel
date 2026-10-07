@@ -16,10 +16,14 @@ from heinzel_bi_control import (
     DashboardDatasetConnectionBinding,
     DashboardNoValidPlan,
     DashboardProductGenerationReference,
+    DashboardPublicationRecord,
+    DashboardPublicationWorkflow,
     DashboardStaleRevision,
+    DeclareDashboardPublicationCommand,
     PublishDashboardCommand,
     SQLiteDashboardConnectionRepository,
     SQLiteDashboardContractRepository,
+    SQLiteDashboardPublicationRepository,
     SQLiteDashboardRepository,
 )
 from heinzel_contract_model import (
@@ -380,6 +384,7 @@ def _fixture(
         as_of=answer_as_of,
         freshness_disposition=freshness_disposition,
         delivered_at=NOW - timedelta(minutes=1),
+        result_expires_at=NOW + timedelta(hours=1),
     )
     connection = DashboardDatasetConnectionBinding(
         tenant_id="tenant-a",
@@ -940,3 +945,85 @@ def test_stale_or_cross_tenant_request_authority_prevents_provider_effect(
         service.publish(command)
 
     assert provider.definitions == []
+
+
+class _MovableClock:
+    def __init__(self, now: datetime) -> None:
+        self.now = now
+
+    def __call__(self) -> datetime:
+        return self.now
+
+
+def _declared_workflow(
+    *, workflow_clock: _MovableClock
+) -> tuple[DashboardPublicationWorkflow, _Provider, DashboardPublicationRecord]:
+    service, provider, command, authority = _fixture()
+    answer = authority["answer"]
+    assert isinstance(answer, DashboardAnswerAuthority)
+    workflow = DashboardPublicationWorkflow(
+        repository=SQLiteDashboardPublicationRepository(":memory:"),
+        composition=service,
+        answers=_AnswerReader(answer),
+        clock=workflow_clock,
+    )
+    record = workflow.declare(
+        DeclareDashboardPublicationCommand(
+            intent_id="intent-1",
+            tenant_id=command.tenant_id,
+            dashboard_id=command.dashboard_id,
+            dashboard_version=command.dashboard_version,
+            request_id=command.request_id,
+            answer_id=command.answer_id,
+            expected_revision=command.expected_revision,
+        )
+    )
+    return workflow, provider, record
+
+
+def test_a_declared_intent_drives_the_real_composition_to_one_durable_publication() -> None:
+    workflow, provider, declared = _declared_workflow(workflow_clock=_MovableClock(NOW))
+    assert declared.intent.result_expires_at == NOW + timedelta(hours=1)
+
+    record = workflow.advance(tenant_id="tenant-a", intent_id="intent-1")
+
+    assert record.state == "published"
+    assert len(provider.definitions) == 1
+    applied = provider.definitions[0]
+    assert record.attempts[-1].dashboard_revision == applied.revision
+    assert record.attempts[-1].desired_digest == applied.desired_digest
+
+
+def test_an_intent_past_its_snapshot_window_never_reaches_the_real_bi_provider() -> None:
+    clock = _MovableClock(NOW)
+    workflow, provider, declared = _declared_workflow(workflow_clock=clock)
+
+    clock.now = declared.intent.result_expires_at
+    record = workflow.advance(tenant_id="tenant-a", intent_id="intent-1")
+
+    assert record.state == "expired"
+    assert provider.definitions == []
+
+
+def test_a_second_intent_publishes_the_next_revision_over_the_same_contract() -> None:
+    clock = _MovableClock(NOW)
+    workflow, provider, _ = _declared_workflow(workflow_clock=clock)
+    first = workflow.advance(tenant_id="tenant-a", intent_id="intent-1")
+    assert first.attempts[-1].dashboard_revision == 1
+
+    workflow.declare(
+        DeclareDashboardPublicationCommand(
+            intent_id="intent-2",
+            tenant_id="tenant-a",
+            dashboard_id="dashboard:revenue",
+            dashboard_version=1,
+            request_id="request-1",
+            answer_id="answer-1",
+            expected_revision=2,
+        )
+    )
+    second = workflow.advance(tenant_id="tenant-a", intent_id="intent-2")
+
+    assert second.state == "published"
+    assert second.attempts[-1].dashboard_revision == 2
+    assert [definition.revision for definition in provider.definitions] == [1, 2]

@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
 
 from heinzel_contract_model import ArtifactModel, ArtifactReference
-from pydantic import ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator, model_validator
 
 from .answer_delivery import (
     AnswerAdmissionReader,
@@ -22,7 +22,7 @@ DashboardProductGenerationReference = AnswerProductGenerationReference
 class DashboardAnswerAuthority(ArtifactModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     tenant_id: str = Field(min_length=1)
     request_id: str = Field(min_length=1)
     request_revision: int = Field(ge=1)
@@ -36,14 +36,26 @@ class DashboardAnswerAuthority(ArtifactModel):
     as_of: datetime
     freshness_disposition: Literal["current", "stale", "unknown", "not_applicable"]
     delivered_at: datetime
+    result_expires_at: datetime
 
-    @field_validator("as_of", "delivered_at")
+    @field_validator("as_of", "delivered_at", "result_expires_at")
     @classmethod
     def timestamp_is_utc(cls, value: datetime, info: object) -> datetime:
         if value.tzinfo is None or value.utcoffset() != timedelta(0):
             field_name = getattr(info, "field_name", "timestamp")
             raise ValueError(f"{field_name} must be timezone-aware UTC")
         return value.astimezone(UTC)
+
+    @model_validator(mode="after")
+    def result_outlives_its_delivery(self) -> DashboardAnswerAuthority:
+        #
+        # The reader only projects an authority while the result snapshot is still readable, so an
+        # authority whose evidence expired at or before delivery could never have been produced.
+        # Publication deadlines are taken from this field, so the invariant is enforced here rather
+        # than left to the one reader that happens to establish it.
+        if self.result_expires_at <= self.delivered_at:
+            raise ValueError("result_expires_at must follow delivered_at")
+        return self
 
 
 class DashboardRequestReader(Protocol):
@@ -175,6 +187,7 @@ class RequestManagementDashboardAnswerAuthorityReader:
             as_of=answer.as_of,
             freshness_disposition=answer.freshness_disposition,
             delivered_at=answer.delivered_at,
+            result_expires_at=snapshot.expires_at,
         )
 
     @staticmethod

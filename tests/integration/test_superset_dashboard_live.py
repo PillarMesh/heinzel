@@ -107,6 +107,7 @@ def _admitted_desired(
         as_of=NOW - timedelta(minutes=5),
         freshness_disposition="current",
         delivered_at=NOW - timedelta(minutes=1),
+        result_expires_at=NOW + timedelta(hours=1),
     )
     return DashboardDesiredState(
         tenant_id=tenant_id,

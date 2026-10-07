@@ -674,6 +674,7 @@ def test_requester_dashboard_disappears_after_authoritative_access_revocation(
                     as_of=_NOW,
                     freshness_disposition="current",
                     delivered_at=_NOW,
+                    result_expires_at=_NOW + timedelta(hours=1),
                 ),
                 dataset_product_ref=grant.data_product_version_ref,
                 dataset_generation=1,

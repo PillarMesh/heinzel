@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
 
@@ -80,6 +80,7 @@ def _desired(**updates: object) -> DashboardDesiredState:
             as_of=NOW,
             freshness_disposition="current",
             delivered_at=NOW,
+            result_expires_at=NOW + timedelta(hours=1),
         ),
         "dataset_product_ref": product_ref,
         "dataset_generation": 7,

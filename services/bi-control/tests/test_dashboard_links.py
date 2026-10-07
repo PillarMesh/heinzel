@@ -123,6 +123,7 @@ def _desired(
                 as_of=NOW,
                 freshness_disposition="current",
                 delivered_at=NOW,
+                result_expires_at=NOW + timedelta(hours=1),
             ),
             "dataset_product_ref": PRODUCT_REF,
             "dataset_generation": 7,

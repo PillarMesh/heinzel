@@ -226,6 +226,7 @@ def test_current_delivered_answer_projects_only_dashboard_authority() -> None:
         as_of=NOW - timedelta(minutes=5),
         freshness_disposition="current",
         delivered_at=NOW - timedelta(minutes=1),
+        result_expires_at=NOW + timedelta(hours=1),
     )
     assert "statement" not in authority.model_dump()
     assert "plan_digest" not in authority.model_dump()
