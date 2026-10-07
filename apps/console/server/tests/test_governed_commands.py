@@ -1801,6 +1801,141 @@ def test_only_one_exact_approval_is_shown_as_recorded(
     assert detail.proposal.required_approvals[0].satisfied is (field == "valid")
 
 
+def _advance(stack: _Stack, request: InboxRequest, *states: RequestState) -> InboxRequest:
+    """Move a request through the owning service, so its real transitions are recorded."""
+    moved = request
+    for state in states:
+        moved = stack.requests.transition(
+            request.tenant_id,
+            request.request_id,
+            state,
+            actor_id=_ARCHITECT,
+            expected_revision=moved.revision,
+        )
+    return moved
+
+
+def _recorded_approvals(
+    proposal: FulfillmentProposal, *, request_revision: int
+) -> tuple[FulfillmentApprovalBinding, ...]:
+    return tuple(
+        FulfillmentApprovalBinding(
+            approval_id=f"apr-0000000000000000000{index}-" + "b" * 24,
+            tenant_id=proposal.tenant_id,
+            request_id=proposal.request_id,
+            request_revision=request_revision,
+            proposal_id=proposal.proposal_id,
+            proposal_revision=proposal.revision,
+            proposal_digest=digest(proposal),
+            subject_digest=requirement.subject_digest,
+            actor_id=(
+                _ARCHITECT if requirement.authority_ref == _ARCHITECT_PRINCIPAL else _REQUESTER
+            ),
+            authority_ref=requirement.authority_ref,
+            decision="approve",
+            created_at=_FIXED_TIME,
+        )
+        for index, requirement in enumerate(proposal.required_approvals, start=1)
+    )
+
+
+def test_the_approvals_an_admission_consumed_stay_recorded_once_it_advances_the_revision(
+    stack: _Stack,
+) -> None:
+    """The panel reports the approvals the admission was taken on, not the current revision.
+
+    The governed-answer admission records no `FulfillmentAdmissionReceipt`, so there is
+    no `source_request_revision` to match the approvals against, and matching them
+    against the request's current revision reported `0 of 2` for a request whose
+    admission required both: admission itself advances the revision past the one the
+    approvals were given against, and execution and delivery advance it twice more.
+
+    The revision the admission was taken from is read from the request's own lifecycle
+    instead - the transition out of `awaiting_approval` is written in the same
+    transaction as the admission that caused it.
+    """
+    request = _question(stack)
+    awaiting = _advance(
+        stack,
+        request,
+        RequestState.INVESTIGATING,
+        RequestState.PROPOSED,
+        RequestState.AWAITING_APPROVAL,
+    )
+    statement = _statement(awaiting)
+    proposal = _proposal(awaiting, statement)
+    approvals = _recorded_approvals(proposal, request_revision=awaiting.revision)
+    delivered = _advance(
+        stack,
+        awaiting,
+        RequestState.EXECUTING,
+        RequestState.VERIFYING,
+        RequestState.DELIVERED,
+    )
+    views = _StaticFulfillmentViews(request=delivered, statement=statement)
+    views.proposal = proposal
+    views.approvals = approvals
+
+    detail = stack.backend(fulfillment=views).get_request_detail(
+        _architect_context(), request.request_id
+    )
+
+    assert (awaiting.revision, delivered.revision) == (4, 7)
+    assert len(approvals) == 2
+    assert detail.proposal is not None
+    assert detail.evidence.authorization_summary == (
+        "2 of 2 required approval(s) are recorded for this proposal."
+    )
+    assert all(item.satisfied for item in detail.proposal.required_approvals)
+
+
+def test_approvals_the_admission_could_not_have_consumed_are_never_reported_as_recorded(
+    stack: _Stack,
+) -> None:
+    """A revision bump between the approvals and the admission withdraws them.
+
+    The admission is then taken from a revision no approval stands at, and the panel
+    has to say so. Falling back to the newest approval's own revision instead would
+    report every withdrawn approval as recorded, which is the case
+    `test_a_revision_bump_after_the_approvals_withdraws_the_offered_admission` exists
+    to catch.
+    """
+    request = _question(stack)
+    awaiting = _advance(
+        stack,
+        request,
+        RequestState.INVESTIGATING,
+        RequestState.PROPOSED,
+        RequestState.AWAITING_APPROVAL,
+    )
+    statement = _statement(awaiting)
+    proposal = _proposal(awaiting, statement)
+    approvals = _recorded_approvals(proposal, request_revision=awaiting.revision)
+    stack.requests.append_conversation(
+        request.tenant_id,
+        request.request_id,
+        _ARCHITECT,
+        "One more note before admission.",
+        expected_revision=awaiting.revision,
+    )
+    bumped = stack.requests.get(request.tenant_id, request.request_id)
+    executing = _advance(stack, bumped, RequestState.EXECUTING)
+    views = _StaticFulfillmentViews(request=executing, statement=statement)
+    views.proposal = proposal
+    views.approvals = approvals
+
+    detail = stack.backend(fulfillment=views).get_request_detail(
+        _architect_context(), request.request_id
+    )
+
+    assert bumped.revision == awaiting.revision + 1
+    assert detail.proposal is not None
+    assert not any(item.satisfied for item in detail.proposal.required_approvals)
+    assert detail.evidence.authorization_summary == (
+        "0 of 2 required approval(s) are recorded for this proposal."
+    )
+
+
 def test_preparation_without_an_owning_adapter_is_explicitly_unavailable(stack: _Stack) -> None:
     backend = stack.backend()
     with pytest.raises(ConsoleUnavailable) as failure:

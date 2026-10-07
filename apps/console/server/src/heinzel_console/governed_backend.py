@@ -43,6 +43,7 @@ from heinzel_request_management import (
     ProductIntentNoValidPlan,
     RequestState,
     ReviewerRequestView,
+    TransitionEvent,
 )
 from heinzel_request_management import RequesterRequestView as ServiceRequesterRequestView
 from heinzel_request_management.fulfillment_models import (
@@ -3319,7 +3320,7 @@ class GovernedConsoleBackend:
             revision=request.revision,
             proposal_digest=reviewed_proposal_digest,
             proposal=self._proposal_view(
-                view, lambda authority_ref: self._authority_label(view, authority_ref)
+                view, history, lambda authority_ref: self._authority_label(view, authority_ref)
             ),
             conversation=self._conversation_view(
                 request, self._conversation_entries(context, request.request_id)
@@ -3336,7 +3337,7 @@ class GovernedConsoleBackend:
                 )
                 for event in history
             ),
-            evidence=self._evidence_context(view),
+            evidence=self._evidence_context(view, history),
             available_actions=(
                 ("approve", "reject", "request_changes")
                 if request.state is RequestState.AWAITING_APPROVAL
@@ -3472,8 +3473,42 @@ class GovernedConsoleBackend:
         )
 
     @staticmethod
+    def _admitted_from_revision(history: tuple[TransitionEvent, ...]) -> int | None:
+        """The revision an admission was taken from, read from the request's lifecycle.
+
+        `None` until the request has left `awaiting_approval` for `executing`.
+
+        The governed-answer admission records no `FulfillmentAdmissionReceipt`, so on
+        that path there is no `source_request_revision` to match the approvals against.
+        Falling back to the request's current revision reported none recorded for a
+        request whose admission required all of them, because admission itself advances
+        the revision past the one the approvals were given against.
+
+        The transition is written in the same transaction as the admission that caused
+        it, and `TransitionEvent.request_revision` is the revision that transaction
+        produced, so the revision it was taken from is the one before it. Which is the
+        revision every approval had to stand at for the admission to be offered.
+
+        Reading it from the transition rather than from the approvals is what keeps a
+        withdrawn approval withdrawn. A revision bump after the approvals leaves the
+        request in `awaiting_approval` with no such transition, so the count falls back
+        to the current revision and reports none recorded - the case
+        `test_a_revision_bump_after_the_approvals_withdraws_the_offered_admission`
+        exists to catch.
+        """
+        admitted = tuple(
+            event.request_revision
+            for event in history
+            if event.from_state is RequestState.AWAITING_APPROVAL
+            and event.to_state is RequestState.EXECUTING
+        )
+        return None if not admitted else max(admitted) - 1
+
+    @classmethod
     def _approval_views(
+        cls,
         view: ArchitectRequestView,
+        history: tuple[TransitionEvent, ...],
         label_for: Callable[[str], str | None] = lambda _: None,
     ) -> tuple[ProposalApprovalView, ...]:
         if not view.proposals:
@@ -3496,9 +3531,13 @@ class GovernedConsoleBackend:
             ),
             None,
         )
-        approval_revision = (
-            view.request.revision if disposition is None else disposition.source_request_revision
-        )
+        admitted_from = cls._admitted_from_revision(history)
+        if disposition is not None:
+            approval_revision = disposition.source_request_revision
+        elif admitted_from is not None:
+            approval_revision = admitted_from
+        else:
+            approval_revision = view.request.revision
         return tuple(
             ProposalApprovalView(
                 authority_ref=requirement.authority_ref,
@@ -3527,13 +3566,14 @@ class GovernedConsoleBackend:
     def _proposal_view(
         cls,
         view: ArchitectRequestView,
+        history: tuple[TransitionEvent, ...],
         label_for: Callable[[str], str | None] = lambda _: None,
     ) -> RequestProposalView | None:
         if not view.proposals:
             return None
         proposal = view.proposals[-1]
-        approvals = cls._approval_views(view, label_for)
-        evidence = cls._evidence_context(view)
+        approvals = cls._approval_views(view, history, label_for)
+        evidence = cls._evidence_context(view, history)
         subject = proposal.subject
         if isinstance(subject, StakeholderAnswerDraft):
             return StakeholderAnswerProposalView(
@@ -3640,7 +3680,9 @@ class GovernedConsoleBackend:
         )
 
     @classmethod
-    def _evidence_context(cls, view: ArchitectRequestView) -> EvidenceContextView:
+    def _evidence_context(
+        cls, view: ArchitectRequestView, history: tuple[TransitionEvent, ...]
+    ) -> EvidenceContextView:
         proposal = view.proposals[-1] if view.proposals else None
         freshness: FreshnessState = "unknown"
         as_of = None
@@ -3690,7 +3732,8 @@ class GovernedConsoleBackend:
             quality_summary=quality_summary,
             lineage_summary=lineage_summary,
             authorization_summary=(
-                f"{sum(item.satisfied for item in cls._approval_views(view))} of {required} "
+                f"{sum(item.satisfied for item in cls._approval_views(view, history))} "
+                f"of {required} "
                 "required approval(s) are recorded for this proposal."
             ),
             evidence_refs=tuple(receipt.evidence_id for receipt in view.evidence),

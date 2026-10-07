@@ -146,24 +146,36 @@ This stage works end to end and is the strongest part of the demonstration. What
 | The query estimator returns no estimate by design, because PostgreSQL's planner rows and width cannot conservatively represent bytes scanned. No pre-execution cost gate can fire; the scan bound comes from the relation's measured size. | Unbuilt | `PostgreSQLQueryEstimator.estimate` in `providers/postgresql/src/heinzel_provider_postgresql/query_estimator.py` |
 | The answer scope policy carries no disclosure classifications although the contract classifies the product `commercial`, so no disclosure control over classified data is shown. | Unbuilt | [quickstart README](../deploy/quickstart/README.md) |
 | No test raises an incident from a real failure and recovers it. | Unbuilt | [status.md](status.md) |
-| After admission the evidence panel reports `0 of 2 required approval(s) are recorded`, although both were recorded and both were checked. Measured on a live console: `2 of 2` at revision 4, `0 of 2` at revision 7. | Unbuilt | `_approval_views` in `governed_backend.py`; `source_request_revision=expected_revision` in `services/request-management/src/heinzel_request_management/fulfillment_service.py` |
+| ~~After admission the evidence panel reports `0 of 2 required approval(s) are recorded`, although both were recorded and both were checked.~~ Closed in the projection, which now matches the approvals against the revision the admission was taken from rather than against the request's current one. Proved at the console projection over a real request lifecycle, not re-measured on a live console. | Delivered | `_admitted_from_revision` and `_approval_views` in `governed_backend.py`; `test_the_approvals_an_admission_consumed_stay_recorded_once_it_advances_the_revision` in `apps/console/server/tests/test_governed_commands.py` |
 | Data access requests are refused at intake, because grant application, expiry and revocation are not delivered. | Unbuilt | `data_access_intake_available=False` in `demo/console.py` |
 
-The approval count is worth separating from the rest, because the mechanism under it is correct and
-the display is not. An approval is bound to the request revision it was given against, so any change
-to the request withdraws it and the offered admission with it. That is pinned by
+The approval count was worth separating from the rest, because the mechanism under it was correct
+and the display was not. An approval is bound to the request revision it was given against, so any
+change to the request withdraws it and the offered admission with it. That is pinned by
 `test_a_revision_bump_after_the_approvals_withdraws_the_offered_admission` in the
 [console governed journey](../tests/end-to-end/test_console_governed_journey.py), and it is the
 property that stops an approval outliving what it approved.
 
 Admission itself advances the revision. On the fulfillment path the admission receipt carries
 `source_request_revision`, which pins the match back to the revision the approvals were given
-against, and the count survives. The answer path records no such receipt, so the match falls back
-to the request's current revision and no approval carries it. The panel then reports none recorded
-for a request whose admission required all of them.
+against, and the count survived. The answer path records no such receipt, so the match fell back to
+the request's current revision and no approval carried it. The panel then reported none recorded for
+a request whose admission required all of them -- `2 of 2` at revision 4, `0 of 2` at revision 7,
+where admission, execution and delivery account for the three revisions in between.
 
-The fix is the receipt, not the view. Matching instead on the revision a proposal was approved at
-would report approvals as satisfied in exactly the case the test above exists to catch.
+What the projection now matches against is not the approvals and not the receipt the answer path
+does not write, but the transition the admission wrote: a request leaves `awaiting_approval` for
+`executing` in the same transaction that records the admission, and `TransitionEvent` carries the
+revision that transaction produced, so the revision it was taken from is the one before it.
+Matching instead on the revision a proposal was approved at would report approvals as satisfied in
+exactly the case the test above exists to catch; this does not, because a revision bump after the
+approvals leaves the request in `awaiting_approval` with no such transition, and the count falls
+back to the current revision and reports none recorded. That case is pinned alongside the first by
+`test_approvals_the_admission_could_not_have_consumed_are_never_reported_as_recorded`.
+
+The missing fulfillment admission receipt is a gap in its own right and stays as the first row of
+this stage: nothing here re-checks an approver's standing authority or proposal drift. This closes
+the count, not the admission.
 
 ## 6. Present a dashboard
 
