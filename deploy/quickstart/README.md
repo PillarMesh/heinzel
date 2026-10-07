@@ -138,6 +138,14 @@ console. Without it the console publishes nothing for Superset to copy and repor
 publication as not delivered, rather than publishing a dashboard whose every query would be
 refused -- a refusal that would arrive at whoever opened it.
 
+Discard Superset's own volume whenever you discard the state directory, with
+`docker compose --profile dashboards down --volumes`. The two hold one demonstration between them:
+Superset keeps the dashboard a previous state directory published, and the provider refuses to
+overwrite a dashboard it cannot account for -- `Superset dashboard has an unrecognized external
+mutation`, which is the right answer about an object this console never created and the reason a
+second run otherwise fails. Discarding the state directory alone also leaves Superset holding the
+previous run's warehouse credential, and that one the provider does reconcile.
+
 That copy of a client key is readable by anything that can read the directory the console shares
 with Superset. It is the same compromise this demonstration already makes with Superset's own
 server key, it is a key minted per start by an authority minted per start, and it is why neither

@@ -135,7 +135,23 @@ class HttpSupersetClient:
                 },
             )
         else:
+            #
+            # The connection is reconciled, not adopted. Superset stores the connection string it
+            # was created with, and the credential behind it rotates: the one resolved for this
+            # apply is the one that works now, and the one Superset holds may be an earlier
+            # deployment's. Left alone, every query through this dashboard is refused while the
+            # dashboard itself reports as published -- drift nothing surfaces, because the receipt
+            # records an applied dashboard and not a connection that still authenticates.
+            #
+            # Written unconditionally because it cannot be compared: Superset masks the password on
+            # read, so a connection whose only change is the credential is indistinguishable from
+            # one that is current. A connection edited inside Superset is overwritten for the same
+            # reason this is a desired state at all -- what the governed definition names is what
+            # Superset must hold.
             database_id = _identifier(database)
+            self._update(
+                "database", database_id, {"sqlalchemy_uri": self._credentials.database_uri}
+            )
 
         dataset_metadata = _metadata(
             stable_key=definition.dataset_stable_key,

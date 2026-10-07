@@ -14,6 +14,7 @@ from heinzel_provider_superset import (
     SupersetCredentials,
     SupersetHttpResponse,
 )
+from heinzel_provider_superset.client import _database_key
 
 
 @dataclass
@@ -213,6 +214,11 @@ def _definition(**updates: object) -> BiDashboardDefinition:
     }
     values.update(updates)
     return BiDashboardDefinition.model_validate(values)
+
+
+def _stable_database_key() -> str:
+    """The name the client looks a database up by, derived as the client derives it."""
+    return _database_key(_definition())
 
 
 def _provider(api: _SupersetApi) -> tuple[CredentialScopedSupersetProvider, _Resolver]:
@@ -602,3 +608,48 @@ def test_credentials_have_a_redacted_representation() -> None:
 
     assert "service-user" not in repr(credentials)
     assert "database-password" not in repr(credentials)
+
+
+def test_an_existing_database_is_reconciled_to_the_credential_this_apply_resolved() -> None:
+    """Superset stores the connection it was created with, and the credential behind it rotates.
+
+    Left as it was, every query through the dashboard is refused while the dashboard itself reports
+    as published: the receipt records an applied dashboard, not a connection that still
+    authenticates, so nothing surfaces the drift.
+
+    Written rather than compared because Superset masks the password on read, which makes a
+    connection whose only change is the credential indistinguishable from a current one.
+    """
+    api = _SupersetApi()
+    definition = _definition()
+    stale = "postgresql://user:a-password-from-an-earlier-deployment@warehouse/db"
+    api.resources["database"].append(
+        _Resource(41, {"database_name": _stable_database_key(), "sqlalchemy_uri": stale})
+    )
+    provider, resolver = _provider(api)
+
+    provider.apply(definition)
+
+    assert [call[1] for call in api.calls if call[0] == "PUT"].count("/api/v1/database/41") == 1
+    assert api.resources["database"][0].payload["sqlalchemy_uri"] == (
+        resolver.credentials.database_uri
+    )
+    # Reconciled rather than duplicated: one database, still the one that was already there.
+    assert [call[1] for call in api.calls if call[0] == "POST"].count("/api/v1/database/") == 0
+    assert len(api.resources["database"]) == 1
+    assert api.resources["database"][0].resource_id == 41
+
+
+def test_a_database_that_is_created_is_not_then_written_again() -> None:
+    """The reconciliation is for a connection Superset already holds, not every apply.
+
+    A create already carries the current credential, so writing it a second time would be a
+    mutation that changes nothing -- and `POST` then `PUT` on one resource reads, in a Superset
+    audit log, as a connection that was corrected rather than one that was right.
+    """
+    api = _SupersetApi()
+    provider, _ = _provider(api)
+
+    provider.apply(_definition())
+
+    assert [call[1] for call in api.calls if call[0] == "PUT"].count("/api/v1/database/1") == 0
