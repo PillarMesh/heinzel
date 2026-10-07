@@ -47,8 +47,13 @@ RUN --mount=from=ghcr.io/astral-sh/uv:0.9.7@sha256:ba4857bf2a068e9bc0e64eed8563b
 # The bundle comes only from the web stage above; the host's own `dist` is excluded from the
 # build context, so nothing here can serve a stale local build.
 COPY --from=web /src/apps/console/dist /srv/console/dist
+# The second directory is where the console mints the TLS material the quickstart's optional
+# Superset serves. It is prepared here rather than only mounted, because a named volume inherits
+# its owner from the directory the image carries at that path: mounted anywhere the image has not
+# prepared, a fresh volume belongs to root and this unprivileged user cannot write it.
 RUN useradd --system --create-home --uid 10001 heinzel \
-  && mkdir -p /var/lib/heinzel && chown heinzel:heinzel /var/lib/heinzel
+  && mkdir -p /var/lib/heinzel /var/lib/heinzel-superset-tls \
+  && chown heinzel:heinzel /var/lib/heinzel /var/lib/heinzel-superset-tls
 USER heinzel
 # The origin is configuration, not something the server can derive from the `0.0.0.0` it binds
 # under `--container`: a command whose `Origin` header differs is refused `same_origin_required`,

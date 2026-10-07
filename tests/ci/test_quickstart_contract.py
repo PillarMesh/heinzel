@@ -167,9 +167,19 @@ def test_the_quickstart_publishes_on_loopback_only() -> None:
 
 def test_the_quickstart_keeps_state_in_a_named_volume() -> None:
     """Without the named volume `docker compose down -v` has nothing to remove, and the
-    demonstration cannot be reset without deleting the container's own layer."""
+    demonstration cannot be reset without deleting the container's own layer.
+
+    Both of the console's mounts, exactly: the state directory, and the TLS material it mints for
+    the optional Superset. Spelled as the whole list rather than as a membership test, so a third
+    mount nobody decided on is a failure here rather than something to notice in review. The
+    Superset mount's own requirements -- which volume, which direction, read by whom -- are
+    `tests/quickstart/test_compose_contract.py`'s.
+    """
     compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
-    assert compose["services"]["console"]["volumes"] == ["heinzel-state:/var/lib/heinzel"]
+    assert compose["services"]["console"]["volumes"] == [
+        "heinzel-state:/var/lib/heinzel",
+        "heinzel-superset-tls:/var/lib/heinzel-superset-tls",
+    ]
     assert "heinzel-state" in compose["volumes"]
 
 
@@ -298,6 +308,35 @@ def test_dependabot_watches_the_quickstart_images() -> None:
         )
 
 
+def test_every_directory_that_pins_a_base_image_is_watched() -> None:
+    """A Dockerfile Dependabot does not watch pins a digest no security update reaches.
+
+    Derived from where the Dockerfiles actually are rather than from a list written here, because
+    the list is what goes stale: moving a Dockerfile leaves the old directory watched and the new
+    one unwatched, and the digest silently stops being refreshed. That is exactly what happened
+    when the Superset image moved out of the emulator, and a membership test over a hardcoded path
+    did not notice.
+    """
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text(encoding="utf-8"))
+    watched = {
+        directory
+        for update in config["updates"]
+        if update["package-ecosystem"] == "docker"
+        for directory in update["directories"]
+    }
+    carrying_a_dockerfile = {
+        f"/{path.parent.relative_to(ROOT).as_posix()}"
+        for path in ROOT.glob("**/Dockerfile")
+        if ".git" not in path.parts and "node_modules" not in path.parts
+    }
+
+    assert carrying_a_dockerfile, "no Dockerfile was found, so this requirement proves nothing"
+    assert carrying_a_dockerfile <= watched, (
+        "these directories carry a Dockerfile that no Dependabot update reaches: "
+        f"{sorted(carrying_a_dockerfile - watched)}"
+    )
+
+
 _UNCOMPLETABLE = frozenset(
     {
         "version-update:semver-major",
@@ -398,11 +437,58 @@ def test_the_warehouse_is_never_published() -> None:
     assert "ports" not in _warehouse_service()
 
 
+# The only values a name that says password or secret may carry: nothing at all, a substitution of
+# a variable, one defaulting to empty, or one that refuses with a message. A substitution with any
+# other default -- `${PASSWORD:-hunter2}` -- is a committed credential wearing a substitution's
+# clothes, so it is not among them.
+_SECRET_FROM_THE_ENVIRONMENT = re.compile(r"\$\{[A-Z_][A-Z0-9_]*(?:|:-|:\?[^}]*)\}\Z")
+
+
+def _configured_environment(service: dict[str, object]) -> tuple[tuple[str, object], ...]:
+    """A service's environment as name and value pairs, in either spelling compose accepts.
+
+    A bare entry in the list spelling passes the variable through from the environment by name, and
+    so has no value here at all -- which is the strongest thing a compose file can say about a
+    secret, and is how the optional Superset's two are required.
+    """
+    declared = service.get("environment") or {}
+    if isinstance(declared, dict):
+        return tuple(declared.items())
+    assert isinstance(declared, list), declared
+    pairs: list[tuple[str, object]] = []
+    for entry in declared:
+        name, separator, value = str(entry).partition("=")
+        pairs.append((name, value if separator else None))
+    return tuple(pairs)
+
+
+def _carries_a_credential(key: str, value: object) -> bool:
+    if value is None or value == "":
+        return False
+    names_a_secret = "PASSWORD" in key.upper() or "SECRET" in key.upper()
+    if names_a_secret:
+        return not (
+            isinstance(value, str) and _SECRET_FROM_THE_ENVIRONMENT.fullmatch(value) is not None
+        )
+    # A DSN is configuration naming where to connect; it carries a credential only if somebody
+    # writes one into it, which is what this catches.
+    return (
+        isinstance(value, str)
+        and "://" in value
+        and "@" in value.split("://", 1)[1]
+        and ":" in value.split("://", 1)[1].split("@", 1)[0]
+    )
+
+
 def test_the_warehouse_holds_no_credential_in_version_control() -> None:
     """A password committed beside the console that uses it is a password in git forever.
 
     The configured values, not the file's text: the comments explain why there is no credential
     here, and a check over the text would be satisfied by deleting the explanation.
+
+    Every service, because the optional Superset's admin password and secret key are named here
+    too. Named is all they are: each is required from the environment and none has a value in this
+    file, which is what this reads rather than trusting the names.
     """
     environment = _warehouse_service()["environment"]
     assert isinstance(environment, dict)
@@ -413,17 +499,8 @@ def test_the_warehouse_holds_no_credential_in_version_control() -> None:
     secretish = tuple(
         f"{service_name}.{key}"
         for service_name, service in compose["services"].items()
-        for key, value in (service.get("environment") or {}).items()
-        if "PASSWORD" in key.upper()
-        or "SECRET" in key.upper()
-        # A DSN is configuration naming where to connect; it carries a credential only if
-        # somebody writes one into it, which is what this catches.
-        or (
-            isinstance(value, str)
-            and "://" in value
-            and "@" in value.split("://", 1)[1]
-            and ":" in value.split("://", 1)[1].split("@", 1)[0]
-        )
+        for key, value in _configured_environment(service)
+        if _carries_a_credential(key, value)
     )
     assert secretish == (), f"these carry or could carry a credential: {secretish}"
 
@@ -450,11 +527,21 @@ def test_the_console_is_given_the_warehouse_this_compose_runs() -> None:
     assert _warehouse_service()["environment"]["POSTGRES_DB"] == "heinzel"  # type: ignore[index]
 
 
-def test_both_volumes_are_named_so_one_command_discards_both() -> None:
+def test_every_volume_is_named_so_one_command_discards_them_all() -> None:
     """The console refuses to start when its state and its warehouse disagree, naming
-    `docker compose down -v` -- which removes nothing that is not a named volume."""
+    `docker compose down -v` -- which removes nothing that is not a named volume.
+
+    The two the optional Superset adds are named for the same reason: its metadata database and
+    the TLS material the console minted for it must be discarded with the demonstration's own
+    state, or the next start serves a certificate against an authority minted since.
+    """
     compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
-    assert set(compose["volumes"]) == {"heinzel-state", "heinzel-warehouse"}
+    assert set(compose["volumes"]) == {
+        "heinzel-state",
+        "heinzel-warehouse",
+        "heinzel-superset-home",
+        "heinzel-superset-tls",
+    }
     assert _warehouse_service()["volumes"] == ["heinzel-warehouse:/var/lib/postgresql/data"]
 
 

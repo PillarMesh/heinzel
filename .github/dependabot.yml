@@ -49,7 +49,10 @@ updates:
   - package-ecosystem: docker
     directories:
       - /deploy/quickstart
-      - /tests/emulators/superset
+      # The Superset image the quickstart's optional dashboards profile builds. It moved here
+      # from the emulator, which now builds this one rather than carrying its own, so this is
+      # the only place its base digest is pinned -- and the only directory that can refresh it.
+      - /deploy/quickstart/superset
     schedule:
       interval: weekly
     open-pull-requests-limit: 2

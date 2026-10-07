@@ -13,7 +13,47 @@
 # materializes the demonstration's product, which runs dbt and takes a little longer than the
 # starts after it.
 #
+# A third thing is optional and off: the Superset the demonstration can publish a certified
+# dashboard to, behind the `dashboards` profile. The command above creates neither of its services
+# and the demonstration is exactly what it was without them. The README beside this file has the
+# one command that starts it, the two secrets it requires, and what the image build costs.
+#
 # See the README beside this file for what the demonstration shows and where it stops.
+
+# The optional Superset, shared by the service that initializes it and the service that serves it.
+# Modelled on `tests/emulators/superset/compose.yaml`, which the live dashboard requirements
+# exercise against this same image and this same configuration file -- so what a reader starts here
+# is the artifact those tests prove, rather than a second spelling of it.
+x-superset: &superset
+  build:
+    context: superset
+    dockerfile: Dockerfile
+  # Both secrets are passed through from the environment rather than written here, because a
+  # secret committed beside the service that uses it is a secret in version control forever.
+  #
+  # Passed through by name, and deliberately not spelled `${VAR:?required}` as the emulator spells
+  # it: compose resolves every substitution when it loads this file, before it applies profiles, so
+  # that spelling makes the default `docker compose up` -- which creates neither of these services
+  # -- fail for want of a Superset secret. Unset, a passed-through variable reaches the container
+  # unset, and the commands below refuse on it by name before anything else runs.
+  environment:
+    - HEINZEL_SUPERSET_ADMIN_PASSWORD
+    - HEINZEL_SUPERSET_SECRET_KEY
+    - SUPERSET_CONFIG_PATH=/app/pythonpath/superset_config.py
+  mem_limit: 1536m
+  profiles:
+    - dashboards
+  volumes:
+    # Superset's own metadata database, which the initialization below creates and the server
+    # beside it reads. Removed by `--profile dashboards down -v`, which is how the README spells
+    # that command: a `down` that does not name the profile leaves these two containers running.
+    - heinzel-superset-home:/app/superset_home
+    # The configuration is the quickstart's own file, not a copy: it is what sets the secret key
+    # and the feature flags the dashboard provider needs.
+    - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+    # The TLS material the console mints, read-only, because Superset serves it and never writes
+    # it. The console's own mount of this volume is read-write, and is the only writer.
+    - heinzel-superset-tls:/heinzel-private:ro
 
 services:
   # The warehouse the demonstration provisions, acquires from, materializes into and answers
@@ -74,6 +114,21 @@ services:
       # console reports every answer capability as not delivered, which is the honest answer with
       # no warehouse to answer from.
       HEINZEL_DEMO_WAREHOUSE_DSN: "postgresql://postgres@warehouse:5432/heinzel"
+      # The optional Superset below, by the service name its certificate is minted for. Empty
+      # unless `HEINZEL_SUPERSET_ADMIN_PASSWORD` is set, which is the same variable those services
+      # require: the console is told about a Superset exactly when one can start, and a default
+      # `up` leaves all three of these empty and reports dashboard publication as not delivered,
+      # exactly as it did before this profile existed. Set the password without
+      # `--profile dashboards` and the console is told about a Superset that is not running, which
+      # is why the README gives one command that does both.
+      HEINZEL_DEMO_SUPERSET_BASE_URL: "${HEINZEL_SUPERSET_ADMIN_PASSWORD:+https://superset:8088}"
+      # Where the console mints the authority and server certificate Superset serves. Its own
+      # mount of that volume, below, not Superset's read-only one.
+      HEINZEL_DEMO_SUPERSET_TLS_DIRECTORY: "${HEINZEL_SUPERSET_ADMIN_PASSWORD:+/var/lib/heinzel-superset-tls}"
+      # The admin Superset's initialization creates, which is the only account the console has to
+      # reach it with. One variable, read here and by both services below, so the console cannot
+      # be given a password Superset was not created with.
+      HEINZEL_DEMO_SUPERSET_ADMIN_PASSWORD: "${HEINZEL_SUPERSET_ADMIN_PASSWORD:-}"
     # Not merely started: the console provisions the database as its first act, so the warehouse
     # has to be accepting connections for the named database, not just running. The console also
     # waits a bounded time for it, which is what covers `docker compose restart` -- that command
@@ -85,8 +140,17 @@ services:
     # this and the warehouse's volume, and the demonstration resumes from the product it already
     # materialized; `docker compose down -v` removes both and the next start is a fresh
     # demonstration. Removing one and keeping the other is what the console refuses to start on.
+    #
+    # The second volume carries the TLS material the console mints for the optional Superset, and
+    # it is mounted read-write because the console is its writer: Superset serves that material
+    # and mounts the same volume read-only. It is mounted whether or not the `dashboards` profile
+    # is on -- compose cannot put a mount behind a profile -- and stays empty while the console is
+    # told about no Superset. The image prepares this directory so that a fresh volume inherits an
+    # owner the console can write as; a volume mounted anywhere the image has not prepared belongs
+    # to root, and the console cannot write it.
     volumes:
       - heinzel-state:/var/lib/heinzel
+      - heinzel-superset-tls:/var/lib/heinzel-superset-tls
     # No `restart:` on purpose, deviating from the quickstart design's `unless-stopped`. This is
     # a foreground `up --build` demonstration, and a restart policy turns a configuration the
     # console refuses — a misspelled origin, say — into a container Docker restarts in a loop:
@@ -94,6 +158,105 @@ services:
     # away, and the reader is left with a console that serves nothing. The named volume above,
     # not a restart policy, is what carries recorded work across a stop.
 
+  # Superset's metadata database, its admin account and its roles, created once before it serves.
+  # A later start finds them in the volume and makes nothing new, so this runs to completion on
+  # every `--profile dashboards up` and the service below waits for it to succeed.
+  #
+  # Only under that profile: `docker compose up` creates neither this service nor the one below.
+  superset-init:
+    <<: *superset
+    # Both secrets are refused by name before anything else runs, because `superset db upgrade`
+    # failing on a missing configuration key reports a Python traceback rather than the variable to
+    # set. `$$` is how this file spells a `$` the shell is to expand rather than compose.
+    command:
+      - /bin/sh
+      - -ceu
+      - >-
+        : "$${HEINZEL_SUPERSET_SECRET_KEY:?required, see deploy/quickstart/README.md}" &&
+        : "$${HEINZEL_SUPERSET_ADMIN_PASSWORD:?required, see deploy/quickstart/README.md}" &&
+        superset db upgrade &&
+        superset fab create-admin
+        --username admin
+        --firstname Heinzel
+        --lastname Administrator
+        --email admin@localhost.invalid
+        --password "$$HEINZEL_SUPERSET_ADMIN_PASSWORD" &&
+        superset init
+
+  # The Superset the console publishes its certified dashboard to. It serves TLS because
+  # `SupersetCredentials` refuses a base URL that is not HTTPS, which holds on a compose network
+  # nothing outside can reach as much as anywhere else.
+  superset:
+    <<: *superset
+    # The wait is not belt and braces. The console mints this material during its own startup and
+    # these two containers start concurrently, so gunicorn reaching for a certificate that is not
+    # there yet is the normal case rather than an unlucky one -- and it exits on it, which with no
+    # restart policy here leaves a Superset that never serves. The authority is written last of
+    # the three, so all three present means the set is whole rather than half-written.
+    command:
+      - /bin/sh
+      - -ceu
+      - |
+        : "$${HEINZEL_SUPERSET_SECRET_KEY:?required, see deploy/quickstart/README.md}"
+        until [ -f /heinzel-private/server.key ] \
+          && [ -f /heinzel-private/server.crt ] \
+          && [ -f /heinzel-private/ca.crt ]; do
+          sleep 1
+        done
+        exec gunicorn \
+          --bind 0.0.0.0:8088 \
+          --certfile /heinzel-private/server.crt \
+          --keyfile /heinzel-private/server.key \
+          --workers 2 \
+          --timeout 120 \
+          "superset.app:create_app()"
+    # Loopback only, like the console's port and for the same reason: this Superset has one admin
+    # account and a secret key from the environment, and the published port is its whole boundary.
+    # `8088:8088` would publish it on every interface.
+    ports:
+      - "127.0.0.1:${HEINZEL_SUPERSET_PORT:-8088}:8088"
+    # The console, because it is what mints the material the command above waits for: without this,
+    # `up superset` on its own waits for a certificate nothing is writing. Not `service_healthy` --
+    # the wait loop above is what covers the ordering, and a console that is slow to become healthy
+    # is not a reason to leave Superset uncreated.
+    depends_on:
+      console:
+        condition: service_started
+      superset-init:
+        condition: service_completed_successfully
+    # Over TLS and against the authority the console minted, because Superset serves nothing on
+    # plain HTTP: a check over `http://` reports an unhealthy Superset that is serving correctly.
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "--cacert",
+          "/heinzel-private/ca.crt",
+          "https://127.0.0.1:8088/health",
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+    # No `restart:` here either, for the reason the console's own absence of one gives: a Superset
+    # that refuses its configuration must say so once and stop, not scroll the one actionable line
+    # away. This deviates from the emulator project these services are modelled on, which restarts
+    # `unless-stopped` because a long-running test run holds it up rather than a reader watching it.
+
 volumes:
   heinzel-state:
   heinzel-warehouse:
+  # Both belong to the optional Superset. They are discarded by `down -v` with `--profile
+  # dashboards` named, because a `down` that does not name the profile does not reach the services
+  # that hold them -- nor report that it did not, since they are the project's own and so are not
+  # orphans. The TLS volume is the one the console writes and Superset reads; discarding it with
+  # Superset's metadata database is what keeps the certificate Superset serves and the authority
+  # the console trusts from being minted apart.
+  #
+  # A plain `down -v` while Superset is running is worse than incomplete: the console mounts the
+  # TLS volume under either profile, so that command removes the console, tries to remove the
+  # volume and the network under it, reports `Resource is still in use` for both, and exits 0. It
+  # reads as a reset and is not one.
+  heinzel-superset-home:
+  heinzel-superset-tls:

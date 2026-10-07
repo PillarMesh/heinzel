@@ -6,7 +6,10 @@ answer, packaged by
 look at the product on one machine. It is not a deployment, and nothing here is a starting
 point for one.
 
-Two containers: the console, and the PostgreSQL warehouse it provisions and answers over.
+Two containers: the console, and the PostgreSQL warehouse it provisions and answers over. A third
+is optional and off by default — the Superset the demonstration can publish a dashboard to, behind
+a Compose profile. [Publishing a dashboard to Superset](#publishing-a-dashboard-to-superset-and-what-it-costs)
+says what it adds and what it costs.
 
 ## Start it
 
@@ -109,6 +112,64 @@ that a failure at each one is classified and reported rather than swallowed, and
 surface answers from a binding already carried to `ready`. It does not prove the live
 provisioning, which needs a daemon; what proves that provider is the warehouse-lifecycle
 acceptance run, against the same provider over its own Compose project.
+
+## Publishing a dashboard to Superset, and what it costs
+
+A dashboard needs a BI service to publish to, and the demonstration carries none by default. One
+is available behind the `dashboards` Compose profile. Without that profile `docker compose up`
+creates neither of its two services and the demonstration is exactly what the rest of this file
+describes, which is the point: the profile is opt-in because of what it costs.
+
+**It adds about 1.3 GB of image.** That is the official Superset image plus the PostgreSQL driver
+it does not carry, measured as `docker images` reports the built result — downloaded and built on
+the first `--profile dashboards up` and reused afterwards. It also adds a second long-running
+container with a 1.5 GB memory limit, beside a console, a warehouse and a dbt run already sharing
+this machine.
+
+It needs two secrets, and neither has a default or a value in version control: a password for the
+one Superset admin account, and Superset's own secret key. Generate them into the shell that starts
+the demonstration, so they are in the environment and not in a file:
+
+```sh
+export HEINZEL_SUPERSET_ADMIN_PASSWORD=$(openssl rand -base64 24)
+export HEINZEL_SUPERSET_SECRET_KEY=$(openssl rand -base64 48)
+docker compose -f deploy/quickstart/compose.yaml --profile dashboards up --build
+```
+
+Then open <https://127.0.0.1:8088> and sign in as `admin` with the password that command generated
+(`echo "$HEINZEL_SUPERSET_ADMIN_PASSWORD"` prints it again). Set `HEINZEL_SUPERSET_PORT` to publish
+Superset on another port; nothing is spelled twice, so unlike `HEINZEL_PORT` it moves on its own.
+
+Four things to know before you run it.
+
+- **Keep both secrets for the life of the demonstration.** Superset's metadata database is in a
+  named volume, and the secret key is what encrypts the credentials stored in it — the warehouse
+  password a registered database connection carries among them. A start with a different key is
+  not refused: it initializes without a word of complaint, and leaves Superset holding material
+  encrypted under a key it no longer has. So export them once and reuse them, or reset with
+  `--profile dashboards down -v` and generate both again. Unset is the one failure here that tells
+  you exactly what to do: each container refuses before it does anything, naming the variable.
+- **Superset serves TLS, from material the console mints.** `SupersetCredentials` refuses a base
+  URL that is not HTTPS, which holds on a Compose network nothing outside can reach as much as
+  anywhere else. There is no key custody in a demonstration, so the console mints a throwaway
+  authority and a server certificate for it at startup, into a volume Superset reads read-only;
+  Superset waits for that material rather than exiting without it, because the two containers
+  start at the same time. The authority is not one a browser knows, so a browser will warn before
+  it loads <https://127.0.0.1:8088>. That warning is correct: the certificate was minted by this
+  demonstration minutes ago and signed by nothing else.
+- **One admin account and a published port are its whole boundary.** Compose publishes Superset on
+  `127.0.0.1` only, for the same reason it publishes the console that way. Do not publish it on
+  another interface, and do not reuse either secret anywhere else.
+- **Stop and reset it with the profile named.** Its metadata database and the minted TLS material
+  are two more named volumes, and they have to go with the console's state: a Superset that kept
+  the certificate it was serving while the console minted a new authority would be a Superset the
+  console no longer trusts. A `down` that does not name `--profile dashboards` does not reach these
+  containers at all, and says nothing about it — see [Stop it](#stop-it) for what that looks like.
+
+What the console does with that Superset is the publication path's own, and
+[docs/demonstration-gaps.md](../../docs/demonstration-gaps.md) is where that is stated rather than
+here. This profile is the Superset to publish to; it does not by itself make the demonstration
+publish.
 
 ## What it shows
 
@@ -249,14 +310,26 @@ disagree about whether the product has been materialized, because materializing 
 either commit a generation the warehouse already holds or publish authority for a relation that
 is not there — and it names `down -v`, which removes both.
 
+Name the profile if you started it: `down` without `--profile dashboards` leaves the Superset
+containers running and their volumes in place, and does not report them — they are the project's
+own, so they are not orphans, and `--remove-orphans` does not reach them either. With `-v` it is
+worse than incomplete: it removes the console, reports `Resource is still in use` for the TLS
+volume and the network the running Superset still holds, and exits 0. That reads as a reset and is
+not one.
+
+```sh
+docker compose -f deploy/quickstart/compose.yaml --profile dashboards down
+```
+
 ## Reset it
 
 ```sh
-docker compose -f deploy/quickstart/compose.yaml down -v
+docker compose -f deploy/quickstart/compose.yaml --profile dashboards down -v
 ```
 
-`-v` removes that volume as well, so the next start is a fresh demonstration with the seeded
-question waiting again.
+`-v` removes those volumes as well, so the next start is a fresh demonstration with the seeded
+question waiting again. The profile is named for the reason above, and is harmless when Superset
+was never started; drop it only if you are certain it never was.
 
 A request that reached a terminal state is not re-seeded: the seed recognises its own question
 whatever state it reached, so `down -v` is the way back to a clean demonstration.
