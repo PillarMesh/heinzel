@@ -111,11 +111,40 @@ path deliberately keeps them in the process instead; discard the state directory
 project together, both of which the refusal names. A provisioning that stopped half-way is refused
 outright for the same reason.
 
-And it does not publish a dashboard. Superset runs in this file's Compose project while the
-warehouse runs in the provider's, that warehouse publishes on loopback only, and its certificate
-covers `localhost` and `127.0.0.1` alone -- so there is no network name a Superset container could
-reach it under and still verify. The default path publishes no dashboard either, for an unrelated
-reason given below.
+It does publish a dashboard, and it is the only path that can: a dashboard dataset connection
+cites a warehouse-control binding, and the default path's database has none. Two manual steps,
+because Superset runs in this file's Compose project while the console runs from a checkout, and
+they do not reach that warehouse the same way. The console reaches it on the loopback port the
+provider published, which belongs to the host; from inside a container that address is the
+container. Superset reaches it by name on a network they share.
+
+Start Superset and the console, then, once the console has provisioned its warehouse:
+
+```sh
+# The network the provider created for it, and the Superset container to put on that network.
+docker network connect "$(docker network ls --format '{{.Name}}' | grep -- '-private$')" \
+  heinzel-quickstart-superset-1
+
+# Superset's own copy of the client certificate the warehouse's `pg_hba.conf` verifies. libpq
+# refuses a private key any group or world can read, and only the user presenting it can own such
+# a file -- so the console publishes the material readable and Superset makes the private copy.
+docker exec -u superset heinzel-quickstart-superset-1 sh -ceu '
+  install -d -m 0700 /app/superset_home/warehouse-tls
+  install -m 0600 /heinzel-private/warehouse/* /app/superset_home/warehouse-tls/'
+```
+
+Set `HEINZEL_DEMO_SUPERSET_WAREHOUSE_TLS_DIRECTORY` to that last directory before starting the
+console. Without it the console publishes nothing for Superset to copy and reports dashboard
+publication as not delivered, rather than publishing a dashboard whose every query would be
+refused -- a refusal that would arrive at whoever opened it.
+
+That copy of a client key is readable by anything that can read the directory the console shares
+with Superset. It is the same compromise this demonstration already makes with Superset's own
+server key, it is a key minted per start by an authority minted per start, and it is why neither
+belongs in a deployment: a deployment issues Superset its own client certificate and resolves it
+from a secret store.
+
+The default path publishes no dashboard, for an unrelated reason given below.
 
 [docs/demonstration-gaps.md](../../docs/demonstration-gaps.md) records what is proved about this
 path and what is not. The offline suite proves the Compose operations it issues and their order,

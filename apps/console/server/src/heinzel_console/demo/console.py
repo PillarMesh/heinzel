@@ -51,10 +51,12 @@ from ..operation_handles import InMemoryOperationHandleRepository
 from .access import DemoAccessControl, build_demo_access_control
 from .answer_runtime import DemoGovernedAnswer, demo_governed_answer
 from .bi_provider import (
+    SUPERSET_TLS_DIRECTORY_VARIABLE,
     SUPERSET_WAREHOUSE_TLS_DIRECTORY_VARIABLE,
     DemoWarehouseRoute,
     demo_dashboard_publication,
     record_demo_dashboard_connection,
+    share_warehouse_client_material,
 )
 from .bootstrap import ensure_demo_generation
 from .collaborators import (
@@ -108,10 +110,7 @@ _REQUESTER_CONTEXT = TrustedActorContext(
 
 
 def _demo_warehouse_route(
-    environment: Mapping[str, str],
-    *,
-    state_dir: Path,
-    managed: DemoManagedWarehouse | None,
+    environment: Mapping[str, str], *, managed: DemoManagedWarehouse | None
 ) -> DemoWarehouseRoute | None:
     """How Superset reaches the warehouse, when it reaches it differently than the console does.
 
@@ -119,38 +118,30 @@ def _demo_warehouse_route(
     same name, and on a managed warehouse this start did not provision, which it cannot reach at
     all.
 
-    On a managed warehouse it needs the deployment to have mounted the console's state directory
-    into Superset's container, because the client certificate the warehouse's `pg_hba.conf` verifies
-    lives under it and Superset has to be able to read it. The variable names where that directory
-    is mounted, and the rest of the path is derived rather than configured: the warehouse's private
-    directory carries a digest of the binding, which nothing can name before the binding exists, and
-    the state directory is a path the deployment already chose.
+    On a managed warehouse it needs two things of the deployment, and this returns `None` without
+    either: a Superset to publish to, and somewhere inside its container that Superset keeps its own
+    copy of the warehouse's client material. `share_warehouse_client_material` publishes that
+    material where Superset can read it; the copy is Superset's because libpq refuses a private key
+    any group or world can read and only the user presenting it can own such a file.
 
-    Unset, this returns `None` and publication reports itself as not delivered rather than
-    publishing a dashboard whose every query would be refused. A published dashboard that cannot
-    read its own product is worse than an absent one, because the refusal arrives at whoever opens
-    it rather than at whoever deployed it.
+    `None` means publication reports itself as not delivered, rather than publishing a dashboard
+    whose every query would be refused. A published dashboard that cannot read its own product is
+    worse than an absent one: the refusal arrives at whoever opens it rather than at whoever
+    deployed it.
     """
     if managed is None or managed.private_directory is None:
         return None
-    mounted = environment.get(SUPERSET_WAREHOUSE_TLS_DIRECTORY_VARIABLE, "").strip()
-    if not mounted:
+    shared = environment.get(SUPERSET_TLS_DIRECTORY_VARIABLE, "").strip()
+    inside = environment.get(SUPERSET_WAREHOUSE_TLS_DIRECTORY_VARIABLE, "").strip()
+    if not shared or not inside:
         return None
-    try:
-        inside = managed.private_directory.relative_to(state_dir)
-    except ValueError:
-        # The private directory is always under the state directory this console was given, so a
-        # path outside it is a wiring mistake rather than a deployment to work around.
-        raise RuntimeError(
-            "the warehouse's private directory is not inside the console's state directory, so "
-            "no path inside Superset's container can name it"
-        ) from None
+    share_warehouse_client_material(managed.private_directory, destination=Path(shared))
     return DemoWarehouseRoute(
         host=managed.internal_hostname,
         # The port the warehouse listens on inside its own container, not the one its Compose
         # project publishes to the host: a client on the shared network reaches the container.
         port=POSTGRESQL_WAREHOUSE_CONTAINER_PORT,
-        tls_directory=PurePosixPath(mounted).joinpath(*inside.parts),
+        tls_directory=PurePosixPath(inside),
     )
 
 
@@ -271,9 +262,7 @@ class DemoConsole:
                     state_dir,
                     warehouse_dsn=answering_dsn,
                     principals=principals,
-                    dashboard_route=_demo_warehouse_route(
-                        os.environ, state_dir=state_dir, managed=managed
-                    ),
+                    dashboard_route=_demo_warehouse_route(os.environ, managed=managed),
                 )
             )
             self.governed_answer = governed_answer

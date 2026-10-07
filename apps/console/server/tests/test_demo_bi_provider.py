@@ -13,6 +13,7 @@ needs a cold Superset and is marked `live`.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from contextlib import closing
 from datetime import UTC, datetime
@@ -32,12 +33,15 @@ from heinzel_console.demo.bi_provider import (
     SUPERSET_ADMIN_PASSWORD_VARIABLE,
     SUPERSET_BASE_URL_VARIABLE,
     SUPERSET_TLS_DIRECTORY_VARIABLE,
+    WAREHOUSE_CLIENT_MATERIAL_DIRECTORY,
+    WAREHOUSE_CLIENT_MATERIAL_FILENAMES,
     DemoWarehouseRoute,
     demo_dashboard_connection_secret_ref,
     demo_dashboard_publication,
     demo_superset_connection,
     demo_superset_database_uri,
     record_demo_dashboard_connection,
+    share_warehouse_client_material,
 )
 from heinzel_console.demo.superset_tls import ensure_demo_superset_tls_material
 from heinzel_console.demo.warehouse import DEMO_WAREHOUSE_ROLES, ProvisioningRefused
@@ -619,3 +623,71 @@ def test_the_connection_secret_reference_is_the_same_one_every_start() -> None:
         demo_dashboard_connection_secret_ref(tenant_id="tenant-demo", warehouse_binding_id="whb-2")
         != first
     )
+
+
+def _private_warehouse_directory(root: Path) -> Path:
+    """A directory shaped as the PostgreSQL provider keeps its own: private, every file `0600`."""
+    private = root / "pgw-abc123"
+    private.mkdir(parents=True)
+    private.chmod(0o700)
+    for filename in WAREHOUSE_CLIENT_MATERIAL_FILENAMES:
+        path = private / filename
+        path.write_text(f"-----BEGIN {filename}-----\n", encoding="ascii")
+        path.chmod(0o600)
+    return private
+
+
+def test_the_warehouse_client_material_is_published_where_another_user_can_read_it(
+    tmp_path: Path,
+) -> None:
+    """Superset runs as another user and cannot read the provider's private directory at all.
+
+    Its own copy has to be `0600` and owned by the user presenting it, because libpq refuses a
+    private key any group or world can read -- and only that user can own such a file. So this step
+    publishes the material readable, and Superset makes the private copy.
+    """
+    private = _private_warehouse_directory(tmp_path / "state")
+    destination = tmp_path / "superset-tls"
+    destination.mkdir()
+
+    shared = share_warehouse_client_material(private, destination=destination)
+
+    assert shared == destination / WAREHOUSE_CLIENT_MATERIAL_DIRECTORY
+    assert shared.stat().st_mode & 0o777 == 0o755
+    for filename in WAREHOUSE_CLIENT_MATERIAL_FILENAMES:
+        published = shared / filename
+        assert published.read_text(encoding="ascii") == (private / filename).read_text(
+            encoding="ascii"
+        )
+        assert published.stat().st_mode & 0o777 == 0o644, filename
+
+
+def test_publishing_the_client_material_again_overwrites_what_an_earlier_start_left(
+    tmp_path: Path,
+) -> None:
+    """The authority is minted per start, so material from an earlier one verifies nothing.
+
+    Left in place it would be a certificate signed by an authority this warehouse no longer has,
+    and the refusal would arrive as a dashboard whose queries fail rather than as a stale file.
+    """
+    destination = tmp_path / "superset-tls"
+    share_warehouse_client_material(
+        _private_warehouse_directory(tmp_path / "first"), destination=destination
+    )
+    second = _private_warehouse_directory(tmp_path / "second")
+    (second / "ca.crt").write_text("-----BEGIN second authority-----\n", encoding="ascii")
+
+    shared = share_warehouse_client_material(second, destination=destination)
+
+    assert (shared / "ca.crt").read_text(encoding="ascii") == "-----BEGIN second authority-----\n"
+
+
+def test_a_private_directory_missing_what_superset_must_present_is_refused_by_name(
+    tmp_path: Path,
+) -> None:
+    """Named, because the alternative is Superset refused for a file nothing said was absent."""
+    private = _private_warehouse_directory(tmp_path / "state")
+    (private / "client.key").unlink()
+
+    with pytest.raises(ProvisioningRefused, match=re.escape("no client.key")):
+        share_warehouse_client_material(private, destination=tmp_path / "superset-tls")

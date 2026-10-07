@@ -71,10 +71,13 @@ __all__ = [
     "SUPERSET_BASE_URL_VARIABLE",
     "SUPERSET_TLS_DIRECTORY_VARIABLE",
     "SUPERSET_WAREHOUSE_TLS_DIRECTORY_VARIABLE",
+    "WAREHOUSE_CLIENT_MATERIAL_DIRECTORY",
+    "WAREHOUSE_CLIENT_MATERIAL_FILENAMES",
     "DemoSupersetConnection",
     "demo_dashboard_publication",
     "demo_superset_connection",
     "demo_superset_database_uri",
+    "share_warehouse_client_material",
 ]
 
 # The deployment's contract with `deploy/quickstart/compose.yaml`, which sets all three from one
@@ -84,10 +87,12 @@ __all__ = [
 SUPERSET_BASE_URL_VARIABLE = "HEINZEL_DEMO_SUPERSET_BASE_URL"
 SUPERSET_TLS_DIRECTORY_VARIABLE = "HEINZEL_DEMO_SUPERSET_TLS_DIRECTORY"
 SUPERSET_ADMIN_PASSWORD_VARIABLE = "HEINZEL_DEMO_SUPERSET_ADMIN_PASSWORD"
-# Where the warehouse's own private directory is mounted inside Superset's container, on the
-# warehouse-control path. A warehouse that service provisioned demands TLS and a client
-# certificate its `pg_hba.conf` verifies, and those files are the console's: Superset cannot
-# present them unless the deployment put them where it can read them, and this names where.
+# Where Superset keeps its own copy of the warehouse's client material, inside its container, on
+# the warehouse-control path. A warehouse that service provisioned demands TLS and a client
+# certificate its `pg_hba.conf` verifies, and libpq refuses a private key that any group or
+# world can read -- so Superset makes a `0600` copy it owns, and this names where it put it.
+# The console cannot write that copy itself: it would have to own the file as the user Superset
+# runs as, which is a uid no deployment should have to tell it.
 SUPERSET_WAREHOUSE_TLS_DIRECTORY_VARIABLE = "HEINZEL_DEMO_SUPERSET_WAREHOUSE_TLS_DIRECTORY"
 
 # The account Superset's initialization creates, and the only one the console has to reach it
@@ -98,6 +103,9 @@ _SUPERSET_ADMIN_USERNAME = "admin"
 # What Superset's own driver takes. Not `postgresql://`: the console's other providers are given
 # libpq keyword DSNs, and the scheme is what says which of the two this string is.
 _SQLALCHEMY_SCHEME = "postgresql+psycopg2"
+# Readable by the Superset user, which is not the console's, as in `demo/superset_tls.py`.
+_SHARED_MODE = 0o644
+_SHARED_DIRECTORY_MODE = 0o755
 
 # Long enough for Superset to create a database, a dataset and a chart per visual intent on a
 # cold instance, which is slower than any read the console makes.
@@ -249,6 +257,44 @@ def demo_superset_connection(
         tls_material=material,
         ssl_context=ssl.create_default_context(cafile=str(material.authority_path)),
     )
+
+
+WAREHOUSE_CLIENT_MATERIAL_DIRECTORY = "warehouse"
+WAREHOUSE_CLIENT_MATERIAL_FILENAMES = ("ca.crt", "client.crt", "client.key")
+
+
+def share_warehouse_client_material(private_directory: Path, *, destination: Path) -> Path:
+    """Publish the warehouse's client material where Superset can pick it up.
+
+    A warehouse warehouse-control provisioned serves `hostssl` with `clientcert=verify-ca`, so
+    Superset has to present a certificate that authority signed and verify the server against it.
+    Those files are the provider's, in a directory it keeps private at `0700` with every file at
+    `0600` owned by the console -- which Superset, running as another user, cannot read at all.
+
+    Copied here at `_SHARED_MODE`, into the directory the console already shares with Superset, and
+    read from there by Superset into a `0600` copy of its own. Two steps rather than one because
+    libpq refuses a private key any group or world can read, and only the user that will present it
+    can own such a file: the console would have to be told the uid Superset runs as to write it.
+
+    That makes this copy of a client key readable by anything that can read the shared directory.
+    It is the same compromise `demo/superset_tls.py` already makes with Superset's server key and
+    for the same reason, it is a key minted per start by an authority minted per start, and it is
+    why neither belongs in a deployment. A deployment issues Superset its own client certificate
+    and resolves it from a secret store.
+    """
+    shared = destination / WAREHOUSE_CLIENT_MATERIAL_DIRECTORY
+    shared.mkdir(parents=True, exist_ok=True)
+    shared.chmod(_SHARED_DIRECTORY_MODE)
+    for filename in WAREHOUSE_CLIENT_MATERIAL_FILENAMES:
+        source = private_directory / filename
+        if not source.is_file():
+            raise ProvisioningRefused(
+                f"the warehouse's private directory holds no {filename} for Superset to present"
+            )
+        target = shared / filename
+        target.write_bytes(source.read_bytes())
+        target.chmod(_SHARED_MODE)
+    return shared
 
 
 def demo_dashboard_connection_secret_ref(*, tenant_id: str, warehouse_binding_id: str) -> str:
