@@ -62,6 +62,7 @@ from .source_capability_probe import (
 from .warehouse import PostgreSQLBackupCommandBoundary, PostgreSQLWarehouseProvider
 from .warehouse_database import (
     POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE,
+    POSTGRESQL_WAREHOUSE_CONTAINER_PORT,
     POSTGRESQL_WAREHOUSE_DATABASE_NAME,
     PostgreSQLConnectionTarget,
 )
@@ -74,6 +75,7 @@ from .warehouse_settings import (
 __all__ = [
     "POSTGRESQL_SERVER_VERSION_NUM",
     "POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE",
+    "POSTGRESQL_WAREHOUSE_CONTAINER_PORT",
     "POSTGRESQL_WAREHOUSE_DATABASE_NAME",
     "POSTGRESQL_WAREHOUSE_IMAGE",
     "PostgreSQLAccessAuthorityInvalid",

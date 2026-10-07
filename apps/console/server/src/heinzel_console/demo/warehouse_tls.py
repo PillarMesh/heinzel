@@ -42,7 +42,10 @@ _VALIDITY = timedelta(days=7)
 _BACKDATE = timedelta(days=1)
 
 # The provider reaches the warehouse on the loopback address its Compose project publishes, so
-# these are the only two names a server certificate has to carry.
+# these are the two names every server certificate here carries. They are not the only two a
+# deployment needs: a client in another container reaches the warehouse by its name on their shared
+# network, and `verify-full` checks that name against this certificate -- so a caller that will
+# connect that way names it through `internal_hostnames`.
 _SERVER_COMMON_NAME = "localhost"
 _LOOPBACK_ADDRESS = "127.0.0.1"
 _CLIENT_COMMON_NAME = "heinzel-demonstration-warehouse-client"
@@ -57,12 +60,19 @@ class DemoWarehouseTLSMaterial:
     certificate_bundle: str
 
 
-def generate_demo_warehouse_tls_material(*, now: datetime) -> DemoWarehouseTLSMaterial:
+def generate_demo_warehouse_tls_material(
+    *, now: datetime, internal_hostnames: tuple[str, ...] = ()
+) -> DemoWarehouseTLSMaterial:
     """Mint one authority, one server certificate and one client certificate.
 
     Elliptic-curve keys rather than RSA: the material is minted on every start, and a
     demonstration that spent a second generating RSA keys before it listened would be paying
     that second for nothing.
+
+    `internal_hostnames` are further names the server certificate must cover, for a client that
+    reaches the warehouse on a container network rather than through the published loopback port.
+    Omitted, the certificate carries only `localhost` and `127.0.0.1`, and such a client fails
+    hostname verification rather than connecting to something unverified.
     """
     observed_at = utc_issue_time(now)
     authority_key = ec.generate_private_key(ec.SECP256R1())
@@ -81,6 +91,7 @@ def generate_demo_warehouse_tls_material(*, now: datetime) -> DemoWarehouseTLSMa
             [
                 x509.DNSName(_SERVER_COMMON_NAME),
                 x509.IPAddress(ipaddress.ip_address(_LOOPBACK_ADDRESS)),
+                *(x509.DNSName(name) for name in dict.fromkeys(internal_hostnames)),
             ]
         ),
     )

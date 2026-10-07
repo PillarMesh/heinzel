@@ -1483,6 +1483,17 @@ class PostgreSQLWarehouseProvider:
         self._fault_hook = fault_hook
         self._primary_resources: dict[str, PrivateWarehouseResource] = {}
 
+    @staticmethod
+    def internal_hostname(binding: WarehouseBinding) -> str:
+        """The name this warehouse answers to on its own container network.
+
+        A client on that network reaches it here rather than through the loopback port the
+        Compose project publishes, which belongs to the host and means the client itself from
+        inside any other container. Derived from the binding alone, as the container name is, so
+        a caller can mint a certificate covering this name before the warehouse exists.
+        """
+        return _warehouse_identity(binding, Path()).container_name
+
     def connection_target(self, binding: WarehouseBinding) -> PostgreSQLConnectionTarget:
         """Where this warehouse answers, and the TLS material a client must present.
 

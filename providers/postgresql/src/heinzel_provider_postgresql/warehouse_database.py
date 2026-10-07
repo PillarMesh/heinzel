@@ -19,6 +19,10 @@ from .warehouse_settings import POSTGRESQL_SERVER_VERSION_NUM
 # second spelling of either in another component is a silent mismatch rather than a failure.
 POSTGRESQL_WAREHOUSE_DATABASE_NAME = "heinzel_warehouse"
 POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE = "postgres"
+# The port the warehouse listens on inside its own container. A client on a network it shares
+# reaches it here; the port its Compose project publishes belongs to the host's loopback, and
+# from inside any other container that address is that container.
+POSTGRESQL_WAREHOUSE_CONTAINER_PORT = 5432
 _DATABASE_NAME = POSTGRESQL_WAREHOUSE_DATABASE_NAME
 _PRINCIPALS = (
     "administration",
@@ -1348,6 +1352,7 @@ def _restored_query_summary(connection: Any, plan: PostgreSQLGrantPlan) -> dict[
 
 __all__ = [
     "POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE",
+    "POSTGRESQL_WAREHOUSE_CONTAINER_PORT",
     "POSTGRESQL_WAREHOUSE_DATABASE_NAME",
     "PostgreSQLConnectionTarget",
     "PostgreSQLDatabaseObservation",

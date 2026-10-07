@@ -34,8 +34,8 @@ from collections.abc import Callable, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from pathlib import Path
-from urllib.parse import quote
+from pathlib import Path, PurePosixPath
+from urllib.parse import quote, urlencode
 
 import httpx
 import psycopg
@@ -70,6 +70,7 @@ __all__ = [
     "SUPERSET_ADMIN_PASSWORD_VARIABLE",
     "SUPERSET_BASE_URL_VARIABLE",
     "SUPERSET_TLS_DIRECTORY_VARIABLE",
+    "SUPERSET_WAREHOUSE_TLS_DIRECTORY_VARIABLE",
     "DemoSupersetConnection",
     "demo_dashboard_publication",
     "demo_superset_connection",
@@ -83,6 +84,11 @@ __all__ = [
 SUPERSET_BASE_URL_VARIABLE = "HEINZEL_DEMO_SUPERSET_BASE_URL"
 SUPERSET_TLS_DIRECTORY_VARIABLE = "HEINZEL_DEMO_SUPERSET_TLS_DIRECTORY"
 SUPERSET_ADMIN_PASSWORD_VARIABLE = "HEINZEL_DEMO_SUPERSET_ADMIN_PASSWORD"
+# Where the warehouse's own private directory is mounted inside Superset's container, on the
+# warehouse-control path. A warehouse that service provisioned demands TLS and a client
+# certificate its `pg_hba.conf` verifies, and those files are the console's: Superset cannot
+# present them unless the deployment put them where it can read them, and this names where.
+SUPERSET_WAREHOUSE_TLS_DIRECTORY_VARIABLE = "HEINZEL_DEMO_SUPERSET_WAREHOUSE_TLS_DIRECTORY"
 
 # The account Superset's initialization creates, and the only one the console has to reach it
 # with. `superset fab create-admin --username admin` in the Compose project names it; a different
@@ -124,13 +130,39 @@ class DemoSupersetConnection:
         )
 
 
-def demo_superset_database_uri(bootstrap_dsn: str, *, role: str, password: str) -> str:
+@dataclass(frozen=True, slots=True)
+class DemoWarehouseRoute:
+    """How Superset reaches the warehouse, from inside its own container.
+
+    Named separately from the console's own connection because the two differ on the
+    warehouse-control path, and silently: the console reaches that warehouse on the loopback port
+    its Compose project publishes, which from inside any container is that container. Superset
+    reaches it by name on a network they share, presenting the client certificate the warehouse's
+    `pg_hba.conf` verifies -- so the paths here are Superset's, not the console's.
+    """
+
+    host: str
+    port: int
+    tls_directory: PurePosixPath
+
+
+def demo_superset_database_uri(
+    bootstrap_dsn: str,
+    *,
+    role: str,
+    password: str,
+    route: DemoWarehouseRoute | None = None,
+) -> str:
     """The SQLAlchemy URI Superset queries the product with, from the console's own warehouse DSN.
 
-    The host comes from the console's bootstrap DSN rather than being named here, because Superset
-    connects from its own container: the loopback address that reaches the published port from the
-    host reaches Superset itself on the Compose network, and a URI naming it would have Superset
-    looking for the warehouse inside itself.
+    Without a `route` the host comes from the console's bootstrap DSN, because on the
+    demonstration's own warehouse both reach it the same way: it is a sibling container on the
+    same Compose network, named the same from either side.
+
+    With one, the route is used instead, and it has to be. The loopback address that reaches a
+    published port from the host reaches Superset itself from inside its container, so a URI
+    naming it has Superset looking for the warehouse inside itself -- which is a refused
+    connection, reported as a provider that rejected the dashboard.
 
     The login and password are percent-escaped. The demonstration generates a fresh password per
     start from `secrets.token_urlsafe`, which includes `-` and `_` today and whose output no caller
@@ -138,16 +170,42 @@ def demo_superset_database_uri(bootstrap_dsn: str, *, role: str, password: str) 
     and database the URI names.
     """
     parsed = psycopg.conninfo.conninfo_to_dict(bootstrap_dsn)
-    host = parsed.get("host")
     database = parsed.get("dbname")
-    if not isinstance(host, str) or not host or not isinstance(database, str) or not database:
+    if not isinstance(database, str) or not database:
         raise ProvisioningRefused(
-            "the warehouse connection names no host and database for Superset to reach it by"
+            "the warehouse connection names no database for Superset to read the product from"
+        )
+    login = f"{quote(role, safe='')}:{quote(password, safe='')}"
+    if route is not None:
+        return (
+            f"{_SQLALCHEMY_SCHEME}://{login}@{route.host}:{route.port}"
+            f"/{quote(database, safe='')}?{_route_query(route.tls_directory)}"
+        )
+    host = parsed.get("host")
+    if not isinstance(host, str) or not host:
+        raise ProvisioningRefused(
+            "the warehouse connection names no host for Superset to reach it by"
         )
     port = parsed.get("port")
     authority = f"{host}:{port}" if isinstance(port, str) and port else host
-    login = f"{quote(role, safe='')}:{quote(password, safe='')}"
     return f"{_SQLALCHEMY_SCHEME}://{login}@{authority}/{quote(database, safe='')}"
+
+
+def _route_query(tls_directory: PurePosixPath) -> str:
+    """The transport parameters, naming files by their path inside Superset's container.
+
+    `verify-full` rather than `verify-ca`, so the warehouse's name is checked against the
+    certificate and not only the authority that signed it. Its certificate carries that name
+    because the console minted it to -- see `demo/warehouse_tls.py`.
+    """
+    return urlencode(
+        {
+            "sslmode": "verify-full",
+            "sslrootcert": str(tls_directory / "ca.crt"),
+            "sslcert": str(tls_directory / "client.crt"),
+            "sslkey": str(tls_directory / "client.key"),
+        }
+    )
 
 
 def demo_superset_connection(

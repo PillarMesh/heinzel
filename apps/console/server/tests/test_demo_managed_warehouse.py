@@ -23,11 +23,13 @@ import os
 import sqlite3
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from ipaddress import ip_address
 from pathlib import Path
 from typing import IO
 
 import pytest
 import yaml
+from cryptography import x509
 from heinzel_console.auth import TrustedActorContext
 from heinzel_console.demo import ManagedWarehouseOption, ManagedWarehouseRefused
 from heinzel_console.demo.console import DemoConsole
@@ -500,6 +502,43 @@ def test_the_demonstration_minted_tls_material_parses_as_the_provider_reads_it()
         certificates.client_certificate_pem,
     ):
         assert value.startswith("-----BEGIN CERTIFICATE-----")
+
+
+def test_the_server_certificate_covers_the_name_a_client_on_its_network_reaches_it_by() -> None:
+    """`verify-full` checks the name a client connected to against the certificate.
+
+    A BI tool in another container reaches the warehouse by its name on a network they share, not
+    by the loopback port the Compose project publishes -- which, from inside any container, is that
+    container. Without this name the connection fails hostname verification, and the alternative
+    would be verifying only the authority and not who answered.
+    """
+    material = generate_demo_warehouse_tls_material(
+        now=_clock(), internal_hostnames=("pm-pg-abc123-database",)
+    )
+
+    certificates = warehouse_provider._TLSCertificateBundle.model_validate_json(
+        material.certificate_bundle
+    )
+    server = x509.load_pem_x509_certificate(certificates.server_certificate_pem.encode("ascii"))
+    names = server.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+
+    assert "pm-pg-abc123-database" in names.get_values_for_type(x509.DNSName)
+    # The loopback names the provider itself connects by are still carried.
+    assert "localhost" in names.get_values_for_type(x509.DNSName)
+    assert ip_address("127.0.0.1") in names.get_values_for_type(x509.IPAddress)
+
+
+def test_a_certificate_asked_for_no_internal_name_carries_only_the_loopback_ones() -> None:
+    """Named rather than always added, so a deployment that needs none asserts none."""
+    material = generate_demo_warehouse_tls_material(now=_clock())
+
+    certificates = warehouse_provider._TLSCertificateBundle.model_validate_json(
+        material.certificate_bundle
+    )
+    server = x509.load_pem_x509_certificate(certificates.server_certificate_pem.encode("ascii"))
+    names = server.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
+
+    assert names.get_values_for_type(x509.DNSName) == ["localhost"]
 
 
 def test_tls_material_is_refused_an_issue_time_that_is_not_utc() -> None:

@@ -16,8 +16,8 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import closing
 from datetime import UTC, datetime
-from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from pathlib import Path, PurePosixPath
+from urllib.parse import parse_qsl, unquote, urlsplit
 
 import pytest
 from cryptography import x509
@@ -32,6 +32,7 @@ from heinzel_console.demo.bi_provider import (
     SUPERSET_ADMIN_PASSWORD_VARIABLE,
     SUPERSET_BASE_URL_VARIABLE,
     SUPERSET_TLS_DIRECTORY_VARIABLE,
+    DemoWarehouseRoute,
     demo_dashboard_connection_secret_ref,
     demo_dashboard_publication,
     demo_superset_connection,
@@ -223,11 +224,64 @@ def test_a_url_unsafe_role_password_reaches_superset_unchanged(tmp_path: Path) -
 
 
 def test_a_warehouse_connection_naming_no_host_is_refused_before_superset_is_configured() -> None:
-    """Superset connects from its own container, so a URI with no host reaches nothing at all."""
-    with pytest.raises(ProvisioningRefused, match="no host and database"):
+    """Superset connects from its own container, so a URI with no host reaches nothing at all.
+
+    Refused for the host specifically, rather than for one of the two things it could be missing:
+    a deployment reading this has one of them to fix.
+    """
+    with pytest.raises(ProvisioningRefused, match="no host for Superset to reach it by"):
         demo_superset_database_uri(
             "dbname=heinzel", role=DEMO_WAREHOUSE_ROLES.dashboard, password="reader-secret"
         )
+
+
+def test_a_warehouse_connection_naming_no_database_is_refused_even_with_a_route() -> None:
+    """A route says where the warehouse is, never which database holds the product.
+
+    So the database stays required on the path that supplies one, where every other coordinate
+    comes from the route rather than from the console's own connection.
+    """
+    with pytest.raises(ProvisioningRefused, match="no database for Superset to read the product"):
+        demo_superset_database_uri(
+            "host=127.0.0.1 port=5432",
+            role=DEMO_WAREHOUSE_ROLES.dashboard,
+            password="reader-secret",
+            route=DemoWarehouseRoute(
+                host="pm-pg-abc-database",
+                port=5432,
+                tls_directory=PurePosixPath("/heinzel-warehouse-tls"),
+            ),
+        )
+
+
+def test_the_route_sends_superset_to_the_warehouse_and_not_into_its_own_container() -> None:
+    """The console reaches a managed warehouse on a loopback port its Compose project publishes.
+
+    From inside Superset's container that address is Superset, so a URI built from the console's own
+    connection has Superset looking for the warehouse inside itself -- a refused connection, which
+    arrives as a provider that rejected the dashboard rather than as a host that was never right.
+    """
+    uri = demo_superset_database_uri(
+        "postgresql://postgres:secret@127.0.0.1:47369/heinzel_warehouse?sslmode=verify-full",
+        role=DEMO_WAREHOUSE_ROLES.dashboard,
+        password="reader-secret",
+        route=DemoWarehouseRoute(
+            host="pm-pg-abc-database",
+            port=5432,
+            tls_directory=PurePosixPath("/heinzel-warehouse-tls"),
+        ),
+    )
+
+    parsed = urlsplit(uri)
+    assert (parsed.hostname, parsed.port) == ("pm-pg-abc-database", 5432)
+    assert parsed.path == "/heinzel_warehouse"
+    settings = dict(parse_qsl(parsed.query))
+    # `verify-full` rather than `verify-ca`: the warehouse's name is checked against the
+    # certificate the console minted to cover it, not only the authority that signed it.
+    assert settings["sslmode"] == "verify-full"
+    assert settings["sslrootcert"] == "/heinzel-warehouse-tls/ca.crt"
+    assert settings["sslcert"] == "/heinzel-warehouse-tls/client.crt"
+    assert settings["sslkey"] == "/heinzel-warehouse-tls/client.key"
 
 
 def test_a_warehouse_connection_without_a_port_names_one_no_port_rather_than_a_wrong_one() -> None:

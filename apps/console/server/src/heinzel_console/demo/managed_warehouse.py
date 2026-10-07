@@ -182,9 +182,21 @@ class DemoManagedWarehouse:
         bindings: WarehouseControlBindingReader,
         repository: SQLiteWarehouseRepository,
         administration_dsn: str | None,
+        internal_hostname: str,
+        private_directory: Path | None,
     ) -> None:
         self.binding = binding
         self.bindings = bindings
+        # The name this warehouse answers to on its own container network, and the directory
+        # holding the authority and client certificate a connection to it must present. A BI tool
+        # in another container reaches it by these two and not by the published loopback port,
+        # which from inside any container means that container itself.
+        #
+        # The directory is the provider's and is named rather than copied: a second copy would be
+        # a second thing to keep in step with a certificate minted per start. `None` when this
+        # start did not provision the warehouse and so holds neither.
+        self.internal_hostname = internal_hostname
+        self.private_directory = private_directory
         #
         # How this process administers the warehouse, when this process is the one that created
         # it. `None` otherwise, which is not a degraded form of the same thing: provisioning
@@ -437,9 +449,15 @@ def _provision(
         # administration secret with it: the binding is reportable and the warehouse is not
         # reachable from here. `administration_dsn` is `None` and says so.
         return DemoManagedWarehouse(
-            binding=binding, bindings=reader, repository=repository, administration_dsn=None
+            binding=binding,
+            bindings=reader,
+            repository=repository,
+            administration_dsn=None,
+            internal_hostname=PostgreSQLWarehouseProvider.internal_hostname(binding),
+            private_directory=None,
         )
-    operation_secrets = _operation_secrets(clock=clock)
+    internal_hostname = PostgreSQLWarehouseProvider.internal_hostname(binding)
+    operation_secrets = _operation_secrets(clock=clock, internal_hostnames=(internal_hostname,))
     provider = _build_provider(
         directory,
         compose_file=compose_file,
@@ -461,6 +479,8 @@ def _provision(
         bindings=reader,
         repository=repository,
         administration_dsn=_administration_dsn(provider, ready, secrets=operation_secrets),
+        internal_hostname=internal_hostname,
+        private_directory=provider.connection_target(ready).root_certificate.parent,
     )
 
 
@@ -660,14 +680,23 @@ def _private_directory(directory: Path) -> Path:
     return resolved
 
 
-def _operation_secrets(*, clock: Callable[[], datetime]) -> WarehouseOperationSecrets:
+def _operation_secrets(
+    *, clock: Callable[[], datetime], internal_hostnames: tuple[str, ...]
+) -> WarehouseOperationSecrets:
     """One start's eight principal passwords, its TLS material and its backup key.
 
     Validated by `WarehouseOperationSecrets` itself, which is the model warehouse-control's own
     secret store persists, so a field that moves is a failure here rather than a provider
     holding a credential nothing minted.
+
+    `internal_hostnames` go into the server certificate, for a client that reaches the warehouse
+    across a container network instead of through the published loopback port. They are known
+    before the warehouse exists because they derive from the binding, which is why the certificate
+    can cover them without a second provisioning.
     """
-    material = generate_demo_warehouse_tls_material(now=clock())
+    material = generate_demo_warehouse_tls_material(
+        now=clock(), internal_hostnames=internal_hostnames
+    )
     return WarehouseOperationSecrets(
         administration_password=_password(),
         ingestion_runtime_password=_password(),

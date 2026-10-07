@@ -29,7 +29,7 @@ import psycopg
 from heinzel_contract_model import ArtifactReference, digest
 from heinzel_provider_sdk import LandReceipt
 
-from .bi_provider import demo_superset_database_uri
+from .bi_provider import DemoWarehouseRoute, demo_superset_database_uri
 from .catalog import compose_demo_product_catalog, demo_source_freshness_observation
 from .generation import DemoAcquisition, LandedDemoGeneration
 from .materialization import (
@@ -231,6 +231,7 @@ def _readable(
     generation: int,
     namespace: str,
     relation_name: str,
+    dashboard_route: DemoWarehouseRoute | None,
 ) -> DemoWarehouseGeneration:
     """Grant the read-only roles `SELECT` on this product, and describe how to reach it.
 
@@ -277,12 +278,13 @@ def _readable(
             DEMO_WAREHOUSE_ROLES.estimator,
             passwords[DEMO_WAREHOUSE_ROLES.estimator],
         ),
-        # Not `role_dsn`: Superset takes a SQLAlchemy URI, and it reaches the warehouse by the
-        # host this DSN names rather than by the loopback address that reaches the published port.
+        # Not `role_dsn`: Superset takes a SQLAlchemy URI, and on the warehouse-control path it
+        # reaches the warehouse by a route of its own rather than by anything this DSN names.
         dashboard_database_uri=demo_superset_database_uri(
             bootstrap_dsn,
             role=DEMO_WAREHOUSE_ROLES.dashboard,
             password=passwords[DEMO_WAREHOUSE_ROLES.dashboard],
+            route=dashboard_route,
         ),
     )
 
@@ -295,6 +297,7 @@ def ensure_demo_generation(
     dbt_executable: Path,
     workspace: Path,
     clock: Callable[[], datetime],
+    dashboard_route: DemoWarehouseRoute | None = None,
 ) -> DemoWarehouseGeneration:
     """Provision, acquire, land, materialize and publish, or return what an earlier start did.
 
@@ -348,6 +351,7 @@ def ensure_demo_generation(
             generation=_GENERATION,
             namespace=published.namespace,
             relation_name=published.relation_name,
+            dashboard_route=dashboard_route,
         )
 
     receipt, watermark_at = _landed_generation(
@@ -420,4 +424,5 @@ def ensure_demo_generation(
         generation=materialized.receipt.product_generation,
         namespace=materialized.target_schema,
         relation_name=materialized.model_name,
+        dashboard_route=dashboard_route,
     )
