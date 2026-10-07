@@ -62,8 +62,17 @@ DEMO_ANSWER_POLICY_ID = "answer-policy-demo"
 
 # What the requester may do with an answer. `view` and `query` are what the demonstration
 # shows; `download` is included because the console offers it and a permission the console
-# offers but the entitlement withholds is a button that always refuses.
+# offers but the entitlement withholds is a button that always refuses. `dashboard` is included
+# for the same reason and is load-bearing: dashboard mode requires both `dashboard` and `view`,
+# and a grant's permissions must be a subset of the entitlement's, so without it a data access
+# request for a dashboard cannot be admitted at all.
+#
+# Changing this tuple changes the assertion's payload digest. The local authority asserts one body
+# per source revision, and a revision that returns different content is equivocation -- which the
+# observation repository refuses, as it must. A state directory written by an earlier console
+# therefore has to be discarded, not carried across: `docker compose down -v`.
 DEMO_ENTITLEMENT_PERMISSIONS: tuple[Literal["dashboard", "download", "query", "view"], ...] = (
+    "dashboard",
     "download",
     "query",
     "view",

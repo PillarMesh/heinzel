@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
+from heinzel_access_control import SQLiteAccessGrantRepository
 from heinzel_bi_control import (
     SQLiteDashboardContractRepository,
     SQLiteDashboardRepository,
@@ -338,6 +339,20 @@ class DemoStores:
             opened.append(self.dashboard_contracts)
             self.dashboards = SQLiteDashboardRepository(str(state_dir / "dashboards.sqlite3"))
             opened.append(self.dashboards)
+            # The applied access grants an admitted data access request produces, and the
+            # provider-effect receipts recorded against each revision. ADR-0007 puts that
+            # lifecycle in access-control, so what opens here is its repository rather than
+            # anything the console owns. The connection is this class's; the repository borrows it
+            # and has no `close` of its own, like the generation ledger above.
+            access_grants_connection = self._connect(state_dir / "access-grants.sqlite3")
+            opened.append(access_grants_connection)
+            self.access_grants = SQLiteAccessGrantRepository(access_grants_connection)
+            # Which principal may read which delivered result, and until when. The real
+            # `AnswerResultAccessEffectProvider` writes this, and it is durable because a grant
+            # outlives the request that applied it. Opened unconditionally, like the dashboard
+            # stores: an empty table is the correct answer on a console that granted nothing.
+            self.result_access_connection = self._connect(state_dir / "result-access.sqlite3")
+            opened.append(self.result_access_connection)
         except BaseException:
             # Best-effort clean-up: a failure to close must not replace the failure to open.
             _close_each(tuple(reversed(opened)))

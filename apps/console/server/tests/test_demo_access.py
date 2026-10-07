@@ -90,13 +90,11 @@ _VALIDITY = timedelta(days=365)
 _PUBLISHED_FIELDS = ("daily-order-value", "order_day")
 _UNPUBLISHED_FIELD = "customer_email"
 
-# What the demonstration's entitlement authority has to assert before a dashboard grant is
-# possible at all. `DEMO_ENTITLEMENT_PERMISSIONS` does not yet include `dashboard`, so these
-# tests publish it explicitly rather than quietly relaxing the check that catches its absence.
-_WITH_DASHBOARD: tuple[EntitlementPermission, ...] = (
-    *DEMO_ENTITLEMENT_PERMISSIONS,
-    "dashboard",
-)
+# What the demonstration's entitlement authority asserts. `DEMO_ENTITLEMENT_PERMISSIONS` carries
+# `dashboard`, which dashboard mode requires, so these tests assert over the demonstration's own
+# permissions rather than a set assembled here -- a set assembled here would keep passing if the
+# demonstration stopped asserting one.
+_WITH_DASHBOARD: tuple[EntitlementPermission, ...] = DEMO_ENTITLEMENT_PERMISSIONS
 
 
 @dataclass(frozen=True)
@@ -436,17 +434,22 @@ def test_a_grant_is_never_revoked_by_an_actor_who_neither_asked_for_it_nor_gover
         assert demonstration.grants.load_current_for_request(DEMO_TENANT_ID, request_id) == active
 
 
-def test_dashboard_access_is_refused_while_the_demonstration_asserts_no_dashboard_permission(
+def test_dashboard_access_is_refused_by_an_authority_that_asserts_no_dashboard_permission(
     tmp_path: Path,
 ) -> None:
-    """The demonstration's own entitlement withholds `dashboard`, and admission says so.
+    """An entitlement withholding `dashboard` refuses the grant, whatever was approved.
 
-    `DEMO_ENTITLEMENT_PERMISSIONS` asserts `download`, `query` and `view`. A dashboard grant needs
-    `dashboard`, so with the demonstration's published permissions the admission cannot bind one
-    and no grant is created. This is the gap that has to close in `demo/answers.py` before the
-    requester can see a dashboard; it is pinned here so that closing it is a deliberate act.
+    The demonstration now asserts `dashboard`, so this constructs an authority that does not. The
+    property is the one that matters whoever the tenant is: a grant's permissions must be a subset
+    of what the authority asserts, and an approval cannot supply one it withheld. Nothing here
+    depends on the demonstration's own permission set, so this keeps holding if that set changes
+    again.
     """
-    with _demonstration(tmp_path, permissions=DEMO_ENTITLEMENT_PERMISSIONS) as demonstration:
+    without_dashboard = tuple(
+        permission for permission in DEMO_ENTITLEMENT_PERMISSIONS if permission != "dashboard"
+    )
+    assert "dashboard" not in without_dashboard
+    with _demonstration(tmp_path, permissions=without_dashboard) as demonstration:
         request_id = _submit(demonstration)
         _propose_and_approve(demonstration, request_id)
 
@@ -454,6 +457,24 @@ def test_dashboard_access_is_refused_while_the_demonstration_asserts_no_dashboar
             _admit(demonstration, request_id)
 
         assert demonstration.grants.load_current_for_request(DEMO_TENANT_ID, request_id) is None
+
+
+def test_dashboard_access_is_granted_under_the_permissions_the_demonstration_asserts(
+    tmp_path: Path,
+) -> None:
+    """The journey the demonstration exists to show, in dashboard mode, end to end.
+
+    The counterpart of the refusal above: with `dashboard` asserted, the same approved proposal
+    reaches an active grant carrying exactly `dashboard` and `view`.
+    """
+    with _demonstration(tmp_path, permissions=DEMO_ENTITLEMENT_PERMISSIONS) as demonstration:
+        request_id = _submit(demonstration)
+        _propose_and_approve(demonstration, request_id)
+        grant, _ = _apply_and_deliver(demonstration, request_id)
+
+        assert grant.state == "active"
+        assert grant.access_mode == "dashboard"
+        assert grant.permissions == ("dashboard", "view")
 
 
 def test_query_access_is_granted_under_the_permissions_the_demonstration_does_assert(

@@ -40,6 +40,7 @@ from ..governed_adapters import (
 )
 from ..governed_backend import GovernedConsoleBackend
 from ..operation_handles import InMemoryOperationHandleRepository
+from .access import DemoAccessControl, build_demo_access_control
 from .answer_runtime import DemoGovernedAnswer, demo_governed_answer
 from .bootstrap import ensure_demo_generation
 from .collaborators import (
@@ -142,24 +143,6 @@ class DemoConsole:
             role_resolver = DemoRoleResolver()
             fulfillment_repository = SQLiteFulfillmentRepository(self._stores.requests)
             self._requests = RequestManagementService(self._stores.requests, clock=demo_clock)
-            self._fulfillment = FulfillmentService(
-                request_service=self._requests,
-                repository=fulfillment_repository,
-                snapshot_resolver=build_demo_snapshot_resolver(
-                    publications=self._stores.publications,
-                    publication=publication,
-                    clock=demo_clock,
-                ),
-                answer_candidate_provider=DemoAnswerCandidateProvider(publication=publication),
-                policy_compiler=build_demo_policy_compiler(),
-                authority_role_resolver=role_resolver,
-                clock=demo_clock,
-            )
-            self._fulfillment_reads = FulfillmentReadService(
-                request_service=self._requests,
-                repository=fulfillment_repository,
-                authority_role_resolver=role_resolver,
-            )
             actors = InMemoryWorkspaceActorDirectory()
             actors.bind_actor(
                 tenant_id=DEMO_TENANT_ID,
@@ -196,6 +179,52 @@ class DemoConsole:
             )
             self.governed_answer = governed_answer
             runtime = None if governed_answer is None else governed_answer.runtime
+            # Access-control over the demonstration's own stores. Composed only alongside a
+            # governed answer, and for the same reason the publishable dashboards are: the grant is
+            # narrowed against the entitlement the answer resolves through, and one tenant,
+            # principal and purpose has one authority. A second resolver here would let the answer
+            # and the grant be narrowed against different assertions of the same entitlement, with
+            # nothing downstream saying which one the requester actually holds. Without an answer
+            # there is nothing to grant access to either, so none at all is the honest posture.
+            access: DemoAccessControl | None = (
+                None
+                if governed_answer is None
+                else build_demo_access_control(
+                    grants=self._stores.access_grants,
+                    result_access_connection=self._stores.result_access_connection,
+                    requests=self._requests,
+                    fulfillment_repository=fulfillment_repository,
+                    entitlements=governed_answer.runtime.entitlements,
+                    product_ref=governed_answer.preparation.product_ref,
+                    bindings=governed_answer.preparation.bindings,
+                    clock=demo_clock,
+                )
+            )
+            self.access = access
+            self._fulfillment = FulfillmentService(
+                request_service=self._requests,
+                repository=fulfillment_repository,
+                snapshot_resolver=build_demo_snapshot_resolver(
+                    publications=self._stores.publications,
+                    publication=publication,
+                    clock=demo_clock,
+                ),
+                answer_candidate_provider=DemoAnswerCandidateProvider(publication=publication),
+                policy_compiler=build_demo_policy_compiler(),
+                authority_role_resolver=role_resolver,
+                access_candidate_provider=None if access is None else access.scope_previews,
+                data_product_owner_resolver=None if access is None else access.product_owners,
+                access_grant_admission_resolver=(
+                    None if access is None else access.grant_admission
+                ),
+                access_grant_activation_reader=None if access is None else access.activation,
+                clock=demo_clock,
+            )
+            self._fulfillment_reads = FulfillmentReadService(
+                request_service=self._requests,
+                repository=fulfillment_repository,
+                authority_role_resolver=role_resolver,
+            )
             # Provisioned before the backend is built, because the binding the reader projects
             # has to be `ready` by the time the setup surface can be asked for it: a reader over
             # a binding still being provisioned would report the foundation stage incomplete for
@@ -269,18 +298,24 @@ class DemoConsole:
                 answer_results=None if runtime is None else runtime.results,
                 verified_answers=None if runtime is None else runtime.answers,
                 answer_downloads=None if runtime is None else runtime.downloads,
-                # The demonstration delivers no grant application, expiry or revocation, so
-                # its own workspace card reports data access as not delivered. Intake must
-                # fail closed to match it: accepted, such a request clears intake and
-                # clarification and is then refused at preparation with advice to reload
-                # that cannot help, leaving a request in the inbox no action can move.
                 # The dashboards the delivered answer could be published to, read from the
                 # contracts the demonstration certified. Publishing itself stays unwired: that
                 # needs a BI provider, and there is none to reach -- so the offering names what
                 # matches and the view says publication is not available, rather than offering a
                 # control that refuses every press.
                 publishable_dashboards=publishable_dashboards,
-                data_access_intake_available=False,
+                # Access-control applies, verifies and revokes the grant an admitted data access
+                # request produces, so intake may accept one. All five move together: the
+                # workspace card reports data access ready only when every one of them is wired,
+                # and an intake that accepted a request the rest could not finish would leave it
+                # in the inbox with no action able to move it.
+                fulfillment_access_execution_commands=(
+                    None if access is None else self._fulfillment
+                ),
+                access_grant_commands=None if access is None else access.grant_commands,
+                access_grants=None if access is None else access.grants,
+                access_revocation_commands=(None if access is None else access.revocation_commands),
+                data_access_intake_available=access is not None,
                 actors=actors,
                 principals=principals,
                 clock=demo_clock,
