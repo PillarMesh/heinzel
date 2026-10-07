@@ -254,6 +254,7 @@ def fresh_superset_stack() -> Iterator[LocalSuperset]:
     with TemporaryDirectory(prefix="heinzel-superset-private-") as root_text:
         private_directory = Path(root_text) / "tls"
         write_tls_material(private_directory, generate_tls_material())
+        _share_with_the_superset_user(private_directory)
         port = _available_port()
         admin_password = secrets.token_urlsafe(24)
         warehouse_password = secrets.token_urlsafe(24)
@@ -291,6 +292,24 @@ def fresh_superset_stack() -> Iterator[LocalSuperset]:
             if stopped.returncode != 0:
                 raise RuntimeError("Superset teardown failed")
             stack.assert_removed()
+
+
+def _share_with_the_superset_user(private_directory: Path) -> None:
+    """Make the minted material readable by the user Superset runs as.
+
+    `write_tls_material` writes owner-only files into an owner-only directory, which is what
+    PostgreSQL requires of a server key -- it refuses to start when one is group or world
+    readable. Superset has the opposite requirement: it runs as its own unprivileged user, not as
+    the user that minted this, so owner-only material is material it cannot read. Gunicorn reports
+    that as `certfile ... does not exist`, which reads as a missing mount rather than a mode.
+
+    Relaxed here rather than in the writer, because the writer serves both and PostgreSQL's
+    requirement is the stricter one. These are throwaway certificates in a temporary directory that
+    is removed with the stack, and the key never leaves this machine.
+    """
+    private_directory.chmod(0o755)
+    for name in ("ca.crt", "server.crt", "server.key"):
+        (private_directory / name).chmod(0o644)
 
 
 def _compose(stack: LocalSuperset, *arguments: str) -> subprocess.CompletedProcess[str]:
