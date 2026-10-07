@@ -17,12 +17,25 @@ the console then reports is one warehouse-control made, validated and recorded e
 container needs that daemon's socket bind-mounted into it, which is host-level access. The
 existing path needs neither. See `deploy/quickstart/README.md` and `docs/demonstration-gaps.md`.
 
+This is also the warehouse the demonstration answers from: `_administration_dsn` is how, and
+`DemoConsole` composes its governed answer over it. ADR-0003 makes a Heinzel-operated data plane
+mandatory for every tenant, so the path that produces a binding warehouse-control owns is the one
+whose warehouse should be answering.
+
 Credentials are minted per start and held in this process, never written to the state
 directory, which is the posture `demo/warehouse.py` already takes with the warehouse's role
-passwords. That has one consequence worth stating plainly rather than discovering: a start that
-fails part-way through provisioning leaves a warehouse whose administration password went with
-the process that created it, and the next start refuses to adopt it instead of connecting with
-credentials it never had. `_resumable_binding` is where that refusal lives.
+passwords. That has two consequences worth stating plainly rather than discovering, both because
+provisioning rotates the administering login to the `administration` secret this start minted.
+
+A start that fails part-way through provisioning leaves a warehouse whose administration password
+went with the process that created it, and the next start refuses to adopt it instead of
+connecting with credentials it never had. `_resumable_binding` is where that refusal lives.
+
+A start that finds a `ready` binding does adopt it, because a warehouse that exists is still worth
+reporting -- but it holds no credential that warehouse accepts either, so `administration_dsn` is
+`None` and the console reports every answer capability as not delivered. That is the same answer it
+gives with no warehouse at all, and it is why the demonstration's answer on this path is shown by
+discarding the state directory and the Compose project together rather than by restarting.
 """
 
 from __future__ import annotations

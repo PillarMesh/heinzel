@@ -97,14 +97,25 @@ HEINZEL_DEMO_WAREHOUSE_CONTROL=1 uv run heinzel-console serve --state-dir ./.hei
 Without a reachable daemon the console refuses to start and says so, naming the socket and the
 setting to unset. It is the same refusal if `docker` is not installed at all.
 
-Two things this path does not do. It does not answer the seeded question: the governed answer is
-composed over the warehouse `HEINZEL_DEMO_WAREHOUSE_DSN` names, and these two settings are
-exclusive, so a console on this path reports a managed warehouse and still reports every answer
-capability as not delivered. And it cannot resume a provisioning that stopped half-way: the
-warehouse's credentials are minted per start and written nowhere, so a start that died partway
-through holds none of them, and the next start refuses to adopt that binding rather than
-connecting with credentials the warehouse never had. It names the Compose project to remove and
-the state directory to discard.
+This path answers the seeded question, over the warehouse warehouse-control provisioned. It
+acquires, lands, materializes through dbt and publishes a product generation in that warehouse,
+and the governed journey runs through it to delivered rows -- so the one path that produces a
+binding warehouse-control owns is also the one the demonstration answers from.
+
+Two limits. It answers only in the start that provisioned the warehouse: provisioning rotates the
+administering login to an operation secret minted per start and written nowhere, so a later start
+adopts a `ready` binding holding none of the credentials that warehouse accepts. It reports the
+binding and reports every answer capability as not delivered, which is what it reports with no
+warehouse at all. Keeping those secrets in the state directory would make it resumable, and this
+path deliberately keeps them in the process instead; discard the state directory and the Compose
+project together, both of which the refusal names. A provisioning that stopped half-way is refused
+outright for the same reason.
+
+And it does not publish a dashboard. Superset runs in this file's Compose project while the
+warehouse runs in the provider's, that warehouse publishes on loopback only, and its certificate
+covers `localhost` and `127.0.0.1` alone -- so there is no network name a Superset container could
+reach it under and still verify. The default path publishes no dashboard either, for an unrelated
+reason given below.
 
 [docs/demonstration-gaps.md](../../docs/demonstration-gaps.md) records what is proved about this
 path and what is not. The offline suite proves the Compose operations it issues and their order,
