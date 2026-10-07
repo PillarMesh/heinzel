@@ -28,6 +28,7 @@ dependencies = [
   "heinzel-provider-openmetadata",
   "heinzel-provider-postgresql",
   "heinzel-provider-sdk",
+  "heinzel-provider-superset",
   "heinzel-request-management",
   "heinzel-runtime",
   "heinzel-semantic-registry",
@@ -68,6 +69,7 @@ heinzel-knowledge-graph = { workspace = true }
 heinzel-provider-openmetadata = { workspace = true }
 heinzel-provider-postgresql = { workspace = true }
 heinzel-provider-sdk = { workspace = true }
+heinzel-provider-superset = { workspace = true }
 heinzel-request-management = { workspace = true }
 heinzel-runtime = { workspace = true }
 heinzel-semantic-registry = { workspace = true }

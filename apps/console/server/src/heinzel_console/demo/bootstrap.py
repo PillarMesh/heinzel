@@ -29,6 +29,7 @@ import psycopg
 from heinzel_contract_model import ArtifactReference, digest
 from heinzel_provider_sdk import LandReceipt
 
+from .bi_provider import demo_superset_database_uri
 from .catalog import compose_demo_product_catalog, demo_source_freshness_observation
 from .generation import DemoAcquisition, LandedDemoGeneration
 from .materialization import (
@@ -72,11 +73,16 @@ class DemoWarehouseGeneration:
     namespace: str
     relation_name: str
     # Kept out of the representation: these carry role passwords, and a repr of this object
-    # reaches a log or a traceback. Two rather than one because reading the product to answer a
-    # question and explaining a statement to estimate its scan are different privileges, held by
-    # different roles -- neither of which may write anything.
+    # reaches a log or a traceback. Three rather than one because reading the product to answer a
+    # question, explaining a statement to estimate its scan, and querying it for a published
+    # dashboard are different privileges, held by different roles -- none of which may write
+    # anything. ADR-0007 is why the third is not the first: a BI provider connecting as
+    # `answer_runtime` would make a database login stand in for an access decision.
     answer_dsn: str = field(repr=False)
     estimator_dsn: str = field(repr=False)
+    # The one that is not a libpq DSN: Superset takes a SQLAlchemy URI, and `demo/bi_provider.py`
+    # owns that conversion.
+    dashboard_database_uri: str = field(repr=False)
     # The compiled model the answer path re-verifies before it answers, and the key it verifies
     # with. Read back from the store rather than carried from the materialization, so a restart
     # that found an earlier generation hands back the same thing a fresh one does.
@@ -270,6 +276,13 @@ def _readable(
             bootstrap_dsn,
             DEMO_WAREHOUSE_ROLES.estimator,
             passwords[DEMO_WAREHOUSE_ROLES.estimator],
+        ),
+        # Not `role_dsn`: Superset takes a SQLAlchemy URI, and it reaches the warehouse by the
+        # host this DSN names rather than by the loopback address that reaches the published port.
+        dashboard_database_uri=demo_superset_database_uri(
+            bootstrap_dsn,
+            role=DEMO_WAREHOUSE_ROLES.dashboard,
+            password=passwords[DEMO_WAREHOUSE_ROLES.dashboard],
         ),
     )
 

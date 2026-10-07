@@ -17,7 +17,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Callable, Iterator
 from contextlib import closing, contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -125,6 +125,10 @@ class DemoGovernedAnswer:
 
     runtime: GovernedAnswerRuntime
     preparation: DemoAnswerPreparation
+    # How Superset reaches the product this answer was read from, as the least-privilege dashboard
+    # reader. Carried here because the publication is composed from the answer and the generation
+    # together, and kept out of the representation: it holds a role password.
+    dashboard_database_uri: str = field(repr=False)
 
     def admission_commands(self, requests: RequestManagementService) -> DemoAnswerAdmission:
         """The console seam that admits a question's plan, over this preparation."""
@@ -241,6 +245,7 @@ def demo_governed_answer(
         with closing(runtime):
             yield DemoGovernedAnswer(
                 runtime=runtime,
+                dashboard_database_uri=generation.dashboard_database_uri,
                 preparation=DemoAnswerPreparation(
                     entitlements=runtime.entitlements,
                     questions=runtime.questions,

@@ -1,0 +1,240 @@
+"""The console side of the demonstration's Superset: credentials, trust, and the publication seam.
+
+ADR-0010 says the source snapshot bounds the window to publish and that nothing here makes a
+dashboard demonstrable on its own -- an instance must still exist to publish to. This module is
+how the console is told about one. Given a Superset, it assembles the BI provider bi-control's
+publication workflow drives, and hands back the one seam the console's backend takes; given none,
+it hands back nothing and dashboard publication stays `not_delivered`, which is the honest answer
+with no Superset to publish to.
+
+Three decisions are made here and nowhere else.
+
+The console trusts exactly the authority it minted. `demo/superset_tls.py` mints a throwaway
+authority per demonstration and writes it where Superset reads it; the client built here verifies
+against that file alone, so a Superset serving anything else is a verification failure rather than
+a publication to an instance nobody vouched for.
+
+Superset queries the product as `dashboard_reader` and never as `answer_runtime`. ADR-0007 states
+that `answer_runtime` is the runtime's own service principal for an already admitted governed
+query, not a requester grant; a BI provider connecting as it would make a database login stand in
+for an access decision. `dashboard_reader` holds `SELECT` on the materialized product and nothing
+else, and publication still confers no access to the dashboard it creates.
+
+Superset is given a SQLAlchemy URI, not the libpq keyword DSN every other provider here takes.
+`SupersetCredentials.database_uri` reaches Superset's own SQLAlchemy layer, so the conversion
+happens once, in `demo_superset_database_uri`, with the password percent-escaped: the
+demonstration's role passwords are generated per start and routinely carry characters a URI
+reserves.
+"""
+
+from __future__ import annotations
+
+import ssl
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import ExitStack, contextmanager
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from urllib.parse import quote
+
+import httpx
+import psycopg
+from heinzel_bi_control import (
+    DashboardAnswerAuthorityReader,
+    DashboardControlService,
+    DashboardPublicationWorkflow,
+    DashboardPublisher,
+    SQLiteDashboardPublicationRepository,
+    SQLiteDashboardRepository,
+)
+from heinzel_provider_superset import (
+    HttpSupersetClient,
+    HttpxSupersetTransport,
+    SupersetCredentials,
+    SupersetProvider,
+)
+
+from ..governed_adapters import (
+    CurrentGovernedAnswerReader,
+    WorkflowDashboardPublicationCommands,
+)
+from .superset_tls import DemoSupersetTLSMaterial, ensure_demo_superset_tls_material
+from .warehouse import ProvisioningRefused
+
+__all__ = [
+    "SUPERSET_ADMIN_PASSWORD_VARIABLE",
+    "SUPERSET_BASE_URL_VARIABLE",
+    "SUPERSET_TLS_DIRECTORY_VARIABLE",
+    "DemoSupersetConnection",
+    "demo_dashboard_publication",
+    "demo_superset_connection",
+    "demo_superset_database_uri",
+]
+
+# The deployment's contract with `deploy/quickstart/compose.yaml`, which sets all three from one
+# `HEINZEL_SUPERSET_ADMIN_PASSWORD` and leaves all three empty without it. Renaming one here
+# without renaming it there would leave the console told about no Superset by a Compose project
+# that started one.
+SUPERSET_BASE_URL_VARIABLE = "HEINZEL_DEMO_SUPERSET_BASE_URL"
+SUPERSET_TLS_DIRECTORY_VARIABLE = "HEINZEL_DEMO_SUPERSET_TLS_DIRECTORY"
+SUPERSET_ADMIN_PASSWORD_VARIABLE = "HEINZEL_DEMO_SUPERSET_ADMIN_PASSWORD"
+
+# The account Superset's initialization creates, and the only one the console has to reach it
+# with. `superset fab create-admin --username admin` in the Compose project names it; a different
+# name here would authenticate as nobody.
+_SUPERSET_ADMIN_USERNAME = "admin"
+
+# What Superset's own driver takes. Not `postgresql://`: the console's other providers are given
+# libpq keyword DSNs, and the scheme is what says which of the two this string is.
+_SQLALCHEMY_SCHEME = "postgresql+psycopg2"
+
+# Long enough for Superset to create a database, a dataset and a chart per visual intent on a
+# cold instance, which is slower than any read the console makes.
+_REQUEST_TIMEOUT = 30.0
+
+_PUBLICATIONS_DATABASE = "dashboard-publications.sqlite3"
+
+
+@dataclass(frozen=True, slots=True)
+class DemoSupersetConnection:
+    """One Superset the console may publish to, and the trust it reaches it with."""
+
+    # Kept out of the representation: it carries the admin password and the dashboard reader's,
+    # and a repr of this object reaches a log or a traceback.
+    credentials: SupersetCredentials = field(repr=False)
+    tls_material: DemoSupersetTLSMaterial
+    ssl_context: ssl.SSLContext
+
+    def open_client(self) -> httpx.Client:
+        """A client that trusts the minted authority and nothing else.
+
+        `trust_env` is off deliberately. A proxy or a certificate bundle picked up from the
+        environment would either route the console's publication somewhere it was not sent or
+        widen the trust this context exists to narrow.
+        """
+        return httpx.Client(
+            verify=self.ssl_context,
+            timeout=_REQUEST_TIMEOUT,
+            trust_env=False,
+        )
+
+
+def demo_superset_database_uri(bootstrap_dsn: str, *, role: str, password: str) -> str:
+    """The SQLAlchemy URI Superset queries the product with, from the console's own warehouse DSN.
+
+    The host comes from the console's bootstrap DSN rather than being named here, because Superset
+    connects from its own container: the loopback address that reaches the published port from the
+    host reaches Superset itself on the Compose network, and a URI naming it would have Superset
+    looking for the warehouse inside itself.
+
+    The login and password are percent-escaped. The demonstration generates a fresh password per
+    start from `secrets.token_urlsafe`, which includes `-` and `_` today and whose output no caller
+    may assume; an unescaped one that happened to carry `@` or `/` would silently change which host
+    and database the URI names.
+    """
+    parsed = psycopg.conninfo.conninfo_to_dict(bootstrap_dsn)
+    host = parsed.get("host")
+    database = parsed.get("dbname")
+    if not isinstance(host, str) or not host or not isinstance(database, str) or not database:
+        raise ProvisioningRefused(
+            "the warehouse connection names no host and database for Superset to reach it by"
+        )
+    port = parsed.get("port")
+    authority = f"{host}:{port}" if isinstance(port, str) and port else host
+    login = f"{quote(role, safe='')}:{quote(password, safe='')}"
+    return f"{_SQLALCHEMY_SCHEME}://{login}@{authority}/{quote(database, safe='')}"
+
+
+def demo_superset_connection(
+    environment: Mapping[str, str],
+    *,
+    database_uri: str,
+    now: datetime,
+) -> DemoSupersetConnection | None:
+    """The Superset this deployment asked for, or `None` because it asked for none.
+
+    A half-configured Superset is not a Superset. All three variables are read, an empty value
+    counts as absent, and anything short of all three is `None`: the Compose project sets them
+    together from one secret, so a partial set is a hand-edit, and starting against a Superset that
+    was only partly described would publish nowhere in particular. What the console reports instead
+    is dashboard publication `not_delivered`, which is true.
+
+    A variable that is present and wrong is a different thing and is never read as absence.
+    `SupersetCredentials` refuses a base URL that is not an HTTPS origin, and that refusal
+    propagates: an operator who set `http://superset:8088` gets told so rather than getting a
+    console that quietly publishes nothing.
+
+    The environment is passed in rather than read from `os.environ`, so nothing has to mutate
+    process state to describe a deployment.
+    """
+    base_url = environment.get(SUPERSET_BASE_URL_VARIABLE, "")
+    tls_directory = environment.get(SUPERSET_TLS_DIRECTORY_VARIABLE, "")
+    admin_password = environment.get(SUPERSET_ADMIN_PASSWORD_VARIABLE, "")
+    if not all((base_url, tls_directory, admin_password)):
+        return None
+    # Before the material is minted, so a base URL no client could use is refused rather than
+    # leaving a certificate authority behind for a Superset the console will not reach.
+    credentials = SupersetCredentials(
+        base_url=base_url,
+        username=_SUPERSET_ADMIN_USERNAME,
+        password=admin_password,
+        database_uri=database_uri,
+    )
+    material = ensure_demo_superset_tls_material(Path(tls_directory), now=now)
+    return DemoSupersetConnection(
+        credentials=credentials,
+        tls_material=material,
+        ssl_context=ssl.create_default_context(cafile=str(material.authority_path)),
+    )
+
+
+@contextmanager
+def demo_dashboard_publication(
+    environment: Mapping[str, str],
+    *,
+    state_dir: Path,
+    dashboards: SQLiteDashboardRepository,
+    database_uri: str,
+    current_answers: CurrentGovernedAnswerReader,
+    answer_authority: DashboardAnswerAuthorityReader,
+    compose_publisher: Callable[[DashboardControlService], DashboardPublisher],
+    clock: Callable[[], datetime],
+) -> Iterator[WorkflowDashboardPublicationCommands | None]:
+    """The console's publication seam over a real Superset, or `None` given no Superset.
+
+    A context manager because what it opens has to be released: an HTTP client holding a
+    connection to Superset and the SQLite database the publication intents are recorded in. The
+    console enters it alongside the governed answer whose delivery a publication is compiled from.
+
+    `compose_publisher` is given the control service this builds and returns what publishes
+    through it, which is bi-control's `DashboardCompositionService` over the demonstration's
+    contract, query-binding, materialization, product-publication and connection authorities. It
+    is injected rather than assembled here because none of those authorities is about Superset,
+    while the control service cannot be built without the provider that is: the caller holds the
+    authorities, this holds the provider, and the callable is where the two meet.
+    """
+    connection = demo_superset_connection(environment, database_uri=database_uri, now=clock())
+    if connection is None:
+        yield None
+        return
+    with ExitStack() as closing:
+        client = closing.enter_context(connection.open_client())
+        repository = SQLiteDashboardPublicationRepository(str(state_dir / _PUBLICATIONS_DATABASE))
+        closing.callback(repository.close)
+        provider = SupersetProvider(
+            HttpSupersetClient(
+                credentials=connection.credentials,
+                transport=HttpxSupersetTransport(client),
+            )
+        )
+        yield WorkflowDashboardPublicationCommands(
+            DashboardPublicationWorkflow(
+                repository=repository,
+                composition=compose_publisher(
+                    DashboardControlService(dashboards, provider, clock=clock)
+                ),
+                answers=answer_authority,
+                clock=clock,
+            ),
+            current_answers,
+        )

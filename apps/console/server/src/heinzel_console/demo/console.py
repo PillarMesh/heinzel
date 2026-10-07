@@ -13,12 +13,17 @@ Nothing in this package imports from `tests/`, and no test module is executed at
 
 from __future__ import annotations
 
+import os
 import shutil
-from contextlib import ExitStack, suppress
+from contextlib import ExitStack, closing, suppress
 from pathlib import Path
 from types import TracebackType
 
-from heinzel_bi_control import DashboardContractVerifier
+from heinzel_bi_control import (
+    DashboardCompositionService,
+    DashboardContractVerifier,
+    SQLiteDashboardConnectionRepository,
+)
 from heinzel_request_management import (
     FulfillmentReadService,
     FulfillmentService,
@@ -42,6 +47,7 @@ from ..governed_backend import GovernedConsoleBackend
 from ..operation_handles import InMemoryOperationHandleRepository
 from .access import DemoAccessControl, build_demo_access_control
 from .answer_runtime import DemoGovernedAnswer, demo_governed_answer
+from .bi_provider import demo_dashboard_publication
 from .bootstrap import ensure_demo_generation
 from .collaborators import (
     DEMO_ARCHITECT_ID,
@@ -247,6 +253,11 @@ class DemoConsole:
                 if governed_answer is None
                 else self._compose_publishable_dashboards(state_dir, answer=governed_answer)
             )
+            publication_commands = (
+                None
+                if governed_answer is None
+                else self._compose_dashboard_publication(state_dir, answer=governed_answer)
+            )
             self.backend = GovernedConsoleBackend(
                 identity=GovernedWorkspaceIdentity(
                     tenant_ref=DEMO_TENANT_ID,
@@ -304,6 +315,7 @@ class DemoConsole:
                 # matches and the view says publication is not available, rather than offering a
                 # control that refuses every press.
                 publishable_dashboards=publishable_dashboards,
+                dashboard_publication_commands=publication_commands,
                 # Access-control applies, verifies and revokes the grant an admitted data access
                 # request produces, so intake may accept one. All five move together: the
                 # workspace card reports data access ready only when every one of them is wired,
@@ -394,6 +406,47 @@ class DemoConsole:
             answer_authority=answer.runtime.dashboard_answers,
             dashboard_control=RepositoryDashboardRevisionReader(self._stores.dashboards),
             clock=demo_clock,
+        )
+
+    def _compose_dashboard_publication(
+        self, state_dir: Path, *, answer: DemoGovernedAnswer
+    ) -> object:
+        """The publication commands, when the deployment named a Superset to publish to."""
+        signing_key = resolve_dashboard_contract_key(state_dir)
+        # Opened here rather than inside `compose_publisher`, so the console closes it: a store
+        # the composition owns privately would outlive every caller able to close it.
+        connections = self._closing.enter_context(
+            closing(
+                SQLiteDashboardConnectionRepository(
+                    str(state_dir / "dashboard-connections.sqlite3")
+                )
+            )
+        )
+        return self._closing.enter_context(
+            demo_dashboard_publication(
+                os.environ,
+                state_dir=state_dir,
+                dashboards=self._stores.dashboards,
+                database_uri=answer.dashboard_database_uri,
+                current_answers=RepositoryCurrentGovernedAnswerReader(
+                    answer.runtime.answer_records
+                ),
+                answer_authority=answer.runtime.dashboard_answers,
+                compose_publisher=lambda control: DashboardCompositionService(
+                    contracts=self._stores.dashboard_contracts,
+                    contract_verifier=DashboardContractVerifier(
+                        demo_dashboard_contract_keys(signing_key)
+                    ),
+                    answers=answer.runtime.dashboard_answers,
+                    query_bindings=self._stores.query_bindings,
+                    materializations=self._stores.materialization_receipts,
+                    product_publications=self._stores.product_publications,
+                    connections=connections,
+                    dashboard_control=control,
+                    clock=demo_clock,
+                ),
+                clock=demo_clock,
+            )
         )
 
     def seed_demonstration_request(self) -> None:
