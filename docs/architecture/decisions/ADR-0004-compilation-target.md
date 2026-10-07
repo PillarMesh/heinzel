@@ -59,13 +59,16 @@ Governed queries are not dbt models. The runtime executes them directly through 
 
 ## Implementation dependency record 2026-09-15
 
-`services/dbt-adapter` pins `dbt-clickhouse==1.10.2` alongside `dbt-core==1.10.13` and
+`services/dbt-adapter` pins `dbt-clickhouse` alongside `dbt-core==1.10.13` and
 `dbt-postgres==1.10.2`. The ClickHouse adapter is required because the existing subprocess boundary
 selects a provider-specific dbt target and must load that target without adding provider behavior to
-the compiler or runtime. Release 1.10.2 is maintained by ClickHouse, declares support for dbt Core
-1.10 and ClickHouse 25.8, and is licensed under Apache-2.0. The lockfile also pins its transitive
-drivers. A pinned-engine live test executes a compiler-signed table model before this dependency is
-accepted as evidence for ClickHouse materialization.
+the compiler or runtime. The release accepted here, 1.10.2, is maintained by ClickHouse, declares
+support for dbt Core 1.10 and ClickHouse 25.8, and is licensed under Apache-2.0. The pin has since
+moved to 1.10.3 as ordinary dependency maintenance, recorded in the changelog rather than re-argued
+here; the reason the dependency exists is what this record settles, not the release it was first
+accepted at. The lockfile also pins its transitive drivers. A pinned-engine live test executes a
+compiler-signed table model before this dependency is accepted as evidence for ClickHouse
+materialization.
 
 ## Amendment 2026-09-15: per-engine activation of the product SQL rule
 
