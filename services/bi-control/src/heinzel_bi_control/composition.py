@@ -22,6 +22,8 @@ from .models import (
     DashboardAnswerAuthority,
     DashboardDatasetConnectionBinding,
     DashboardDesiredState,
+    DashboardDimensionProjection,
+    DashboardMetricProjection,
     DashboardProviderReceipt,
     PublishDashboardCommand,
 )
@@ -455,6 +457,8 @@ class DashboardCompositionService:
             metric_refs=metric_refs,
             dimension_refs=dimension_refs,
             filter_refs=filter_refs,
+            metric_projections=_metric_projections(metric_refs, binding=binding),
+            dimension_projections=_dimension_projections(dimension_refs, binding=binding),
             visual_intents=visual_intents,
             lifecycle_state="active",
         )
@@ -465,3 +469,40 @@ class DashboardCompositionService:
         ):
             raise DashboardStaleRevision("dashboard desired revision is stale")
         return desired
+
+
+def _metric_projections(
+    metric_refs: tuple[ArtifactReference, ...], *, binding: ApprovedProductQueryBinding
+) -> tuple[DashboardMetricProjection, ...]:
+    """How the approved query binding reads each metric the contract named.
+
+    Looked up rather than taken wholesale: the binding may bind more of the product than this
+    dashboard was certified for, and a provider given those would query columns no contract
+    admitted. `_validate_binding` has already refused a contract metric the binding does not
+    carry, so every reference resolves here.
+    """
+    bound = {item.semantic_ref: item for item in binding.metric_bindings}
+    return tuple(
+        DashboardMetricProjection(
+            semantic_ref=reference,
+            aggregate=bound[reference].aggregate,
+            column_name=bound[reference].column_name,
+            output_name=bound[reference].output_name,
+        )
+        for reference in metric_refs
+    )
+
+
+def _dimension_projections(
+    dimension_refs: tuple[ArtifactReference, ...], *, binding: ApprovedProductQueryBinding
+) -> tuple[DashboardDimensionProjection, ...]:
+    """How the approved query binding reads each dimension the contract named."""
+    bound = {item.semantic_ref: item for item in binding.dimension_bindings}
+    return tuple(
+        DashboardDimensionProjection(
+            semantic_ref=reference,
+            column_name=bound[reference].column_name,
+            output_name=bound[reference].output_name,
+        )
+        for reference in dimension_refs
+    )

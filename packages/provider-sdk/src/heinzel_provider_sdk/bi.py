@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Literal, Protocol, runtime_checkable
+from typing import Final, Literal, Protocol, runtime_checkable
 
 from heinzel_contract_model import canonical_bytes, digest
-from pydantic import ConfigDict, Field
+from pydantic import ConfigDict, Field, model_validator
 
 from .models import ProviderModel
 
 type BiLifecycleState = Literal["active", "archived"]
 type BiVisualIntent = Literal["bar", "line", "number", "table"]
+type BiAggregate = Literal["average", "count", "maximum", "minimum", "sum"]
+# The intents drawn along an axis, which is what makes a dimension a precondition for them.
+_AXIS_INTENTS: Final = frozenset({"bar", "line"})
 
 
 class _BiModel(ProviderModel):
@@ -37,8 +40,31 @@ class BiDataset(_BiModel):
     relation_name: str = Field(min_length=1)
 
 
+class BiMetricProjection(_BiModel):
+    """How one governed metric is read from the relation, for a provider that must query it.
+
+    A provider is given the semantic reference as well, and that reference is the governed
+    identity; this is the physical reading of it. Without the column and the aggregate a provider
+    can create a dataset and cannot ask it anything, which is a dashboard that exists and renders
+    nothing.
+    """
+
+    semantic_ref: str = Field(min_length=1)
+    aggregate: BiAggregate
+    column_name: str = Field(min_length=1)
+    output_name: str = Field(min_length=1)
+
+
+class BiDimensionProjection(_BiModel):
+    """How one governed dimension is read from the relation."""
+
+    semantic_ref: str = Field(min_length=1)
+    column_name: str = Field(min_length=1)
+    output_name: str = Field(min_length=1)
+
+
 class BiDashboardDefinition(_BiModel):
-    schema_version: Literal["2"] = "2"
+    schema_version: Literal["3"] = "3"
     tenant_id: str = Field(min_length=1)
     dashboard_id: str = Field(min_length=1)
     version: int = Field(ge=1)
@@ -57,8 +83,23 @@ class BiDashboardDefinition(_BiModel):
     metric_refs: tuple[str, ...]
     dimension_refs: tuple[str, ...]
     filter_refs: tuple[str, ...]
+    metric_projections: tuple[BiMetricProjection, ...] = Field(min_length=1)
+    dimension_projections: tuple[BiDimensionProjection, ...]
     visual_intents: tuple[BiVisualIntent, ...]
     lifecycle_state: BiLifecycleState
+
+    @model_validator(mode="after")
+    def every_visual_intent_can_be_drawn(self) -> BiDashboardDefinition:
+        #
+        # A bar and a line are drawn along an axis, so a provider given either with no dimension
+        # can only create a chart that draws nothing. bi-control refuses this before it stores a
+        # desired state; it is refused again here because this is the boundary a provider trusts.
+        if self.dimension_projections:
+            return self
+        plotted = tuple(intent for intent in self.visual_intents if intent in _AXIS_INTENTS)
+        if plotted:
+            raise ValueError(f"{plotted[0]} needs a dimension to plot its metric along")
+        return self
 
 
 class BiApplyResult(_BiModel):

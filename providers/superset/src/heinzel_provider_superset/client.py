@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Literal, Protocol
+from typing import Final, Literal, Protocol
 
 import httpx
 from heinzel_contract_model import canonical_bytes, digest
@@ -13,6 +13,8 @@ from heinzel_provider_sdk.bi import (
     BiDashboardDefinition,
     BiDataset,
     BiLifecycleState,
+    BiMetricProjection,
+    BiVisualIntent,
 )
 from heinzel_provider_sdk.errors import ProviderErrorClassification
 
@@ -183,11 +185,16 @@ class HttpSupersetClient:
             )
             chart_payload: dict[str, object] = {
                 "slice_name": chart_key,
-                "viz_type": visual_intent,
+                "viz_type": _VIZ_TYPES[visual_intent],
                 "datasource_id": dataset_id,
                 "datasource_type": "table",
                 "description": chart_metadata,
-                "params": _canonical_json({"heinzel": json.loads(chart_metadata)}),
+                "params": _canonical_json(
+                    {
+                        **_form_data(visual_intent, definition, dataset_id=dataset_id),
+                        "heinzel": json.loads(chart_metadata),
+                    }
+                ),
             }
             chart = self._lookup("chart", "slice_name", chart_key)
             if chart is None:
@@ -617,6 +624,76 @@ class CredentialScopedSupersetProvider:
             client,
             provider_version=self._provider_version,
         ).apply(definition)
+
+
+# The governed intent is not Superset's vocabulary. `bar` and `line` name what the contract asked
+# for; these name the plugin that draws it. Passing the intent through as a `viz_type` produced a
+# chart Superset had no plugin for, which it renders as an empty one.
+_VIZ_TYPES: Final[dict[BiVisualIntent, str]] = {
+    "bar": "echarts_timeseries_bar",
+    "line": "echarts_timeseries_line",
+    "number": "big_number_total",
+    "table": "table",
+}
+_ROW_LIMIT: Final = 10_000
+
+
+def _superset_metric(projection: BiMetricProjection) -> dict[str, object]:
+    """One governed metric as Superset's adhoc metric, aggregating the bound column.
+
+    `SIMPLE` rather than a SQL expression: the aggregate and the column are separate governed
+    facts, and handing Superset a string it parses would make this the one place a column name
+    reaches a query without the server knowing which column it is.
+    """
+    return {
+        "expressionType": "SIMPLE",
+        "column": {"column_name": projection.column_name},
+        "aggregate": projection.aggregate.upper(),
+        "label": projection.output_name,
+        "hasCustomLabel": True,
+    }
+
+
+def _form_data(
+    visual_intent: BiVisualIntent,
+    definition: BiDashboardDefinition,
+    *,
+    dataset_id: int,
+) -> dict[str, object]:
+    """What Superset queries this chart with: the governed metric, by the governed dimension.
+
+    Written per plugin because each reads a different shape -- a big number takes one `metric`
+    where the others take `metrics`, and a table groups where the time-series charts take an
+    `x_axis`. The shapes here are the ones a running Superset was confirmed to render; a plugin
+    given the wrong one draws nothing and reports an empty query rather than an error.
+    """
+    metrics = [_superset_metric(projection) for projection in definition.metric_projections]
+    dimensions = [projection.column_name for projection in definition.dimension_projections]
+    shared: dict[str, object] = {
+        "datasource": f"{dataset_id}__table",
+        "viz_type": _VIZ_TYPES[visual_intent],
+    }
+    if visual_intent == "number":
+        return {**shared, "metric": metrics[0], "subheader": definition.title}
+    if visual_intent == "table":
+        # Grouped by the dimensions there are, and over the whole relation when there are none,
+        # which Superset renders as the single row that is.
+        return {
+            **shared,
+            "query_mode": "aggregate",
+            "groupby": dimensions,
+            "metrics": metrics,
+            "row_limit": _ROW_LIMIT,
+        }
+    # A bar and a line are drawn along an axis. `DashboardDesiredState` refuses either without a
+    # dimension, so reaching here with none would be an artifact that never should have stored.
+    return {
+        **shared,
+        "x_axis": dimensions[0],
+        "metrics": metrics,
+        "groupby": [],
+        "row_limit": _ROW_LIMIT,
+    }
 
 
 def _database_key(definition: BiDashboardDefinition) -> str:

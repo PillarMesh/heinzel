@@ -3080,6 +3080,23 @@ def _publishable_desired(*, revision: int = 1, prior: str | None = None) -> Dash
                 ArtifactReference(artifact_id="dimension:region", version=1, digest="f" * 64),
             ),
             "filter_refs": (),
+            "metric_projections": (
+                {
+                    "semantic_ref": metric_ref,
+                    "aggregate": "sum",
+                    "column_name": "revenue_total",
+                    "output_name": "revenue_total",
+                },
+            ),
+            "dimension_projections": (
+                {
+                    "semantic_ref": ArtifactReference(
+                        artifact_id="dimension:region", version=1, digest="f" * 64
+                    ),
+                    "column_name": "region",
+                    "output_name": "region",
+                },
+            ),
             "visual_intents": ("bar",),
             "lifecycle_state": "active",
         }

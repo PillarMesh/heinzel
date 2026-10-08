@@ -15,6 +15,7 @@ from heinzel_bi_control import (
     DashboardAnswerAuthority,
     DashboardControlService,
     DashboardDesiredState,
+    DashboardMetricProjection,
     DashboardProductGenerationReference,
     SQLiteDashboardRepository,
 )
@@ -696,6 +697,17 @@ def test_requester_dashboard_disappears_after_authoritative_access_revocation(
                 metric_refs=(metric_ref,),
                 dimension_refs=(),
                 filter_refs=(),
+                # A table over the whole relation: no dimension to group by, which is the one
+                # shape `DashboardDesiredState` admits without one alongside a single number.
+                metric_projections=(
+                    DashboardMetricProjection(
+                        semantic_ref=metric_ref,
+                        aggregate="sum",
+                        column_name="revenue_total",
+                        output_name="revenue_total",
+                    ),
+                ),
+                dimension_projections=(),
                 visual_intents=("table",),
                 lifecycle_state="active",
             )

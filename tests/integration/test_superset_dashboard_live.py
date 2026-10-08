@@ -13,6 +13,8 @@ from heinzel_bi_control import (
     DashboardAnswerAuthority,
     DashboardControlService,
     DashboardDesiredState,
+    DashboardDimensionProjection,
+    DashboardMetricProjection,
     DashboardProductGenerationReference,
     SQLiteDashboardRepository,
 )
@@ -137,6 +139,22 @@ def _admitted_desired(
         metric_refs=(metric,),
         dimension_refs=(_reference("dimension:region", "3"),),
         filter_refs=(),
+        # The columns `analytics.orders_current` actually has, because Superset queries them.
+        metric_projections=(
+            DashboardMetricProjection(
+                semantic_ref=metric,
+                aggregate="sum",
+                column_name="revenue",
+                output_name="revenue",
+            ),
+        ),
+        dimension_projections=(
+            DashboardDimensionProjection(
+                semantic_ref=_reference("dimension:region", "3"),
+                column_name="region",
+                output_name="region",
+            ),
+        ),
         visual_intents=("bar", "number"),
         lifecycle_state="active",
     )

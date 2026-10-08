@@ -9,7 +9,12 @@ from typing import Protocol
 
 from heinzel_contract_model import ArtifactReference, canonical_bytes, digest
 from heinzel_provider_sdk import ProviderError
-from heinzel_provider_sdk.bi import BiDashboardDefinition, BiProvider
+from heinzel_provider_sdk.bi import (
+    BiDashboardDefinition,
+    BiDimensionProjection,
+    BiMetricProjection,
+    BiProvider,
+)
 
 from .models import (
     DashboardAccessAuthorization,
@@ -475,6 +480,23 @@ class DashboardControlService:
                 metric_refs=tuple(_provider_reference(item) for item in stored.metric_refs),
                 dimension_refs=tuple(_provider_reference(item) for item in stored.dimension_refs),
                 filter_refs=tuple(_provider_reference(item) for item in stored.filter_refs),
+                metric_projections=tuple(
+                    BiMetricProjection(
+                        semantic_ref=_provider_reference(item.semantic_ref),
+                        aggregate=item.aggregate,
+                        column_name=item.column_name,
+                        output_name=item.output_name,
+                    )
+                    for item in stored.metric_projections
+                ),
+                dimension_projections=tuple(
+                    BiDimensionProjection(
+                        semantic_ref=_provider_reference(item.semantic_ref),
+                        column_name=item.column_name,
+                        output_name=item.output_name,
+                    )
+                    for item in stored.dimension_projections
+                ),
                 visual_intents=stored.visual_intents,
                 lifecycle_state=stored.lifecycle_state,
             )

@@ -124,6 +124,21 @@ def _definition(**updates: object) -> BiDashboardDefinition:
         "metric_refs": ("metric:revenue:v2",),
         "dimension_refs": ("dimension:region:v1",),
         "filter_refs": ("dimension:status:v1",),
+        "metric_projections": (
+            {
+                "semantic_ref": "metric:revenue:v2",
+                "aggregate": "sum",
+                "column_name": "revenue_total",
+                "output_name": "revenue_total",
+            },
+        ),
+        "dimension_projections": (
+            {
+                "semantic_ref": "dimension:region:v1",
+                "column_name": "region",
+                "output_name": "region",
+            },
+        ),
         "visual_intents": ("bar",),
         "lifecycle_state": "active",
     }

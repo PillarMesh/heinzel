@@ -14,7 +14,12 @@ from heinzel_bi_control import (
 )
 from heinzel_contract_model import ArtifactReference
 from heinzel_provider_sdk import ProviderError
-from heinzel_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
+from heinzel_provider_sdk.bi import (
+    BiApplyResult,
+    BiDashboardDefinition,
+    BiDimensionProjection,
+    BiMetricProjection,
+)
 
 NOW = datetime(2026, 9, 11, 12, tzinfo=UTC)
 
@@ -97,6 +102,17 @@ def _desired(**updates: object) -> DashboardDesiredState:
         "connection_secret_ref": "secret://tenant-a/superset-database",
         "metric_refs": (metric_ref,),
         "dimension_refs": (dimension_ref,),
+        "metric_projections": (
+            {
+                "semantic_ref": metric_ref,
+                "aggregate": "sum",
+                "column_name": "revenue_total",
+                "output_name": "revenue_total",
+            },
+        ),
+        "dimension_projections": (
+            {"semantic_ref": dimension_ref, "column_name": "region", "output_name": "region"},
+        ),
         "filter_refs": (filter_ref,),
         "visual_intents": ("bar",),
         "lifecycle_state": "active",
@@ -117,7 +133,7 @@ def test_service_persists_desired_state_and_receipt_before_exposing_publication(
     assert repository.load_receipt("tenant-a", "revenue", 3, 1) == receipt
     assert provider.definitions == [
         BiDashboardDefinition(
-            schema_version="2",
+            schema_version="3",
             tenant_id="tenant-a",
             dashboard_id="revenue",
             version=3,
@@ -136,6 +152,23 @@ def test_service_persists_desired_state_and_receipt_before_exposing_publication(
             metric_refs=(f"metric:revenue@2#{'d' * 64}",),
             dimension_refs=(f"dimension:region@1#{'e' * 64}",),
             filter_refs=(f"dimension:status@1#{'f' * 64}",),
+            # The physical reading of the same metric and dimension, which is what lets the
+            # provider query the dataset rather than only create it.
+            metric_projections=(
+                BiMetricProjection(
+                    semantic_ref=f"metric:revenue@2#{'d' * 64}",
+                    aggregate="sum",
+                    column_name="revenue_total",
+                    output_name="revenue_total",
+                ),
+            ),
+            dimension_projections=(
+                BiDimensionProjection(
+                    semantic_ref=f"dimension:region@1#{'e' * 64}",
+                    column_name="region",
+                    output_name="region",
+                ),
+            ),
             visual_intents=("bar",),
             lifecycle_state="active",
         )
@@ -179,7 +212,7 @@ def test_service_persists_desired_state_and_receipt_before_exposing_publication(
 
 def test_desired_state_rejects_the_previous_schema_version() -> None:
     payload = _desired().model_dump(mode="python")
-    payload["schema_version"] = "3"
+    payload["schema_version"] = "4"
 
     with pytest.raises(ValueError, match="schema_version"):
         DashboardDesiredState.model_validate(payload)

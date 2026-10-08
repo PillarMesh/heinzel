@@ -209,6 +209,21 @@ def _definition(**updates: object) -> BiDashboardDefinition:
         "metric_refs": ("metric:revenue:v2",),
         "dimension_refs": ("dimension:region:v1",),
         "filter_refs": ("dimension:status:v1",),
+        "metric_projections": (
+            {
+                "semantic_ref": "metric:revenue:v2",
+                "aggregate": "sum",
+                "column_name": "revenue_total",
+                "output_name": "revenue_total",
+            },
+        ),
+        "dimension_projections": (
+            {
+                "semantic_ref": "dimension:region:v1",
+                "column_name": "region",
+                "output_name": "region",
+            },
+        ),
         "visual_intents": ("bar", "number"),
         "lifecycle_state": "active",
     }
@@ -653,3 +668,104 @@ def test_a_database_that_is_created_is_not_then_written_again() -> None:
     provider.apply(_definition())
 
     assert [call[1] for call in api.calls if call[0] == "PUT"].count("/api/v1/database/1") == 0
+
+
+def _chart_params(api: _SupersetApi) -> dict[str, object]:
+    """The form data the one created chart carries, as Superset stores it."""
+    chart = next(
+        item for item in api.resources["chart"] if "chart-000" in str(item.payload["slice_name"])
+    )
+    params = chart.payload["params"]
+    assert isinstance(params, str)
+    return dict(json.loads(params))
+
+
+@pytest.mark.parametrize(
+    ("intent", "viz_type"),
+    [
+        ("bar", "echarts_timeseries_bar"),
+        ("line", "echarts_timeseries_line"),
+        ("number", "big_number_total"),
+        ("table", "table"),
+    ],
+)
+def test_each_governed_intent_becomes_the_superset_plugin_that_draws_it(
+    intent: str, viz_type: str
+) -> None:
+    """`bar` names what the contract asked for; it is not a Superset plugin.
+
+    Passed through as a `viz_type` it produced a chart Superset had no plugin for, which it
+    renders empty. Each of these was confirmed against a running Superset.
+    """
+    api = _SupersetApi()
+    provider, _ = _provider(api)
+
+    provider.apply(_definition(visual_intents=(intent,)))
+
+    chart = next(
+        item for item in api.resources["chart"] if "chart-000" in str(item.payload["slice_name"])
+    )
+    assert chart.payload["viz_type"] == viz_type
+    assert _chart_params(api)["viz_type"] == viz_type
+
+
+def test_an_axis_chart_asks_for_the_metric_along_the_bound_dimension() -> None:
+    """Without this the chart has a datasource and no query, and Superset answers `Empty query?`.
+
+    The aggregate and the column stay separate rather than being handed over as a SQL string, so
+    the one place a column name reaches a query is one Superset parses as a column.
+    """
+    api = _SupersetApi()
+    provider, _ = _provider(api)
+
+    provider.apply(_definition(visual_intents=("bar",)))
+    params = _chart_params(api)
+
+    assert params["x_axis"] == "region"
+    assert params["metrics"] == [
+        {
+            "expressionType": "SIMPLE",
+            "column": {"column_name": "revenue_total"},
+            "aggregate": "SUM",
+            "label": "revenue_total",
+            "hasCustomLabel": True,
+        }
+    ]
+    # The governed metadata the provider reconciles against is still carried beside the query.
+    assert "heinzel" in params
+
+
+def test_a_single_number_asks_for_one_metric_and_a_table_groups_by_what_it_has() -> None:
+    """The plugins read different shapes: `metric` singular against `metrics`, and a table groups.
+
+    A table with no dimension is a table over the whole relation, which a running Superset renders
+    as the single row that is -- so neither it nor a number needs one.
+    """
+    api = _SupersetApi()
+    provider, _ = _provider(api)
+    provider.apply(_definition(visual_intents=("number",)))
+    number = _chart_params(api)
+
+    assert number["metric"] == {
+        "expressionType": "SIMPLE",
+        "column": {"column_name": "revenue_total"},
+        "aggregate": "SUM",
+        "label": "revenue_total",
+        "hasCustomLabel": True,
+    }
+    assert "metrics" not in number
+    assert number["subheader"] == "Revenue overview"
+
+    grouped = _SupersetApi()
+    grouped_provider, _ = _provider(grouped)
+    grouped_provider.apply(_definition(visual_intents=("table",)))
+    table = _chart_params(grouped)
+
+    assert table["query_mode"] == "aggregate"
+    assert table["groupby"] == ["region"]
+
+    ungrouped = _SupersetApi()
+    ungrouped_provider, _ = _provider(ungrouped)
+    ungrouped_provider.apply(_definition(visual_intents=("table",), dimension_projections=()))
+
+    assert _chart_params(ungrouped)["groupby"] == []

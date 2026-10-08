@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Literal, Self
+from typing import Annotated, Final, Literal, Self
 
 from heinzel_contract_model import ArtifactModel, ArtifactReference, FreshnessRequirement, digest
 from heinzel_provider_sdk.bi import BiLifecycleState, BiVisualIntent, dashboard_external_key
@@ -221,8 +221,35 @@ class DashboardLinkSession(_BiControlModel):
         return self
 
 
+# The intents drawn along an axis, which is what makes a dimension a precondition for them.
+_AXIS_INTENTS: Final = frozenset({"bar", "line"})
+
+
+class DashboardMetricProjection(_BiControlModel):
+    """How one approved metric is read from the relation the dashboard queries.
+
+    Beside `metric_refs` rather than instead of them, because the two answer different questions.
+    The reference says which approved metric this is, and is what the contract is verified against;
+    this says which column carries it and how it aggregates, which is what a BI provider needs to
+    ask for it. A provider given only the reference can name a dataset and not query it.
+    """
+
+    semantic_ref: ArtifactReference
+    aggregate: Literal["average", "count", "maximum", "minimum", "sum"]
+    column_name: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    output_name: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+
+
+class DashboardDimensionProjection(_BiControlModel):
+    """How one approved dimension is read from the relation the dashboard queries."""
+
+    semantic_ref: ArtifactReference
+    column_name: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    output_name: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+
+
 class DashboardDesiredState(_BiControlModel):
-    schema_version: Literal["4"] = "4"
+    schema_version: Literal["5"] = "5"
     tenant_id: str = Field(min_length=1)
     dashboard_id: str = Field(min_length=1)
     version: int = Field(ge=1)
@@ -247,8 +274,28 @@ class DashboardDesiredState(_BiControlModel):
     metric_refs: tuple[ArtifactReference, ...]
     dimension_refs: tuple[ArtifactReference, ...]
     filter_refs: tuple[ArtifactReference, ...]
+    # The same metrics and dimensions, as the approved query binding reads them. At least one of
+    # each, because a dashboard that names no metric is one no provider can query and this is the
+    # artifact a provider receipt is taken against.
+    metric_projections: tuple[DashboardMetricProjection, ...] = Field(min_length=1)
+    dimension_projections: tuple[DashboardDimensionProjection, ...]
     visual_intents: tuple[BiVisualIntent, ...] = Field(min_length=1)
     lifecycle_state: BiLifecycleState
+
+    @model_validator(mode="after")
+    def every_visual_intent_can_be_drawn(self) -> DashboardDesiredState:
+        #
+        # A bar and a line are drawn along an axis, and a provider handed either with no dimension
+        # can only create a chart that draws nothing -- which it would do while this artifact
+        # recorded a dashboard that was applied. Refused here instead, while it is still a desired
+        # state. A number and a table need none: both render the metric over the whole relation,
+        # which a running Superset was confirmed to do.
+        if self.dimension_projections:
+            return self
+        plotted = tuple(intent for intent in self.visual_intents if intent in _AXIS_INTENTS)
+        if plotted:
+            raise ValueError(f"{plotted[0]} needs a dimension to plot its metric along")
+        return self
 
     @model_validator(mode="after")
     def requires_revision_chain(self) -> DashboardDesiredState:

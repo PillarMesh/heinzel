@@ -26,7 +26,13 @@ const recoveryContent = {
   },
   malformed: {
     title: "This workspace response could not be displayed",
-    detail: "The response failed contract validation, so no partial product state was rendered.",
+    // The second sentence is the one a reader needs. A bundle compiled against an earlier
+    // contract fails every response this way, on every page, and the first sentence alone sends
+    // them to look at a server that is answering correctly.
+    detail:
+      "The response failed contract validation, so no partial product state was rendered. " +
+      "A compiled bundle older than the service it is served beside fails this way on every " +
+      "page: rebuild it with npm run build.",
   },
   view: {
     title: "This view could not be displayed",

@@ -10,6 +10,8 @@ from heinzel_bi_control import (
     DashboardAnswerAuthority,
     DashboardControlService,
     DashboardDesiredState,
+    DashboardDimensionProjection,
+    DashboardMetricProjection,
     DashboardProductGenerationReference,
     SQLiteDashboardRepository,
 )
@@ -222,6 +224,22 @@ def test_fresh_request_reaches_a_live_dashboard_and_revocation_hides_it_immediat
                     metric_refs=(metric_ref,),
                     dimension_refs=(_reference("dimension:region", "a"),),
                     filter_refs=(),
+                    # The columns the relation actually has, because Superset queries them.
+                    metric_projections=(
+                        DashboardMetricProjection(
+                            semantic_ref=metric_ref,
+                            aggregate="sum",
+                            column_name="revenue",
+                            output_name="revenue",
+                        ),
+                    ),
+                    dimension_projections=(
+                        DashboardDimensionProjection(
+                            semantic_ref=_reference("dimension:region", "a"),
+                            column_name="region",
+                            output_name="region",
+                        ),
+                    ),
                     visual_intents=("bar", "number"),
                     lifecycle_state="active",
                 )

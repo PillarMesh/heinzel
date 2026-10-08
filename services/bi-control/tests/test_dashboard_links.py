@@ -93,6 +93,7 @@ def _desired(
     prior_desired_digest: str | None = None,
 ) -> DashboardDesiredState:
     metric_ref = ArtifactReference(artifact_id="metric:revenue", version=2, digest="d" * 64)
+    dimension_ref = ArtifactReference(artifact_id="dimension:region", version=1, digest="e" * 64)
     return DashboardDesiredState.model_validate(
         {
             "tenant_id": "tenant-a",
@@ -143,7 +144,22 @@ def _desired(
             "warehouse_binding_digest": "2" * 64,
             "connection_secret_ref": "secret://tenant-a/superset-database",
             "metric_refs": (metric_ref,),
-            "dimension_refs": (),
+            "dimension_refs": (dimension_ref,),
+            "metric_projections": (
+                {
+                    "semantic_ref": metric_ref,
+                    "aggregate": "sum",
+                    "column_name": "revenue_total",
+                    "output_name": "revenue_total",
+                },
+            ),
+            "dimension_projections": (
+                {
+                    "semantic_ref": dimension_ref,
+                    "column_name": "region",
+                    "output_name": "region",
+                },
+            ),
             "filter_refs": (),
             "visual_intents": ("bar",),
             "lifecycle_state": lifecycle_state,
