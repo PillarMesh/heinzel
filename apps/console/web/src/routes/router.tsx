@@ -29,6 +29,7 @@ import DecisionWorkspaceRoute, {
 } from "../features/inbox/decision-workspace"
 import {MyRequests, type RequesterClient} from "../features/requests/my-requests"
 import {SetupWorkbench, type SetupClient} from "../features/setup/setup-workbench"
+import {NoticesPage} from "../notices/notices-page"
 import {selectLandingRoute} from "./landing-route"
 import {RecoveryPage} from "./recovery-page"
 
@@ -291,6 +292,7 @@ export function ConsoleRoutes({
           element={<CapabilitySummaryPage capabilities={capabilities} kind="evidence" />}
           path="/evidence"
         />
+        <Route element={<NoticesPage />} path="/notices" />
         <Route
           element={
             <RecoveryPage

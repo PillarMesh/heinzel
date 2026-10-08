@@ -182,6 +182,13 @@ export function AppShell({
             </ol>
           </details>
         </aside>}
+        {/*
+          Last, and quiet. A notices page is reached deliberately or not at all, so it sits
+          where a reader looks for it rather than competing with the product's navigation.
+        */}
+        <NavLink className="app-shell__notices" to="/notices">
+          Third-party notices
+        </NavLink>
       </header>
       <div className="app-shell__surface">
         <ModeBanner dataProvenance={dataProvenance} />

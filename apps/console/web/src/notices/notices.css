@@ -1,0 +1,62 @@
+.notices-group {
+  margin-top: var(--space-10);
+}
+
+.notices-group h2 {
+  margin: 0;
+  text-transform: capitalize;
+}
+
+.notices-group__detail {
+  color: var(--color-ink-muted);
+  margin: var(--space-1) 0 var(--space-4);
+}
+
+.notices-table {
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  border-spacing: 0;
+  box-shadow: var(--shadow-raised);
+  max-width: 56rem;
+  overflow: hidden;
+  width: 100%;
+}
+
+.notices-table th,
+.notices-table td {
+  padding: var(--space-2) var(--space-4);
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.notices-table thead th {
+  background: var(--color-sunken);
+  border-bottom: 1px solid var(--color-line);
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.notices-table tbody tr + tr th,
+.notices-table tbody tr + tr td {
+  border-top: 1px solid var(--color-line);
+}
+
+.notices-table tbody th {
+  color: var(--color-ink-strong);
+  font-weight: var(--weight-medium);
+  /* A package name is an identifier; it must not be hyphenated or re-wrapped as prose. */
+  overflow-wrap: anywhere;
+}
+
+.notices-table td {
+  color: var(--color-ink);
+}
+
+.notices-table__unknown {
+  color: var(--color-ink-muted);
+  font-style: italic;
+}

@@ -50,6 +50,23 @@ summary {
   outline-offset: 2px;
 }
 
+/*
+ * Read by a screen reader, not drawn. The shell's route announcement already carried this
+ * class and nothing defined it, so what should have been an announcement was a stray line of
+ * text under every page. Clipped rather than `display: none`, which would take it out of the
+ * accessibility tree and silence the thing it exists for.
+ */
+.visually-hidden {
+  border: 0;
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
 .skip-link {
   background: var(--color-raised);
   color: var(--color-ink-strong);
@@ -176,6 +193,19 @@ summary {
   border-top: 1px solid var(--color-shell-line);
   margin-top: auto;
   padding-top: var(--space-5);
+}
+
+.app-shell__notices {
+  color: var(--color-on-shell-muted);
+  font-size: var(--text-2xs);
+  margin-top: calc(var(--space-8) * -1 + var(--space-3));
+  text-decoration: none;
+}
+
+.app-shell__notices:hover,
+.app-shell__notices[aria-current="page"] {
+  color: var(--color-on-shell);
+  text-decoration: underline;
 }
 
 .governance-spine__summary {

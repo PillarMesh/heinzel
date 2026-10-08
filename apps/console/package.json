@@ -9,8 +9,10 @@
   "scripts": {
     "build": "vite build",
     "check:contracts": "node scripts/generate-contracts.mjs --check",
+    "check:notices": "node scripts/generate-notices.mjs --check",
     "dev": "vite",
     "generate:contracts": "node scripts/generate-contracts.mjs",
+    "generate:notices": "node scripts/generate-notices.mjs",
     "lint": "eslint .",
     "test": "vitest",
     "test:e2e": "playwright test",

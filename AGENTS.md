@@ -101,5 +101,8 @@ behaviour. Documentation describes intended design; it is not evidence that some
 ## Console
 
 The console in `apps/console` is React and TypeScript with a Starlette server. It must pass
-`npm run lint`, `npm run typecheck`, `npm run check:contracts` and `npm run test -- --run`.
+`npm run lint`, `npm run typecheck`, `npm run check:contracts`, `npm run check:notices` and
+`npm run test -- --run`. The third-party notices the console serves are generated from the
+manifests that decide what is distributed, never edited; `check:notices` fails when the two
+disagree, and a deployment that adds a service must record what it is licensed under.
 Services, not the console, are authoritative for validity, lifecycle state, execution and evidence.
