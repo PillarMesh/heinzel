@@ -14,7 +14,7 @@ dependencies = [
   "heinzel-contract-model",
   "heinzel-provider-sdk",
   "pydantic>=2.13.5,<3",
-  "snowflake-connector-python>=4.7.5,<5",
+  "snowflake-connector-python>=4.8.0,<5",
 ]
 
 [project.urls]

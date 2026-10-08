@@ -11,7 +11,7 @@ classifiers = [
   "Operating System :: POSIX",
 ]
 dependencies = [
-  "mcp>=2.2.0,<3",
+  "mcp>=2.3.0,<3",
   "heinzel-contract-model",
   "heinzel-contract-service",
   "heinzel-evidence",
