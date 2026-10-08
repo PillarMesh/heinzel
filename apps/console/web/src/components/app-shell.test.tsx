@@ -1,4 +1,4 @@
-import {render, screen} from "@testing-library/react"
+import {render, screen, waitFor} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import {readFileSync} from "node:fs"
 import {resolve} from "node:path"
@@ -103,6 +103,44 @@ describe("AppShell", () => {
     )
     expect(screen.getByText("Not delivered")).toBeInTheDocument()
     expect(screen.getByText("Governed evidence service wiring")).toBeInTheDocument()
+  })
+
+  test("names the tab after the page rather than after the product", () => {
+    // Every route used to be titled `Heinzel`, which told a person with eight of them open
+    // nothing about any of them, and left the arrival announcement saying "Current work".
+    installMedia({})
+
+    renderShell()
+
+    expect(document.title).toBe("Run history · Heinzel")
+  })
+
+  test("follows a heading that only arrives once the page has its data", async () => {
+    // Several pages do not know what they are called until their read resolves, which is
+    // after the effect that set the title would have run.
+    installMedia({})
+    renderShell()
+
+    const heading = screen.getByRole("heading", {level: 1})
+    heading.textContent = "What is the daily order value?"
+
+    await waitFor(() =>
+      expect(document.title).toBe("What is the daily order value? · Heinzel"),
+    )
+  })
+
+  test("keeps the governance spine out of the way until it is asked for", () => {
+    // Open, it is one row of wiring per capability beside every page of the product, and the
+    // same list again in full on `/evidence`.
+    installMedia({})
+
+    renderShell()
+
+    const spine = screen.getByRole("complementary", {name: "Governance spine"})
+    const disclosure = spine.querySelector("details")
+    expect(disclosure).not.toBeNull()
+    expect(disclosure).not.toHaveAttribute("open")
+    expect(spine).toHaveTextContent("1 of 2 ready")
   })
 
   test("puts the skip link and all actions in the keyboard order without hover", async () => {

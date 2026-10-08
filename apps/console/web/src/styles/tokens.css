@@ -27,6 +27,14 @@
 
   /* One accent, reserved for action. */
   --color-primary: #1d4ed8;
+  /*
+   * The focus ring is its own colour because the accent is not one. `--color-primary` over the
+   * navy rail measures 2.58:1, under the 3:1 WCAG 2.2 asks of a focus indicator, and the rail
+   * carries the primary navigation -- so the one surface a keyboard reaches first was the one
+   * where the ring was hardest to see. This clears 3:1 over every surface the product paints:
+   * navy 4.70, raised navy 3.98, the page 3.40, white 3.68, the primary wash 3.22.
+   */
+  --color-focus: #3b82f6;
   --color-primary-strong: #1a43ba;
   --color-primary-wash: #eaf0fe;
   --color-primary-line: #c4d3f8;
@@ -53,9 +61,13 @@
   --font-display: var(--font-body);
   --font-utility: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
 
-  /* A fourth-major scale, rounded to whole pixels at the 16px root. */
-  --text-3xs: 0.6875rem;
-  --text-2xs: 0.75rem;
+  /*
+   * A fourth-major scale, rounded to whole pixels at the 16px root. The two smallest steps sit
+   * above the run: the product spends them on uppercase, letterspaced, monospaced labels, and at
+   * 11px that combination is the least legible thing it draws.
+   */
+  --text-3xs: 0.75rem;
+  --text-2xs: 0.8125rem;
   --text-xs: 0.8125rem;
   --text-sm: 0.875rem;
   --text-base: 0.9375rem;

@@ -294,7 +294,7 @@ export function ConsoleRoutes({
           }
           path="/recovery"
         />
-        <Route element={<RecoveryPage kind="workspace" />} path="*" />
+        <Route element={<RecoveryPage kind="not_found" />} path="*" />
       </Routes>
     </AppShell>
   )

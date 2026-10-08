@@ -1,3 +1,4 @@
+import {formatInstant} from "../../format/instant"
 import {ArtifactReference, ArtifactReferences} from "./artifact-reference"
 import {useEffect, useRef, useState, type ReactNode} from "react"
 
@@ -38,7 +39,7 @@ function EvidenceContent({
             {evidence.as_of === null || evidence.as_of === undefined ? (
               "Not recorded"
             ) : (
-              <time dateTime={evidence.as_of}>{evidence.as_of}</time>
+              <time dateTime={evidence.as_of}>{formatInstant(evidence.as_of)}</time>
             )}
           </dd>
         </div>

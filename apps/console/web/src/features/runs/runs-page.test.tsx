@@ -45,7 +45,7 @@ test("a tenant with no runs is told so rather than shown an empty frame", async 
 
   render(<RunsPage client={client} />)
 
-  await waitFor(() => expect(screen.getByText(/no runs have been recorded/i)).toBeVisible())
+  await waitFor(() => expect(screen.getByText(/no runs recorded/i)).toBeVisible())
 })
 
 test("a run's own state is shown rather than mapped onto another vocabulary", async () => {
@@ -125,7 +125,7 @@ test("a leased run shows its status, window and attempts with internals behind d
   )
   expect(screen.getByText(/window 2026-09-16T00:00:00.000Z to 2026-09-17T00:00:00.000Z/i)).toBeVisible()
   expect(screen.getByText(/2 attempts, latest epoch 2/i)).toBeVisible()
-  expect(screen.queryByText(/no runs have been recorded/i)).toBeNull()
+  expect(screen.queryByText(/no runs recorded/i)).toBeNull()
   expect(screen.queryByText("worker-b")).not.toBeVisible()
   for (const boundary of screen.getAllByText("acquisition_prepared:prepared-receipt-1")) {
     expect(boundary).not.toBeVisible()
@@ -175,7 +175,7 @@ test("an unavailable state-owned run read is reported rather than shown as no ru
   await waitFor(() =>
     expect(screen.getByText(/state-owned runs are unavailable right now/i)).toBeVisible(),
   )
-  expect(screen.queryByText(/no runs have been recorded/i)).toBeNull()
+  expect(screen.queryByText(/no runs recorded/i)).toBeNull()
 })
 
 test("a single lease renewal is described in the singular", async () => {

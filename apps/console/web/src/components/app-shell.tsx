@@ -21,6 +21,12 @@ const productNavigation = [
   {label: "Evidence", to: "/evidence"},
 ] as const
 
+/** What the current page calls itself: its own `h1`, or nothing when it has not got one yet. */
+function pageName(main: HTMLElement): string | null {
+  const heading = main.querySelector("h1")?.textContent?.trim()
+  return heading === undefined || heading === "" ? null : heading
+}
+
 function mediaMatches(query: string): boolean {
   return typeof globalThis.matchMedia === "function" && globalThis.matchMedia(query).matches
 }
@@ -87,6 +93,8 @@ export function AppShell({
   const [routeAnnouncement, setRouteAnnouncement] = useState("")
   const hasQueue = queue !== undefined
   const hasEvidence = evidence !== undefined
+  const capabilities = workspace.capabilities ?? []
+  const readyCapabilities = capabilities.filter((capability) => capability.state === "ready")
   const slotClasses = [
     hasQueue ? "responsive-workspace--has-queue" : null,
     hasEvidence ? "responsive-workspace--has-evidence" : null,
@@ -105,7 +113,29 @@ export function AppShell({
       return
     }
     main.focus()
-    setRouteAnnouncement(main.querySelector("h1")?.textContent ?? "Current work")
+    setRouteAnnouncement(pageName(main) ?? "Current work")
+  }, [routeIdentity])
+
+  // The page's own heading is what the page is called, so the tab, the history entry and the
+  // bookmark all say it. Every route was titled `Heinzel`, which told a person with eight of
+  // them open nothing about any of them.
+  //
+  // Observed rather than read once: several pages only learn their heading when their data
+  // arrives, which is after this effect would have run, and this effect also has to run on
+  // first paint -- where the route has not changed and the one above deliberately does not.
+  useEffect(() => {
+    const main = mainRef.current
+    if (main === null) {
+      return undefined
+    }
+    const apply = () => {
+      const named = pageName(main)
+      document.title = named === null ? "Heinzel" : `${named} · Heinzel`
+    }
+    apply()
+    const observer = new MutationObserver(apply)
+    observer.observe(main, {characterData: true, childList: true, subtree: true})
+    return () => observer.disconnect()
   }, [routeIdentity])
 
   return (
@@ -125,18 +155,32 @@ export function AppShell({
           ))}
         </nav>
         {session.active_role === "requester" ? null : <aside aria-label="Governance spine" className="governance-spine">
-          <p className="governance-spine__title">Governance spine</p>
-          <ol>
-            {(workspace.capabilities ?? []).map((capability) => (
-              <li key={capability.capability_id}>
-                <span>{capability.label}</span>
-                <CapabilityState state={capability.state} />
-                {capability.dependency === null || capability.dependency === undefined ? null : (
-                  <small>{capability.dependency}</small>
-                )}
-              </li>
-            ))}
-          </ol>
+          {/*
+            Folded away rather than removed. Open, this is one row of implementation wiring per
+            capability -- around fifteen hundred pixels of it -- repeated beside every page and
+            listed again in full on `/evidence`, so the most permanent surface the console has
+            was spent on its least actionable content, and a reader on a phone scrolled past all
+            of it to reach the page. The tally is the part worth carrying everywhere.
+          */}
+          <details className="governance-spine__disclosure">
+            <summary className="governance-spine__summary">
+              <span className="governance-spine__title">Governance spine</span>
+              <span className="governance-spine__tally">
+                {readyCapabilities.length} of {capabilities.length} ready
+              </span>
+            </summary>
+            <ol>
+              {capabilities.map((capability) => (
+                <li key={capability.capability_id}>
+                  <span>{capability.label}</span>
+                  <CapabilityState state={capability.state} />
+                  {capability.dependency === null || capability.dependency === undefined ? null : (
+                    <small>{capability.dependency}</small>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </details>
         </aside>}
       </header>
       <div className="app-shell__surface">

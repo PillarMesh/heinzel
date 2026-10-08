@@ -17,7 +17,7 @@ const dashboard = {
   access_state: "active",
   published_at: "2026-09-11T12:00:00Z",
   state: "ready",
-  summary: "Revision 3 was published by the managed BI provider on September 11, 2026.",
+  summary: "Revision 3 published by the managed BI provider.",
   preview_ref: null,
   link_ref: null,
 } as const
@@ -35,11 +35,14 @@ test("lists provider-receipted dashboards without exposing provider or internal 
 
   const link = await screen.findByRole("link", {name: "Current revenue overview"})
   expect(link).toHaveAttribute("href", `/dashboards/${dashboard.dashboard_ref}`)
-  expect(screen.getByText(/Revision 3 was published/)).toBeVisible()
+  expect(screen.getByText(/Revision 3 published/)).toBeVisible()
   expect(screen.getByText("Ready")).toBeVisible()
   expect(screen.getByText("Current")).toBeVisible()
   expect(screen.getByText("Data as of")).toBeVisible()
-  expect(screen.getByText(new Date(dashboard.as_of).toLocaleString())).toBeVisible()
+  // Asserted as the literal a reader sees rather than by re-running the formatter: the point
+  // of the shared one is that the instant reads the same on every machine, and an expectation
+  // derived from the runtime's own locale could not have caught it when it did not.
+  expect(screen.getByText("Sep 11, 2026, 11:55:00 UTC")).toBeVisible()
   expect(screen.getByText("Access")).toBeVisible()
   expect(screen.getByText("Active")).toBeVisible()
   expect(screen.queryByText(/Superset/i)).not.toBeInTheDocument()

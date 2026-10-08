@@ -1,3 +1,4 @@
+import {formatInstant} from "../../format/instant"
 import {type FormEvent, useEffect, useState} from "react"
 
 import type {
@@ -188,9 +189,10 @@ export function AcquisitionReceiptsPage({
       ) : null}
       {failure === null ? null : <p role="alert">{failure}</p>}
       {failure !== null || receipts === null ? null : receipts.length === 0 ? (
-        <p className="summary-page__guidance">
-          No acquisition has recorded a receipt for this tenant.
-        </p>
+        <div className="empty-state">
+          <strong>No acquisition receipts</strong>
+          <p>A receipt is recorded here each time a registered source is acquired.</p>
+        </div>
       ) : (
         <ul aria-label="Acquisition receipts" className="capability-ledger">
           {receipts.map((receipt) => (
@@ -201,7 +203,7 @@ export function AcquisitionReceiptsPage({
                 </h2>
                 <p>
                   {receipt.logical_object_refs.join(", ")} · recorded{" "}
-                  {new Date(receipt.created_at).toLocaleString()}
+                  {formatInstant(receipt.created_at)}
                 </p>
                 <details className="responsive-disclosure">
                   <summary>Technical references</summary>

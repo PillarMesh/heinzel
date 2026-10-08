@@ -122,7 +122,10 @@ test("the stakeholder answer review states every grounding fact the architect mu
     "Synthetic net revenue increased after delayed invoices were recognized.",
   )
   expect(review).toHaveTextContent("net-revenue-v1")
-  expect(review).toHaveTextContent("2026-01-01T00:00:00Z")
+  // Shown as a person reads it, with the exact stored instant kept on the element for anything
+  // that parses the page rather than looks at it.
+  expect(review).toHaveTextContent("Jan 1, 2026, 00:00:00 UTC")
+  expect(review.querySelector("time")).toHaveAttribute("datetime", "2026-01-01T00:00:00Z")
   expect(review).toHaveTextContent("Current")
   expect(review).toHaveTextContent(
     "Fixture values are synthetic and cannot support a real decision.",

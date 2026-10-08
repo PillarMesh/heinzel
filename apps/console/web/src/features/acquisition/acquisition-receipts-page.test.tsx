@@ -83,7 +83,7 @@ test("a tenant with no receipts is told so rather than shown an empty frame", as
   render(<AcquisitionReceiptsPage client={client} />)
 
   await waitFor(() =>
-    expect(screen.getByText(/no acquisition has recorded a receipt/i)).toBeVisible(),
+    expect(screen.getByText(/no acquisition receipts/i)).toBeVisible(),
   )
 })
 

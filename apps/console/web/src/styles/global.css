@@ -46,7 +46,7 @@ summary {
 
 :focus-visible {
   border-radius: var(--radius-sm);
-  outline: 2px solid var(--color-primary);
+  outline: 2px solid var(--color-focus);
   outline-offset: 2px;
 }
 
@@ -68,6 +68,15 @@ summary {
   transform: translateY(0);
 }
 
+/*
+ * A link inside running text is the product's smallest pointer target, and several measured
+ * under the 24px WCAG 2.2 asks of one. The padding is vertical only and the box stays inline,
+ * so the target grows without the text moving.
+ */
+.app-shell__surface a:not(.product-navigation__link) {
+  padding-block: 0.15rem;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
@@ -82,6 +91,16 @@ summary {
   font-size: var(--text-sm);
   gap: var(--space-8);
   padding: var(--space-6) var(--space-5) var(--space-5);
+  /*
+   * Held against the top so the navigation survives the page. The rail used to scroll away
+   * with the document, and the decision workspace is several screens tall, so moving between
+   * pages from the bottom of one meant scrolling back up to find the way out.
+   */
+  align-self: start;
+  max-height: 100vh;
+  overflow-y: auto;
+  position: sticky;
+  top: 0;
 }
 
 .app-shell__identity {
@@ -144,14 +163,33 @@ summary {
   padding-top: var(--space-5);
 }
 
+.governance-spine__summary {
+  align-items: baseline;
+  cursor: pointer;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+  padding: var(--space-2) 0;
+}
+
+.governance-spine__disclosure[open] .governance-spine__summary {
+  margin-bottom: var(--space-2);
+}
+
 .governance-spine__title {
   color: var(--color-navy-text);
   font-family: var(--font-utility);
   font-size: var(--text-3xs);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-caps);
-  margin: 0 0 var(--space-3);
   text-transform: uppercase;
+}
+
+.governance-spine__tally {
+  color: var(--color-white);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
 }
 
 .governance-spine ol {
@@ -285,6 +323,35 @@ summary {
   max-width: 64rem;
 }
 
+/*
+ * A page with nothing in it used to say so in one grey sentence, indistinguishable from the
+ * prose around it, so the reader could not tell an empty list from a paragraph that had not
+ * finished loading. Given a shape, and room, it reads as a state the page is in.
+ */
+.empty-state {
+  background: var(--color-white);
+  border: 1px dashed var(--color-line-strong);
+  border-radius: var(--radius-lg);
+  color: var(--color-ink-muted);
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+  margin: var(--space-6) 0;
+  max-width: 48rem;
+  padding: var(--space-10) var(--space-6);
+  text-align: center;
+}
+
+.empty-state p {
+  margin: 0;
+  max-width: 44ch;
+}
+
+.empty-state strong {
+  color: var(--color-navy);
+  font-size: var(--text-md);
+}
+
 .eyebrow {
   color: var(--color-ink-muted);
   font-family: var(--font-utility);
@@ -295,11 +362,22 @@ summary {
   text-transform: uppercase;
 }
 
+/*
+ * h1 ran to h2 at 1.56x and then h2 to h3 at 1.2x, which left h3 the size of body text and h4
+ * unstyled -- so the deepest levels, which is where the decision workspace spends most of its
+ * headings, were indistinguishable from each other and from the prose between them. The scale
+ * below separates every level the product uses, and h4 drops to the muted ink rather than
+ * chasing a size difference too small to read.
+ */
 h1,
 h2,
-h3 {
+h3,
+h4,
+h5,
+h6 {
   color: var(--color-navy);
   font-family: var(--font-display);
+  letter-spacing: var(--tracking-title);
   text-wrap: balance;
 }
 
@@ -313,17 +391,25 @@ h1 {
 }
 
 h2 {
-  font-size: var(--text-lg);
+  font-size: var(--text-xl);
   font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-title);
   line-height: var(--leading-snug);
 }
 
 h3 {
-  font-size: var(--text-base);
+  font-size: var(--text-md);
   font-weight: var(--weight-semibold);
-  letter-spacing: var(--tracking-title);
   line-height: var(--leading-snug);
+}
+
+h4,
+h5,
+h6 {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-snug);
+  margin: 0 0 var(--space-2);
 }
 
 .summary-page__lead {
@@ -597,6 +683,48 @@ h3 {
   cursor: not-allowed;
 }
 
+/*
+ * The quieter half of the pair. Buttons that carried no class fell through to the browser's
+ * own, and a disabled one of those measured 1.99:1 -- grey on grey, unreadable, on the only
+ * control the clarification panel has.
+ */
+.secondary-action {
+  background: var(--color-white);
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-md);
+  color: var(--color-primary);
+  cursor: pointer;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  padding: 0.6rem var(--space-5);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.secondary-action:hover:not(:disabled) {
+  background: var(--color-primary-wash);
+  border-color: var(--color-primary-line);
+}
+
+.secondary-action:disabled {
+  background: var(--color-neutral-surface);
+  border-color: var(--color-neutral-line);
+  color: var(--color-ink-muted);
+  cursor: not-allowed;
+}
+
+.recovery-page__actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+}
+
+.recovery-page__home {
+  color: var(--color-primary);
+  font-weight: var(--weight-semibold);
+}
+
 @keyframes loading-pulse {
   50% {
     opacity: 0.35;
@@ -617,7 +745,10 @@ h3 {
 
   .app-shell__rail {
     gap: 1rem;
+    max-height: none;
+    overflow-y: visible;
     padding: 1.15rem;
+    position: static;
   }
 
   .governance-spine {
@@ -628,10 +759,15 @@ h3 {
     grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   }
 
+  /*
+   * Wrapped rather than scrolled sideways. The row used to be an `overflow-x` strip with no
+   * fade, snap or indicator, so it cut off mid-word and everything past the cut -- five of the
+   * nine destinations -- was undiscoverable on a phone.
+   */
   .product-navigation {
     display: flex;
-    overflow-x: auto;
-    padding-bottom: 0.4rem;
+    flex-wrap: wrap;
+    gap: var(--space-1);
   }
 
   .product-navigation__link {

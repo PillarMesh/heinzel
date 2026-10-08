@@ -1924,9 +1924,10 @@ class GovernedConsoleBackend:
                     ),
                     published_at=publication.published_at,
                     state=("ready" if publication.lifecycle_state == "active" else "blocked"),
+                    # The console shows `published_at` beside this as a fact of its own, so the
+                    # sentence does not spell the date a second time in a third format.
                     summary=(
-                        f"Revision {publication.version} was published by the managed BI provider "
-                        f"on {publication.published_at:%B %-d, %Y}."
+                        f"Revision {publication.version} published by the managed BI provider."
                         if publication.lifecycle_state == "active"
                         else f"Revision {publication.version} is archived."
                     ),

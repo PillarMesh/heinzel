@@ -1,3 +1,4 @@
+import {formatInstant} from "../../format/instant"
 import {useEffect, useState} from "react"
 
 import {ConsoleApiError} from "../../api/client"
@@ -42,13 +43,18 @@ function DashboardRecord({
       <div>
         {showTitle ? <h2>{dashboard.display_name}</h2> : null}
         <p>{dashboard.summary}</p>
-        <p>
-          Published <time dateTime={dashboard.published_at}>{new Date(dashboard.published_at).toLocaleString()}</time>
-        </p>
         <dl className="dashboard-record__facts">
           <div>
+            <dt>Published</dt>
+            <dd>
+              <time dateTime={dashboard.published_at}>
+                {formatInstant(dashboard.published_at)}
+              </time>
+            </dd>
+          </div>
+          <div>
             <dt>Data as of</dt>
-            <dd><time dateTime={dashboard.as_of}>{new Date(dashboard.as_of).toLocaleString()}</time></dd>
+            <dd><time dateTime={dashboard.as_of}>{formatInstant(dashboard.as_of)}</time></dd>
           </div>
           <div>
             <dt>Freshness</dt>
@@ -134,12 +140,12 @@ export function DashboardsPage({client, dashboardRef}: DashboardsPageProps) {
                 </h2>
                 <p>{dashboard.summary}</p>
                 <p>
-                  Published <time dateTime={dashboard.published_at}>{new Date(dashboard.published_at).toLocaleString()}</time>
+                  Published <time dateTime={dashboard.published_at}>{formatInstant(dashboard.published_at)}</time>
                 </p>
                 <dl className="dashboard-record__facts">
                   <div>
                     <dt>Data as of</dt>
-                    <dd><time dateTime={dashboard.as_of}>{new Date(dashboard.as_of).toLocaleString()}</time></dd>
+                    <dd><time dateTime={dashboard.as_of}>{formatInstant(dashboard.as_of)}</time></dd>
                   </div>
                   <div>
                     <dt>Freshness</dt>

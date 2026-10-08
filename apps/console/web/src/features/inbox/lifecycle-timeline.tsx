@@ -1,3 +1,4 @@
+import {formatInstant} from "../../format/instant"
 import type {LifecycleEventView} from "../../api/generated"
 
 interface LifecycleTimelineProps {
@@ -14,7 +15,7 @@ export function LifecycleTimeline({events}: LifecycleTimelineProps) {
         <li key={event.event_id}>
           <strong>{event.state.replaceAll("_", " ")}</strong>
           <span>{event.summary}</span>
-          <time dateTime={event.occurred_at}>{event.occurred_at}</time>
+          <time dateTime={event.occurred_at}>{formatInstant(event.occurred_at)}</time>
         </li>
       ))}
     </ol>

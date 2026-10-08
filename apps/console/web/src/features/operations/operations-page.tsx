@@ -113,7 +113,10 @@ export function OperationsPage({
       </p>
       {failure === null ? null : <p role="alert">{failure}</p>}
       {failure !== null || incidents === null ? null : incidents.length === 0 ? (
-        <p className="operations-page__empty">No active incidents are recorded.</p>
+        <div className="empty-state">
+          <strong>No active incidents</strong>
+          <p>Failures appear here with the recovery actions the current run state admits.</p>
+        </div>
       ) : (
         <ul aria-label="Current incidents" className="incident-list">
           {incidents.map((incident) => (

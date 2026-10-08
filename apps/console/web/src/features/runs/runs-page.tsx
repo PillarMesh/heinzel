@@ -160,9 +160,10 @@ export function RunsPage({client}: RunsPageProps) {
       )}
       {failure !== null || runs === null ? null : runs.length === 0 ? (
         leasedRuns.length > 0 || !leasedRunsAvailable ? null : (
-        <p className="summary-page__guidance">
-          No runs have been recorded under this tenant&rsquo;s activated contracts.
-        </p>
+        <div className="empty-state">
+          <strong>No runs recorded</strong>
+          <p>Runs appear here once an activated contract executes.</p>
+        </div>
         )
       ) : (
         <ul aria-label="Recorded runs" className="capability-ledger">

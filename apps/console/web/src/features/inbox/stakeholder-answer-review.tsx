@@ -1,3 +1,4 @@
+import {formatInstant} from "../../format/instant"
 import {ArtifactReference, ArtifactReferences, ProposalApprovals} from "./artifact-reference"
 import type {
   ActorRole,
@@ -63,7 +64,7 @@ export function StakeholderAnswerReview({proposal}: StakeholderAnswerReviewProps
         <div>
           <dt>As of</dt>
           <dd>
-            <time dateTime={proposal.as_of}>{proposal.as_of}</time>
+            <time dateTime={proposal.as_of}>{formatInstant(proposal.as_of)}</time>
           </dd>
         </div>
         <div>

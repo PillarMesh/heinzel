@@ -273,6 +273,22 @@ describe("ConsoleRoutes", () => {
     expect(screen.getByText("Demo scenario - no managed effects")).toBeVisible()
   })
 
+  test("tells an unknown address apart from a workspace that will not load", async () => {
+    // An address with no page used to render the workspace failure -- "the server could not
+    // provide an authorized workspace projection" -- which sent the reader looking for an
+    // outage that was not happening, from a page with no way off it.
+    renderRoutes("/no-such-page")
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", {name: "This page does not exist"})).toBeVisible(),
+    )
+    expect(screen.queryByRole("heading", {name: "Workspace unavailable"})).toBeNull()
+    expect(screen.getByRole("link", {name: "Back to the inbox"})).toHaveAttribute(
+      "href",
+      "/inbox",
+    )
+  })
+
   test("renders dashboards from the owning listing", async () => {
     renderRoutes("/dashboards")
 
@@ -317,7 +333,7 @@ describe("ConsoleRoutes", () => {
     renderRoutes("/acquisition-receipts")
 
     await waitFor(() =>
-      expect(screen.getByText(/no acquisition has recorded a receipt/i)).toBeVisible(),
+      expect(screen.getByText(/no acquisition receipts/i)).toBeVisible(),
     )
     expect(screen.getByRole("heading", {name: "Acquisition evidence"})).toBeVisible()
   })
@@ -330,7 +346,7 @@ describe("ConsoleRoutes", () => {
     renderRoutes("/runs")
 
     await waitFor(() =>
-      expect(screen.getByText(/no runs have been recorded/i)).toBeVisible(),
+      expect(screen.getByText(/no runs recorded/i)).toBeVisible(),
     )
     expect(screen.getByRole("heading", {name: "Runs"})).toBeVisible()
   })

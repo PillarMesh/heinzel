@@ -488,7 +488,7 @@ function RequestDetailPanel({
   return (
     <div className="decision-detail__body">
       <p className="eyebrow">{detail.kind.replaceAll("_", " ")}</p>
-      <h2>{detail.title}</h2>
+      <h1>{detail.title}</h1>
       <dl className="decision-detail__facts">
         <div>
           <dt>Lifecycle state</dt>
@@ -513,7 +513,7 @@ function RequestDetailPanel({
         session={session}
       />
 
-      {detail.question ? <section className="proposal-review" aria-label="Original question"><h3>Original question</h3><p>{detail.question}</p></section> : null}
+      {detail.question ? <section className="proposal-review" aria-label="Original question"><h2>Original question</h2><p>{detail.question}</p></section> : null}
       <RequestPreparation
         key={`${detail.request_id}:${detail.revision}`}
         client={client}
@@ -559,7 +559,7 @@ function RequestDetailPanel({
         <AccessPreviewReview proposal={detail.proposal} />
       ) : (
         <section aria-label="Disclosure denial proposal" className="proposal-review">
-          <h3>Proposed disclosure denial</h3><p>{detail.proposal.explanation}</p>
+          <h2>Proposed disclosure denial</h2><p>{detail.proposal.explanation}</p>
           <p>Reason: {detail.proposal.reason_code}</p>
           <ProposalApprovals approvals={detail.proposal.required_approvals ?? []} />
         </section>
@@ -615,7 +615,7 @@ function RequestDetailPanel({
 
       {detail.admission === null || detail.admission === undefined ? null : (
         <div className="decision-detail__admission">
-          <h3>Admission to execution</h3>
+          <h2>Admission to execution</h2>
           {detail.admission.available && detail.admission.pending_delivery === true ? (
             <>
               <p>
@@ -896,7 +896,10 @@ export function DecisionWorkspace({
             </button>
           )}
           {selectedRequestId === null ? (
-            <p className="inbox-empty">Select a request to review its proposal.</p>
+            <div className="inbox-empty">
+              <h1>Inbox</h1>
+              <p>Select a request from the decision queue to review its proposal.</p>
+            </div>
           ) : detailFailed ? (
             <p role="alert">The request detail could not be displayed safely.</p>
           ) : currentDetail === null ? (

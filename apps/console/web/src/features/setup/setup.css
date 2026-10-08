@@ -99,9 +99,43 @@
 }
 
 .setup-progress__item small {
+  /*
+   * Sized, because `small` with nothing said about it inherits the browser's `smaller` from a
+   * 13px parent and lands at 10.8px -- the smallest text the product drew.
+   */
   color: var(--color-navy-text);
+  font-size: var(--text-2xs);
   margin-top: 0.25rem;
   text-transform: capitalize;
+}
+
+/*
+ * A stepper exists to show which steps are done. "Complete" and "Blocked" were the same muted
+ * grey under identical outlined circles, so the one thing it had to say was the one thing it
+ * did not. The state is now carried by the mark, its fill and its colour together, never by
+ * colour alone.
+ */
+.setup-progress__item--complete .setup-progress__number {
+  /*
+   * Filled rather than ticked. A check drawn over the digit would have had to hide it, and the
+   * step number is what a screen reader reads out to say which step this is.
+   */
+  background: var(--color-ready-surface);
+  border-color: var(--color-ready-line);
+  color: var(--color-ready);
+  font-weight: var(--weight-semibold);
+}
+
+.setup-progress__item--complete small {
+  color: var(--color-ready-line);
+}
+
+.setup-progress__item--blocked .setup-progress__number {
+  border-style: dashed;
+}
+
+.setup-progress__item--blocked small {
+  color: var(--color-attention-line);
 }
 
 .setup-progress__item em {

@@ -1,4 +1,5 @@
 type RecoveryKind =
+  | "not_found"
   | "workspace"
   | "projection"
   | "service"
@@ -12,6 +13,13 @@ type RecoveryKind =
   | "none"
 
 const recoveryContent = {
+  not_found: {
+    title: "This page does not exist",
+    // A routing miss used to render the workspace failure, which told the reader the server
+    // could not authorize a projection. Nothing was wrong with the server, and the sentence
+    // sent them looking for an outage that was not happening.
+    detail: "The address is not one this console serves. Nothing is wrong with the workspace.",
+  },
   workspace: {
     title: "Workspace unavailable",
     detail: "The server could not provide an authorized workspace projection.",
@@ -64,6 +72,9 @@ const recoveryContent = {
   },
 } satisfies Record<RecoveryKind, {title: string; detail: string}>
 
+/** Where a reader is sent from a surface that cannot show them what they asked for. */
+const homeRoute = "/inbox"
+
 interface RecoveryPageProps {
   readonly detail?: string | null | undefined
   readonly kind: RecoveryKind
@@ -83,11 +94,25 @@ export function RecoveryPage({actionLabel, correlationId, detail, kind, onRetry}
       {correlationId === undefined || correlationId === null ? null : (
         <p className="recovery-page__reference">Support reference: {correlationId}</p>
       )}
-      {onRetry === undefined ? null : (
-        <button className="primary-action" onClick={onRetry} type="button">
-          {actionLabel ?? "Try again"}
-        </button>
-      )}
+      <div className="recovery-page__actions">
+        {onRetry === undefined ? null : (
+          <button className="primary-action" onClick={onRetry} type="button">
+            {actionLabel ?? "Try again"}
+          </button>
+        )}
+        {/*
+          Every recovery surface was a dead end: it named what had gone wrong and left the
+          reader on a page with no way off it but the browser's back button.
+
+          A document link rather than a routed one. This page is also what the bootstrap renders
+          when the application failed before the router existed, so a routed link would throw
+          there -- and re-entering through the server is the right move from a surface that is
+          telling you the client state cannot be trusted.
+        */}
+        <a className="recovery-page__home" href={homeRoute}>
+          Back to the inbox
+        </a>
+      </div>
     </section>
   )
 }

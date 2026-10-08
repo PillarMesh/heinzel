@@ -1,3 +1,4 @@
+import {formatInstant} from "../../format/instant"
 import {useState} from "react"
 
 import type {
@@ -117,7 +118,7 @@ export function ConversationPanel({
             <span className="conversation-message__kind">{message.author_role === null ? "Role not recorded" : authorLabels[message.author_role]}</span>
             <span className="conversation-message__author">{message.author_label}</span>
             <p>{message.body}</p>
-            <time dateTime={message.created_at}>{message.created_at}</time>
+            <time dateTime={message.created_at}>{formatInstant(message.created_at)}</time>
           </li>
         ))}
       </ol>
@@ -131,6 +132,7 @@ export function ConversationPanel({
         />
       </label>
       <button
+        className="secondary-action"
         disabled={!canIntervene || submitting || body.trim() === ""}
         onClick={() => void sendMessage()}
         type="button"

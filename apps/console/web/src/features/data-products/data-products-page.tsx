@@ -1,3 +1,4 @@
+import {formatInstant} from "../../format/instant"
 import {useEffect, useState} from "react"
 
 import {ConsoleApiError} from "../../api/client"
@@ -47,7 +48,7 @@ function ProductAvailability({product}: {readonly product: DataProductView}) {
           <dt>Freshness checked</dt>
           <dd>
             <time dateTime={product.freshness_observed_at ?? undefined}>
-              {new Date(product.freshness_observed_at ?? "").toLocaleString()}
+              {formatInstant(product.freshness_observed_at ?? "")}
             </time>
           </dd>
         </div>
@@ -160,7 +161,7 @@ export function DataProductsPage({client, dataProductId}: DataProductsPageProps)
                     <p>
                       Catalog revision {product.catalog_revision}. Freshness checked{" "}
                       <time dateTime={product.freshness_observed_at ?? undefined}>
-                        {new Date(product.freshness_observed_at ?? "").toLocaleString()}
+                        {formatInstant(product.freshness_observed_at ?? "")}
                       </time>
                       .
                     </p>

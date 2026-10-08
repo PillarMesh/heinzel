@@ -51,7 +51,7 @@ test("a fresh governed warehouse answer is presented and downloads safely", asyn
   await page.getByRole("link", {name: "Current revenue by region"}).click()
 
   await expect(page.getByRole("heading", {name: "Current revenue by region"})).toBeVisible()
-  await expect(page.getByText(/Revision 1 was published by the managed BI provider/)).toBeVisible()
+  await expect(page.getByText(/Revision 1 published by the managed BI provider/)).toBeVisible()
   await expect(page.getByText("Data as of", {exact: true})).toBeVisible()
   await expect(page.getByText("Current", {exact: true})).toBeVisible()
   await expect(page.getByText("Access", {exact: true})).toBeVisible()
