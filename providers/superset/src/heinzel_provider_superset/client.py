@@ -803,8 +803,13 @@ def _chart_stable_key(resource: Mapping[str, object]) -> str | None:
 
 
 # Superset's grid is twelve columns across, and a unit of height is eight pixels.
+#
+# A lone chart is 720 pixels tall. The canvas under the chrome is a little over 800 on a laptop,
+# so it fills the view it is opened in without being the only thing that ever fits: a shorter row
+# left a band of empty grid under the answer, which reads the same way the corner did. A paired
+# row is shorter because two of them sit side by side and a reader takes in both at once.
 _GRID_COLUMNS: Final = 12
-_ROW_HEIGHT_UNITS: Final = 58
+_ROW_HEIGHT_UNITS: Final = 90
 _ROW_HEIGHT_UNITS_PAIRED: Final = 50
 
 

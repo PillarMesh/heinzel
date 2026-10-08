@@ -52,6 +52,29 @@ def _inline_svg(name: str) -> str:
 
 
 APP_NAME = "Heinzel"
+
+# The series a chart draws in. Registered under the id of the shipped default rather than beside
+# it, so a chart that names no scheme -- which is every chart the provider publishes, because the
+# contract says what a series means and not what colour it is -- draws in the product's palette
+# instead of the engine's. Heinzel blue first, because a governed answer is usually one series;
+# the rest are the palette's own, spaced so adjacent series stay distinguishable.
+EXTRA_CATEGORICAL_COLOR_SCHEMES = [
+    {
+        "id": "supersetColors",
+        "label": "Heinzel",
+        "isDefault": True,
+        "colors": [
+            "#2155F5",
+            "#14695F",
+            "#8BAAFF",
+            "#6DD4B6",
+            "#0D1B2F",
+            "#7a4a09",
+            "#9f1d1d",
+            "#525f76",
+        ],
+    }
+]
 FAVICONS = [{"href": _inline_svg("heinzel-symbol-color.svg")}]
 
 # Superset 6 reads its chrome from theme tokens; `APP_ICON` alone no longer reaches the navbar.
