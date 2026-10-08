@@ -1000,8 +1000,16 @@ export function DecisionWorkspace({
             </>
           )}
           <h3>Publish a dashboard</h3>
+          {/*
+            Keyed on the revision as well as the request, because what is publishable is a
+            function of both. The offering is read once per mount, so an architect who admitted
+            a request and stayed on the page was left looking at the answer that had just been
+            delivered beside a panel still saying nothing could be published from it -- the
+            offering it was showing had been composed before the admission existed.
+          */}
           <DashboardPublication
             client={client}
+            key={`${currentDetail.request_id}:${currentDetail.revision}`}
             mutationContext={() => ({
               csrfToken: session.csrf_token,
               idempotencyKey: idempotencyKeyFactory(),

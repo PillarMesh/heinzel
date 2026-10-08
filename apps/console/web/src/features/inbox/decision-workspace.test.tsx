@@ -776,6 +776,60 @@ test("an admission whose outcome is unknown is reconciled, not reported as uncha
   expect(second[2].idempotencyKey).toBe(first[2].idempotencyKey)
 })
 
+test("admitting a proposal re-reads what the delivered answer makes publishable", async () => {
+  // The offering is composed by the server from a delivered answer, so nothing is publishable
+  // until the admission exists. Read once per mount, it left the architect who had just admitted
+  // a request looking at the delivered answer beside a panel still saying there was nothing to
+  // publish from it -- and the only way out was to leave the page and come back.
+  const user = userEvent.setup()
+  const getPublishableDashboards = vi
+    .fn()
+    .mockResolvedValueOnce({
+      meta: {correlation_id: "correlation-publication", data_provenance: "demo_fixture" as const},
+      data: {request_id: "request-answer", answer_title: null, dashboards: [], publication_available: true},
+    })
+    .mockResolvedValue({
+      meta: {correlation_id: "correlation-publication", data_provenance: "demo_fixture" as const},
+      data: {
+        request_id: "request-answer",
+        answer_title: "Weekly revenue movement",
+        publication_available: true,
+        dashboards: [
+          {
+            dashboard_id: "dashboard:revenue",
+            dashboard_version: 3,
+            next_revision: 1,
+            owner: "principal:finance-owner",
+          },
+        ],
+      },
+    })
+  const client = createClient({
+    getPublishableDashboards,
+    getRequestDetail: vi.fn(async () =>
+      detailEnvelope({...answerDetail, admission: {available: true, blocking_reason: null}}),
+    ),
+    admitRequest: vi.fn(async () =>
+      detailEnvelope({
+        ...answerDetail,
+        revision: answerDetail.revision + 1,
+        state: "delivered",
+        admission: null,
+      }),
+    ),
+  })
+  renderWorkspace(client, answerDetail.request_id)
+
+  expect(
+    await screen.findByText(/No certified dashboard matches this answer/),
+  ).toBeVisible()
+
+  await user.click(await screen.findByRole("button", {name: "Admit to execution"}))
+
+  expect(await screen.findByRole("button", {name: "Publish"})).toBeVisible()
+  expect(getPublishableDashboards).toHaveBeenCalledTimes(2)
+})
+
 test("an admitted answer whose delivery did not complete offers a delivery retry", async () => {
   const user = userEvent.setup()
   const admitRequest = vi.fn(async () =>
