@@ -1,3 +1,4 @@
+import {StatusPill} from "../../components/status-pill"
 import type {ArtifactReferenceView, ProposalApprovalView} from "../../api/generated"
 
 /**
@@ -40,5 +41,5 @@ export function ArtifactReferences({label, references}: {readonly label: string;
 export function ProposalApprovals({approvals}: {readonly approvals: readonly ProposalApprovalView[]}) {
   if (approvals.length === 0) return null
   // The authority reference is what the owning service checks; the label is what a reviewer reads.
-  return <section aria-label="Required approvals"><h4>Required approvals</h4><ul>{approvals.map((approval) => <li key={`${approval.authority_ref}:${approval.reason}`}>{approval.authority_label === null || approval.authority_label === undefined ? <code>{approval.authority_ref}</code> : approval.authority_label} · {approval.reason.replaceAll("_", " ")} · <strong>{approval.satisfied ? "Recorded" : "Not recorded"}</strong></li>)}</ul></section>
+  return <section aria-label="Required approvals"><h4>Required approvals</h4><ul>{approvals.map((approval) => <li key={`${approval.authority_ref}:${approval.reason}`}>{approval.authority_label === null || approval.authority_label === undefined ? <code>{approval.authority_ref}</code> : approval.authority_label} · {approval.reason.replaceAll("_", " ")} · <StatusPill tone={approval.satisfied ? "ready" : "neutral"}>{approval.satisfied ? "Recorded" : "Not recorded"}</StatusPill></li>)}</ul></section>
 }

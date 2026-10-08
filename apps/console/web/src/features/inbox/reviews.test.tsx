@@ -143,7 +143,9 @@ test("the access preview review states the effective scope, exclusions, checks, 
   expect(review).toHaveTextContent("Investigate delayed invoice recognition.")
   expect(screen.getByRole("list", {name: "Effective scope"})).toHaveTextContent("invoice_id")
   expect(screen.getByRole("list", {name: "Exclusions"})).toHaveTextContent("recognized_at")
-  expect(review).toHaveTextContent("2026-01-08T00:00:00Z")
+  // Shown as a person reads it, with the stored instant kept on the element.
+  expect(review).toHaveTextContent("Jan 8, 2026, 00:00:00 UTC")
+  expect(review.querySelector("time")).toHaveAttribute("datetime", "2026-01-08T00:00:00Z")
   expect(screen.getByRole("list", {name: "Intended checks"})).toHaveTextContent(
     "Can query synthetic invoice identifiers.",
   )

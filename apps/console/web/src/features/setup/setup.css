@@ -59,7 +59,13 @@
   width: 100%;
 }
 
+/*
+ * A step that has not been reached is a step, not a disabled button. The control layer gives
+ * a disabled button a filled, sunken ground, which is right for an action the reader cannot
+ * take and wrong for a row in a progress list that was never a button to look at.
+ */
 .setup-progress__item > button:disabled {
+  background: transparent;
   cursor: default;
 }
 

@@ -1,4 +1,5 @@
 @import "./tokens.css";
+@import "./controls.css";
 
 * {
   box-sizing: border-box;
@@ -415,27 +416,6 @@ summary {
   text-decoration-color: currentcolor;
 }
 
-/*
- * Form controls, drawn the same way. A native `select` beside a themed input reads as a
- * control the product did not know about.
- */
-.app-shell__surface select,
-.app-shell__surface input[type="text"],
-.app-shell__surface input[type="search"],
-.app-shell__surface textarea {
-  background: var(--color-raised);
-  border: 1px solid var(--color-line-strong);
-  border-radius: var(--radius-sm);
-  color: var(--color-ink);
-  font: inherit;
-  padding: var(--space-2) var(--space-3);
-}
-
-.app-shell__surface select {
-  /* Room for the chevron the platform draws, so the longest option never sits under it. */
-  padding-right: var(--space-8);
-}
-
 .empty-state p {
   margin: 0;
   max-width: 44ch;
@@ -481,7 +461,11 @@ h1 {
   letter-spacing: var(--tracking-display);
   line-height: var(--leading-tight);
   margin: 0 0 var(--space-3);
-  max-width: 24ch;
+  /*
+   * Wide enough for a heading of a few words to stay on one line. At 24ch a three-word title
+   * broke after the second word in a panel with room for all three.
+   */
+  max-width: 32ch;
 }
 
 h2 {
@@ -772,59 +756,18 @@ h6 {
   padding: var(--space-8);
 }
 
-.primary-action {
-  background: var(--color-primary);
-  border: 0;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-raised);
-  color: var(--color-on-primary);
-  cursor: pointer;
-  font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  letter-spacing: 0;
-  padding: 0.6rem var(--space-5);
-  transition: background var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-.primary-action:hover:not(:disabled) {
-  background: var(--color-primary-strong);
-  box-shadow: var(--shadow-lifted);
-}
-
-.primary-action:disabled {
-  background: var(--color-neutral-surface);
-  box-shadow: none;
-  color: var(--color-ink-muted);
-  cursor: not-allowed;
-}
-
 /*
- * The quieter half of the pair. Buttons that carried no class fell through to the browser's
- * own, and a disabled one of those measured 1.99:1 -- grey on grey, unreadable, on the only
- * control the clarification panel has.
+ * The two ranked buttons, as semantics. What they look like is in `controls.css` with the
+ * rest of the control layer; these say which is which.
  */
+.primary-action,
 .secondary-action {
-  background: var(--color-raised);
-  border: 1px solid var(--color-line-strong);
-  border-radius: var(--radius-md);
-  color: var(--color-primary);
-  cursor: pointer;
   font-size: var(--text-sm);
-  font-weight: var(--weight-semibold);
-  padding: 0.6rem var(--space-5);
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  padding-inline: var(--space-5);
 }
 
-.secondary-action:hover:not(:disabled) {
-  background: var(--color-primary-wash);
-  border-color: var(--color-primary-line);
-}
-
-.secondary-action:disabled {
-  background: var(--color-neutral-surface);
-  border-color: var(--color-neutral-line);
-  color: var(--color-ink-muted);
-  cursor: not-allowed;
+.secondary-action:not(:disabled) {
+  color: var(--color-primary);
 }
 
 .recovery-page__actions {

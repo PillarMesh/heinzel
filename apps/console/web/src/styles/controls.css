@@ -1,0 +1,349 @@
+/*
+ * The controls, as elements.
+ *
+ * The product had no control layer: forty-four buttons, fourteen inputs and thirteen text
+ * areas, almost none of them carrying a class, so each was drawn by whatever descendant rule
+ * a feature happened to write, or by the browser. That is what made the management surfaces
+ * -- the ones a reviewer spends their day in -- look unfinished beside the pages that had
+ * been designed.
+ *
+ * Written against the elements rather than against classes, so every one of those call sites
+ * is covered without being touched, and scoped to the work surface so the navigation rail,
+ * which is drawn on a dark ground, keeps its own treatment. A class is added on top only
+ * where rank matters: which of three buttons is the one to press.
+ *
+ * The base rules sit inside `:where()`, which costs nothing in specificity. That makes this a
+ * default rather than an override: a feature that already dresses a particular control -- the
+ * setup stepper's rows are buttons, and are meant to look like steps -- still wins without
+ * having to out-weigh anything. The states and the variants keep their weight, because a
+ * state has to beat the base and a variant is a choice made at the call site.
+ */
+
+:where(.app-shell__surface) :where(input[type="text"], input[type="search"], input[type="email"],
+  input[type="url"], input[type="number"], input[type="password"], textarea, select) {
+  background: var(--color-raised);
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink);
+  font: inherit;
+  min-height: var(--control-height);
+  padding: 0.4rem var(--space-3);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+  width: 100%;
+}
+
+:where(.app-shell__surface) :where(input, textarea, select):hover:not(:disabled, [readonly]) {
+  border-color: var(--color-ink-muted);
+}
+
+/*
+ * The ring is drawn inside as well as out. An outline alone sits beside the control; the
+ * inner line makes the field itself look focused, which is what a reader scanning a long
+ * form is looking for.
+ */
+:where(.app-shell__surface) :where(input, textarea, select):focus-visible {
+  border-color: var(--color-focus);
+  box-shadow: 0 0 0 1px var(--color-focus) inset;
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+:where(.app-shell__surface) :where(input, textarea, select):disabled {
+  background: var(--color-sunken);
+  border-color: var(--color-line);
+  color: var(--color-ink-muted);
+  cursor: not-allowed;
+}
+
+:where(.app-shell__surface textarea) {
+  /* Tall enough for the sentence it expects, and growable, never shrinkable to nothing. */
+  display: block;
+  line-height: var(--leading-normal);
+  min-height: 5.5rem;
+  padding: var(--space-3);
+  resize: vertical;
+}
+
+:where(.app-shell__surface select) {
+  /* Room for the chevron the platform draws, so the longest option never sits under it. */
+  appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, currentcolor 50%),
+    linear-gradient(135deg, currentcolor 50%, transparent 50%);
+  background-position: right 1.05rem center, right 0.8rem center;
+  background-repeat: no-repeat;
+  background-size: 0.3rem 0.3rem, 0.3rem 0.3rem;
+  cursor: pointer;
+  padding-right: var(--space-8);
+}
+
+/*
+ * Checkboxes and radios, drawn rather than left to the platform. `accent-color` alone keeps
+ * the platform's size, which is smaller than the 24px a pointer target is held to and smaller
+ * than the text beside it.
+ */
+:where(.app-shell__surface) :where(input[type="checkbox"], input[type="radio"]) {
+  appearance: none;
+  background: var(--color-raised);
+  border: 1.5px solid var(--color-line-strong);
+  cursor: pointer;
+  display: grid;
+  flex: none;
+  height: 1.15rem;
+  margin: 0;
+  min-height: 0;
+  place-content: center;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+  width: 1.15rem;
+}
+
+:where(.app-shell__surface input[type="checkbox"]) {
+  border-radius: var(--radius-sm);
+}
+
+:where(.app-shell__surface input[type="radio"]) {
+  border-radius: 50%;
+}
+
+:where(.app-shell__surface) :where(input[type="checkbox"], input[type="radio"])::before {
+  content: "";
+  transform: scale(0);
+  transition: transform var(--duration-fast) var(--ease-entrance);
+}
+
+:where(.app-shell__surface input[type="checkbox"])::before {
+  /* A tick, as a clipped square, so it scales with the box and needs no glyph. */
+  background: var(--color-on-primary);
+  clip-path: polygon(14% 44%, 0 60%, 40% 100%, 100% 18%, 84% 2%, 38% 68%);
+  height: 0.7rem;
+  width: 0.7rem;
+}
+
+:where(.app-shell__surface input[type="radio"])::before {
+  background: var(--color-on-primary);
+  border-radius: 50%;
+  height: 0.45rem;
+  width: 0.45rem;
+}
+
+:where(.app-shell__surface) :where(input[type="checkbox"], input[type="radio"]):checked {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+:where(.app-shell__surface) :where(input[type="checkbox"], input[type="radio"]):checked::before {
+  transform: scale(1);
+}
+
+:where(.app-shell__surface) :where(input[type="checkbox"], input[type="radio"]):disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+/*
+ * Buttons. The base is the quiet one, because most buttons in a governed console are not the
+ * action -- they are the alternatives to it -- and the one that is says so with `primary`.
+ */
+:where(.app-shell__surface button:not(.capability-state)) {
+  align-items: center;
+  background: var(--color-raised);
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-sm);
+  color: var(--color-ink-strong);
+  cursor: pointer;
+  display: inline-flex;
+  font: inherit;
+  font-weight: var(--weight-medium);
+  gap: var(--space-2);
+  justify-content: center;
+  line-height: 1;
+  min-height: var(--control-height);
+  padding: 0 var(--space-4);
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast);
+  white-space: nowrap;
+}
+
+:where(.app-shell__surface button:not(.capability-state)):hover:not(:disabled) {
+  background: var(--color-sunken);
+  border-color: var(--color-ink-muted);
+}
+
+/* Pressed, by a pixel. Enough to feel, not enough to see as movement. */
+:where(.app-shell__surface button:not(.capability-state)):active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+:where(.app-shell__surface button:not(.capability-state)):disabled {
+  background: var(--color-sunken);
+  border-color: var(--color-line);
+  color: var(--color-ink-muted);
+  cursor: not-allowed;
+}
+
+/*
+ * The variants paint only while the control can be used. Written without `:not(:disabled)`
+ * they out-weighed the disabled treatment, so a primary action the reader could not take was
+ * drawn exactly like one they could -- the loudest thing on the page, and inert.
+ */
+.app-shell__surface button.primary-action:not(:disabled),
+.app-shell__surface button.action--primary:not(:disabled) {
+  background: var(--color-primary);
+  border-color: transparent;
+  box-shadow: var(--shadow-raised);
+  color: var(--color-on-primary);
+  font-weight: var(--weight-semibold);
+}
+
+.app-shell__surface button.primary-action:hover:not(:disabled),
+.app-shell__surface button.action--primary:hover:not(:disabled) {
+  background: var(--color-primary-strong);
+  border-color: transparent;
+  box-shadow: var(--shadow-lifted);
+}
+
+/*
+ * The destructive one is outlined rather than filled. A filled red button is the loudest
+ * thing on a page, and on a review surface the loudest thing should be the action that
+ * carries the work forward, not the one that stops it.
+ */
+.app-shell__surface button.action--danger:not(:disabled) {
+  border-color: var(--color-danger-line);
+  color: var(--color-danger);
+}
+
+.app-shell__surface button.action--danger:hover:not(:disabled) {
+  background: var(--color-danger-surface);
+  border-color: var(--color-danger);
+}
+
+.app-shell__surface button.action--ghost:not(:disabled) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--color-primary);
+}
+
+.app-shell__surface button.action--ghost:hover:not(:disabled) {
+  background: var(--color-primary-wash);
+  border-color: transparent;
+}
+
+/*
+ * A field: its label, its control, and whatever has to be said about it. Declared here so a
+ * form is laid out by saying what it is rather than by each feature inventing a grid.
+ */
+.field {
+  display: grid;
+  gap: var(--space-2);
+  margin-block-end: var(--space-5);
+  max-width: 44rem;
+}
+
+.field > span:first-child,
+.field > label {
+  color: var(--color-ink-strong);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.field__hint {
+  color: var(--color-ink-muted);
+  font-size: var(--text-xs);
+  margin: 0;
+}
+
+/* A choice made by ticking something, where the tick sits beside its words rather than above. */
+.field--inline {
+  align-items: start;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.field--inline > span:first-child,
+.field--inline > label {
+  font-weight: var(--weight-regular);
+  line-height: 1.15rem;
+}
+
+/*
+ * Motion, where it says something.
+ *
+ * Each of these marks a change the reader did not make happen on the spot: a page arriving, a
+ * row they are now on, a state that has just become true. Nothing loops, nothing moves more
+ * than a few pixels, and the longest is under a quarter of a second -- past that a transition
+ * stops reading as the same object moving and starts reading as an animation being played.
+ * The reduced-motion block in `tokens.css` collapses every duration to 1ms, so all of it is
+ * off for a reader who asked for that.
+ */
+@keyframes surface-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/*
+ * The shell remounts this on every route change, so the content of a new page arrives rather
+ * than replacing the old one in place -- which is the difference between a page that changed
+ * and a page that flickered.
+ */
+.responsive-workspace__content {
+  animation: surface-enter var(--duration-slow) var(--ease-entrance) both;
+}
+
+.pill,
+.capability-state {
+  transition:
+    background var(--transition-base),
+    border-color var(--transition-base),
+    color var(--transition-base);
+}
+
+/* A card that can be opened says so by lifting under the pointer, not by changing colour. */
+.capability-ledger__item {
+  transition:
+    box-shadow var(--transition-base),
+    transform var(--transition-base);
+}
+
+.capability-ledger__item:hover {
+  box-shadow: var(--shadow-lifted);
+  transform: translateY(-1px);
+}
+
+.decision-queue__item {
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+/* A disclosure's marker turns rather than swapping glyph. */
+.artifact-digest summary::marker,
+.governance-spine__summary::marker {
+  content: "";
+}
+
+.artifact-digest summary,
+.governance-spine__summary {
+  list-style: none;
+}
+
+.artifact-digest summary::before,
+.governance-spine__summary::before {
+  content: "›";
+  display: inline-block;
+  margin-inline-end: var(--space-2);
+  transition: transform var(--transition-base);
+}
+
+.artifact-digest[open] > summary::before,
+.governance-spine__disclosure[open] > .governance-spine__summary::before {
+  transform: rotate(90deg);
+}

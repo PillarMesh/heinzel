@@ -1,5 +1,5 @@
 import {RequestPreparation, type RequestPreparationClient} from "./request-preparation"
-import {ProposalApprovals} from "./artifact-reference"
+import {ArtifactDigest, ProposalApprovals} from "./artifact-reference"
 import {useCallback, useEffect, useRef, useState} from "react"
 import {useParams} from "react-router-dom"
 
@@ -41,6 +41,20 @@ const decisionLabels = {
   approve: "Approve",
   reject: "Reject",
   request_changes: "Request changes",
+} satisfies Record<Decision1, string>
+
+/**
+ * Which of the three is the one to press.
+ *
+ * They were drawn identically, so the surface gave no help with the only question it exists
+ * to ask. Approving carries the work forward and is the filled one; rejecting ends it and is
+ * outlined in the danger colour rather than filled, because the loudest thing on a review
+ * page should be the action that continues it.
+ */
+const decisionRank = {
+  approve: "action--primary",
+  reject: "action--danger",
+  request_changes: "",
 } satisfies Record<Decision1, string>
 
 export interface InboxClient
@@ -484,6 +498,20 @@ function RequestDetailPanel({
     detail.product_intent !== null &&
     detail.product_intent !== undefined &&
     approvedIntentDigest !== detail.product_intent.reviewed_digest
+  /**
+   * What the product is waiting for, in the reviewer's words.
+   *
+   * Ordered so the first thing they can do something about is the thing they are told. A
+   * submission in flight is not a blocker worth naming -- the button already says so.
+   */
+  const blockingReason =
+    requiredEvidenceUnavailable || submitting !== null
+      ? null
+      : !digestConfirmed
+        ? "Confirm the reviewed digest to record a decision."
+        : productIntentApprovalBlocked
+          ? "Approving also needs the product intent approved against the digest under review."
+          : null
 
   return (
     <div className="decision-detail__body">
@@ -586,32 +614,59 @@ function RequestDetailPanel({
 
       {availableActions.length === 0 ? null : (
         <>
-          <label className="decision-detail__digest">
-            <input
-              checked={digestConfirmed}
-              onChange={(event) => setDigestConfirmed(event.currentTarget.checked)}
-              type="checkbox"
-            />
-            <span>I confirm the exact reviewed digest {proposalDigest}.</span>
-          </label>
-          {!requiredEvidenceUnavailable ? null : (
-            <p className="inbox-unavailable">
-              Required evidence is unavailable, so no decision can be recorded.
-            </p>
-          )}
-          <div className="decision-detail__actions">
-            {availableActions.map((action) => (
-              <button
-                className={action === "approve" ? "primary-action" : undefined}
-                disabled={actionsDisabled || (action === "approve" && productIntentApprovalBlocked)}
-                key={action}
-                onClick={() => void recordDecision(action)}
-                type="button"
-              >
-                {submitting === action ? "Submitting decision…" : decisionLabels[action]}
-              </button>
-            ))}
-          </div>
+          {/*
+            The decision, as one thing. The confirmation, what is blocking it and the three
+            actions used to be three loose stacks at the foot of a long page, so the moment
+            the reviewer is here for looked like more of the reading they had just done.
+          */}
+          <section aria-label="Record a decision" className="decision-record">
+            <h2>Record a decision</h2>
+            <label className="decision-record__digest field--inline">
+              <input
+                checked={digestConfirmed}
+                onChange={(event) => setDigestConfirmed(event.currentTarget.checked)}
+                type="checkbox"
+              />
+              <span>
+                I confirm the exact reviewed digest
+                {proposalDigest === null || proposalDigest === undefined ? null : (
+                  // Sixty-four characters wrapped across two lines beside a checkbox, which
+                  // nobody read and nobody could have compared. Its ends, with the whole
+                  // value a disclosure away.
+                  <ArtifactDigest digest={proposalDigest} />
+                )}
+              </span>
+            </label>
+            {!requiredEvidenceUnavailable ? null : (
+              <p className="inbox-unavailable">
+                Required evidence is unavailable, so no decision can be recorded.
+              </p>
+            )}
+            <div className="decision-record__actions">
+              {availableActions.map((action) => (
+                <button
+                  className={decisionRank[action]}
+                  disabled={
+                    actionsDisabled || (action === "approve" && productIntentApprovalBlocked)
+                  }
+                  key={action}
+                  onClick={() => void recordDecision(action)}
+                  type="button"
+                >
+                  {submitting === action ? "Submitting decision…" : decisionLabels[action]}
+                </button>
+              ))}
+              {/*
+                Why, beside the controls it is about. A row of disabled buttons with the
+                reason somewhere else is a reader guessing at what the product wants.
+              */}
+              {blockingReason === null ? null : (
+                <p className="decision-record__blocked" role="status">
+                  {blockingReason}
+                </p>
+              )}
+            </div>
+          </section>
         </>
       )}
 

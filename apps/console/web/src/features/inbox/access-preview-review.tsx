@@ -1,3 +1,5 @@
+import {formatInstant} from "../../format/instant"
+import {StatusPill} from "../../components/status-pill"
 import {ArtifactReference, ArtifactReferences, ProposalApprovals} from "./artifact-reference"
 import type {
   AccessMode,
@@ -43,9 +45,9 @@ function AuthorityList({authorities}: {readonly authorities: readonly AuthorityS
         <li key={`${authority.role}:${authority.reason}`}>
           <strong>{roleLabel(authority.role)}</strong>
           <span>{authority.reason}</span>
-          <span className={`authority-list__state authority-list__state--${authority.satisfied}`}>
+          <StatusPill tone={authority.satisfied ? "ready" : "neutral"}>
             {authority.satisfied ? "Recorded" : "Not recorded"}
-          </span>
+          </StatusPill>
         </li>
       ))}
     </ul>
@@ -78,7 +80,7 @@ export function AccessPreviewReview({proposal}: AccessPreviewReviewProps) {
         <div>
           <dt>Expires at</dt>
           <dd>
-            <time dateTime={proposal.expires_at}>{proposal.expires_at}</time>
+            <time dateTime={proposal.expires_at}>{formatInstant(proposal.expires_at)}</time>
           </dd>
         </div>
         <div>

@@ -153,44 +153,75 @@
 }
 
 .decision-detail__comment,
+/*
+ * A composer: the field and the control that sends it, as one object. They were a loose
+ * label, a loose box and a loose button, so nothing said the button belonged to the field
+ * above it rather than to the section.
+ */
 .conversation-panel__compose {
   display: grid;
-  gap: 0.35rem;
-  margin: 1rem 0;
+  gap: var(--space-2);
+  margin-block: var(--space-4) var(--space-2);
 }
 
-.decision-detail__comment textarea,
-.conversation-panel__compose textarea {
-  border: 1px solid var(--color-line);
-  font: inherit;
-  min-height: 5rem;
-  padding: 0.5rem;
-}
-
-.decision-detail__digest {
-  align-items: start;
+.decision-detail__comment {
   display: grid;
-  gap: 0.5rem;
-  grid-template-columns: auto minmax(0, 1fr);
-  overflow-wrap: anywhere;
+  gap: var(--space-2);
+  margin-block: var(--space-5);
 }
 
-.decision-detail__actions {
+.decision-detail__comment > span,
+.conversation-panel__compose > span {
+  color: var(--color-ink-strong);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+/*
+ * Where the reviewer acts, drawn as a place rather than as the end of the page. The
+ * confirmation, the reason a decision is blocked and the three actions were three loose
+ * stacks under a long read, so the moment this surface exists for looked like more reading.
+ */
+.decision-record {
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-raised);
+  display: grid;
+  gap: var(--space-4);
+  margin-block: var(--space-6);
+  padding: var(--space-5);
+}
+
+.decision-record > h2 {
+  margin: 0;
+}
+
+.decision-record__digest {
+  align-items: start;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.decision-record__digest > span {
+  display: grid;
+  gap: var(--space-1);
+  /* The checkbox and the first line of its label share a baseline. */
+  line-height: 1.15rem;
+  min-width: 0;
+}
+
+.decision-record__actions {
+  align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.75rem;
-  margin: 1rem 0;
+  gap: var(--space-3);
 }
 
-.decision-detail__actions button {
-  border: 1px solid var(--color-line);
-  cursor: pointer;
-  padding: 0.75rem 1rem;
-}
-
-.decision-detail__actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
+.decision-record__blocked {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  margin: 0;
 }
 
 .access-lifecycle {
@@ -341,17 +372,47 @@
 }
 
 .authority-list li,
-.lifecycle-timeline li,
-.conversation-message {
+.lifecycle-timeline li {
   border-left: 3px solid var(--color-line);
   display: grid;
   gap: 0.2rem;
   padding: 0.4rem 0.6rem;
 }
 
-.authority-list__state--false {
-  color: var(--color-attention);
-  font-weight: var(--weight-semibold);
+.authority-list li {
+  align-items: center;
+  column-gap: var(--space-3);
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.authority-list li > span:not(.pill) {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  grid-column: 1;
+}
+
+.authority-list li > .pill {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+
+/*
+ * A message, as a message. A flat tinted block with a rule down one side read as a callout;
+ * these are a thread, so they are bubbles -- rounded, bounded, author first and the time
+ * last and quiet, which is the order a thread is read in.
+ */
+.conversation-message {
+  background: var(--color-sunken);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-3) var(--space-4);
+}
+
+.conversation-message time {
+  color: var(--color-ink-muted);
+  font-size: var(--text-2xs);
 }
 
 .authority-list__state--true {
@@ -359,23 +420,40 @@
   font-weight: var(--weight-semibold);
 }
 
+/* Who is speaking, by the tint of the bubble and the colour of the line above it. */
 .conversation-message--heinzel {
-  border-left-color: var(--color-primary);
+  background: var(--color-primary-wash);
+  border-color: var(--color-primary-line);
 }
 
-.conversation-message--requester {
-  border-left-color: var(--color-neutral);
+.conversation-message--heinzel .conversation-message__kind {
+  color: var(--color-primary);
+}
+
+.conversation-message--requester .conversation-message__kind {
+  color: var(--color-neutral);
 }
 
 .conversation-message--data_architect {
-  border-left-color: var(--color-ready);
+  background: var(--color-ready-surface);
+  border-color: var(--color-ready-line);
+}
+
+.conversation-message--data_architect .conversation-message__kind {
+  color: var(--color-ready);
 }
 
 .conversation-message__kind {
-  font-size: var(--text-2xs);
-  font-weight: var(--weight-bold);
-  letter-spacing: 0.06em;
+  color: var(--color-ink-muted);
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
   text-transform: uppercase;
+}
+
+.conversation-message__author {
+  color: var(--color-ink-strong);
+  font-weight: var(--weight-semibold);
 }
 
 .conversation-message p {
@@ -390,15 +468,24 @@
   max-width: 100%;
 }
 
+.inbox-unavailable,
+.inbox-notice {
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+}
+
 .inbox-unavailable {
   background: var(--color-danger-surface);
+  border: 1px solid var(--color-danger-line);
   color: var(--color-danger);
-  padding: 0.5rem 0.75rem;
 }
 
 .inbox-notice {
   background: var(--color-neutral-surface);
-  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-neutral-line);
+  color: var(--color-neutral);
 }
 
 .inbox-empty,

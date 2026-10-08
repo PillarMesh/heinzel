@@ -1,3 +1,4 @@
+import {StatusPill} from "../../components/status-pill"
 import {formatInstant} from "../../format/instant"
 import {ArtifactReference, ArtifactReferences, ProposalApprovals} from "./artifact-reference"
 import type {
@@ -26,9 +27,9 @@ function AuthorityList({authorities}: {readonly authorities: readonly AuthorityS
         <li key={`${authority.role}:${authority.reason}`}>
           <strong>{roleLabel(authority.role)}</strong>
           <span>{authority.reason}</span>
-          <span className={`authority-list__state authority-list__state--${authority.satisfied}`}>
+          <StatusPill tone={authority.satisfied ? "ready" : "neutral"}>
             {authority.satisfied ? "Recorded" : "Not recorded"}
-          </span>
+          </StatusPill>
         </li>
       ))}
     </ul>

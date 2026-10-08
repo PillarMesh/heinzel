@@ -1,3 +1,4 @@
+import {formatInstant} from "../../format/instant"
 import {RecoveryPage} from "../../routes/recovery-page"
 import {useCallback, useEffect, useState} from "react"
 
@@ -176,7 +177,7 @@ function DeliveredAccess({request}: {readonly request: RequesterRequestView}) {
         You can {delivery.access_mode} the approved fields: {delivery.fields.join(", ")}.
       </p>
       <p className="delivered-answer__context">
-        Available until {delivery.expires_at}. Access expires automatically.
+        Available until {formatInstant(delivery.expires_at)}. Access expires automatically.
       </p>
       <p className="delivered-answer__context">
         Permissions: {delivery.permissions.join(", ")}.
@@ -242,7 +243,7 @@ function AccessLifecycle({
       <h2 id="access-lifecycle-title">{lifecycle.title}</h2>
       <p className="access-lifecycle__summary">{lifecycle.summary}</p>
       <p className="access-lifecycle__term">
-        Approved term: {lifecycle.effective_at} to {lifecycle.expires_at}.
+        Approved term: {formatInstant(lifecycle.effective_at)} to {formatInstant(lifecycle.expires_at)}.
       </p>
       {lifecycle.can_revoke ? (
         confirming ? (

@@ -196,34 +196,40 @@
   padding: 0;
 }
 
-.conversation-message {
+/*
+ * Scoped to this thread. Both this surface and the architect's inbox had a bare
+ * `.conversation-message`, with different colours and different child names, so the one the
+ * bundler emitted last painted the other -- a requester's green reply arrived in the
+ * architect's review with a rule down its side that nothing there had asked for.
+ */
+.conversation-thread .conversation-message {
   border-left: 4px solid var(--color-line);
   display: grid;
   gap: 0.2rem;
   padding: 0.5rem 0.75rem;
 }
 
-.conversation-message p {
+.conversation-thread .conversation-message p {
   margin: 0;
 }
 
 /* Colour reinforces the label; it never carries the distinction alone. */
-.conversation-message--heinzel {
+.conversation-thread .conversation-message--heinzel {
   background: var(--color-primary-wash);
   border-left-color: var(--color-primary);
 }
 
-.conversation-message--requester {
+.conversation-thread .conversation-message--requester {
   background: var(--color-ready-surface);
   border-left-color: var(--color-ready);
 }
 
-.conversation-message--architect {
+.conversation-thread .conversation-message--architect {
   background: var(--color-attention-surface);
   border-left-color: var(--color-attention);
 }
 
-.conversation-message__label {
+.conversation-thread .conversation-message__label {
   font-family: var(--font-utility);
   font-size: var(--text-2xs);
   font-weight: var(--weight-semibold);
@@ -231,12 +237,12 @@
   text-transform: uppercase;
 }
 
-.conversation-message__author,
-.conversation-message__time {
+.conversation-thread .conversation-message__author,
+.conversation-thread .conversation-message__time {
   font-size: var(--text-xs);
 }
 
-.conversation-message__body {
+.conversation-thread .conversation-message__body {
   white-space: pre-wrap;
 }
 

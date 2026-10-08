@@ -1,3 +1,4 @@
+import {formatInstant} from "../../format/instant"
 import {useEffect, useState} from "react"
 
 import type {
@@ -85,7 +86,7 @@ function LeasedRun({run}: {readonly run: LeasedRunView}) {
                   <p>
                     {attemptSummary(attempt)}. Worker <code>{attempt.worker_ref}</code>, claimed{" "}
                     {new Date(attempt.claimed_at).toISOString()}, lease until{" "}
-                    {new Date(attempt.lease_expires_at).toISOString()}
+                    {formatInstant(attempt.lease_expires_at)}
                     {(attempt.lease_extensions ?? 0) === 0
                       ? "."
                       : ` after ${attempt.lease_extensions} ${attempt.lease_extensions === 1 ? "renewal" : "renewals"}.`}
