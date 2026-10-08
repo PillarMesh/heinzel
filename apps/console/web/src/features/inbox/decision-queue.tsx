@@ -7,6 +7,12 @@ const requestKindLabels = {
   data_access: "Data access",
 } satisfies Record<RequestKind, string>
 
+/** A lifecycle state as a person reads it, rather than as the identifier it travels under. */
+function stateLabel(state: string): string {
+  const words = state.replaceAll("_", " ")
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`
+}
+
 const riskLabels = {
   low: "Low risk",
   medium: "Medium risk",
@@ -190,7 +196,7 @@ export function DecisionQueue({
                 <strong>{item.title}</strong>
                 <span className="decision-queue__meta">
                   {requestKindLabels[item.kind]} · {riskLabels[item.risk]} ·{" "}
-                  {item.state.replaceAll("_", " ")}
+                  {stateLabel(item.state)}
                 </span>
                 <span className="decision-queue__purpose">{item.purpose}</span>
                 {item.deadline === null || item.deadline === undefined ? null : (

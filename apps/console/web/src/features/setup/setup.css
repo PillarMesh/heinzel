@@ -11,7 +11,7 @@
  */
 .setup-progress {
   align-self: start;
-  background: var(--color-white);
+  background: var(--color-raised);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-raised);
@@ -95,7 +95,7 @@
 .setup-progress__item[aria-current="step"] .setup-progress__number {
   background: var(--color-primary);
   border-color: var(--color-primary);
-  color: var(--color-white);
+  color: var(--color-on-primary);
   font-weight: var(--weight-semibold);
 }
 
@@ -159,7 +159,7 @@
 }
 
 .setup-stage {
-  background: var(--color-white);
+  background: var(--color-raised);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-raised);
@@ -181,7 +181,7 @@
 }
 
 .warehouse-options legend {
-  color: var(--color-navy);
+  color: var(--color-ink-strong);
   font-family: var(--font-display);
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
@@ -191,7 +191,7 @@
 
 .warehouse-option {
   align-items: center;
-  background: var(--color-white);
+  background: var(--color-raised);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -254,7 +254,7 @@
 }
 
 .operation-status__title {
-  color: var(--color-navy);
+  color: var(--color-ink-strong);
   font-family: var(--font-display);
   font-size: var(--text-base);
   font-weight: var(--weight-semibold);
@@ -366,7 +366,7 @@
 }
 
 .source-card h3 {
-  color: var(--color-navy);
+  color: var(--color-ink-strong);
   font-size: var(--text-base);
 }
 
@@ -432,7 +432,7 @@
 }
 
 .source-handle h3 {
-  color: var(--color-navy);
+  color: var(--color-ink-strong);
   font-size: var(--text-base);
   margin: 0 0 0.35rem;
 }

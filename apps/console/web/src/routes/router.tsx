@@ -266,8 +266,14 @@ export function ConsoleRoutes({
         <Route element={<RunsPage client={setupClient} />} path="/runs" />
         <Route
           element={<OperationsPage client={setupClient} session={sessionEnvelope.data} />}
-          path="/operations"
+          path="/incidents"
         />
+        {/*
+          The route used to be `/operations` while the link to it, and the page it opened,
+          both said Incidents -- three names for one place, one of them in the address bar
+          and in every bookmark. The old address still resolves.
+        */}
+        <Route element={<Navigate replace to="/incidents" />} path="/operations" />
         <Route
           element={
             <AcquisitionReceiptsPage client={setupClient} session={sessionEnvelope.data} />

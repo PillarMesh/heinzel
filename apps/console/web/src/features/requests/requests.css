@@ -97,7 +97,7 @@
 }
 
 .access-lifecycle__term {
-  color: var(--color-muted);
+  color: var(--color-ink-muted);
   font-size: var(--text-sm);
 }
 
@@ -209,18 +209,18 @@
 
 /* Colour reinforces the label; it never carries the distinction alone. */
 .conversation-message--heinzel {
-  background: #eef2ff;
-  border-left-color: #4338ca;
+  background: var(--color-primary-wash);
+  border-left-color: var(--color-primary);
 }
 
 .conversation-message--requester {
-  background: #ecfdf5;
-  border-left-color: #047857;
+  background: var(--color-ready-surface);
+  border-left-color: var(--color-ready);
 }
 
 .conversation-message--architect {
-  background: #fff7ed;
-  border-left-color: #b45309;
+  background: var(--color-attention-surface);
+  border-left-color: var(--color-attention);
 }
 
 .conversation-message__label {
@@ -275,8 +275,8 @@
 }
 
 .delivered-answer {
-  background: #f0fdf4;
-  border: 1px solid #86efac;
+  background: var(--color-ready-surface);
+  border: 1px solid var(--color-ready-line);
   border-radius: var(--radius-lg);
   display: grid;
   gap: 0.75rem;

@@ -3,8 +3,24 @@
 /*
  * Evidence Ledger tokens.
  *
- * The visual direction: deep navy shell, quiet work surfaces, one blue that means
- * *action*, and semantic colour reserved for lifecycle meaning. Colour never carries status alone.
+ * The colour system is two layers. A role says what a colour is *for* -- the page, a raised
+ * panel, the shell, ink, a boundary, an action, a lifecycle state -- and each theme answers
+ * every role. Nothing outside this file names a colour, so a theme is a complete answer rather
+ * than a set of overrides, and the dark theme below is the same roles with different values.
+ *
+ * Two names were literals rather than roles and had to go before a second theme was possible:
+ * `--color-white` meant both "a raised panel" and "text on something dark", and `--color-navy`
+ * meant both "the shell" and "a heading". In a dark theme each of those pairs moves in opposite
+ * directions, so they are now four roles.
+ *
+ * Every pair a reader actually sees is verified rather than judged: body and heading ink on
+ * each surface, text on the shell, text on a filled action, each lifecycle colour on its own
+ * tint and on a plain panel, and -- at the 3:1 WCAG 2.2 asks of non-text -- the border that
+ * identifies a form control and the focus ring, on every surface it can land on. The lowest
+ * margin in either theme is 3.27:1 against a 3.0 requirement. A hairline inside a badge or a
+ * divider between sections carries no information and is exempt; those are tuned by eye.
+ *
+ * Colour never carries meaning alone: a lifecycle state is a word and a mark as well as a tint.
  *
  * Type was previously `Avenir Next Condensed` over `Avenir Next`, which exists only
  * on macOS. Everywhere else it fell through to `Arial Narrow`, so the product had a
@@ -13,47 +29,56 @@
  */
 
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
 
-  /* Shell and surfaces. */
-  --color-navy: #0d1b2f;
-  --color-navy-raised: #16294480;
-  --color-navy-line: #24405f;
-  --color-navy-text: #a9c2e0;
-  --color-surface: #f4f6f9;
-  --color-white: #ffffff;
-  --color-ink: #131c2b;
-  --color-ink-muted: #4d5c72;
+  /* Surfaces, from the page up. */
+  --color-canvas: #f4f6fa;
+  --color-raised: #ffffff;
+  --color-sunken: #eceff5;
+
+  /* The shell: the navigation rail, and the full-screen states that stand in for it. */
+  --color-shell: #101827;
+  --color-shell-raised: #1e293b;
+  --color-shell-line: #334155;
+  --color-on-shell: #ffffff;
+  --color-on-shell-muted: #aebcd2;
+
+  /* Ink, on the surfaces above. */
+  --color-ink: #1a2233;
+  --color-ink-strong: #0d1422;
+  --color-ink-muted: #525f76;
+
+  /* Boundaries. `line` divides; `line-strong` is what identifies a control. */
+  --color-line: #dde3ec;
+  --color-line-strong: #737f96;
 
   /* One accent, reserved for action. */
-  --color-primary: #1d4ed8;
+  --color-primary: #3451df;
+  --color-primary-strong: #2a41b8;
+  --color-primary-wash: #eef1fe;
+  --color-primary-line: #c3cdfa;
+  --color-on-primary: #ffffff;
+
   /*
-   * The focus ring is its own colour because the accent is not one. `--color-primary` over the
-   * navy rail measures 2.58:1, under the 3:1 WCAG 2.2 asks of a focus indicator, and the rail
-   * carries the primary navigation -- so the one surface a keyboard reaches first was the one
-   * where the ring was hardest to see. This clears 3:1 over every surface the product paints:
-   * navy 4.70, raised navy 3.98, the page 3.40, white 3.68, the primary wash 3.22.
+   * The focus ring is its own colour because the accent is not one: over the shell the accent
+   * measured 2.58:1, under the 3:1 a focus indicator is held to, on the surface a keyboard
+   * reaches first. This clears 3:1 over every surface either theme paints.
    */
   --color-focus: #3b82f6;
-  --color-primary-strong: #1a43ba;
-  --color-primary-wash: #eaf0fe;
-  --color-primary-line: #c4d3f8;
 
-  /* Semantic, reserved for lifecycle meaning. */
-  --color-ready: #12603d;
-  --color-ready-surface: #dff3e6;
-  --color-ready-line: #9cd4b4;
+  /* Lifecycle, reserved for lifecycle meaning. */
+  --color-ready: #0f6b45;
+  --color-ready-surface: #e2f5ea;
+  --color-ready-line: #7fc8a4;
   --color-attention: #7a4a09;
-  --color-attention-surface: #fdf2d5;
-  --color-attention-line: #e3bd6b;
-  --color-danger: #991b1b;
-  --color-danger-surface: #fdeaea;
-  --color-danger-line: #eaa9a9;
-  --color-neutral: #44536a;
-  --color-neutral-surface: #e8ecf2;
-  --color-neutral-line: #c3ccd9;
-  --color-line: #dbe1ea;
-  --color-line-strong: #c2cbd8;
+  --color-attention-surface: #fdf3da;
+  --color-attention-line: #d9ad52;
+  --color-danger: #9f1d1d;
+  --color-danger-surface: #fdecec;
+  --color-danger-line: #e59a9a;
+  --color-neutral: #475569;
+  --color-neutral-surface: #e8ecf3;
+  --color-neutral-line: #afbacb;
 
   /* Type. `wght` is a variable axis, so weights are continuous. */
   --font-body:
@@ -116,9 +141,69 @@
    */
   --shadow-raised: 0 1px 2px rgb(15 27 47 / 6%), 0 1px 1px rgb(15 27 47 / 4%);
   --shadow-lifted: 0 6px 16px -6px rgb(15 27 47 / 18%), 0 2px 4px rgb(15 27 47 / 6%);
-  --shadow-focus: 0 0 0 3px var(--color-white), 0 0 0 5px var(--color-primary);
+  --shadow-focus: 0 0 0 3px var(--color-raised), 0 0 0 5px var(--color-focus);
 
   --transition-fast: 120ms cubic-bezier(0.2, 0, 0.13, 1);
+}
+
+/*
+ * The same roles, answered for a dark room. Not an inversion: the surfaces separate by
+ * lightening as they rise, which is how depth reads without light, and the accent and the
+ * lifecycle colours lighten and desaturate, because a colour that is legible on white is a
+ * smear on near-black. Ink stops short of pure white, which haloes against a dark ground.
+ *
+ * Followed from the operating system. The console has no theme control of its own, so there is
+ * nothing to remember and nothing to disagree with what the rest of the machine is doing.
+ */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #0b1017;
+    --color-raised: #141b26;
+    --color-sunken: #0f161f;
+
+    --color-shell: #080c12;
+    --color-shell-raised: #1b2433;
+    --color-shell-line: #2b3850;
+    --color-on-shell: #f1f5fb;
+    --color-on-shell-muted: #9aa9c2;
+
+    --color-ink: #dfe6f2;
+    --color-ink-strong: #f4f7fc;
+    --color-ink-muted: #9fadc4;
+
+    --color-line: #263144;
+    --color-line-strong: #5f6e89;
+
+    --color-primary: #8da5ff;
+    --color-primary-strong: #a8bbff;
+    --color-primary-wash: #161f37;
+    --color-primary-line: #32436e;
+    --color-on-primary: #0b1017;
+
+    --color-focus: #7aa2ff;
+
+    --color-ready: #5fd3a0;
+    --color-ready-surface: #0f251c;
+    --color-ready-line: #2f6b51;
+    --color-attention: #e8b863;
+    --color-attention-surface: #2a2112;
+    --color-attention-line: #6d5526;
+    --color-danger: #f58d8d;
+    --color-danger-surface: #2b1518;
+    --color-danger-line: #703539;
+    --color-neutral: #a3b0c6;
+    --color-neutral-surface: #1b2432;
+    --color-neutral-line: #44516a;
+
+    /*
+     * A shadow tuned for white is invisible on near-black, so depth is carried by a hairline
+     * of light along the top edge and a deeper, softer drop beneath.
+     */
+    --shadow-raised: 0 1px 0 rgb(255 255 255 / 4%) inset, 0 1px 2px rgb(0 0 0 / 50%);
+    --shadow-lifted:
+      0 1px 0 rgb(255 255 255 / 5%) inset, 0 12px 28px -10px rgb(0 0 0 / 70%),
+      0 2px 6px rgb(0 0 0 / 40%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

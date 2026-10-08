@@ -95,7 +95,7 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", {name: "Runs"})).toHaveAttribute("aria-current", "page")
     expect(screen.getByRole("link", {name: "Incidents"})).toHaveAttribute(
       "href",
-      "/operations",
+      "/incidents",
     )
     expect(screen.getByRole("link", {name: "Workspace setup"})).toHaveAttribute(
       "href",

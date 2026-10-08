@@ -106,7 +106,7 @@ export function OperationsPage({
 
   return (
     <section aria-labelledby="operations-title" className="operations-page">
-      <p className="eyebrow">Governed operations</p>
+      <p className="eyebrow">Governed capability</p>
       <h1 id="operations-title">Incidents</h1>
       <p className="operations-page__lead">
         Review failures and use only the recovery actions admitted by current run state.

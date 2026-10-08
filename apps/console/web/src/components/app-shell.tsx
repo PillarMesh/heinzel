@@ -14,7 +14,7 @@ const productNavigation = [
   {label: "Inbox", to: "/inbox"},
   {label: "Data products", to: "/data-products"},
   {label: "Runs", to: "/runs"},
-  {label: "Incidents", to: "/operations"},
+  {label: "Incidents", to: "/incidents"},
   {label: "Acquisition", to: "/acquisition-receipts"},
   {label: "Catalog", to: "/catalog"},
   {label: "Dashboards", to: "/dashboards"},

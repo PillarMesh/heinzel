@@ -842,6 +842,6 @@ test("refreshes the owning queue after preparation changes the request state", a
   })
   renderWorkspace(client, before.request_id)
   await userEvent.click(await screen.findByRole("button", {name: "Prepare answer proposal"}))
-  await waitFor(() => expect(queueOptions()[0]).toHaveTextContent("proposed"))
+  await waitFor(() => expect(queueOptions()[0]).toHaveTextContent("Proposed"))
   expect(getInbox).toHaveBeenCalledTimes(2)
 })

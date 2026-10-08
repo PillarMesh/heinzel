@@ -92,8 +92,10 @@ export function ImpactPanel({client, dataProvenance, requestId}: ImpactPanelProp
     return null
   }
   if (state.kind === "unavailable") {
+    // Without the card. A bordered, padded panel is how a populated analysis presents itself,
+    // and wearing it for one sentence gave an absence the weight of a finding.
     return (
-      <section aria-label="Impact analysis" className="impact-panel">
+      <section aria-label="Impact analysis" className="impact-panel impact-panel--absent">
         <h3>Impact analysis</h3>
         <p role="status">Impact analysis is unavailable for this request.</p>
       </section>

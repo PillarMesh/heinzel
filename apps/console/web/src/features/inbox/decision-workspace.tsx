@@ -498,10 +498,6 @@ function RequestDetailPanel({
           <dt>Requester purpose</dt>
           <dd>{detail.purpose}</dd>
         </div>
-        <div>
-          <dt>Server revision</dt>
-          <dd>{detail.revision}</dd>
-        </div>
       </dl>
 
       <AccessRevocationPanel

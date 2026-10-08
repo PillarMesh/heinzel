@@ -90,6 +90,23 @@ test("a page still says which page it is at phone width", async ({page}) => {
   }
 })
 
+test("the dark theme is held to the same contrast as the light one", async ({page}) => {
+  // The theme answers every colour role with different values, so every pair a reader sees is
+  // a different pair. A palette verified at design time is verified against the tokens; this
+  // is verified against what the browser actually composited.
+  await page.emulateMedia({colorScheme: "dark"})
+
+  for (const route of MAJOR_ROUTES) {
+    await page.goto(route)
+    await expectFixtureBanner(page)
+    const results = await new AxeBuilder({page}).withTags(WCAG_TAGS).analyze()
+    expect(
+      results.violations.map((violation) => `${violation.id}: ${violation.nodes.length} node(s)`),
+      `${route} must have no WCAG violation in the dark theme`,
+    ).toEqual([])
+  }
+})
+
 test("axe reports no violation on the foundation stage after a binding is submitted", async ({
   page,
 }) => {

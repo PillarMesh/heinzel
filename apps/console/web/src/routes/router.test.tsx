@@ -260,7 +260,7 @@ describe("ConsoleRoutes", () => {
     ["/inbox", "Decision queue"],
     ["/data-products", "Data products"],
     ["/runs", "Runs"],
-    ["/operations", "Incidents"],
+    ["/incidents", "Incidents"],
     ["/catalog", "Catalog"],
     ["/dashboards", "Dashboards"],
     ["/evidence", "Evidence"],

@@ -1,9 +1,19 @@
 .impact-panel {
-  border: 1px solid var(--color-border, #d6d9df);
+  border: 1px solid var(--color-line);
   border-radius: 0.75rem;
   display: grid;
   gap: 1rem;
   padding: 1rem;
+}
+
+.impact-panel--absent {
+  border: 0;
+  gap: var(--space-1);
+  padding: 0;
+}
+
+.impact-panel--absent p {
+  color: var(--color-ink-muted);
 }
 
 .impact-panel__header {
@@ -21,16 +31,16 @@
 }
 
 .impact-panel__group {
-  border-inline-start: 0.25rem solid #2f6f52;
+  border-inline-start: 0.25rem solid var(--color-ready);
   padding-inline-start: 0.75rem;
 }
 
 .impact-panel__group--possible {
-  border-inline-start-color: #a67317;
+  border-inline-start-color: var(--color-attention);
 }
 
 .impact-panel__group > p {
-  color: var(--color-text-muted, #545b66);
+  color: var(--color-ink-muted);
   margin-block: 0.25rem 0.75rem;
 }
 
@@ -52,7 +62,7 @@
 .impact-panel__list span,
 .impact-panel__summary span,
 .impact-panel__empty {
-  color: var(--color-text-muted, #545b66);
+  color: var(--color-ink-muted);
   font-size: 0.875rem;
 }
 

@@ -7,7 +7,7 @@
 .result-provenance,
 .technical-details,
 .result-empty {
-  border: 1px solid var(--border-subtle, #d8d7d2);
+  border: 1px solid var(--color-line);
   border-radius: 0.75rem;
   padding: 1.25rem;
 }
@@ -19,7 +19,7 @@
 }
 
 .result-hero__context {
-  color: var(--text-muted, #595a55);
+  color: var(--color-ink-muted);
 }
 
 .result-table-frame {
@@ -33,7 +33,7 @@
 
 .result-table th,
 .result-table td {
-  border-bottom: 1px solid var(--border-subtle, #d8d7d2);
+  border-bottom: 1px solid var(--color-line);
   padding: 0.75rem;
   text-align: left;
   vertical-align: top;
