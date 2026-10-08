@@ -264,6 +264,42 @@ function renderWorkspace(client: InboxClient, requestedRequestId?: string) {
   )
 }
 
+test("the queue carries the page heading when it is the whole page", async () => {
+  // At phone width the detail pane is not drawn until a request is chosen, and the heading
+  // lived there -- so the page a phone arrived at had no heading at all, which is what the
+  // shell titles the tab and announces from.
+  const client = createClient()
+  render(
+    <DecisionWorkspace
+      client={client}
+      dataProvenance="demo_fixture"
+      idempotencyKeyFactory={() => "idempotency-decision"}
+      layout="narrow"
+      session={session}
+    />,
+  )
+
+  const heading = await screen.findByRole("heading", {level: 1})
+  expect(heading).toHaveTextContent("Decision queue")
+})
+
+test("the queue steps back to a section heading once a request owns the page", async () => {
+  const client = createClient()
+  render(
+    <DecisionWorkspace
+      client={client}
+      dataProvenance="demo_fixture"
+      idempotencyKeyFactory={() => "idempotency-decision"}
+      layout="narrow"
+      requestedRequestId="request-answer"
+      session={session}
+    />,
+  )
+
+  const heading = await screen.findByRole("heading", {level: 1})
+  expect(heading).not.toHaveTextContent("Decision queue")
+})
+
 test("the queue preserves the server-issued order and never re-sorts it in the browser", async () => {
   renderWorkspace(createClient())
 

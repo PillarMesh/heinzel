@@ -875,6 +875,7 @@ export function DecisionWorkspace({
         <DecisionQueue
           focusRequestId={queueFocus.requestId}
           focusToken={queueFocus.token}
+          isPageHeading={!showDetail}
           items={items}
           onActivate={() => setDetailFocusToken((token) => token + 1)}
           onSelect={(requestId) => setSelectedRequestId(requestId)}

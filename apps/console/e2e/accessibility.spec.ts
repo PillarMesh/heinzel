@@ -70,6 +70,26 @@ test("every page says which page it is, in its heading and in its title", async 
   expect([...titles.values()]).not.toContain("Heinzel")
 })
 
+test("a page still says which page it is at phone width", async ({page}) => {
+  // The layout decides which regions are drawn, so a heading can be present at one width and
+  // absent at another -- `/inbox` does not draw the detail pane at this width until a request
+  // is chosen, and the heading lived there. The fixture always has one chosen, so the empty
+  // case is covered where it is cheap to set up, in `decision-workspace.test.tsx`; this guards
+  // every route against a heading that the narrow layout drops.
+  await page.setViewportSize({width: 390, height: 844})
+
+  for (const route of MAJOR_ROUTES) {
+    await page.goto(route)
+    await expectFixtureBanner(page)
+
+    const headings = page.getByRole("main").getByRole("heading", {level: 1})
+    await expect(headings, `${route} must have a page heading at 390px`).toHaveCount(1)
+    await expect
+      .poll(async () => page.title(), {message: `${route} must be titled at 390px`})
+      .not.toBe("Heinzel")
+  }
+})
+
 test("axe reports no violation on the foundation stage after a binding is submitted", async ({
   page,
 }) => {

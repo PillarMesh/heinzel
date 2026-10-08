@@ -42,6 +42,14 @@ function blockedLabel(item: InboxItemView): string | null {
 interface DecisionQueueProps {
   readonly focusRequestId?: string | null
   readonly focusToken?: number
+  /**
+   * Whether the queue is the whole page.
+   *
+   * At phone width the detail pane is not drawn until a request is chosen, so the queue is
+   * what the reader arrived at. Left at h2 the page had no heading at all, which is what the
+   * shell names the tab and announces from.
+   */
+  readonly isPageHeading?: boolean
   readonly items: readonly InboxItemView[]
   readonly onActivate: (requestId: string) => void
   readonly onSelect: (requestId: string) => void
@@ -51,6 +59,7 @@ interface DecisionQueueProps {
 export function DecisionQueue({
   focusRequestId = null,
   focusToken = 0,
+  isPageHeading = false,
   items,
   onActivate,
   onSelect,
@@ -122,7 +131,7 @@ export function DecisionQueue({
 
   return (
     <section aria-label="Decision queue" className="decision-queue">
-      <h2>Decision queue</h2>
+      {isPageHeading ? <h1>Decision queue</h1> : <h2>Decision queue</h2>}
       <div className="decision-queue__filters">
         <label>
           <span>Request type</span>
