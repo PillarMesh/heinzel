@@ -6,12 +6,13 @@ from dataclasses import dataclass
 from typing import Final, Literal, Protocol
 
 import httpx
-from heinzel_contract_model import canonical_bytes, digest
+from heinzel_contract_model import canonical_bytes, digest, display_label
 from heinzel_provider_sdk import ProviderError
 from heinzel_provider_sdk.bi import (
     BiApplyResult,
     BiDashboardDefinition,
     BiDataset,
+    BiDimensionProjection,
     BiLifecycleState,
     BiMetricProjection,
     BiVisualIntent,
@@ -175,8 +176,9 @@ class HttpSupersetClient:
                 self._update("dataset", dataset_id, {"description": dataset_metadata})
 
         expected_chart_keys: set[str] = set()
+        titles = _chart_titles(definition)
         for index, visual_intent in enumerate(definition.visual_intents):
-            chart_key = f"{definition.stable_external_key}-chart-{index:03d}"
+            chart_key = _chart_key(definition, index)
             expected_chart_keys.add(chart_key)
             chart_metadata = _metadata(
                 stable_key=chart_key,
@@ -184,7 +186,7 @@ class HttpSupersetClient:
                 lifecycle_state="active",
             )
             chart_payload: dict[str, object] = {
-                "slice_name": chart_key,
+                "slice_name": titles[index],
                 "viz_type": _VIZ_TYPES[visual_intent],
                 "datasource_id": dataset_id,
                 "datasource_type": "table",
@@ -196,26 +198,22 @@ class HttpSupersetClient:
                     }
                 ),
             }
-            chart = self._lookup("chart", "slice_name", chart_key)
+            chart = self._lookup_chart(stable_key=chart_key)
             if chart is None:
                 self._create("chart", chart_payload)
-            elif _description(chart) != chart_metadata:
+            elif _description(chart) != chart_metadata or chart.get("slice_name") != titles[index]:
                 self._update("chart", _identifier(chart), chart_payload)
 
-        for chart in self._iter_resources("chart"):
-            candidate_chart_key = chart.get("slice_name")
-            if (
-                isinstance(candidate_chart_key, str)
-                and candidate_chart_key.startswith(f"{definition.stable_external_key}-chart-")
-                and candidate_chart_key not in expected_chart_keys
-            ):
-                metadata = _metadata(
-                    stable_key=candidate_chart_key,
-                    managed_digest=definition.desired_digest,
-                    lifecycle_state="archived",
-                )
-                if _description(chart) != metadata:
-                    self._update("chart", _identifier(chart), {"description": metadata})
+        for chart, candidate_chart_key in self._managed_charts(definition):
+            if candidate_chart_key in expected_chart_keys:
+                continue
+            metadata = _metadata(
+                stable_key=candidate_chart_key,
+                managed_digest=definition.desired_digest,
+                lifecycle_state="archived",
+            )
+            if _description(chart) != metadata:
+                self._update("chart", _identifier(chart), {"description": metadata})
 
     def get_dataset(self, *, stable_key: str) -> BiDataset | None:
         dataset = self._lookup_dataset(stable_key=stable_key)
@@ -302,22 +300,18 @@ class HttpSupersetClient:
         self, *, external_id: str, definition: BiDashboardDefinition
     ) -> SupersetDashboard:
         dashboard_id = _external_identifier(external_id)
-        for chart in self._iter_resources("chart"):
-            chart_key = chart.get("slice_name")
-            if isinstance(chart_key, str) and chart_key.startswith(
-                f"{definition.stable_external_key}-chart-"
-            ):
-                self._update(
-                    "chart",
-                    _identifier(chart),
-                    {
-                        "description": _metadata(
-                            stable_key=chart_key,
-                            managed_digest=definition.desired_digest,
-                            lifecycle_state="archived",
-                        )
-                    },
-                )
+        for chart, chart_key in self._managed_charts(definition):
+            self._update(
+                "chart",
+                _identifier(chart),
+                {
+                    "description": _metadata(
+                        stable_key=chart_key,
+                        managed_digest=definition.desired_digest,
+                        lifecycle_state="archived",
+                    )
+                },
+            )
         self._update("dashboard", dashboard_id, self._dashboard_payload(definition))
         return self._dashboard_after_write(dashboard_id, definition)
 
@@ -326,19 +320,14 @@ class HttpSupersetClient:
     ) -> None:
         dashboard_id = _external_identifier(external_id)
         expected_chart_keys = {
-            f"{definition.stable_external_key}-chart-{index:03d}"
+            _chart_key(definition, index)
             for index, _visual_intent in enumerate(definition.visual_intents)
         }
-        managed_charts = tuple(
-            chart
-            for chart in self._iter_resources("chart")
-            if isinstance(chart.get("slice_name"), str)
-            and str(chart["slice_name"]).startswith(f"{definition.stable_external_key}-chart-")
-        )
-        observed_keys = {str(chart["slice_name"]) for chart in managed_charts}
+        managed_charts = self._managed_charts(definition)
+        observed_keys = {chart_key for _chart, chart_key in managed_charts}
         if not expected_chart_keys.issubset(observed_keys):
             raise _client_error("integrity_failure")
-        for chart in managed_charts:
+        for chart, chart_key in managed_charts:
             chart_id = _identifier(chart)
             payload = self._request("GET", f"/api/v1/chart/{chart_id}")
             if (
@@ -351,9 +340,7 @@ class HttpSupersetClient:
             if not isinstance(result, dict):
                 raise _client_error("invalid_provider_response")
             current_dashboard_ids = _role_ids(result.get("dashboards", []))
-            desired_dashboard_ids = (
-                (dashboard_id,) if chart.get("slice_name") in expected_chart_keys else ()
-            )
+            desired_dashboard_ids = (dashboard_id,) if chart_key in expected_chart_keys else ()
             if current_dashboard_ids != desired_dashboard_ids:
                 self._update("chart", chart_id, {"dashboards": list(desired_dashboard_ids)})
 
@@ -434,6 +421,36 @@ class HttpSupersetClient:
         if len(matches) > 1:
             raise _client_error("integrity_failure")
         return matches[0] if matches else None
+
+    def _lookup_chart(self, *, stable_key: str) -> Mapping[str, object] | None:
+        matches = tuple(
+            chart
+            for chart in self._iter_resources("chart")
+            if _chart_stable_key(chart) == stable_key
+        )
+        if len(matches) > 1:
+            raise _client_error("integrity_failure")
+        return matches[0] if matches else None
+
+    def _managed_charts(
+        self, definition: BiDashboardDefinition
+    ) -> tuple[tuple[Mapping[str, object], str], ...]:
+        """Every chart this dashboard owns, with the key it owns it by.
+
+        Found by the key the chart carries in its own metadata rather than by its name, because
+        its name is what a person reads and a person may rename it. A chart renamed inside
+        Superset is still this dashboard's to reconcile; one that merely happens to be called
+        what this dashboard would have called it is not.
+        """
+        prefix = _chart_key_prefix(definition)
+        found: list[tuple[Mapping[str, object], str]] = []
+        for chart in self._iter_resources("chart"):
+            chart_key = _chart_stable_key(chart)
+            if chart_key is not None and chart_key.startswith(prefix):
+                found.append((chart, chart_key))
+        if len({chart_key for _chart, chart_key in found}) != len(found):
+            raise _client_error("integrity_failure")
+        return tuple(found)
 
     def _lookup_dataset(self, *, stable_key: str) -> Mapping[str, object] | None:
         matches = tuple(
@@ -649,9 +666,46 @@ def _superset_metric(projection: BiMetricProjection) -> dict[str, object]:
         "expressionType": "SIMPLE",
         "column": {"column_name": projection.column_name},
         "aggregate": projection.aggregate.upper(),
-        "label": projection.output_name,
+        # The legend and the axis of a published chart are read by the stakeholder who asked the
+        # question, not by whoever bound the column, so they carry the metric as the console's
+        # own result table writes it rather than the identifier underneath.
+        "label": display_label(projection.output_name),
         "hasCustomLabel": True,
     }
+
+
+def _chart_titles(definition: BiDashboardDefinition) -> tuple[str, ...]:
+    """What each chart of this dashboard is called, in the order its intents are declared.
+
+    Named after what it draws rather than after the key it is reconciled by. The key is a digest
+    with an index on it, which is the right thing for finding a chart again and the wrong thing
+    to put above it on a dashboard someone opens to read an answer.
+
+    Computed for the whole dashboard at once because two intents over the same metric and
+    dimension describe themselves identically -- a bar and a line of the same series -- and two
+    charts under one title on one dashboard read as the same chart drawn twice.
+    """
+    described = tuple(
+        _described_series(intent, definition.metric_projections, definition.dimension_projections)
+        for intent in definition.visual_intents
+    )
+    return tuple(
+        description if described.count(description) == 1 else f"{description} ({intent})"
+        for description, intent in zip(described, definition.visual_intents, strict=True)
+    )
+
+
+def _described_series(
+    visual_intent: BiVisualIntent,
+    metrics: tuple[BiMetricProjection, ...],
+    dimensions: tuple[BiDimensionProjection, ...],
+) -> str:
+    """The metrics a chart draws, and the dimension it draws them along where it has one."""
+    drawn = ", ".join(display_label(projection.output_name) for projection in metrics)
+    plotted = visual_intent != "number" and bool(dimensions)
+    if not plotted:
+        return drawn
+    return f"{drawn} by {display_label(dimensions[0].output_name)}"
 
 
 def _form_data(
@@ -694,6 +748,33 @@ def _form_data(
         "groupby": [],
         "row_limit": _ROW_LIMIT,
     }
+
+
+def _chart_key_prefix(definition: BiDashboardDefinition) -> str:
+    return f"{definition.stable_external_key}-chart-"
+
+
+def _chart_key(definition: BiDashboardDefinition, index: int) -> str:
+    return f"{_chart_key_prefix(definition)}{index:03d}"
+
+
+def _chart_stable_key(resource: Mapping[str, object]) -> str | None:
+    """The governed key a chart carries, or `None` for a chart this deployment does not manage.
+
+    Superset's own charts have a free-text description and people write in it, so anything that
+    is not the metadata this provider writes is somebody else's chart rather than a corrupt one.
+    """
+    description = resource.get("description")
+    if not isinstance(description, str) or not description:
+        return None
+    try:
+        metadata = json.loads(description)
+    except ValueError:
+        return None
+    if not isinstance(metadata, dict):
+        return None
+    stable_key = metadata.get("stable_key")
+    return stable_key if isinstance(stable_key, str) and stable_key else None
 
 
 def _database_key(definition: BiDashboardDefinition) -> str:

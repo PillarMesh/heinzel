@@ -670,12 +670,19 @@ def test_a_database_that_is_created_is_not_then_written_again() -> None:
     assert [call[1] for call in api.calls if call[0] == "PUT"].count("/api/v1/database/1") == 0
 
 
+def _chart(api: _SupersetApi, index: int = 0) -> _Resource:
+    """One created chart, found the way the provider finds it: by the key in its metadata."""
+    suffix = f"-chart-{index:03d}"
+    return next(
+        item
+        for item in api.resources["chart"]
+        if str(json.loads(str(item.payload["description"]))["stable_key"]).endswith(suffix)
+    )
+
+
 def _chart_params(api: _SupersetApi) -> dict[str, object]:
     """The form data the one created chart carries, as Superset stores it."""
-    chart = next(
-        item for item in api.resources["chart"] if "chart-000" in str(item.payload["slice_name"])
-    )
-    params = chart.payload["params"]
+    params = _chart(api).payload["params"]
     assert isinstance(params, str)
     return dict(json.loads(params))
 
@@ -702,10 +709,7 @@ def test_each_governed_intent_becomes_the_superset_plugin_that_draws_it(
 
     provider.apply(_definition(visual_intents=(intent,)))
 
-    chart = next(
-        item for item in api.resources["chart"] if "chart-000" in str(item.payload["slice_name"])
-    )
-    assert chart.payload["viz_type"] == viz_type
+    assert _chart(api).payload["viz_type"] == viz_type
     assert _chart_params(api)["viz_type"] == viz_type
 
 
@@ -727,7 +731,7 @@ def test_an_axis_chart_asks_for_the_metric_along_the_bound_dimension() -> None:
             "expressionType": "SIMPLE",
             "column": {"column_name": "revenue_total"},
             "aggregate": "SUM",
-            "label": "revenue_total",
+            "label": "Revenue Total",
             "hasCustomLabel": True,
         }
     ]
@@ -750,7 +754,7 @@ def test_a_single_number_asks_for_one_metric_and_a_table_groups_by_what_it_has()
         "expressionType": "SIMPLE",
         "column": {"column_name": "revenue_total"},
         "aggregate": "SUM",
-        "label": "revenue_total",
+        "label": "Revenue Total",
         "hasCustomLabel": True,
     }
     assert "metrics" not in number
@@ -769,3 +773,89 @@ def test_a_single_number_asks_for_one_metric_and_a_table_groups_by_what_it_has()
     ungrouped_provider.apply(_definition(visual_intents=("table",), dimension_projections=()))
 
     assert _chart_params(ungrouped)["groupby"] == []
+
+
+def test_a_chart_is_named_after_what_it_draws_rather_than_the_key_it_is_found_by() -> None:
+    """The slice name is the heading a stakeholder reads above the chart on the dashboard.
+
+    It used to be the reconciliation key -- a digest with an index on it -- which told whoever
+    opened the published answer nothing about what they were looking at.
+    """
+    api = _SupersetApi()
+    provider, _ = _provider(api)
+
+    provider.apply(_definition(visual_intents=("bar", "number")))
+
+    assert _chart(api, 0).payload["slice_name"] == "Revenue Total by Region"
+    assert _chart(api, 1).payload["slice_name"] == "Revenue Total"
+
+
+def test_two_charts_of_the_same_series_are_told_apart_by_the_shape_that_draws_them() -> None:
+    """A bar and a line of one metric describe themselves identically.
+
+    Left alone they would appear on one dashboard under one heading, which reads as the same
+    chart drawn twice rather than as the two the contract asked for.
+    """
+    api = _SupersetApi()
+    provider, _ = _provider(api)
+
+    provider.apply(_definition(visual_intents=("bar", "line")))
+
+    assert _chart(api, 0).payload["slice_name"] == "Revenue Total by Region (bar)"
+    assert _chart(api, 1).payload["slice_name"] == "Revenue Total by Region (line)"
+
+
+def test_a_chart_renamed_inside_superset_is_reconciled_rather_than_published_a_second_time() -> (
+    None
+):
+    """Identity moved off the name so that the name could be a person's to change.
+
+    A chart found by its name is lost the moment somebody edits the heading, and the next apply
+    publishes a second copy beside it while the dashboard still lists the first.
+    """
+    definition = _definition(visual_intents=("bar",))
+    chart_key = f"{definition.stable_external_key}-chart-000"
+    api = _SupersetApi()
+    api.resources["chart"].append(
+        _Resource(
+            61,
+            {
+                "slice_name": "Renamed by an analyst",
+                "description": json.dumps(
+                    {
+                        "stable_key": chart_key,
+                        "managed_digest": definition.desired_digest,
+                        "lifecycle_state": "active",
+                    },
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+            },
+        )
+    )
+    provider, _ = _provider(api)
+
+    provider.apply(definition)
+
+    assert len(api.resources["chart"]) == 1
+    assert [call[1] for call in api.calls if call[0] == "POST"].count("/api/v1/chart/") == 0
+    # The heading the governed definition names is what the dashboard carries.
+    assert api.resources["chart"][0].payload["slice_name"] == "Revenue Total by Region"
+
+
+def test_a_chart_this_deployment_does_not_manage_is_left_alone() -> None:
+    """Superset's description is free text and people write prose in it.
+
+    A chart whose description is not this provider's metadata belongs to whoever made it, so it
+    is neither adopted nor reported as a corrupt response.
+    """
+    api = _SupersetApi()
+    api.resources["chart"].append(
+        _Resource(62, {"slice_name": "Someone else's chart", "description": "notes, not JSON"})
+    )
+    provider, _ = _provider(api)
+
+    provider.apply(_definition(visual_intents=("bar",)))
+
+    assert api.resources["chart"][0].payload["description"] == "notes, not JSON"
+    assert [call[1] for call in api.calls if call[0] == "PUT"].count("/api/v1/chart/62") == 0

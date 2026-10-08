@@ -36,6 +36,7 @@ from .models import (
     TriggerRequirement,
     Unknown,
 )
+from .naming import display_label
 
 __all__ = [
     "FIXED_PROJECTION",
@@ -75,4 +76,5 @@ __all__ = [
     "canonical_bytes",
     "canonical_value",
     "digest",
+    "display_label",
 ]

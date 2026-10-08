@@ -28,7 +28,7 @@ from heinzel_access_control import AccessGrant, AccessGrantDenied, AccessGrantIn
 from heinzel_bi_control import DashboardPublication, DashboardPublicationRecord
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
 from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
-from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_model import ArtifactReference, digest, display_label
 from heinzel_contract_service import BusinessProcessManifest
 from heinzel_evidence import AcquisitionEvidenceReceipt
 from heinzel_request_management import (
@@ -1233,7 +1233,7 @@ class GovernedConsoleBackend:
             columns=tuple(
                 AnswerResultColumnView(
                     name=column.name,
-                    label=column.name.replace("_", " ").strip().title(),
+                    label=display_label(column.name),
                     value_type=column.value_type,
                     allowed_operations=(),
                 )
