@@ -101,8 +101,10 @@ behaviour. Documentation describes intended design; it is not evidence that some
 ## Console
 
 The console in `apps/console` is React and TypeScript with a Starlette server. It must pass
-`npm run lint`, `npm run typecheck`, `npm run check:contracts`, `npm run check:notices` and
-`npm run test -- --run`. The third-party notices the console serves are generated from the
-manifests that decide what is distributed, never edited; `check:notices` fails when the two
-disagree, and a deployment that adds a service must record what it is licensed under.
+`npm run lint`, `npm run typecheck`, `npm run check:contracts`, `npm run check:notices`,
+`npm run check:brand` and `npm run test -- --run`. The third-party notices the console serves
+are generated from the manifests that decide what is distributed, never edited; `check:notices`
+fails when the two disagree, and a deployment that adds a service must record what it is
+licensed under. The brand marks live in `brand/`; the surfaces that need their own copy are
+checked against it by `check:brand`, so a mark is changed there and nowhere else.
 Services, not the console, are authoritative for validity, lifecycle state, execution and evidence.

@@ -52,17 +52,22 @@
   --color-line: #dde3ec;
   --color-line-strong: #737f96;
 
-  /* One accent, reserved for action. */
-  --color-primary: #3451df;
-  --color-primary-strong: #2a41b8;
-  --color-primary-wash: #eef1fe;
-  --color-primary-line: #c3cdfa;
+  /*
+   * One accent, reserved for action: Heinzel blue, from the brand palette in `brand/README.md`,
+   * so the product's mark and its actions are the same colour. Measured rather than chosen --
+   * 5.70:1 on a raised surface, 5.27:1 on the canvas, and 5.70:1 the other way for the white it
+   * carries when it is a fill. The strong variant is the pressed and hovered state at 7.59:1.
+   */
+  --color-primary: #2155f5;
+  --color-primary-strong: #1a45cc;
+  --color-primary-wash: #eef2fe;
+  --color-primary-line: #c2cffb;
   --color-on-primary: #ffffff;
 
   /*
-   * The focus ring is its own colour because the accent is not one: over the shell the accent
-   * measured 2.58:1, under the 3:1 a focus indicator is held to, on the surface a keyboard
-   * reaches first. This clears 3:1 over every surface either theme paints.
+   * The focus ring stays its own colour. The accent clears 3:1 over every surface a keyboard
+   * reaches, but only just over the shell (3.12:1), and a ring that is the same colour as the
+   * control it surrounds reads as part of the control rather than as focus.
    */
   --color-focus: #3b82f6;
 
@@ -193,10 +198,12 @@
     --color-line: #263144;
     --color-line-strong: #5f6e89;
 
-    --color-primary: #8da5ff;
-    --color-primary-strong: #a8bbff;
-    --color-primary-wash: #161f37;
-    --color-primary-line: #32436e;
+    /* The brand's own reverse blue, which is what it supplies for a dark surface: 8.44:1 on
+       the canvas, 7.65:1 on a raised surface, and 8.44:1 for the ink it carries as a fill. */
+    --color-primary: #8baaff;
+    --color-primary-strong: #a8beff;
+    --color-primary-wash: #17203a;
+    --color-primary-line: #33457a;
     --color-on-primary: #0b1017;
 
     --color-focus: #7aa2ff;

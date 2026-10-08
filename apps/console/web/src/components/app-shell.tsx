@@ -143,7 +143,19 @@ export function AppShell({
       <SkipLink />
       <header className="app-shell__rail">
         <div className="app-shell__identity">
-          <p className="app-shell__wordmark">Heinzel</p>
+          {/*
+            The supplied mark rather than the name set in a face. The reverse lockup in both
+            themes, because the rail is the dark shell in both, and at the width the brand's
+            own guidance calls its legibility floor. Served as a file and drawn as an `img`:
+            the artwork is outlined paths, so it does not depend on a face being loaded.
+          */}
+          <img
+            alt="Heinzel"
+            className="app-shell__wordmark"
+            height={47}
+            src="/brand/heinzel-horizontal-reverse.svg"
+            width={148}
+          />
           <p>{session.workspace.display_name}</p>
           <span>{session.active_role.replaceAll("_", " ")}</span>
         </div>

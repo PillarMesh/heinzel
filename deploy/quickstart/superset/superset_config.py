@@ -41,29 +41,36 @@ _BRANDING = Path(__file__).resolve().parent / "branding"
 def _inline_svg(name: str) -> str:
     """An SVG as a data URI, because the mark has to reach a chrome that serves no static files.
 
-    Drawn as geometry rather than set as text: this renders inside an `<img>`, where the page's
-    own faces are not available and the mark would otherwise fall back to whatever sans the
-    viewer's machine has.
+    The supplied artwork is outlined vector paths with no linked images, scripts, stylesheets or
+    live fonts, which is what makes this possible: it renders inside an `<img>`, where the page's
+    own faces are not available and lettering set as text would fall back to whatever sans the
+    viewer's machine has. `brand/README.md` is where these files come from and the only place
+    they are changed; `apps/console` fails `check:brand` when this copy has drifted from it.
     """
     encoded = base64.b64encode((_BRANDING / name).read_bytes()).decode("ascii")
     return f"data:image/svg+xml;base64,{encoded}"
 
 
 APP_NAME = "Heinzel"
-FAVICONS = [{"href": _inline_svg("heinzel-monogram.svg")}]
+FAVICONS = [{"href": _inline_svg("heinzel-symbol-color.svg")}]
 
 # Superset 6 reads its chrome from theme tokens; `APP_ICON` alone no longer reaches the navbar.
 THEME_DEFAULT = {
     "token": {
         "brandAppName": APP_NAME,
         "brandLogoAlt": APP_NAME,
-        "brandLogoUrl": _inline_svg("heinzel-wordmark.svg"),
+        # The colour lockup, because this chrome runs the light algorithm below and its navbar
+        # is a pale surface. Height is the only dimension the chrome takes: the artwork is
+        # 353.62 by 112, so 45px tall is 142px wide -- just over the 140px the brand calls the
+        # legibility floor for the full lockup, which is why it is not smaller.
+        "brandLogoUrl": _inline_svg("heinzel-horizontal-color.svg"),
         "brandLogoHref": "/",
-        "brandLogoHeight": "22px",
-        "brandLogoMargin": "18px 0",
-        # The console's own accent, so an action means the same thing on both sides of the link.
-        "colorPrimary": "#3451df",
-        "colorLink": "#3451df",
+        "brandLogoHeight": "45px",
+        "brandLogoMargin": "8px 0",
+        # Heinzel blue, the console's own accent, so an action means the same thing on both
+        # sides of the link. See the palette in `brand/README.md`.
+        "colorPrimary": "#2155F5",
+        "colorLink": "#2155F5",
         "colorSuccess": "#0f6b45",
         "colorWarning": "#7a4a09",
         "colorError": "#9f1d1d",
