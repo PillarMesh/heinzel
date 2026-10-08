@@ -574,15 +574,21 @@ function RequestDetailPanel({
         session={session}
       />
 
+      {/*
+        Said before the field rather than after it. The comment stays writable -- a reviewer
+        drafts one while a request is blocked on somebody else -- but the reader learns that no
+        decision can be recorded yet before they type, not underneath what they typed.
+      */}
+      {availableActions.length === 0 ? (
+        <p className="inbox-notice">No decision is admissible from this projection.</p>
+      ) : null}
       <label className="decision-detail__comment">
         <span>Review comment</span>
         <textarea onChange={(event) => setComment(event.currentTarget.value)} value={comment} />
       </label>
       {refreshNotice === null ? null : <p className="inbox-notice">{refreshNotice}</p>}
 
-      {availableActions.length === 0 ? (
-        <p className="inbox-empty">No decision is admissible from this projection.</p>
-      ) : (
+      {availableActions.length === 0 ? null : (
         <>
           <label className="decision-detail__digest">
             <input

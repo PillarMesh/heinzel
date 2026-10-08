@@ -283,9 +283,9 @@ describe("ConsoleRoutes", () => {
       expect(screen.getByRole("heading", {name: "This page does not exist"})).toBeVisible(),
     )
     expect(screen.queryByRole("heading", {name: "Workspace unavailable"})).toBeNull()
-    expect(screen.getByRole("link", {name: "Back to the inbox"})).toHaveAttribute(
+    expect(screen.getByRole("link", {name: "Back to the workspace"})).toHaveAttribute(
       "href",
-      "/inbox",
+      "/",
     )
   })
 

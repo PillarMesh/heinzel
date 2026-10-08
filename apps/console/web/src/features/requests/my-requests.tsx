@@ -1,3 +1,4 @@
+import {RecoveryPage} from "../../routes/recovery-page"
 import {useCallback, useEffect, useState} from "react"
 
 import type {MutationRequestContext} from "../../api/client"
@@ -394,7 +395,9 @@ export function MyRequests({
   }, [client, dataProvenance, reloadToken])
 
   if (failed) {
-    return <p role="alert">Your requests could not be displayed safely.</p>
+    // A whole page that cannot be shown is a recovery boundary, not a sentence. It used to
+    // render as one line of unheaded prose with no way off the page.
+    return <RecoveryPage detail="Your requests could not be displayed safely." kind="view" />
   }
   if (requests === null) {
     return <p role="status">Loading your requests…</p>

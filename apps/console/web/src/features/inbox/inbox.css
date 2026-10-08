@@ -47,8 +47,8 @@
 }
 
 .decision-queue__filters select {
-  border: 1px solid var(--color-line);
-  padding: 0.45rem;
+  /* Drawn by the shared control rule; it only needs to fill its column here. */
+  width: 100%;
 }
 
 .decision-queue__items {
@@ -438,5 +438,23 @@
 }
 
 .artifact-reference {
+  display: block;
   overflow-wrap: anywhere;
+}
+
+.artifact-digest {
+  font-size: var(--text-2xs);
+}
+
+.artifact-digest summary {
+  color: var(--color-ink-muted);
+  cursor: pointer;
+}
+
+.artifact-digest__full {
+  display: block;
+  overflow-wrap: anywhere;
+  padding-top: var(--space-1);
+  /* Selectable as one unit, because a digest is only useful copied whole. */
+  user-select: all;
 }

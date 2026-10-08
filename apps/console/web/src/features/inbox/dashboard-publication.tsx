@@ -109,9 +109,9 @@ export function DashboardPublication({
 
   return (
     <section aria-label="Publishable dashboards">
-      {offering.answerTitle === null ? null : (
+      {offering.answerTitle === null || offering.dashboards.length === 1 ? null : (
         <p className="summary-page__guidance">
-          Publishing titles the dashboard &ldquo;{offering.answerTitle}&rdquo;.
+          Publishing titles each of these &ldquo;{offering.answerTitle}&rdquo;.
         </p>
       )}
       {offering.publicationAvailable ? null : (
@@ -134,8 +134,24 @@ export function DashboardPublication({
           return (
             <li className="capability-ledger__item" key={key}>
               <div>
-                <h4>{dashboard.dashboard_id}</h4>
+                {/*
+                  Headed by what the published dashboard will be called. It used to be headed
+                  by the governed identifier -- `dashboard-demo-revenue` -- while the sentence
+                  directly above it already said the title, so the card named the one thing
+                  the architect was not deciding about. The identifier stays, as a fact.
+                */}
+                <h4>
+                  {offering.answerTitle === null || offering.dashboards.length > 1
+                    ? dashboard.dashboard_id
+                    : offering.answerTitle}
+                </h4>
                 <dl className="dashboard-record__facts">
+                  <div>
+                    <dt>Dashboard</dt>
+                    <dd>
+                      <code>{dashboard.dashboard_id}</code>
+                    </dd>
+                  </div>
                   <div>
                     <dt>Contract version</dt>
                     <dd>{dashboard.dashboard_version}</dd>

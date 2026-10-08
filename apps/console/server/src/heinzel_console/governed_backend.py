@@ -290,6 +290,24 @@ _REQUEST_STATES: dict[RequestState, ConsoleRequestState] = {
     RequestState.FAILED: "failed",
     RequestState.RETIRED: "closed",
 }
+
+
+def _transition_summary(from_state: RequestState, to_state: RequestState) -> str:
+    """One lifecycle step, in the vocabulary the rest of the page is written in.
+
+    The heading of each entry already names the console state, which collapses several of
+    request-management's own; this sentence spelled the uncollapsed names instead, so the
+    timeline both leaked `awaiting_approval` into prose and showed two entries headed
+    `execution ready` of which the second read as a duplicate rather than as the step within
+    it that it is.
+    """
+    moved_from = _REQUEST_STATES[from_state].replace("_", " ")
+    moved_to = _REQUEST_STATES[to_state].replace("_", " ")
+    if moved_from == moved_to:
+        return f"The request advanced within {moved_to}."
+    return f"The request moved from {moved_from} to {moved_to}."
+
+
 _BLOCKED_REASONS: dict[RequestState, str] = {
     RequestState.NO_VALID_PLAN: "No valid plan was recorded for this request.",
     RequestState.REJECTED: "The request was denied by the owning authority.",
@@ -3156,10 +3174,7 @@ class GovernedConsoleBackend:
                 LifecycleEventView(
                     event_id=event.event_id,
                     state=_REQUEST_STATES[event.to_state],
-                    summary=(
-                        f"The request moved from {event.from_state.value} to "
-                        f"{event.to_state.value}."
-                    ),
+                    summary=_transition_summary(event.from_state, event.to_state),
                     occurred_at=event.created_at,
                 )
                 for event in history
@@ -3330,10 +3345,7 @@ class GovernedConsoleBackend:
                 LifecycleEventView(
                     event_id=event.event_id,
                     state=_REQUEST_STATES[event.to_state],
-                    summary=(
-                        f"The request moved from {event.from_state.value} to "
-                        f"{event.to_state.value}."
-                    ),
+                    summary=_transition_summary(event.from_state, event.to_state),
                     occurred_at=event.created_at,
                 )
                 for event in history

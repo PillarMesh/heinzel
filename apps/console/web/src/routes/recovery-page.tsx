@@ -72,8 +72,13 @@ const recoveryContent = {
   },
 } satisfies Record<RecoveryKind, {title: string; detail: string}>
 
-/** Where a reader is sent from a surface that cannot show them what they asked for. */
-const homeRoute = "/inbox"
+/**
+ * Where a reader is sent from a surface that cannot show them what they asked for.
+ *
+ * The root rather than a named page: it redirects to whichever landing route this session's
+ * role is authorized for, and a requester has no inbox to be sent back to.
+ */
+const homeRoute = "/"
 
 interface RecoveryPageProps {
   readonly detail?: string | null | undefined
@@ -90,7 +95,12 @@ export function RecoveryPage({actionLabel, correlationId, detail, kind, onRetry}
     <section aria-labelledby={`recovery-${kind}`} className="recovery-page">
       <p className="eyebrow">Recovery boundary</p>
       <h1 id={`recovery-${kind}`}>{content.title}</h1>
-      <p>{detail ?? content.detail}</p>
+      {/*
+        Announced, not just displayed. This page is here because the reader asked for
+        something the console is refusing to show them, which is the case assertive live
+        regions exist for.
+      */}
+      <p role="alert">{detail ?? content.detail}</p>
       {correlationId === undefined || correlationId === null ? null : (
         <p className="recovery-page__reference">Support reference: {correlationId}</p>
       )}
@@ -110,7 +120,7 @@ export function RecoveryPage({actionLabel, correlationId, detail, kind, onRetry}
           telling you the client state cannot be trusted.
         */}
         <a className="recovery-page__home" href={homeRoute}>
-          Back to the inbox
+          Back to the workspace
         </a>
       </div>
     </section>

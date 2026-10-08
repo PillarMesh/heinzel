@@ -7,7 +7,7 @@ import {MAJOR_ROUTES, expectFixtureBanner, openRequest, resetDemoFixture} from "
 // console's own Content-Security-Policy. That defect is pinned there; these checks
 // are about the rendered product.
 
-const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]
+const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]
 
 test.beforeEach(async ({request}) => {
   await resetDemoFixture(request)
@@ -43,6 +43,32 @@ for (const route of MAJOR_ROUTES) {
     await auditRoute(page, route)
   })
 }
+
+test("every page says which page it is, in its heading and in its title", async ({page}) => {
+  // Neither is an axe rule at WCAG A or AA: `document-title` only asks that a title exists,
+  // and `page-has-heading-one` is a best-practice rule outside the tags above. Both were
+  // failing -- every route was titled `Heinzel`, and the two inbox pages had no page heading,
+  // which also left the shell announcing the literal words "Current work" on arrival.
+  const titles = new Map<string, string>()
+  for (const route of MAJOR_ROUTES) {
+    await page.goto(route)
+    await expectFixtureBanner(page)
+
+    const headings = page.getByRole("main").getByRole("heading", {level: 1})
+    await expect(headings, `${route} must have exactly one page heading`).toHaveCount(1)
+
+    const heading = (await headings.first().textContent())?.trim() ?? ""
+    await expect
+      .poll(async () => page.title(), {message: `${route} must be titled after its heading`})
+      .toBe(`${heading} · Heinzel`)
+    titles.set(route, await page.title())
+  }
+  // Not one name for everything. `/inbox` and the first request in its queue are the same
+  // page and share a title legitimately, so this asserts that the titles vary rather than
+  // that they are all distinct -- and that none is the bare product name.
+  expect(new Set(titles.values()).size).toBeGreaterThan(titles.size / 2)
+  expect([...titles.values()]).not.toContain("Heinzel")
+})
 
 test("axe reports no violation on the foundation stage after a binding is submitted", async ({
   page,
