@@ -859,3 +859,61 @@ def test_a_chart_this_deployment_does_not_manage_is_left_alone() -> None:
 
     assert api.resources["chart"][0].payload["description"] == "notes, not JSON"
     assert [call[1] for call in api.calls if call[0] == "PUT"].count("/api/v1/chart/62") == 0
+
+
+def _dashboard_position(api: _SupersetApi) -> dict[str, object]:
+    """The layout the one created dashboard carries, as Superset stores it."""
+    position = api.resources["dashboard"][0].payload["position_json"]
+    assert isinstance(position, str)
+    return dict(json.loads(position))
+
+
+def test_a_single_chart_is_published_across_the_width_rather_than_into_a_corner() -> None:
+    """A dashboard written with no layout is not one with a default layout.
+
+    Superset drops every chart into its smallest slot at the top left and leaves the rest of
+    the canvas empty, which reads as a dashboard that failed to finish rather than one with a
+    single answer on it.
+    """
+    api = _SupersetApi()
+    provider, _ = _provider(api)
+
+    provider.apply(_definition(visual_intents=("bar",)))
+    position = _dashboard_position(api)
+
+    chart = position["CHART-000"]
+    assert isinstance(chart, dict)
+    meta = chart["meta"]
+    assert isinstance(meta, dict)
+    assert meta["width"] == 12
+    assert meta["chartId"] == _chart(api).resource_id
+    assert meta["sliceName"] == "Revenue Total by Region"
+
+
+def test_two_charts_share_a_row_and_every_node_is_reachable_from_the_root() -> None:
+    """Superset renders nothing it cannot walk to from `ROOT_ID`.
+
+    A layout whose rows are not among the grid's children, or whose charts are not among a
+    row's, is accepted by the API and draws an empty dashboard -- so the shape is asserted
+    rather than the fields alone.
+    """
+    api = _SupersetApi()
+    provider, _ = _provider(api)
+
+    provider.apply(_definition(visual_intents=("bar", "number")))
+    position = _dashboard_position(api)
+
+    grid = position["GRID_ID"]
+    assert isinstance(grid, dict)
+    rows = grid["children"]
+    assert rows == ["ROW-0"]
+    row = position["ROW-0"]
+    assert isinstance(row, dict)
+    assert row["children"] == ["CHART-000", "CHART-001"]
+    for node_id in ("CHART-000", "CHART-001"):
+        node = position[node_id]
+        assert isinstance(node, dict)
+        meta = node["meta"]
+        assert isinstance(meta, dict)
+        assert meta["width"] == 6
+        assert node["parents"] == ["ROOT_ID", "GRID_ID", "ROW-0"]

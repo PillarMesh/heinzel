@@ -383,9 +383,8 @@ class HttpSupersetClient:
             raise _client_error("invalid_provider_response")
         return _role_ids(result.get("roles"))
 
-    @staticmethod
-    def _dashboard_payload(definition: BiDashboardDefinition) -> dict[str, object]:
-        return {
+    def _dashboard_payload(self, definition: BiDashboardDefinition) -> dict[str, object]:
+        payload: dict[str, object] = {
             "dashboard_title": definition.title,
             "slug": definition.stable_external_key,
             "published": definition.lifecycle_state == "active",
@@ -396,6 +395,32 @@ class HttpSupersetClient:
                 lifecycle_state=definition.lifecycle_state,
             ),
         }
+        #
+        # A dashboard published without a layout is not a dashboard with a default layout: it
+        # is a dashboard with none, and Superset drops every chart into its smallest slot in
+        # the top-left corner with the rest of the canvas empty. The product composes the
+        # layout because the product decided what is on it.
+        placed = self._placed_charts(definition)
+        if placed:
+            payload["position_json"] = _position_json(definition, placed)
+        return payload
+
+    def _placed_charts(self, definition: BiDashboardDefinition) -> tuple[tuple[int, str], ...]:
+        """This dashboard's charts, in the order its visual intents were declared.
+
+        Resolved from one listing rather than one lookup per intent, and tolerant of a chart
+        that is not there: a layout is a presentation of what exists, and refusing to write a
+        dashboard because one of its charts is missing would turn a cosmetic gap into a failed
+        publication.
+        """
+        found = {chart_key: chart for chart, chart_key in self._managed_charts(definition)}
+        titles = _chart_titles(definition)
+        placed: list[tuple[int, str]] = []
+        for index in range(len(definition.visual_intents)):
+            chart = found.get(_chart_key(definition, index))
+            if chart is not None:
+                placed.append((_identifier(chart), titles[index]))
+        return tuple(placed)
 
     def _dashboard_after_write(
         self, dashboard_id: int, definition: BiDashboardDefinition
@@ -775,6 +800,67 @@ def _chart_stable_key(resource: Mapping[str, object]) -> str | None:
         return None
     stable_key = metadata.get("stable_key")
     return stable_key if isinstance(stable_key, str) and stable_key else None
+
+
+# Superset's grid is twelve columns across, and a unit of height is eight pixels.
+_GRID_COLUMNS: Final = 12
+_ROW_HEIGHT_UNITS: Final = 58
+_ROW_HEIGHT_UNITS_PAIRED: Final = 50
+
+
+def _position_json(definition: BiDashboardDefinition, placed: tuple[tuple[int, str], ...]) -> str:
+    """Where each chart sits on the published dashboard.
+
+    One chart takes the width, because a single panel in the corner of an empty canvas reads
+    as a dashboard that failed to finish rather than one with a single answer on it. More than
+    one pairs across the grid, which is as much density as a governed dashboard earns: these
+    are the visual intents one contract admitted, not a workspace somebody is arranging.
+    """
+    per_row = 1 if len(placed) == 1 else 2
+    width = _GRID_COLUMNS // per_row
+    height = _ROW_HEIGHT_UNITS if per_row == 1 else _ROW_HEIGHT_UNITS_PAIRED
+    grid_children: list[str] = []
+    layout: dict[str, object] = {
+        "DASHBOARD_VERSION_KEY": "v2",
+        "ROOT_ID": {"type": "ROOT", "id": "ROOT_ID", "children": ["GRID_ID"]},
+        "HEADER_ID": {"type": "HEADER", "id": "HEADER_ID", "meta": {"text": definition.title}},
+        "GRID_ID": {
+            "type": "GRID",
+            "id": "GRID_ID",
+            "parents": ["ROOT_ID"],
+            "children": grid_children,
+        },
+    }
+    for index, (chart_id, title) in enumerate(placed):
+        row_id = f"ROW-{index // per_row}"
+        row = layout.get(row_id)
+        if row is None:
+            row = {
+                "type": "ROW",
+                "id": row_id,
+                "parents": ["ROOT_ID", "GRID_ID"],
+                "children": [],
+                "meta": {"background": "BACKGROUND_TRANSPARENT"},
+            }
+            layout[row_id] = row
+            grid_children.append(row_id)
+        node_id = f"CHART-{index:03d}"
+        layout[node_id] = {
+            "type": "CHART",
+            "id": node_id,
+            "parents": ["ROOT_ID", "GRID_ID", row_id],
+            "children": [],
+            "meta": {
+                "chartId": chart_id,
+                "width": width,
+                "height": height,
+                "sliceName": title,
+            },
+        }
+        children = row["children"]  # type: ignore[index]
+        assert isinstance(children, list)
+        children.append(node_id)
+    return _canonical_json(layout)
 
 
 def _database_key(definition: BiDashboardDefinition) -> str:
