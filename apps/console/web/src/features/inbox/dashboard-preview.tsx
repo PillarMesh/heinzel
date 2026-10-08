@@ -112,7 +112,7 @@ export function DashboardPreview({
         <p className="inbox-empty">No authorized dashboard link was issued.</p>
       ) : (
         <a href={`/api/v1/links/${encodeURIComponent(linkRef)}`} rel="noreferrer">
-          Open {dashboard.value.display_name} in Superset
+          Open {dashboard.value.display_name} in dashboards
         </a>
       )}
     </article>

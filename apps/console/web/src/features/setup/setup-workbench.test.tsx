@@ -277,8 +277,8 @@ test("keeps a not-delivered Superset capability disabled with its supplied depen
 
   expect(screen.getByRole("heading", {name: "Managed services"})).toBeVisible()
   expect(screen.getByText("Depends on managed Superset delivery.")).toBeVisible()
-  expect(screen.getByRole("button", {name: "Open Superset"})).toBeDisabled()
-  expect(screen.queryByRole("link", {name: "Open Superset"})).not.toBeInTheDocument()
+  expect(screen.getByRole("button", {name: "Open dashboards"})).toBeDisabled()
+  expect(screen.queryByRole("link", {name: "Open dashboards"})).not.toBeInTheDocument()
 })
 
 test("renders typed source intents with intended and denial probes", () => {

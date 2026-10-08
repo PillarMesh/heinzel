@@ -29,7 +29,7 @@ export function ServicesStage({setup}: ServicesStageProps) {
               <CapabilityState state={service.state} />
               {service.service === "superset" ? (
                 <button disabled={service.state === "not_delivered"} type="button">
-                  Open Superset
+                  Open dashboards
                 </button>
               ) : null}
             </div>

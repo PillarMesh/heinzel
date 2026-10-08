@@ -51,6 +51,9 @@ x-superset: &superset
     # The configuration is the quickstart's own file, not a copy: it is what sets the secret key
     # and the feature flags the dashboard provider needs.
     - ./superset/superset_config.py:/app/pythonpath/superset_config.py:ro
+    # The config reads the product's mark from here and inlines it, so the chrome the
+    # stakeholder sees carries the product rather than the engine behind it.
+    - ./superset/branding:/app/pythonpath/branding:ro
     # The TLS material the console mints, read-only, because Superset serves it and never writes
     # it. The console's own mount of this volume is read-write, and is the only writer.
     - heinzel-superset-tls:/heinzel-private:ro

@@ -205,7 +205,7 @@ test("catalog evidence renders the server-issued opaque link and never a provide
     <CatalogEvidence assetRef="asset-revenue" client={client} dataProvenance="demo_fixture" />,
   )
 
-  const link = await screen.findByRole("link", {name: "Open Synthetic net revenue in OpenMetadata"})
+  const link = await screen.findByRole("link", {name: "Open Synthetic net revenue in the catalog"})
   expect(link).toHaveAttribute("href", "/api/v1/links/link-catalog-revenue")
   expect(screen.getByText("Recognized invoice value in the fixture scenario.")).toBeInTheDocument()
 })
@@ -254,7 +254,7 @@ test("the dashboard preview loads a same-origin opaque image route only", async 
     name: "Rendered preview of Synthetic revenue overview",
   })
   expect(image).toHaveAttribute("src", "/api/v1/previews/preview-dashboard-revenue")
-  expect(screen.getByRole("link", {name: "Open Synthetic revenue overview in Superset"})).toHaveAttribute(
+  expect(screen.getByRole("link", {name: "Open Synthetic revenue overview in dashboards"})).toHaveAttribute(
     "href",
     "/api/v1/links/link-dashboard-revenue",
   )

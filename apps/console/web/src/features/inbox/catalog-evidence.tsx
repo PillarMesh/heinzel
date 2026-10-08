@@ -89,7 +89,7 @@ export function CatalogEvidence({assetRef, client, dataProvenance}: CatalogEvide
         <p className="inbox-empty">No authorized catalog link was issued.</p>
       ) : (
         <a href={`/api/v1/links/${encodeURIComponent(linkRef)}`} rel="noreferrer">
-          Open {asset.value.display_name} in OpenMetadata
+          Open {asset.value.display_name} in the catalog
         </a>
       )}
     </article>
