@@ -35,7 +35,7 @@ dependencies = [
   # The local entitlement authority signs envelopes and serves them over loopback TLS
   # (`answers/policy_authority.py`): `cryptography` for the keys and the certificate, `httpx`
   # for the client the shipped signed-HTTP reader resolves through.
-  "cryptography>=50.0.1,<51",
+  "cryptography>=50.0.2,<51",
   "httpx>=0.28,<1",
   # The demonstration provisions and reads its own warehouse (`demo/warehouse.py`).
   "psycopg[binary]>=3.3.6,<4",
