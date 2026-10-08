@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from heinzel_catalog_control import CatalogBinding, CatalogBindingState
 from heinzel_contract_model import (
@@ -72,6 +72,11 @@ DEMO_QUESTION = "What is the daily order value?"
 # the policy covers, so two copies that drifted would refuse the demonstration's happy path with
 # `answer interpretation is not authorized` and name nothing about why.
 DEMO_PURPOSE = "weekly operations review"
+# When the demonstration's meaning was approved, as a fact about the artifact rather than about
+# this start. Before the first seeded order, because meaning is approved and then data is acquired
+# against it, and fixed because the contract that carries this version's digest names the schema the
+# product lands in: taken from the clock, one approved meaning had a different schema every start.
+_MEANING_APPROVED_AT = datetime(2026, 9, 9, tzinfo=UTC)
 _SEMANTIC_VERSION_ID = "semantic-orders"
 _CONTRACT_ID = "contract-orders"
 DEMO_CATALOG_BINDING_ID = "catalog-demo"
@@ -142,8 +147,20 @@ def demo_catalog_binding(*, now: datetime) -> CatalogBinding:
     )
 
 
-def _semantic_version(*, created_at: datetime) -> ApprovedSemanticVersion:
-    """The demonstration's approved meaning: one entity, one metric, one classification."""
+def _semantic_version() -> ApprovedSemanticVersion:
+    """The demonstration's approved meaning: one entity, one metric, one classification.
+
+    Fixed, and not minted from the clock. This artifact's digest reaches the contract, the
+    contract's digest names the schema the product is materialized into, and that name reaches
+    the consumption object the dashboard's dataset is identified by -- so a `created_at` taken from
+    the wall clock gave every start a different schema for the same approved meaning, and a
+    warehouse reused across starts accumulated one per run.
+
+    It is also the rule: identical canonical inputs must produce identical artifacts, and a
+    run-specific timestamp belongs in the surrounding evidence rather than inside the artifact it
+    describes. Everything here that is genuinely about when this start happened -- the publication
+    receipt, the authority window, the catalog observation -- still takes the clock.
+    """
     return ApprovedSemanticVersion(
         semantic_version_id=_SEMANTIC_VERSION_ID,
         tenant_id=DEMO_TENANT_ID,
@@ -198,7 +215,7 @@ def _semantic_version(*, created_at: datetime) -> ApprovedSemanticVersion:
         ),
         authority_bindings=(),
         approval_ids=("approval-demo-owner",),
-        created_at=created_at,
+        created_at=_MEANING_APPROVED_AT,
     )
 
 
@@ -281,7 +298,7 @@ def build_demo_publication(stores: DemoStores, *, clock: Callable[[], datetime])
     if published:
         return _existing_publication(stores, receipt=published[0], valid_until=valid_until)
 
-    semantic_version = _semantic_version(created_at=now)
+    semantic_version = _semantic_version()
     contract = _contract(semantic_version)
     intent = publication_intent(
         binding=demo_catalog_binding(now=now),
