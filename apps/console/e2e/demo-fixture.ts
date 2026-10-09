@@ -107,7 +107,28 @@ async function postCommand(
  * is invoked over the same versioned command the browser would use, because the
  * shell ships no control for it.
  */
+/**
+ * That the server answering this port is the fixture console, and not something else.
+ *
+ * `reuseExistingServer` is on outside CI, so the suite adopts whatever already holds the
+ * port -- and a governed console held it during one run of this repository. Its backend is
+ * not in fixture mode, so it registers no reset route, so every capture died on a bare `404`
+ * from the reset and the whole suite read as broken. The provenance each response carries
+ * tells the two apart in one call, and says which one answered.
+ */
+async function expectTheFixtureConsole(request: APIRequestContext): Promise<void> {
+  const response = await request.get("/api/v1/workspace")
+  const provenance = response.headers()["x-heinzel-data-provenance"]
+  expect(
+    provenance,
+    `the server on this port is not the fixture console (it reports "${provenance}"). ` +
+      "`reuseExistingServer` adopts whatever already holds the port: stop it, or run the " +
+      "suite against a port nothing else is using.",
+  ).toBe("demo_fixture")
+}
+
 export async function resetDemoFixture(request: APIRequestContext): Promise<SetupData> {
+  await expectTheFixtureConsole(request)
   const setup = await readSetup(request)
   const response = await postCommand(
     request,

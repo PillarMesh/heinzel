@@ -83,10 +83,14 @@ test("command-center", async ({page}) => {
 test("stakeholder-answer", async ({page}) => {
   await openRequest(page, "request-answer")
   const detail = page.getByRole("region", {name: "Request detail"})
-  await expect(page.getByRole("region", {name: "Stakeholder answer proposal"})).toBeVisible()
 
-  // The decision itself is the subject of this image, so it shows the confirmed
-  // digest and the admissible actions rather than the queue landing view.
+  // The proposal and the decision are two sections now, so both are opened the way a
+  // reviewer opens them. This capture is of the decision being taken, which is the
+  // section that carries the digest and the admissible actions.
+  await page.getByRole("tab", {name: "Proposal"}).click()
+  await expect(page.getByRole("region", {name: "Stakeholder answer proposal"})).toBeVisible()
+  await page.getByRole("tab", {name: "Decision"}).click()
+
   const digest = detail.getByRole("checkbox", {name: /I confirm the exact reviewed digest/})
   await digest.check()
   await digest.scrollIntoViewIfNeeded()
@@ -97,6 +101,7 @@ test("stakeholder-answer", async ({page}) => {
 
 test("access-preview", async ({page}) => {
   await openRequest(page, "request-access")
+  await page.getByRole("tab", {name: "Proposal"}).click()
   await expect(page.getByRole("region", {name: "Effective access preview"})).toBeVisible()
 
   await captureRoute(page, "access-preview")
