@@ -19,6 +19,48 @@ This page describes the demonstration console in `apps/console`, not a deploymen
 below are deliberate for a demonstration and would be defects in a deployment; they are listed
 because the flow above cannot be shown without closing them.
 
+## Capability profiles, asserted
+
+<!--
+  Held to the product by `test_gap_register.py` (the warehouse-less column, in the ordinary
+  suite) and by the quickstart smoke test (the managed column, which needs a warehouse). The
+  table is the claim; the console is the authority. A capability that changes state fails the
+  test until this table is corrected, which is the point: every other sentence on this page is
+  prose nobody can check, and prose is what went stale.
+
+  Rewriting a row to silence the test is a defect. Build or unwire the capability, or correct
+  the row because the product changed -- never to make a check pass.
+-->
+
+The demonstration runs in two shapes and reports different capabilities in each. **Four
+capabilities differ**, which is how this page came to claim that dashboard publication was
+unwired while the recorded journey was publishing a dashboard: the row described the shape with
+no warehouse, and the demonstration everyone watches is the other one. A gap below that names a
+capability is about one of these columns, and says which.
+
+| Capability | Without a warehouse | With a managed warehouse |
+| --- | --- | --- |
+| `warehouse-binding` | not_delivered | ready |
+| `catalog-binding` | not_delivered | not_delivered |
+| `semantic-review` | not_delivered | not_delivered |
+| `request-fulfillment` | ready | ready |
+| `request-conversation` | ready | ready |
+| `data-product-runs` | not_delivered | not_delivered |
+| `acquisition-evidence` | not_delivered | ready |
+| `question-term-builder` | not_delivered | ready |
+| `source-registration` | not_delivered | not_delivered |
+| `source-acquisition` | not_delivered | not_delivered |
+| `catalog-asset-preview` | not_delivered | not_delivered |
+| `analyst-dashboard` | ready | ready |
+| `dashboard-publication` | not_delivered | ready |
+| `process-package` | not_delivered | not_delivered |
+| `data-access-intake` | not_delivered | ready |
+| `operation-retry` | not_delivered | not_delivered |
+
+Without a warehouse the setup surface refuses the whole read: there is no binding to report a
+stage against. With one it answers seven stages, of which `foundation` is complete and the
+other six are blocked.
+
 ## The demonstration answers the question that was composed, and only a composed one
 
 This section used to say that any question admitted in the demonstration returned daily order

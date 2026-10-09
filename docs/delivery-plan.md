@@ -213,6 +213,15 @@ operable, refreshable and governed — and the point worth aiming at before Phas
 
 The register drifted twice in one sitting. Both times a capability had been built and the row
 still claimed it was missing, and both were found by reading the running console rather than the
-document. Before planning against it again, give it the same treatment the rest of the
-repository gets: assert the claims. The capability register and the setup stages are already
-machine-readable, so a test can hold the document to what the product reports.
+document.
+
+**Done.** The register now carries a capability table per deployment shape, and two tests hold
+it to the product: `apps/console/server/tests/test_gap_register.py` asserts the warehouse-less
+column in the ordinary suite, and the quickstart smoke test asserts the managed column and the
+setup stages against a deployment that has a warehouse. Both directions are checked, so a
+capability gained with no row fails as loudly as a row claiming one that no longer exists.
+
+It covers the claims that are machine-readable, which is the smaller half. Of the two drifts
+that prompted it, this catches one: dashboard publication, a capability state. The other was a
+sentence about a chart, and prose is still prose. Treat the table as the part of this page that
+cannot lie, and the rest as what it has always been.

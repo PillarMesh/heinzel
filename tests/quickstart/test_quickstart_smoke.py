@@ -350,8 +350,52 @@ def test_the_quickstart_answers_the_question_it_seeds() -> None:
         assert refused == 404, refused
 
         _assert_the_production_chain_reads_back(request_id)
+        _assert_the_gap_register_states_what_this_deployment_reports()
     finally:
         _compose("down", "-v")
+
+
+def _assert_the_gap_register_states_what_this_deployment_reports() -> None:
+    """The managed column of the register's capability table, against the warehouse it describes.
+
+    The warehouse-less column is held by `test_gap_register.py` in the ordinary suite. This is
+    the other one, and it is the column that went stale: the register claimed dashboard
+    publication was unwired while a deployment exactly like this one was publishing a dashboard.
+    It is asserted here because only here is there a warehouse to report against.
+    """
+    claim = re.compile(r"^\|\s*`([a-z-]+)`\s*\|\s*\w+\s*\|\s*(\w+)\s*\|$")
+    register = (ROOT / "docs" / "demonstration-gaps.md").read_text(encoding="utf-8")
+    claimed = {
+        match[1]: match[2] for line in register.splitlines() if (match := claim.match(line.strip()))
+    }
+    assert claimed, "the gap register carries no capability claims to check"
+
+    workspace = _read("/api/v1/workspace", actor=ARCHITECT)
+    reported = {
+        capability["capability_id"]: capability["state"] for capability in workspace["capabilities"]
+    }
+
+    assert set(claimed) == set(reported), (
+        "the gap register and this deployment disagree about which capabilities exist; "
+        f"only the console has {sorted(set(reported) - set(claimed))}, "
+        f"only the register has {sorted(set(claimed) - set(reported))}"
+    )
+    drifted = {
+        capability: (state, reported[capability])
+        for capability, state in claimed.items()
+        if state != reported[capability]
+    }
+    assert not drifted, (
+        "the gap register claims a managed-warehouse capability state this deployment does not "
+        f"report (capability: claimed, reported): {drifted}"
+    )
+
+    # And the sentence under the table: seven stages, one complete, the rest blocked.
+    setup = _read("/api/v1/setup", actor=ARCHITECT)
+    states = [stage["state"] for stage in setup["stages"]]
+    assert len(states) == 7, states
+    assert states.count("complete") == 1, states
+    assert states.count("blocked") == 6, states
 
 
 def _assert_the_production_chain_reads_back(request_id: str) -> None:
