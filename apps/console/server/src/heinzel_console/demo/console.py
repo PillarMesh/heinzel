@@ -470,6 +470,7 @@ class DemoConsole:
             stores=self._stores,
             publication=self.publication,
             dbt_executable=Path(dbt_executable),
+            state_dir=state_dir,
             workspace=state_dir / "materialization",
             clock=demo_clock,
             dashboard_route=dashboard_route,

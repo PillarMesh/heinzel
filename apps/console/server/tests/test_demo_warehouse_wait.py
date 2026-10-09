@@ -203,6 +203,7 @@ def test_the_bootstrap_waits_before_it_connects_to_anything(
                 stores=stores,
                 publication=publication,
                 dbt_executable=tmp_path / "dbt",
+                state_dir=tmp_path / "state",
                 workspace=tmp_path / "materialization",
                 clock=demo_clock,
             )

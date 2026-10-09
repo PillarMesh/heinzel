@@ -86,6 +86,7 @@ def test_the_demonstration_answers_its_own_seeded_question(tmp_path: Path) -> No
                 stores=stores,
                 publication=publication,
                 dbt_executable=Path(dbt_executable),
+                state_dir=tmp_path / "state",
                 workspace=tmp_path / "materialization",
                 clock=_clock,
             )

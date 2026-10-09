@@ -19,7 +19,6 @@ Nothing in this package imports from `tests/`, and no test module is executed at
 from __future__ import annotations
 
 import asyncio
-import secrets
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -39,6 +38,7 @@ from .materialization import (
 )
 from .model_authority import SignedModelAuthority
 from .publication import DemoPublication
+from .role_passwords import role_passwords
 from .stores import DemoLandedGeneration, DemoStores
 from .warehouse import (
     DEMO_MAX_WRITE_TRANSACTION_DURATION,
@@ -87,19 +87,6 @@ class DemoWarehouseGeneration:
     # with. Read back from the store rather than carried from the materialization, so a restart
     # that found an earlier generation hands back the same thing a fresh one does.
     signed_model: SignedModelAuthority
-
-
-def _fresh_passwords() -> dict[str, str]:
-    """One new password per role, held in this process and written nowhere.
-
-    Generated on every start rather than stored, so the demonstration keeps no credential on
-    its state volume. `set_demo_role_passwords` makes PostgreSQL agree with what was generated
-    here, which is why a restart does not need to remember the last ones.
-
-    Keyed by role name and derived from the role set, so a role added to `DemoWarehouseRoles`
-    cannot be left without one.
-    """
-    return {role: secrets.token_urlsafe(24) for role in DEMO_WAREHOUSE_ROLES}
 
 
 def _database_name(bootstrap_dsn: str) -> str:
@@ -295,6 +282,7 @@ def ensure_demo_generation(
     stores: DemoStores,
     publication: DemoPublication,
     dbt_executable: Path,
+    state_dir: Path,
     workspace: Path,
     clock: Callable[[], datetime],
     dashboard_route: DemoWarehouseRoute | None = None,
@@ -316,7 +304,10 @@ def ensure_demo_generation(
         version=contract.version,
         digest=digest(contract.destination_product),
     )
-    passwords = _fresh_passwords()
+    # The same on every start over this state directory. They used to be minted per start,
+    # which a source enrolment cannot live with: the detail behind a handle would differ every
+    # morning and the enrolment, which is immutable on purpose, would refuse it.
+    passwords = role_passwords(state_dir, DEMO_WAREHOUSE_ROLES)
     if demo_warehouse_is_provisioned(bootstrap_dsn):
         set_demo_role_passwords(bootstrap_dsn, roles=DEMO_WAREHOUSE_ROLES, passwords=passwords)
     else:

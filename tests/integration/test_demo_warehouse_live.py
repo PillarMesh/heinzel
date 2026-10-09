@@ -613,6 +613,7 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
                 stores=stores,
                 publication=publication,
                 dbt_executable=Path(dbt_executable),
+                state_dir=tmp_path / "state",
                 workspace=tmp_path / "first",
                 clock=lambda: datetime.now(UTC),
             )
@@ -621,6 +622,7 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
                 stores=stores,
                 publication=publication,
                 dbt_executable=Path(dbt_executable),
+                state_dir=tmp_path / "state",
                 workspace=tmp_path / "second",
                 clock=lambda: datetime.now(UTC),
             )
@@ -754,6 +756,7 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
                         discarded, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
                     ),
                     dbt_executable=Path(dbt_executable),
+                    state_dir=tmp_path / "state",
                     workspace=tmp_path / "third",
                     clock=lambda: datetime.now(UTC),
                 )
@@ -800,6 +803,7 @@ def test_a_start_that_fails_after_landing_can_still_start_again(
                     stores=stores,
                     publication=publication,
                     dbt_executable=Path(dbt_executable),
+                    state_dir=tmp_path / "state",
                     workspace=tmp_path / "failed",
                     clock=lambda: datetime.now(UTC),
                 )
@@ -814,6 +818,7 @@ def test_a_start_that_fails_after_landing_can_still_start_again(
                 stores=stores,
                 publication=publication,
                 dbt_executable=Path(dbt_executable),
+                state_dir=tmp_path / "state",
                 workspace=tmp_path / "resumed",
                 clock=lambda: datetime.now(UTC),
             )
@@ -865,6 +870,7 @@ def test_a_restarted_start_publishes_what_it_landed_without_acquiring_again(
                     stores=stores,
                     publication=publication,
                     dbt_executable=Path(dbt_executable),
+                    state_dir=tmp_path / "state",
                     workspace=tmp_path / "failed",
                     clock=lambda: datetime.now(UTC),
                 )
@@ -904,6 +910,7 @@ def test_a_restarted_start_publishes_what_it_landed_without_acquiring_again(
                     stores=stores,
                     publication=publication,
                     dbt_executable=Path(dbt_executable),
+                    state_dir=tmp_path / "state",
                     workspace=tmp_path / "resumed",
                     clock=lambda: datetime.now(UTC),
                 )
