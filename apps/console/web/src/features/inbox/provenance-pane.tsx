@@ -130,7 +130,6 @@ function Warehouse({warehouse}: {readonly warehouse: ProvenanceWarehouseView | n
   return (
     <Panel
       aside={<Step ordinal={1} />}
-      description="The warehouse this tenant's data lives in, provisioned and recorded by warehouse control."
       title="Warehouse"
     >
       {warehouse === null ? (
@@ -172,7 +171,6 @@ function Source({source}: {readonly source: ProvenanceSourceView | null}) {
   return (
     <Panel
       aside={<Step ordinal={2} />}
-      description="The object in the source system, in the shape the tenant's acquisition contract agreed to read it."
       title="Source schema"
     >
       {source === null ? (
@@ -254,7 +252,6 @@ function Landing({landing}: {readonly landing: ProvenanceLandingView | null}) {
   return (
     <Panel
       aside={<Step ordinal={3} />}
-      description="The acquisition run that copied records into the warehouse, and what it attested about them."
       title="Landing run"
     >
       {landing === null ? (
@@ -286,7 +283,6 @@ function Product({product}: {readonly product: ProvenanceProductView | null}) {
   return (
     <Panel
       aside={<Step ordinal={4} />}
-      description="The statement the compiler emitted to build the data product out of the landed records, as it signed it."
       title="Transform"
     >
       {product === null ? (
@@ -347,7 +343,6 @@ function Materialization({
   return (
     <Panel
       aside={<Step ordinal={5} />}
-      description="The receipt the transform provider returned for the run that built the product."
       title="Build"
     >
       {materialization === null ? (
@@ -380,7 +375,6 @@ function Query({query}: {readonly query: ProvenanceQueryView | null}) {
   return (
     <Panel
       aside={<Step ordinal={6} />}
-      description="The statement the compiler emitted to answer this question, and the limits it was admitted under."
       title="Query"
     >
       {query === null ? (
@@ -448,7 +442,6 @@ function Execution({execution}: {readonly execution: ProvenanceExecutionView | n
   return (
     <Panel
       aside={<Step ordinal={7} />}
-      description="The runtime's receipt for the run that produced the rows this answer is drawn from."
       title="Execution"
     >
       {execution === null ? (
