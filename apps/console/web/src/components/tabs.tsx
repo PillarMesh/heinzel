@@ -25,17 +25,10 @@ interface TabsProps {
   readonly ariaLabel: string
   /** The tab to open first. Falls back to the first tab when it names none of them. */
   readonly initial?: string
-  /**
-   * The section the reader moved to, for a layout that depends on which one is open.
-   *
-   * Reported on a change and never on mount, so nothing outside has to be told what it can
-   * work out for itself -- a caller that cares starts from the same `initial` this does.
-   */
-  readonly onSelect?: (id: string) => void
   readonly tabs: readonly TabDefinition[]
 }
 
-export function Tabs({ariaLabel, initial, onSelect, tabs}: TabsProps) {
+export function Tabs({ariaLabel, initial, tabs}: TabsProps) {
   const base = useId()
   const first = tabs[0]
   const [selected, setSelected] = useState(() =>
@@ -50,17 +43,12 @@ export function Tabs({ariaLabel, initial, onSelect, tabs}: TabsProps) {
     return null
   }
 
-  function select(id: string): void {
-    setSelected(id)
-    onSelect?.(id)
-  }
-
   function move(toIndex: number): void {
     const next = tabs[Math.max(0, Math.min(toIndex, tabs.length - 1))]
     if (next === undefined) {
       return
     }
-    select(next.id)
+    setSelected(next.id)
     buttons.current.get(next.id)?.focus()
   }
 
@@ -92,7 +80,7 @@ export function Tabs({ariaLabel, initial, onSelect, tabs}: TabsProps) {
               className="tabs__tab"
               id={`${base}-${tab.id}-tab`}
               key={tab.id}
-              onClick={() => select(tab.id)}
+              onClick={() => setSelected(tab.id)}
               ref={(element) => {
                 if (element === null) {
                   buttons.current.delete(tab.id)

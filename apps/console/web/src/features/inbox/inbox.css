@@ -1,45 +1,29 @@
+/*
+ * The queue and the work, and nothing else. There was a third column -- the evidence rail --
+ * which was the narrowest on the page and carried the longest values, and which repeated four
+ * of the five facts the proposal printed beside it. It is a section of the work now.
+ */
 .decision-workspace {
   display: grid;
   gap: clamp(1rem, 2.5vw, 2rem);
-  /*
-   * The middle column is the work. Measured at 1440 the three came out 190, 355 and 160 pixels
-   * of content: the two columns beside the work held more of the page than the work did.
-   */
-  grid-template-columns: minmax(14rem, 0.78fr) minmax(0, 2.3fr) minmax(15rem, 0.92fr);
-}
-
-/* Two columns when there is no evidence to carry; the work takes the width back. */
-.decision-workspace--no-evidence {
   grid-template-columns: minmax(14rem, 0.78fr) minmax(0, 3fr);
 }
 
 .decision-workspace--medium,
-.decision-workspace--narrow,
-.decision-workspace--medium.decision-workspace--no-evidence,
-.decision-workspace--narrow.decision-workspace--no-evidence {
+.decision-workspace--narrow {
   grid-template-columns: minmax(0, 1fr);
 }
 
 .decision-queue,
-.decision-detail,
-.decision-queue,
-.decision-detail,
-.evidence-region {
+.decision-detail {
   container: decision-pane / inline-size;
-}
-
-.evidence-region {
-  background: var(--color-raised);
-  border: 1px solid var(--color-line);
-  padding: clamp(1rem, 2vw, 1.5rem);
 }
 
 .decision-detail:focus-visible {
   box-shadow: var(--shadow-focus);
 }
 
-.decision-queue h2,
-.evidence-region h2 {
+.decision-queue h2 {
   font-size: 1.15rem;
   margin: 0 0 1rem;
 }
@@ -822,4 +806,158 @@
   .stage-flow__stage {
     flex: 0 0 5.5rem;
   }
+}
+
+
+/*
+ * The things that decide an approval, as a list of checks rather than a definition list.
+ *
+ * The mark is the first column and the only coloured thing in the row, so the reader's eye
+ * runs down one edge and stops at whatever is not a tick. The label is fixed-width so the
+ * summaries line up and can be compared without reading each label first.
+ */
+.review-checks {
+  display: grid;
+  /*
+   * The columns live on the list, not on each row. Given to each row separately they were
+   * sized separately, so `AUTHORIZATION` set a wider label column than `QUALITY` and the
+   * summaries beside them started at different places -- four rows meant to be compared down
+   * a single edge, each indented by the length of its own label.
+   */
+  grid-template-columns: 1.25rem minmax(5rem, max-content) minmax(0, 1fr);
+  list-style: none;
+  margin: var(--space-5) 0 0;
+  padding: 0;
+}
+
+.review-check {
+  border-top: 1px solid var(--color-line);
+  display: grid;
+  gap: var(--space-1) var(--space-3);
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  padding: var(--space-3) 0;
+}
+
+.review-check:first-child {
+  border-top: 0;
+}
+
+.review-check__mark {
+  align-items: center;
+  border-radius: var(--radius-pill);
+  display: flex;
+  height: 1.25rem;
+  justify-content: center;
+  width: 1.25rem;
+}
+
+.review-check__mark > svg {
+  height: 0.875rem;
+  width: 0.875rem;
+}
+
+.review-check--ready .review-check__mark {
+  background: var(--color-ready-surface);
+  color: var(--color-ready);
+}
+
+.review-check--attention .review-check__mark {
+  background: var(--color-attention-surface);
+  color: var(--color-attention);
+}
+
+.review-check--neutral .review-check__mark {
+  background: var(--color-neutral-surface);
+  color: var(--color-neutral);
+}
+
+.review-check__label {
+  color: var(--color-ink-muted);
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  line-height: 1.6;
+  text-transform: uppercase;
+}
+
+.review-check__summary {
+  color: var(--color-ink);
+}
+
+/* Under the summary and in its column, so the two read as one block set in from the label. */
+.review-check__detail {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  grid-column: 3;
+}
+
+.review-check__detail > p,
+.review-check__detail > ul {
+  margin: 0;
+}
+
+.review-check__detail > ul {
+  padding-left: var(--space-5);
+}
+
+.review-check__detail > * + * {
+  margin-top: var(--space-2);
+}
+
+/*
+ * A heading inside a check restates the check's own label, so it is kept for the accessible
+ * name of its region and taken out of the picture.
+ */
+.review-check__detail h4 {
+  clip-path: inset(50%);
+  height: 1px;
+  overflow: hidden;
+  position: absolute;
+  white-space: nowrap;
+  width: 1px;
+}
+
+/*
+ * Each of these rows already ends in a state pill, which is the mark the eye follows. A bullet
+ * beside it is a second mark that carries nothing.
+ */
+.review-check__detail section > ul {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  padding-left: 0;
+}
+
+/* What an answer was built on. Two columns where the pane can carry them. */
+.evidence-pane__citations {
+  display: grid;
+  gap: var(--space-5);
+}
+
+@container decision-pane (min-width: 38rem) {
+  .evidence-pane__citations {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.evidence-pane__citations h4 {
+  color: var(--color-ink-muted);
+  font-size: var(--text-3xs);
+  letter-spacing: var(--tracking-caps);
+  margin: 0 0 var(--space-2);
+  text-transform: uppercase;
+}
+
+.evidence-pane__refs {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.proposal-review__purpose {
+  color: var(--color-ink-muted);
+  margin: 0;
 }

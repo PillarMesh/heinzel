@@ -942,22 +942,22 @@ test("reads the production chain only once the Lineage tab is opened", async () 
 })
 
 
-test("the production chain takes the rail's width while it is open", async () => {
-  // The chain is seven stages and two generated statements read top to bottom. Three of those
-  // stages say what the rail says, at greater length, so the rail beside it was a third of the
-  // page repeating the work -- and the work was in the narrowest column on screen.
+test("every section takes the work's full width, with no rail beside it", async () => {
+  // The rail was a standing third column, the narrowest on the page, carrying the longest
+  // values and repeating four of the five facts the proposal printed beside it. What was its
+  // own -- the citations, the immutable references and the history -- is a section now.
   const client = createClient()
   renderWorkspace(client, "request-answer")
 
   await openTab("Request")
-  expect(await screen.findByRole("region", {name: "Decision evidence"})).toBeVisible()
+  expect(screen.queryByRole("region", {name: "Decision evidence"})).toBeNull()
 
-  await openTab("Lineage")
-  await waitFor(() =>
-    expect(screen.queryByRole("region", {name: "Decision evidence"})).toBeNull(),
-  )
+  await openTab("Evidence")
+  expect(await screen.findByRole("region", {name: "Lifecycle"})).toBeVisible()
+  // Read where the decision is taken, not twice.
+  expect(screen.queryByRole("list", {name: "Readiness"})).toBeNull()
 
-  // And it comes back: the rail is dropped for that one section, not for the request.
-  await openTab("Decision")
-  expect(await screen.findByRole("region", {name: "Decision evidence"})).toBeVisible()
+  await openTab("Proposal")
+  expect(await screen.findByRole("list", {name: "Readiness"})).toBeVisible()
+  expect(screen.queryByRole("region", {name: "Lifecycle"})).toBeNull()
 })

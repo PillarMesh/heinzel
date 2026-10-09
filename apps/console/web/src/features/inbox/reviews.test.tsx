@@ -18,7 +18,7 @@ import {AccessPreviewReview} from "./access-preview-review"
 import {CatalogEvidence} from "./catalog-evidence"
 import {ConversationPanel} from "./conversation-panel"
 import {DashboardPreview} from "./dashboard-preview"
-import {EvidenceDrawer} from "./evidence-drawer"
+import {EvidencePane} from "./evidence-pane"
 import {LifecycleTimeline} from "./lifecycle-timeline"
 import {StakeholderAnswerReview} from "./stakeholder-answer-review"
 
@@ -113,7 +113,7 @@ const conversation: ConversationView = {
   ],
 }
 
-test("the stakeholder answer review states every grounding fact the architect must judge", () => {
+test("the stakeholder answer review states what would stop an approval, and what it answers", () => {
   render(<StakeholderAnswerReview proposal={answerProposal} />)
 
   const review = screen.getByRole("region", {name: "Stakeholder answer proposal"})
@@ -121,19 +121,25 @@ test("the stakeholder answer review states every grounding fact the architect mu
   expect(review).toHaveTextContent(
     "Synthetic net revenue increased after delayed invoices were recognized.",
   )
-  expect(review).toHaveTextContent("net-revenue-v1")
+
+  // The four things that decide an approval, each saying whether it is satisfied rather than
+  // leaving the reader to know in advance which values are the ones that could stop them.
+  const checks = screen.getByRole("list", {name: "Readiness"})
+  expect(checks).toHaveTextContent("Grounds")
+  expect(checks).toHaveTextContent("Current — satisfied")
+  expect(checks).toHaveTextContent(
+    "Fixture values are synthetic and cannot support a real decision.",
+  )
+  expect(checks).toHaveTextContent("Data owner approval remains required.")
   // Shown as a person reads it, with the exact stored instant kept on the element for anything
   // that parses the page rather than looks at it.
   expect(review).toHaveTextContent("Jan 1, 2026, 00:00:00 UTC")
   expect(review.querySelector("time")).toHaveAttribute("datetime", "2026-01-01T00:00:00Z")
-  expect(review).toHaveTextContent("Current")
-  expect(review).toHaveTextContent(
-    "Fixture values are synthetic and cannot support a real decision.",
-  )
-  expect(review).toHaveTextContent("Synthetic orders")
-  expect(review).toHaveTextContent("Synthetic orders to net revenue.")
-  expect(review).toHaveTextContent("Data owner approval remains required.")
   expect(screen.getByRole("list", {name: "Required authorities"})).toHaveTextContent("Data owner")
+
+  // The citations are not here. They are audit material, read once in a dispute and never in
+  // a routine approval, and they were half this panel's height.
+  expect(review).not.toHaveTextContent("Synthetic orders to net revenue.")
 })
 
 test("the access preview review states the effective scope, exclusions, checks, and authority", () => {
@@ -163,29 +169,34 @@ test("the lifecycle timeline lists server events in the order the server supplie
   expect(entries[1]).toHaveTextContent("Candidate answer proposed for review.")
 })
 
-test("the evidence drawer is a static region at wide width", () => {
-  render(<EvidenceDrawer evidence={evidence} layout="wide" />)
+test("the evidence section carries the references and the history", () => {
+  render(<EvidencePane evidence={evidence} lifecycle={lifecycle} proposal={answerProposal} />)
 
-  expect(screen.getByRole("region", {name: "Decision evidence"})).toHaveTextContent(
-    "Fixture projection only; no governed evidence exists.",
+  expect(screen.getByRole("list", {name: "Immutable references"})).toHaveTextContent(
+    "evidence-openmetadata-roundtrip",
   )
-  expect(screen.queryByRole("button", {name: "Show evidence"})).toBeNull()
+  expect(screen.getByRole("region", {name: "Lifecycle"})).toHaveTextContent(
+    "Request submitted by the requester.",
+  )
 })
 
-test("the medium-width evidence drawer takes focus and restores it to its trigger", async () => {
-  const user = userEvent.setup()
-  render(<EvidenceDrawer evidence={evidence} layout="medium" />)
+test("beside a proposal it repeats none of the proposal's own facts", () => {
+  render(<EvidencePane evidence={evidence} lifecycle={lifecycle} proposal={answerProposal} />)
 
-  const trigger = screen.getByRole("button", {name: "Show evidence"})
-  await user.click(trigger)
+  // The rail printed these next to a proposal printing every one of them again, so a reader
+  // got the same sentence twice and the second copy was in the narrowest column on the page.
+  for (const repeated of ["As of", "Freshness", "Authorization", "Grounds"]) {
+    expect(screen.queryByText(repeated)).toBeNull()
+  }
+})
 
-  const drawer = await screen.findByRole("dialog", {name: "Decision evidence"})
-  await waitFor(() => expect(drawer).toHaveFocus())
+test("with nothing proposed it is the only copy, so it states them", () => {
+  render(<EvidencePane evidence={evidence} lifecycle={lifecycle} proposal={null} />)
 
-  await user.keyboard("{Escape}")
-
-  expect(screen.queryByRole("dialog", {name: "Decision evidence"})).toBeNull()
-  expect(trigger).toHaveFocus()
+  const context = screen.getByRole("region", {name: "Context"})
+  expect(context).toHaveTextContent("Current")
+  expect(context).toHaveTextContent("Fixture projection only; no governed evidence exists.")
+  expect(screen.queryByRole("region", {name: "Cited for this answer"})).toBeNull()
 })
 
 test("catalog evidence renders the server-issued opaque link and never a provider URL", async () => {
@@ -464,19 +475,46 @@ test("legacy conversation entries explicitly say their role was not recorded", (
   expect(panel).not.toHaveTextContent("Architect intervention")
 })
 
-test("governed review shows exact artifact versions without inventing catalog links", () => {
+test("the evidence section shows exact artifact versions without inventing catalog links", () => {
   const reference = {artifact_id: "urn:catalog/Revenue <Q1>", version: 2, digest: "a".repeat(64)}
-  render(<StakeholderAnswerReview proposal={{...answerProposal,
-    datasets: [{dataset_ref: "artifact-reference", display_name: "Revenue", artifact_reference: reference}],
-    metric_references: [reference], quality_limitations: [], quality_references: [reference],
-    required_approvals: [{authority_ref: "role:data_owner", reason: "ownership_review", satisfied: false}],
-  }} />)
+  render(
+    <EvidencePane
+      evidence={evidence}
+      lifecycle={lifecycle}
+      proposal={{
+        ...answerProposal,
+        datasets: [
+          {dataset_ref: "artifact-reference", display_name: "Revenue", artifact_reference: reference},
+        ],
+        metric_references: [reference],
+        quality_limitations: [],
+        quality_references: [reference],
+      }}
+    />,
+  )
 
   expect(screen.getAllByText(reference.artifact_id).length).toBeGreaterThan(0)
   expect(screen.getAllByText(reference.digest).length).toBeGreaterThan(0)
-  expect(screen.getByRole("region", {name: "Required approvals"})).toHaveTextContent("Not recorded")
-  expect(screen.queryByText("No quality limitation was recorded.")).not.toBeInTheDocument()
+  // An identifier is not a destination: the console never invents a provider URL for one.
   expect(screen.queryByRole("link")).not.toBeInTheDocument()
+})
+
+test("required approvals stay with the proposal, where the decision is taken", () => {
+  render(
+    <StakeholderAnswerReview
+      proposal={{
+        ...answerProposal,
+        required_approvals: [
+          {authority_ref: "role:data_owner", reason: "ownership_review", satisfied: false},
+        ],
+      }}
+    />,
+  )
+
+  expect(screen.getByRole("list", {name: "Readiness"})).toHaveTextContent(
+    "0 of 1 required approval recorded",
+  )
+  expect(screen.getByRole("region", {name: "Required approvals"})).toHaveTextContent("Not recorded")
 })
 
 test("required approvals name the approving authority rather than its internal reference", () => {

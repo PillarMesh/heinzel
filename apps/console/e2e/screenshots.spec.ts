@@ -104,22 +104,20 @@ test("access-preview", async ({page}) => {
 
 test("no-valid-plan", async ({page}) => {
   await openRequest(page, "request-no-valid-plan")
-  await expect(page.getByRole("region", {name: "Decision evidence"})).toContainText("No Valid Plan")
+  await expect(page.getByRole("tab", {name: "Decision"})).toBeVisible()
 
   await captureRoute(page, "no-valid-plan")
 })
 
-test("evidence-drawer-medium", async ({page}) => {
-  // The medium viewport is where the evidence drawer stops being a column and
-  // becomes a dialog, which is the behavior this capture shows.
-  await page.setViewportSize({width: 1024, height: 768})
-  await openRequest(page, "request-access")
-  await page.getByRole("button", {name: "Show evidence"}).click()
-  await expect(page.getByRole("dialog", {name: "Decision evidence"})).toBeVisible()
+test("evidence-section", async ({page}) => {
+  // Where a request's citations and its history are read. This was a rail beside the work --
+  // the narrowest column on the page, repeating four of the five facts the proposal printed
+  // next to it -- and is a section of the work at its full width now.
+  await openRequest(page, "request-answer")
+  await page.getByRole("tab", {name: "Evidence"}).click()
+  await expect(page.getByRole("region", {name: "Lifecycle"})).toBeVisible()
 
-  // Framed to the medium viewport itself, because the point of this image is what
-  // that viewport shows at once, not the whole scrolled document.
-  await captureRoute(page, "evidence-drawer-medium", false)
+  await captureRoute(page, "evidence-section")
 })
 
 test.fixme("meaning-review", async () => {

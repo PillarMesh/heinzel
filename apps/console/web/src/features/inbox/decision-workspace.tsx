@@ -34,9 +34,7 @@ import {
 } from "./dashboard-publication"
 import {ImpactPanel, type ImpactClient} from "../impact/impact-panel"
 import {DecisionQueue} from "./decision-queue"
-import {EvidenceDrawer, type EvidenceLayout} from "./evidence-drawer"
-import {hasEvidence} from "./evidence"
-import {LifecycleTimeline} from "./lifecycle-timeline"
+import {EvidencePane} from "./evidence-pane"
 import {ProvenancePane, type ProvenanceClient} from "./provenance-pane"
 import {StakeholderAnswerReview} from "./stakeholder-answer-review"
 import "./inbox.css"
@@ -230,7 +228,15 @@ function mediaMatches(query: string): boolean {
   return typeof globalThis.matchMedia === "function" && globalThis.matchMedia(query).matches
 }
 
-function currentLayout(): EvidenceLayout {
+/**
+ * How much room the workspace has: both columns, the queue folded away, or one at a time.
+ *
+ * It was named for the evidence rail, which is gone -- the rail repeated the proposal beside
+ * it in the narrowest column on the page, and what was its own is a section now.
+ */
+export type WorkspaceLayout = "wide" | "medium" | "narrow"
+
+function currentLayout(): WorkspaceLayout {
   if (mediaMatches("(max-width: 759px)")) {
     return "narrow"
   }
@@ -358,19 +364,22 @@ interface RequestDetailPanelProps {
   readonly detail: RequestDetailView
   readonly idempotencyKeyFactory: IdempotencyKeyFactory
   readonly onAuthoritativeDetail: (detail: RequestDetailView) => void
-  /** Which section is open, for the layout outside this panel that depends on it. */
-  readonly onSectionChange: (section: string) => void
+  /** The dashboard this request would open up, when it is a dashboard it names rather than one
+   * the catalog already describes. `null` for every other kind of request. */
+  readonly dashboardCandidateRef: string | null
+  readonly onDashboardAvailability: (available: boolean) => void
   readonly requiredEvidenceUnavailable: boolean
   readonly session: SessionView
 }
 
 function RequestDetailPanel({
   client,
+  dashboardCandidateRef,
   dataProvenance,
   detail,
   idempotencyKeyFactory,
   onAuthoritativeDetail,
-  onSectionChange,
+  onDashboardAvailability,
   requiredEvidenceUnavailable,
   session,
 }: RequestDetailPanelProps) {
@@ -636,6 +645,34 @@ function RequestDetailPanel({
     />
   )
 
+  // What was cited and what has happened, at the page's width instead of in a rail beside it.
+  const evidenceTab = () => (
+    <EvidencePane
+      evidence={detail.evidence}
+      lifecycle={detail.lifecycle ?? []}
+      proposal={detail.proposal ?? null}
+    >
+      {(detail.evidence.datasets ?? [])
+        .filter((dataset) => !dataset.artifact_reference)
+        .map((dataset) => (
+          <CatalogEvidence
+            assetRef={dataset.dataset_ref}
+            client={client}
+            dataProvenance={dataProvenance}
+            key={dataset.dataset_ref}
+          />
+        ))}
+      {dashboardCandidateRef === null ? null : (
+        <DashboardPreview
+          client={client}
+          dashboardRef={dashboardCandidateRef}
+          dataProvenance={dataProvenance}
+          onAvailabilityChange={onDashboardAvailability}
+        />
+      )}
+    </EvidencePane>
+  )
+
   const decisionTab = () => (
     <div className="panel-stack">
       {availableActions.length === 0 ? (
@@ -828,12 +865,12 @@ function RequestDetailPanel({
       <Tabs
         ariaLabel="Request sections"
         initial={openOn}
-        onSelect={onSectionChange}
         tabs={[
           {content: requestTab, id: "request", label: "Request", badge: preparationCount > 0 ? preparationCount : undefined},
           {content: proposalTab, id: "proposal", label: "Proposal"},
           {content: conversationTab, id: "conversation", label: "Conversation", badge: conversationCount > 0 ? conversationCount : undefined},
           {content: lineageTab, id: "lineage", label: "Lineage"},
+          {content: evidenceTab, id: "evidence", label: "Evidence"},
           {content: decisionTab, id: "decision", label: "Decision", badge: decisionsWaiting ? "•" : undefined},
         ]}
       />
@@ -845,7 +882,7 @@ interface DecisionWorkspaceProps {
   readonly client: InboxClient
   readonly dataProvenance: DataProvenance
   readonly idempotencyKeyFactory?: IdempotencyKeyFactory
-  readonly layout?: EvidenceLayout
+  readonly layout?: WorkspaceLayout
   readonly requestedRequestId?: string | undefined
   readonly session: SessionView
 }
@@ -858,7 +895,7 @@ export function DecisionWorkspace({
   requestedRequestId,
   session,
 }: DecisionWorkspaceProps) {
-  const [measuredLayout, setMeasuredLayout] = useState<EvidenceLayout>(currentLayout)
+  const [measuredLayout, setMeasuredLayout] = useState<WorkspaceLayout>(currentLayout)
   const [inbox, setInbox] = useState<{readonly failed: boolean; readonly view: InboxView | null}>({
     failed: false,
     view: null,
@@ -880,10 +917,6 @@ export function DecisionWorkspace({
   const [dashboardAvailability, setDashboardAvailability] = useState<{
     readonly available: boolean
     readonly requestId: string
-  } | null>(null)
-  const [section, setSection] = useState<{
-    readonly requestId: string
-    readonly section: string
   } | null>(null)
   const detailRef = useRef<HTMLElement>(null)
 
@@ -987,20 +1020,6 @@ export function DecisionWorkspace({
     [selectedRequestId],
   )
 
-  const onSectionChange = useCallback(
-    (opened: string) => {
-      if (selectedRequestId !== null) {
-        setSection({requestId: selectedRequestId, section: opened})
-      }
-    },
-    [selectedRequestId],
-  )
-
-  // Keyed to the request, like every other projection here: switching request remounts the
-  // panel and reopens it on its own first section, so a section remembered from the request
-  // before it is not this one's.
-  const openSection =
-    section !== null && section.requestId === selectedRequestId ? section.section : null
   const items = inbox.view?.items ?? []
   const showQueue = effectiveLayout !== "narrow" || selectedRequestId === null
   const showDetail = effectiveLayout !== "narrow" || selectedRequestId !== null
@@ -1009,13 +1028,6 @@ export function DecisionWorkspace({
   const detailIsCurrent = detail.requestId === selectedRequestId
   const detailFailed = detailIsCurrent && detail.failed
   const currentDetail = detailIsCurrent && !detail.failed ? detail.value : null
-  const showEvidence =
-    currentDetail !== null &&
-    hasEvidence(currentDetail.evidence, (currentDetail.lifecycle ?? []).length)
-  // The chain is a reference, not a decision aid: seven stages and two generated statements
-  // read top to bottom, and the rail beside them was taking a third of the page to repeat
-  // what three of those stages already say in full. On that section the work takes the width.
-  const railVisible = showEvidence && openSection !== "lineage"
   const dashboardRef =
     currentDetail?.proposal?.kind === "access_preview" &&
     currentDetail.proposal.access_mode === "dashboard" &&
@@ -1029,11 +1041,7 @@ export function DecisionWorkspace({
     !dashboardAvailability.available
 
   return (
-    <div
-      className={`decision-workspace decision-workspace--${effectiveLayout}${
-        railVisible ? "" : " decision-workspace--no-evidence"
-      }`}
-    >
+    <div className={`decision-workspace decision-workspace--${effectiveLayout}`}>
       {!showQueue ? null : inbox.failed ? (
         <section aria-label="Decision queue" className="decision-queue">
           <h2>Decision queue</h2>
@@ -1087,12 +1095,13 @@ export function DecisionWorkspace({
           ) : (
             <RequestDetailPanel
               client={client}
+              dashboardCandidateRef={dashboardRef}
               dataProvenance={dataProvenance}
               detail={currentDetail}
               idempotencyKeyFactory={idempotencyKeyFactory}
               key={currentDetail.request_id}
               onAuthoritativeDetail={onAuthoritativeDetail}
-              onSectionChange={onSectionChange}
+              onDashboardAvailability={onDashboardAvailability}
               requiredEvidenceUnavailable={requiredEvidenceUnavailable}
               session={session}
             />
@@ -1100,38 +1109,6 @@ export function DecisionWorkspace({
         </section>
       )}
 
-      {/*
-        The rail only when there is evidence to put in it. On a submitted request it stood as a
-        permanent third column whose entire height said `Not recorded`, `Unknown`, `0 datasets`,
-        `0 of 0 approvals`, `No immutable evidence reference exists yet` and `No lifecycle
-        events have been recorded` -- a column of nothing, taking width from the work.
-      */}
-      {currentDetail === null || !railVisible ? null : (
-        <EvidenceDrawer evidence={currentDetail.evidence} layout={effectiveLayout}>
-          {(currentDetail.evidence.datasets ?? []).some((dataset) => !dataset.artifact_reference) && <h3>Catalog records</h3>}
-          {(currentDetail.evidence.datasets ?? []).filter((dataset) => !dataset.artifact_reference).map((dataset) => (
-            <CatalogEvidence
-              assetRef={dataset.dataset_ref}
-              client={client}
-              dataProvenance={dataProvenance}
-              key={dataset.dataset_ref}
-            />
-          ))}
-          {dashboardRef === null ? null : (
-            <>
-              <h3>Dashboard candidate</h3>
-              <DashboardPreview
-                client={client}
-                dashboardRef={dashboardRef}
-                dataProvenance={dataProvenance}
-                onAvailabilityChange={onDashboardAvailability}
-              />
-            </>
-          )}
-          <h3>Lifecycle</h3>
-          <LifecycleTimeline events={currentDetail.lifecycle ?? []} />
-        </EvidenceDrawer>
-      )}
     </div>
   )
 }

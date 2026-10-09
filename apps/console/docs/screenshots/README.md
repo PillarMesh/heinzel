@@ -15,7 +15,7 @@ origin (`scripts/serve-built.mjs`), resets the demo fixture before every capture
 overwrites every file in this directory.
 
 Determinism comes from `playwright.config.ts` and from the fixture itself: a 1440x1024
-desktop viewport (1024x768 for the medium-width drawer), `en-US`, UTC, the light colour
+desktop viewport, `en-US`, UTC, the light colour
 scheme, reduced motion, disabled animations, a hidden caret, and a fixture clock pinned
 to `2026-09-01T16:00:00Z`. Reference identifiers such as `operation-0001` come from a
 monotonic sequence that the demo reset restores, so repeated runs produce byte-identical
@@ -36,7 +36,7 @@ carries the persistent `Demo scenario - no managed effects` banner.
 | `stakeholder-answer.png` | Stakeholder-answer decision with the reviewed digest confirmed | 1440x1024 |
 | `access-preview.png` | Least-privilege access preview: requested fields, effective scope, exclusions | 1440x1024 |
 | `no-valid-plan.png` | `No Valid Plan` outcome with no admissible action | 1440x1024 |
-| `evidence-drawer-medium.png` | The evidence drawer as a dialog at medium width | 1024x768 |
+| `evidence-section.png` | The evidence section: what was cited, and the request's history | 1440x1024 |
 
 `command-center.png` and `stakeholder-answer.png` share a route by design: the console
 places the decision inside the command center rather than on a separate page. They differ
