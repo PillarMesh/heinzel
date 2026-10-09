@@ -143,6 +143,7 @@ from .contracts import (
     ProductIntentSourceCoverageView,
     ProposalApprovalView,
     ProposalPreparationCommand,
+    ProvenanceView,
     PublishableDashboardsView,
     PublishableDashboardView,
     RequestClarificationCommand,
@@ -218,6 +219,7 @@ from .governed_adapters import (
     RequestImpactReader,
     RequestInboxReader,
     RequestIntakeCommands,
+    RequestProvenanceReader,
     SelectableAnswerTermReader,
     SemanticReviewCommands,
     SemanticReviewReader,
@@ -582,6 +584,7 @@ class GovernedConsoleBackend:
         dashboards: DashboardPublicationReader | None = None,
         dashboard_publication_commands: DashboardPublicationCommands | None = None,
         publishable_dashboards: PublishableDashboardReader | None = None,
+        request_provenance: RequestProvenanceReader | None = None,
         data_access_intake_available: bool = True,
         actors: WorkspaceActorDirectory | None = None,
         principals: WorkspacePrincipalDirectory | None = None,
@@ -634,6 +637,7 @@ class GovernedConsoleBackend:
         self._dashboards = dashboards
         self._dashboard_publication_commands = dashboard_publication_commands
         self._publishable_dashboards = publishable_dashboards
+        self._request_provenance = request_provenance
         self._data_access_intake_available = data_access_intake_available
         self._actors = actors
         self._principals = principals
@@ -2026,6 +2030,27 @@ class GovernedConsoleBackend:
                     visible.append(publication)
                     break
         return tuple(visible)
+
+    def get_request_provenance(
+        self, context: TrustedActorContext, request_id: str
+    ) -> ProvenanceView:
+        """How this request's answer was produced, read back from the receipts.
+
+        Composed by whoever can reach every store involved, never by this console: each section
+        is what one service wrote down while doing its own work. A step that has not happened
+        yet is absent rather than invented, so a request read before it is answered shows the
+        chain as far as it has got.
+        """
+        self._authorize(context, ("data_architect",))
+        reader = self._request_provenance
+        if reader is None:
+            raise _not_delivered("a governed provenance read interface")
+        view = self._guarded(
+            lambda: reader.provenance(tenant_id=context.tenant_id, request_id=request_id)
+        )
+        if view is None:
+            raise ConsoleNotFound()
+        return view
 
     def get_publishable_dashboards(
         self, context: TrustedActorContext, request_id: str

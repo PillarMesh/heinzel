@@ -37,6 +37,7 @@ import {DecisionQueue} from "./decision-queue"
 import {EvidenceDrawer, type EvidenceLayout} from "./evidence-drawer"
 import {hasEvidence} from "./evidence"
 import {LifecycleTimeline} from "./lifecycle-timeline"
+import {ProvenancePane, type ProvenanceClient} from "./provenance-pane"
 import {StakeholderAnswerReview} from "./stakeholder-answer-review"
 import "./inbox.css"
 
@@ -72,7 +73,8 @@ export interface InboxClient
     ConversationPanelClient,
     DashboardPreviewClient,
     DashboardPublicationClient,
-    ImpactClient {
+    ImpactClient,
+    ProvenanceClient {
   approveProductIntent(
     requestId: string,
     command: ProductIntentApprovalCommand,
@@ -620,6 +622,17 @@ function RequestDetailPanel({
     />
   )
 
+  // Read on demand. Seven receipts joined across six stores is the console's most expensive
+  // read, and a reviewer who only needs to approve should never pay for it.
+  const lineageTab = () => (
+    <ProvenancePane
+      client={client}
+      dataProvenance={dataProvenance}
+      key={detail.request_id}
+      requestId={detail.request_id}
+    />
+  )
+
   const decisionTab = () => (
     <div className="panel-stack">
       {availableActions.length === 0 ? (
@@ -816,6 +829,7 @@ function RequestDetailPanel({
           {content: requestTab, id: "request", label: "Request", badge: preparationCount > 0 ? preparationCount : undefined},
           {content: proposalTab, id: "proposal", label: "Proposal"},
           {content: conversationTab, id: "conversation", label: "Conversation", badge: conversationCount > 0 ? conversationCount : undefined},
+          {content: lineageTab, id: "lineage", label: "Lineage"},
           {content: decisionTab, id: "decision", label: "Decision", badge: decisionsWaiting ? "•" : undefined},
         ]}
       />

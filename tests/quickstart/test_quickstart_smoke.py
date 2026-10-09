@@ -348,8 +348,63 @@ def test_the_quickstart_answers_the_question_it_seeds() -> None:
         # A result belongs to whoever asked for it, and the architect did not.
         refused, _ = _get(f"/api/v1/requests/{request_id}/result", actor=ARCHITECT)
         assert refused == 404, refused
+
+        _assert_the_production_chain_reads_back(request_id)
     finally:
         _compose("down", "-v")
+
+
+def _assert_the_production_chain_reads_back(request_id: str) -> None:
+    """Every stage from the warehouse to the rows, joined from what each service recorded.
+
+    This is the one place the chain can be checked against services that really ran: the
+    reader joins six stores, and a field renamed in any one of them would otherwise surface as
+    a console section that silently went missing.
+    """
+    chain = _read(f"/api/v1/inbox/{request_id}/provenance", actor=ARCHITECT)
+
+    warehouse = chain["warehouse"]
+    assert warehouse is not None, chain
+    assert warehouse["engine_kind"] == "postgresql", warehouse
+    assert warehouse["lifecycle_state"] == "ready", warehouse
+
+    # The shape the tenant's acquisition contract agreed to read, and its record key.
+    source = chain["source"]
+    assert [field["name"] for field in source["fields"]] == [
+        "order_id",
+        "customer_id",
+        "ordered_on",
+        "order_total",
+        "updated_at",
+    ], source
+    assert source["record_key_fields"] == ["order_id"], source
+    assert source["operation_semantics"] == "upsert_only", source
+
+    # The landing run's own receipt: the five seeded records, in the table it named.
+    landing = chain["landing"]
+    assert landing["target_table_ref"] == "raw_customer_orders", landing
+    assert landing["record_count"] == 5, landing
+
+    # The compiled transform, as the compiler signed it, and the receipt for the run of it.
+    product = chain["product"]
+    assert product["output_columns"] == ["ordered_on", "total_order_value"], product
+    assert product["quality_tests"], product
+    assert product["compiled_sql"].startswith("SELECT"), product
+    assert chain["materialization"]["output_row_count"] == 3, chain["materialization"]
+    assert chain["materialization"]["quality_disposition"] == "passed", chain["materialization"]
+
+    # The governed query, its ceilings, and the receipt for the rows the result page showed.
+    query = chain["query"]
+    assert query["engine_kind"] == "postgresql", query
+    assert query["statement"].startswith("SELECT"), query
+    assert query["routing"] == "policy_admitted", query
+    assert query["row_limit"] > 0, query
+    assert chain["execution"]["row_count"] == 3, chain["execution"]
+
+    # A requester is told the request does not exist: the chain carries the compiled statements
+    # and the warehouse's own identifiers, which are the architect's to read and not theirs.
+    refused, _ = _get(f"/api/v1/inbox/{request_id}/provenance", actor=REQUESTER)
+    assert refused == 404, refused
 
 
 @requires_quickstart

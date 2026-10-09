@@ -30,6 +30,8 @@ from heinzel_console.contracts import (
     AccessRevocationCommand,
     ActorRole,
     DashboardPublicationCommand,
+    ProvenanceView,
+    ProvenanceWarehouseView,
     ResetCommand,
     SetupStageView,
     SetupView,
@@ -62,6 +64,7 @@ from heinzel_console.governed_adapters import (
     PublishableDashboardReader,
     RequestImpactReader,
     RequestInboxReader,
+    RequestProvenanceReader,
     SelectableAnswerTermReader,
     SourceBindingReader,
     SourceRegistrationCommands,
@@ -497,6 +500,7 @@ def _backend(
     dashboards: DashboardPublicationReader | None = None,
     dashboard_publication_commands: DashboardPublicationCommands | None = None,
     publishable_dashboards: PublishableDashboardReader | None = None,
+    request_provenance: RequestProvenanceReader | None = None,
     principals: InMemoryWorkspacePrincipalDirectory | None = None,
 ) -> GovernedConsoleBackend:
     """Inject doubles under the backend's own parameter types.
@@ -531,6 +535,7 @@ def _backend(
         dashboards=dashboards,
         dashboard_publication_commands=dashboard_publication_commands,
         publishable_dashboards=publishable_dashboards,
+        request_provenance=request_provenance,
         principals=principals,
     )
 
@@ -2907,3 +2912,71 @@ def test_only_a_data_architect_reads_the_publishable_offering() -> None:
 
     with pytest.raises(ConsoleNotFound):
         backend.get_publishable_dashboards(_requester_context(), "req-00000000000000000002")
+
+
+# The production chain, as the console reads it back for one request.
+
+
+def _provenance(request_id: str = "req-00000000000000000002") -> ProvenanceView:
+    return ProvenanceView(
+        request_id=request_id,
+        warehouse=ProvenanceWarehouseView(
+            binding_ref="warehouse-demo",
+            engine_kind="postgresql",
+            deployment_mode="heinzel_cloud",
+            region="local",
+            lifecycle_state="ready",
+            capability_profile_digest="a" * 64,
+            provisioned_at=datetime(2026, 9, 12, 9, tzinfo=UTC),
+        ),
+        source=None,
+        landing=None,
+        product=None,
+        materialization=None,
+        query=None,
+        execution=None,
+    )
+
+
+class _ProvenanceReader:
+    def __init__(self, view: ProvenanceView | None) -> None:
+        self._view = view
+        self.requests: list[tuple[str, str]] = []
+
+    def provenance(self, *, tenant_id: str, request_id: str) -> ProvenanceView | None:
+        self.requests.append((tenant_id, request_id))
+        return self._view
+
+
+def test_the_production_chain_is_read_for_the_tenant_and_request_asked_for() -> None:
+    reader = _ProvenanceReader(_provenance())
+    backend = _backend(request_provenance=reader)
+
+    view = backend.get_request_provenance(_architect_context(), "req-00000000000000000002")
+
+    assert view.warehouse is not None
+    assert view.warehouse.binding_ref == "warehouse-demo"
+    assert reader.requests == [(_TENANT, "req-00000000000000000002")]
+
+
+def test_a_request_with_no_recorded_chain_is_not_found_rather_than_empty() -> None:
+    backend = _backend(request_provenance=_ProvenanceReader(None))
+
+    with pytest.raises(ConsoleNotFound):
+        backend.get_request_provenance(_architect_context(), "req-00000000000000000002")
+
+
+def test_the_production_chain_requires_a_wired_reader() -> None:
+    with pytest.raises(ConsoleUnavailable) as refusal:
+        _backend().get_request_provenance(_architect_context(), "req-00000000000000000002")
+
+    assert refusal.value.code == "capability_not_delivered"
+
+
+def test_only_a_data_architect_reads_the_production_chain() -> None:
+    # The chain carries the compiled statements and the warehouse's own identifiers. A requester
+    # is told the request does not exist, not that they may not look at it.
+    backend = _backend(request_provenance=_ProvenanceReader(_provenance()))
+
+    with pytest.raises(ConsoleNotFound):
+        backend.get_request_provenance(_requester_context(), "req-00000000000000000002")

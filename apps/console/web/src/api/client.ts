@@ -21,6 +21,7 @@ import type {
   ConsoleEnvelopeJsonTupleHeinzelConsoleContractsRequesterRequestView,
   ConsoleEnvelopeOperationView,
   ConsoleEnvelopeProductIntentApprovalView,
+  ConsoleEnvelopeProvenanceView,
   ConsoleEnvelopePublishableDashboardsView,
   ConsoleEnvelopeRequesterRequestView,
   ConsoleEnvelopeRequestDetailView,
@@ -393,6 +394,13 @@ export class ConsoleApiClient {
     return this.#request(
       `/api/v1/inbox/${encodePathSegment(requestId)}/impact`,
       "impact_response",
+    )
+  }
+
+  getRequestProvenance(requestId: string): Promise<ConsoleEnvelopeProvenanceView> {
+    return this.#request(
+      `/api/v1/inbox/${encodePathSegment(requestId)}/provenance`,
+      "provenance_response",
     )
   }
 

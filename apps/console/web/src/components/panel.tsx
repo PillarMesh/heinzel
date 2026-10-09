@@ -1,3 +1,4 @@
+import {useId} from "react"
 import type {ReactNode} from "react"
 
 /**
@@ -11,7 +12,8 @@ import type {ReactNode} from "react"
 interface PanelProps {
   /**
    * The section's accessible name, when it must differ from its visible title -- or stand in
-   * for one, on a panel drawn without a header.
+   * for one, on a panel drawn without a header. A panel with a visible title needs neither:
+   * the title names it.
    */
   readonly ariaLabel?: string
   /** A control or status that belongs to this section, placed on the header's trailing edge. */
@@ -40,15 +42,25 @@ export function Panel({
   title,
 }: PanelProps) {
   const Heading = `h${headingLevel}` as const
+  // A `section` is a landmark only once it is named, and an unnamed one is skipped entirely by
+  // the rotor every screen reader offers -- so a panel with a visible title is named by it.
+  const headingId = useId()
   const classes = ["panel", flush ? "panel--flush" : null, className]
     .filter((value): value is string => typeof value === "string" && value !== "")
     .join(" ")
   return (
-    <section aria-label={ariaLabel} className={classes} id={id}>
+    <section
+      aria-label={ariaLabel}
+      aria-labelledby={ariaLabel === undefined && title !== undefined ? headingId : undefined}
+      className={classes}
+      id={id}
+    >
       {title === undefined ? null : (
         <header className="panel__header">
           <div className="panel__heading">
-            <Heading className="panel__title">{title}</Heading>
+            <Heading className="panel__title" id={headingId}>
+              {title}
+            </Heading>
             {description === undefined ? null : <p className="panel__description">{description}</p>}
           </div>
           {aside === undefined ? null : <div className="panel__aside">{aside}</div>}

@@ -83,6 +83,7 @@ from .managed_warehouse import (
     ManagedWarehouseOption,
     provision_demo_managed_warehouse,
 )
+from .provenance import DemoProvenanceSubject, DemoRequestProvenanceReader
 from .publication import DEMO_TENANT_ID, build_demo_publication
 from .seed import seed_demo_request
 from .stores import DemoStores
@@ -329,6 +330,32 @@ class DemoConsole:
                     state_dir, answer=governed_answer, managed=managed
                 )
             )
+            # How the answer was produced, joined from the receipts each service left behind.
+            # Offered only alongside a governed answer, because the query and the execution are
+            # read through the runtime the answer owns -- and because with no answer there is no
+            # chain to read: the earlier steps would show, and the reader would then be a
+            # capability that reports an acquisition and stops.
+            request_provenance = (
+                None
+                if governed_answer is None
+                else DemoRequestProvenanceReader(
+                    acquisition_lifecycle=self._stores.acquisition_lifecycle,
+                    generations=self._stores.generations,
+                    landed_generations=self._stores.landed_generations,
+                    materializations=self._stores.materialization_receipts,
+                    plans=governed_answer.runtime.plans,
+                    results=governed_answer.runtime.results,
+                    signed_models=self._stores.signed_models,
+                    subject=DemoProvenanceSubject(
+                        acquisition_contract_ref=publication.contract.contract_id,
+                        acquisition_contract_revision=publication.contract.version,
+                        product_id=governed_answer.preparation.product_ref.artifact_id,
+                        product_revision=governed_answer.preparation.product_ref.version,
+                        product_generation=governed_answer.preparation.generation,
+                        warehouse=None if managed is None else managed.binding,
+                    ),
+                )
+            )
             self.backend = GovernedConsoleBackend(
                 identity=GovernedWorkspaceIdentity(
                     tenant_ref=DEMO_TENANT_ID,
@@ -386,6 +413,7 @@ class DemoConsole:
                 # the view says publication is unavailable rather than offering a control that
                 # refuses every press.
                 publishable_dashboards=publishable_dashboards,
+                request_provenance=request_provenance,
                 # What was published, read out of bi-control's own repository rather than through a
                 # provider. A publication is recorded there only against a provider receipt, so this
                 # answers the same question -- and it keeps answering it for a deployment that has

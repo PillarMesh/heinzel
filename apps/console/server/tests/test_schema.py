@@ -133,6 +133,7 @@ def test_schema_exposes_every_modeled_response_and_command() -> None:
         "inbox_response",
         "request_detail_response",
         "impact_response",
+        "provenance_response",
         "requester_requests_response",
         "requester_request_response",
         "access_lifecycle_response",

@@ -486,3 +486,20 @@ def test_the_analyst_dashboard_capability_is_delivered_rather_than_awaiting_a_pr
     }
     assert capabilities["analyst-dashboard"]["state"] == "ready"
     assert capabilities["analyst-dashboard"]["dependency"] is None
+
+
+def test_the_production_chain_answers_not_delivered_without_a_governed_answer(
+    console: _Console,
+) -> None:
+    """A console with no warehouse behind it has no chain to read, and says so.
+
+    The read is wired alongside the governed answer, because the query and the execution are
+    read through the runtime that answer owns. Wiring it anyway would answer with an
+    acquisition and nothing after it -- a capability that looks delivered and stops halfway.
+    """
+    request_id = console.submit_question(DEMO_QUESTION, key="provenance-intake")
+
+    refused = console.get(f"/api/v1/inbox/{request_id}/provenance", actor=DEMO_ARCHITECT_ID)
+
+    assert refused.status_code == 503, refused.text
+    assert refused.json()["error"]["code"] == "capability_not_delivered"

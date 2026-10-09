@@ -25,6 +25,7 @@ from ..contracts import (
     IncidentsView,
     JsonTuple,
     OperationView,
+    ProvenanceView,
     PublishableDashboardsView,
     RequestDetailView,
     RequesterRequestView,
@@ -52,6 +53,7 @@ _REVIEW_RESPONSE = TypeAdapter(ConsoleEnvelope[ReviewView])
 _INBOX_RESPONSE = TypeAdapter(ConsoleEnvelope[InboxView])
 _REQUEST_DETAIL_RESPONSE = TypeAdapter(ConsoleEnvelope[RequestDetailView])
 _IMPACT_RESPONSE = TypeAdapter(ConsoleEnvelope[ImpactView])
+_PROVENANCE_RESPONSE = TypeAdapter(ConsoleEnvelope[ProvenanceView])
 _REQUESTER_REQUESTS_RESPONSE = TypeAdapter(ConsoleEnvelope[JsonTuple[RequesterRequestView]])
 _CONVERSATION_RESPONSE = TypeAdapter(ConsoleEnvelope[ConversationView])
 _CLARIFIED_OUTCOME_RESPONSE = TypeAdapter(ConsoleEnvelope[ClarifiedOutcomeView])
@@ -132,6 +134,16 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
             dependencies,
             dependencies.backend.get_publishable_dashboards(context, request_id),
             _PUBLISHABLE_DASHBOARDS_RESPONSE,
+        )
+
+    async def request_provenance(request: Request) -> Response:
+        context = trusted_context(request, dependencies)
+        request_id = path_parameter(request, "request_id")
+        return envelope_response(
+            request,
+            dependencies,
+            dependencies.backend.get_request_provenance(context, request_id),
+            _PROVENANCE_RESPONSE,
         )
 
     async def request_impact(request: Request) -> Response:
@@ -382,6 +394,11 @@ def read_routes(dependencies: RouteDependencies) -> list[Route]:
             methods=["GET"],
         ),
         Route("/api/v1/inbox/{request_id}/impact", request_impact, methods=["GET"]),
+        Route(
+            "/api/v1/inbox/{request_id}/provenance",
+            request_provenance,
+            methods=["GET"],
+        ),
         Route("/api/v1/requests/mine", requester_requests, methods=["GET"]),
         Route("/api/v1/requests/{request_id}/conversation", conversation, methods=["GET"]),
         Route("/api/v1/requests/{request_id}/result", answer_result, methods=["GET"]),

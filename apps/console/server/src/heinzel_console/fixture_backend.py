@@ -56,6 +56,7 @@ from .contracts import (
     ProductIntentApprovalCommand,
     ProductIntentApprovalView,
     ProposalPreparationCommand,
+    ProvenanceView,
     PublishableDashboardsView,
     RecordedDecisionView,
     RecoveryAction,
@@ -887,6 +888,26 @@ class FixtureConsoleBackend:
         """
         self._authorize(context, ("data_architect",))
         return PublishableDashboardsView(request_id=request_id)
+
+    def get_request_provenance(
+        self, context: TrustedActorContext, request_id: str
+    ) -> ProvenanceView:
+        """Refused: the fixture console answers nothing, so nothing produced an answer.
+
+        Provenance is a read of what the acquisition, transform, compiler and execution services
+        each recorded while doing their own work. A fixture has none of those receipts, and
+        composing a plausible chain from seed data would be the one lie this surface exists to
+        make impossible.
+        """
+        self._authorize(context, ("data_architect",))
+        raise ConsoleUnavailable(
+            code="capability_not_delivered",
+            safe_message=(
+                "This capability is not delivered in demonstration-fixture mode. It depends on "
+                "the receipts a governed workspace records while producing an answer."
+            ),
+            recovery_action="none",
+        )
 
     def publish_dashboard(
         self, context: TrustedActorContext, command: DashboardPublicationCommand

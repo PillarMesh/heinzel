@@ -647,6 +647,144 @@ class AnswerResultTechnicalDetailsView(StrictModel):
     result_schema_digest: Digest
 
 
+class ProvenanceWarehouseView(StrictModel):
+    """The warehouse this answer was read from, as warehouse-control recorded it.
+
+    ADR-0003 admits no warehouse a tenant brought itself, so there is always a binding behind an
+    answer and it is always one a governing service provisioned. This is that binding.
+    """
+
+    binding_ref: NonEmptyText
+    engine_kind: NonEmptyText
+    deployment_mode: NonEmptyText
+    region: NonEmptyText
+    lifecycle_state: NonEmptyText
+    capability_profile_digest: Digest
+    provisioned_at: UtcDatetime | None
+
+
+class ProvenanceFieldView(StrictModel):
+    name: NonEmptyText
+    value_type: NonEmptyText
+    nullable: bool
+
+
+class ProvenanceSourceView(StrictModel):
+    """The source the answer ultimately came from, and the shape this tenant agreed to read."""
+
+    source_binding_ref: NonEmptyText
+    logical_object_ref: NonEmptyText
+    source_observation_ref: NonEmptyText | None
+    capability_profile_digest: Digest | None
+    acquisition_modes: JsonTuple[NonEmptyText]
+    operation_semantics: NonEmptyText
+    record_key_fields: JsonTuple[NonEmptyText]
+    source_updated_at_field: NonEmptyText | None
+    schema_digest: Digest
+    fields: JsonTuple[ProvenanceFieldView]
+    validated_at: UtcDatetime | None
+
+
+class ProvenanceLandingView(StrictModel):
+    """What one acquisition run put into the warehouse, and what it attested about it."""
+
+    target_table_ref: NonEmptyText
+    trigger_window: NonEmptyText
+    record_count: int = Field(ge=0)
+    schema_digest: Digest
+    segment_digest: Digest
+    committed_at: UtcDatetime
+
+
+class ProvenanceQualityTestView(StrictModel):
+    column_name: NonEmptyText
+    kind: NonEmptyText
+
+
+class ProvenanceMagnitudeCheckView(StrictModel):
+    column_name: NonEmptyText
+    precision: int = Field(gt=0)
+    scale: int = Field(ge=0)
+
+
+class ProvenanceProductView(StrictModel):
+    """The statement the compiler emitted to build the product, and what it promises of it."""
+
+    product_id: NonEmptyText
+    product_revision: int = Field(gt=0)
+    generation: int = Field(gt=0)
+    model_name: NonEmptyText
+    target_schema: NonEmptyText
+    output_columns: JsonTuple[NonEmptyText]
+    quality_tests: JsonTuple[ProvenanceQualityTestView]
+    magnitude_checks: JsonTuple[ProvenanceMagnitudeCheckView]
+    compiled_sql: NonEmptyText
+    model_digest: Digest
+
+
+class ProvenanceMaterializationView(StrictModel):
+    """The receipt of the run that built the product, as the transform provider reported it."""
+
+    output_row_count: int = Field(ge=0)
+    quality_assertion_count: int = Field(ge=0)
+    quality_disposition: NonEmptyText
+    lineage_digest: Digest
+    dbt_manifest_digest: Digest
+    dbt_run_results_digest: Digest
+    committed_at: UtcDatetime
+
+
+class ProvenanceParameterView(StrictModel):
+    name: NonEmptyText
+    value_type: NonEmptyText
+
+
+class ProvenanceQueryView(StrictModel):
+    """The statement the compiler emitted to answer the question, and the limits it carries."""
+
+    engine_kind: NonEmptyText
+    compiler_version: NonEmptyText
+    allowlist_version: NonEmptyText
+    statement: NonEmptyText
+    parameters: JsonTuple[ProvenanceParameterView]
+    minimum_group_size: int = Field(gt=0)
+    row_limit: int = Field(gt=0)
+    scan_row_ceiling: int = Field(gt=0)
+    scan_byte_ceiling: int = Field(gt=0)
+    estimated_rows: int | None = Field(ge=0)
+    estimated_bytes: int | None = Field(ge=0)
+    routing: NonEmptyText
+    plan_digest: Digest
+    statement_digest: Digest
+    signing_key_id: NonEmptyText
+
+
+class ProvenanceExecutionView(StrictModel):
+    execution_receipt_id: NonEmptyText
+    result_digest: Digest
+    result_schema_digest: Digest
+    row_count: int = Field(ge=0)
+
+
+class ProvenanceView(StrictModel):
+    """How one answer was produced, from the source to the rows.
+
+    Every section is what some service recorded while doing its own work, read back rather than
+    narrated: the acquisition contract's agreed object shape, the landing run's receipt, the
+    compiled transform and its materialization receipt, the compiled query and its execution.
+    A section is absent when the step it describes has not happened for this request yet.
+    """
+
+    request_id: PublicId
+    warehouse: ProvenanceWarehouseView | None
+    source: ProvenanceSourceView | None
+    landing: ProvenanceLandingView | None
+    product: ProvenanceProductView | None
+    materialization: ProvenanceMaterializationView | None
+    query: ProvenanceQueryView | None
+    execution: ProvenanceExecutionView | None
+
+
 class AnswerResultPageView(StrictModel):
     request_id: PublicId
     title: NonEmptyText
@@ -1514,6 +1652,7 @@ class ConsoleApiSchema(StrictModel):
     operation_response: ConsoleEnvelope[OperationView]
     product_intent_approval_response: ConsoleEnvelope[ProductIntentApprovalView]
     answer_result_response: ConsoleEnvelope[AnswerResultPageView]
+    provenance_response: ConsoleEnvelope[ProvenanceView]
     error_response: ConsoleErrorEnvelope
     warehouse_binding_command: WarehouseBindingCommand
     process_package_command: ProcessPackageCommand

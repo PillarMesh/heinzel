@@ -146,7 +146,7 @@ from heinzel_warehouse_control import (
 from heinzel_warehouse_control.repository import WarehouseRepository
 from pydantic import Field, ValidationError, field_validator
 
-from .contracts import AcquisitionModeView, ActorRole, ImpactView
+from .contracts import AcquisitionModeView, ActorRole, ImpactView, ProvenanceView
 from .errors import (
     ConsoleConflict,
     ConsoleError,
@@ -392,6 +392,18 @@ class RepositoryDashboardRevisionReader:
 
 class PublishableDashboardReader(Protocol):
     def offering(self, *, tenant_id: str, request_id: str) -> PublishableDashboardOffering: ...
+
+
+class RequestProvenanceReader(Protocol):
+    """Read back the receipts the services recorded while producing one answer.
+
+    One method, returning the view whole, because the join is across stores each service owns
+    on its own terms -- the acquisition contract's agreed object shape, the landing receipt, the
+    compiled transform and its materialization receipt, the compiled query and its execution.
+    Whoever can reach all of those can assemble it; the console only reads what comes back.
+    """
+
+    def provenance(self, *, tenant_id: str, request_id: str) -> ProvenanceView | None: ...
 
 
 class DashboardPublicationCommands(Protocol):

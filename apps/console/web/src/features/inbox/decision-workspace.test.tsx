@@ -222,6 +222,9 @@ function createClient(overrides: Partial<InboxClient> = {}): InboxClient {
     getRequestImpact: vi.fn(async () => {
       throw new Error("no impact analysis")
     }),
+    getRequestProvenance: vi.fn(async () => {
+      throw new Error("no provenance read")
+    }),
     decideRequest: vi.fn(),
     approveProductIntent: vi.fn(),
     appendConversationMessage: vi.fn(),
@@ -922,4 +925,18 @@ test("refreshes the owning queue after preparation changes the request state", a
   await userEvent.click(await screen.findByRole("button", {name: "Prepare answer proposal"}))
   await waitFor(() => expect(queueOptions()[0]).toHaveTextContent("Proposed"))
   expect(getInbox).toHaveBeenCalledTimes(2)
+})
+
+test("reads the production chain only once the Lineage tab is opened", async () => {
+  const getRequestProvenance = vi.fn(async () => {
+    throw new Error("no provenance read")
+  })
+  const client = createClient({getRequestProvenance})
+
+  renderWorkspace(client, "request-answer")
+  await screen.findByRole("tab", {name: /^Lineage/})
+  expect(getRequestProvenance).not.toHaveBeenCalled()
+
+  await openTab("Lineage")
+  await waitFor(() => expect(getRequestProvenance).toHaveBeenCalledWith("request-answer"))
 })

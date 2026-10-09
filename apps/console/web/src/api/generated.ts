@@ -197,6 +197,27 @@ export type ArtifactId = string
 export type Version2 = number
 export type IntentRevision = number
 export type ExpectedRevision10 = number
+export type ConsoleEnvelopeProvenanceView = ConsoleEnvelope_ProvenanceView_
+export type RowCount1 = number
+export type RecordCount = number
+export type OutputRowCount = number
+export type QualityAssertionCount = number
+export type Generation1 = number
+export type Precision = number
+export type Scale = number
+export type JsonTuple_ProvenanceMagnitudeCheckView_ = ProvenanceMagnitudeCheckView[]
+export type JsonTuple_NonEmptyText_2 = NonEmptyText[]
+export type ProductRevision1 = number
+export type JsonTuple_ProvenanceQualityTestView_ = ProvenanceQualityTestView[]
+export type EstimatedBytes = number | null
+export type EstimatedRows = number | null
+export type MinimumGroupSize = number
+export type JsonTuple_ProvenanceParameterView_ = ProvenanceParameterView[]
+export type RowLimit = number
+export type ScanByteCeiling = number
+export type ScanRowCeiling = number
+export type Nullable = boolean
+export type JsonTuple_ProvenanceFieldView_ = ProvenanceFieldView[]
 export type ConsoleEnvelopePublishableDashboardsView = ConsoleEnvelope_PublishableDashboardsView_
 export type DashboardVersion1 = number
 export type NextRevision = number
@@ -214,14 +235,14 @@ export type JsonTuple_Decision_ = Decision2[]
 export type JsonTuple_DatasetEvidenceView_ = DatasetEvidenceView[]
 export type JsonTuple_PublicId_ = PublicId[]
 export type JsonTuple_ArtifactReferenceView_ = ArtifactReferenceView[]
-export type JsonTuple_NonEmptyText_2 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_3 = NonEmptyText[]
 export type JsonTuple_LifecycleEventView_ = LifecycleEventView[]
 export type PreparationAction = "clarify" | "prepare_access" | "prepare_answer" | "submit_proposal"
 export type JsonTuple_PreparationAction_ = PreparationAction[]
-export type JsonTuple_NonEmptyText_3 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_4 = NonEmptyText[]
 export type Approved = boolean
 export type ApprovedIntentRevision = number | null
-export type JsonTuple_NonEmptyText_4 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_5 = NonEmptyText[]
 export type ProductFilterOperator = "equals" | "not_equals" | "in" | "greater_than" | "less_than"
 export type JsonTuple_ProductIntentFilterView_ = ProductIntentFilterView[]
 export type FreshnessSeconds = number
@@ -249,25 +270,25 @@ export type NonEmptyJsonTuple_ProductIntentSourceCoverageView_ = [
   ...ProductIntentSourceCoverageView[],
 ]
 export type Authorized = boolean
-export type JsonTuple_NonEmptyText_5 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_6 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_7 = NonEmptyText[]
 export type RequestProposalView =
   StakeholderAnswerProposalView | AccessPreviewProposalView | DisclosureDenialProposalView
 export type JsonTuple_DatasetEvidenceView_1 = DatasetEvidenceView[]
 export type Kind2 = "stakeholder_answer"
 export type JsonTuple_ArtifactReferenceView_1 = ArtifactReferenceView[]
 export type JsonTuple_ArtifactReferenceView_2 = ArtifactReferenceView[]
-export type JsonTuple_NonEmptyText_7 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_8 = NonEmptyText[]
 export type JsonTuple_ArtifactReferenceView_3 = ArtifactReferenceView[]
 export type Satisfied = boolean
 export type JsonTuple_ProposalApprovalView_ = ProposalApprovalView[]
 export type Satisfied1 = boolean
 export type JsonTuple_AuthorityStatusView_ = AuthorityStatusView[]
-export type JsonTuple_NonEmptyText_8 = NonEmptyText[]
-export type JsonTuple_ArtifactReferenceView_4 = ArtifactReferenceView[]
 export type JsonTuple_NonEmptyText_9 = NonEmptyText[]
+export type JsonTuple_ArtifactReferenceView_4 = ArtifactReferenceView[]
 export type JsonTuple_NonEmptyText_10 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_11 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_12 = NonEmptyText[]
 export type Kind3 = "access_preview"
 export type JsonTuple_ProposalApprovalView_1 = ProposalApprovalView[]
 export type JsonTuple_AuthorityStatusView_1 = AuthorityStatusView[]
@@ -355,9 +376,9 @@ export type JsonTuple_ManagedServiceView_ = ManagedServiceView[]
 export type JsonTuple_PublicId_2 = PublicId[]
 export type Version3 = number
 export type Revision8 = number
-export type JsonTuple_NonEmptyText_12 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_13 = NonEmptyText[]
 export type JsonTuple_NonEmptyText_14 = NonEmptyText[]
+export type JsonTuple_NonEmptyText_15 = NonEmptyText[]
 export type SourceBindingStateView =
   "draft" | "validating" | "ready" | "suspended" | "failed" | "retired"
 export type JsonTuple_SourceConnectionView_ = SourceConnectionView[]
@@ -412,6 +433,7 @@ export interface ConsoleApiSchema {
   product_intent_approval_command: ProductIntentApprovalCommand
   product_intent_approval_response: ConsoleEnvelopeProductIntentApprovalView
   proposal_preparation_command: ProposalPreparationCommand
+  provenance_response: ConsoleEnvelopeProvenanceView
   publishable_dashboards_response: ConsoleEnvelopePublishableDashboardsView
   request_clarification_command: RequestClarificationCommand
   request_detail_response: ConsoleEnvelopeRequestDetailView
@@ -892,6 +914,141 @@ export interface ProposalPreparationCommand {
   active_role: ActorRole
   expected_revision: ExpectedRevision10
 }
+export interface ConsoleEnvelope_ProvenanceView_ {
+  data: ProvenanceView
+  meta: ApiMeta
+}
+/**
+ * How one answer was produced, from the source to the rows.
+ *
+ * Every section is what some service recorded while doing its own work, read back rather than
+ * narrated: the acquisition contract's agreed object shape, the landing run's receipt, the
+ * compiled transform and its materialization receipt, the compiled query and its execution.
+ * A section is absent when the step it describes has not happened for this request yet.
+ */
+export interface ProvenanceView {
+  execution: ProvenanceExecutionView | null
+  landing: ProvenanceLandingView | null
+  materialization: ProvenanceMaterializationView | null
+  product: ProvenanceProductView | null
+  query: ProvenanceQueryView | null
+  request_id: PublicId
+  source: ProvenanceSourceView | null
+  warehouse: ProvenanceWarehouseView | null
+}
+export interface ProvenanceExecutionView {
+  execution_receipt_id: NonEmptyText
+  result_digest: Digest
+  result_schema_digest: Digest
+  row_count: RowCount1
+}
+/**
+ * What one acquisition run put into the warehouse, and what it attested about it.
+ */
+export interface ProvenanceLandingView {
+  committed_at: UtcDatetime
+  record_count: RecordCount
+  schema_digest: Digest
+  segment_digest: Digest
+  target_table_ref: NonEmptyText
+  trigger_window: NonEmptyText
+}
+/**
+ * The receipt of the run that built the product, as the transform provider reported it.
+ */
+export interface ProvenanceMaterializationView {
+  committed_at: UtcDatetime
+  dbt_manifest_digest: Digest
+  dbt_run_results_digest: Digest
+  lineage_digest: Digest
+  output_row_count: OutputRowCount
+  quality_assertion_count: QualityAssertionCount
+  quality_disposition: NonEmptyText
+}
+/**
+ * The statement the compiler emitted to build the product, and what it promises of it.
+ */
+export interface ProvenanceProductView {
+  compiled_sql: NonEmptyText
+  generation: Generation1
+  magnitude_checks: JsonTuple_ProvenanceMagnitudeCheckView_
+  model_digest: Digest
+  model_name: NonEmptyText
+  output_columns: JsonTuple_NonEmptyText_2
+  product_id: NonEmptyText
+  product_revision: ProductRevision1
+  quality_tests: JsonTuple_ProvenanceQualityTestView_
+  target_schema: NonEmptyText
+}
+export interface ProvenanceMagnitudeCheckView {
+  column_name: NonEmptyText
+  precision: Precision
+  scale: Scale
+}
+export interface ProvenanceQualityTestView {
+  column_name: NonEmptyText
+  kind: NonEmptyText
+}
+/**
+ * The statement the compiler emitted to answer the question, and the limits it carries.
+ */
+export interface ProvenanceQueryView {
+  allowlist_version: NonEmptyText
+  compiler_version: NonEmptyText
+  engine_kind: NonEmptyText
+  estimated_bytes: EstimatedBytes
+  estimated_rows: EstimatedRows
+  minimum_group_size: MinimumGroupSize
+  parameters: JsonTuple_ProvenanceParameterView_
+  plan_digest: Digest
+  routing: NonEmptyText
+  row_limit: RowLimit
+  scan_byte_ceiling: ScanByteCeiling
+  scan_row_ceiling: ScanRowCeiling
+  signing_key_id: NonEmptyText
+  statement: NonEmptyText
+  statement_digest: Digest
+}
+export interface ProvenanceParameterView {
+  name: NonEmptyText
+  value_type: NonEmptyText
+}
+/**
+ * The source the answer ultimately came from, and the shape this tenant agreed to read.
+ */
+export interface ProvenanceSourceView {
+  acquisition_modes: JsonTuple_NonEmptyText_2
+  capability_profile_digest: Digest | null
+  fields: JsonTuple_ProvenanceFieldView_
+  logical_object_ref: NonEmptyText
+  operation_semantics: NonEmptyText
+  record_key_fields: JsonTuple_NonEmptyText_2
+  schema_digest: Digest
+  source_binding_ref: NonEmptyText
+  source_observation_ref: NonEmptyText | null
+  source_updated_at_field: NonEmptyText | null
+  validated_at: UtcDatetime | null
+}
+export interface ProvenanceFieldView {
+  name: NonEmptyText
+  nullable: Nullable
+  value_type: NonEmptyText
+}
+/**
+ * The warehouse this answer was read from, as warehouse-control recorded it.
+ *
+ * ADR-0003 admits no warehouse a tenant brought itself, so there is always a binding behind an
+ * answer and it is always one a governing service provisioned. This is that binding.
+ */
+export interface ProvenanceWarehouseView {
+  binding_ref: NonEmptyText
+  capability_profile_digest: Digest
+  deployment_mode: NonEmptyText
+  engine_kind: NonEmptyText
+  lifecycle_state: NonEmptyText
+  provisioned_at: UtcDatetime | null
+  region: NonEmptyText
+}
 export interface ConsoleEnvelope_PublishableDashboardsView_ {
   data: PublishableDashboardsView
   meta: ApiMeta
@@ -939,7 +1096,7 @@ export interface RequestDetailView {
   kind: RequestKind
   lifecycle?: JsonTuple_LifecycleEventView_
   preparation_actions?: JsonTuple_PreparationAction_
-  preparation_notes?: JsonTuple_NonEmptyText_3
+  preparation_notes?: JsonTuple_NonEmptyText_4
   product_intent?: ProductIntentReviewView | null
   proposal?: RequestProposalView | null
   proposal_digest?: Digest | null
@@ -972,7 +1129,7 @@ export interface EvidenceContextView {
   freshness: FreshnessState
   lineage_summary: NonEmptyText
   metric_references?: JsonTuple_ArtifactReferenceView_
-  metric_versions?: JsonTuple_NonEmptyText_2
+  metric_versions?: JsonTuple_NonEmptyText_3
   quality_summary: NonEmptyText
 }
 export interface DatasetEvidenceView {
@@ -990,7 +1147,7 @@ export interface ProductIntentReviewView {
   approved: Approved
   approved_intent_revision?: ApprovedIntentRevision
   business_outcome: NonEmptyText
-  dimensions?: JsonTuple_NonEmptyText_4
+  dimensions?: JsonTuple_NonEmptyText_5
   filters?: JsonTuple_ProductIntentFilterView_
   freshness_seconds: FreshnessSeconds
   grain: NonEmptyJsonTuple_NonEmptyText_
@@ -999,7 +1156,7 @@ export interface ProductIntentReviewView {
   reviewed_digest: Digest
   source_coverage: NonEmptyJsonTuple_ProductIntentSourceCoverageView_
   title: NonEmptyText
-  unresolved_constraints?: JsonTuple_NonEmptyText_6
+  unresolved_constraints?: JsonTuple_NonEmptyText_7
 }
 export interface ProductIntentFilterView {
   dimension_ref: NonEmptyText
@@ -1012,7 +1169,7 @@ export interface ProductIntentMeasureView {
 }
 export interface ProductIntentSourceCoverageView {
   authorized: Authorized
-  covered_fields?: JsonTuple_NonEmptyText_5
+  covered_fields?: JsonTuple_NonEmptyText_6
   source_ref: NonEmptyText
 }
 export interface StakeholderAnswerProposalView {
@@ -1027,7 +1184,7 @@ export interface StakeholderAnswerProposalView {
   metric_references?: JsonTuple_ArtifactReferenceView_2
   metric_version: NonEmptyText
   purpose: NonEmptyText
-  quality_limitations?: JsonTuple_NonEmptyText_7
+  quality_limitations?: JsonTuple_NonEmptyText_8
   quality_references?: JsonTuple_ArtifactReferenceView_3
   required_approvals?: JsonTuple_ProposalApprovalView_
   required_authorities?: JsonTuple_AuthorityStatusView_
@@ -1048,12 +1205,12 @@ export interface AccessPreviewProposalView {
   authority_summary: NonEmptyText
   data_product_ref: PublicId
   data_product_reference?: ArtifactReferenceView | null
-  denied_checks?: JsonTuple_NonEmptyText_8
+  denied_checks?: JsonTuple_NonEmptyText_9
   effective_object_references?: JsonTuple_ArtifactReferenceView_4
-  effective_scope?: JsonTuple_NonEmptyText_9
-  exclusions?: JsonTuple_NonEmptyText_10
+  effective_scope?: JsonTuple_NonEmptyText_10
+  exclusions?: JsonTuple_NonEmptyText_11
   expires_at: UtcDatetime
-  intended_checks?: JsonTuple_NonEmptyText_11
+  intended_checks?: JsonTuple_NonEmptyText_12
   kind: Kind3
   purpose: NonEmptyText
   requested_fields: NonEmptyJsonTuple_NonEmptyText_
@@ -1358,12 +1515,12 @@ export interface ProcessPackageView {
  */
 export interface SourceConnectionView {
   account_mode?: SourceAccountModeView | null
-  approved_object_refs?: JsonTuple_NonEmptyText_12
+  approved_object_refs?: JsonTuple_NonEmptyText_13
   capability_authority_digest?: Digest | null
   connection_handle?: NonEmptyText | null
-  denied_checks?: JsonTuple_NonEmptyText_13
+  denied_checks?: JsonTuple_NonEmptyText_14
   display_name: NonEmptyText
-  intended_checks?: JsonTuple_NonEmptyText_14
+  intended_checks?: JsonTuple_NonEmptyText_15
   lifecycle_state?: SourceBindingStateView | null
   source_ref: PublicId
   source_type: SourceProviderKind

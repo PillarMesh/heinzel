@@ -1951,6 +1951,57 @@
       "title": "ConsoleEnvelope[ProductIntentApprovalView]",
       "type": "object"
     },
+    "ConsoleEnvelope_ProvenanceView_": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "meta": {
+                "properties": {
+                  "data_provenance": {
+                    "const": "demo_fixture"
+                  }
+                },
+                "required": [
+                  "data_provenance"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "meta"
+            ],
+            "type": "object"
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "$ref": "#/$defs/NoAuthoritativeEvidence"
+              }
+            },
+            "required": [
+              "data"
+            ],
+            "type": "object"
+          }
+        }
+      ],
+      "properties": {
+        "data": {
+          "$ref": "#/$defs/ProvenanceView"
+        },
+        "meta": {
+          "$ref": "#/$defs/ApiMeta"
+        }
+      },
+      "required": [
+        "meta",
+        "data"
+      ],
+      "title": "ConsoleEnvelope[ProvenanceView]",
+      "type": "object"
+    },
     "ConsoleEnvelope_PublishableDashboardsView_": {
       "additionalProperties": false,
       "allOf": [
@@ -3780,6 +3831,30 @@
       },
       "type": "array"
     },
+    "JsonTuple_ProvenanceFieldView_": {
+      "items": {
+        "$ref": "#/$defs/ProvenanceFieldView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ProvenanceMagnitudeCheckView_": {
+      "items": {
+        "$ref": "#/$defs/ProvenanceMagnitudeCheckView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ProvenanceParameterView_": {
+      "items": {
+        "$ref": "#/$defs/ProvenanceParameterView"
+      },
+      "type": "array"
+    },
+    "JsonTuple_ProvenanceQualityTestView_": {
+      "items": {
+        "$ref": "#/$defs/ProvenanceQualityTestView"
+      },
+      "type": "array"
+    },
     "JsonTuple_PublicId_": {
       "items": {
         "$ref": "#/$defs/PublicId"
@@ -4730,6 +4805,560 @@
         "active_role"
       ],
       "title": "ProposalPreparationCommand",
+      "type": "object"
+    },
+    "ProvenanceExecutionView": {
+      "additionalProperties": false,
+      "properties": {
+        "execution_receipt_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "result_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "result_schema_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "row_count": {
+          "minimum": 0,
+          "title": "Row Count",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "execution_receipt_id",
+        "result_digest",
+        "result_schema_digest",
+        "row_count"
+      ],
+      "title": "ProvenanceExecutionView",
+      "type": "object"
+    },
+    "ProvenanceFieldView": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "nullable": {
+          "title": "Nullable",
+          "type": "boolean"
+        },
+        "value_type": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "name",
+        "value_type",
+        "nullable"
+      ],
+      "title": "ProvenanceFieldView",
+      "type": "object"
+    },
+    "ProvenanceLandingView": {
+      "additionalProperties": false,
+      "description": "What one acquisition run put into the warehouse, and what it attested about it.",
+      "properties": {
+        "committed_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "record_count": {
+          "minimum": 0,
+          "title": "Record Count",
+          "type": "integer"
+        },
+        "schema_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "segment_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "target_table_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "trigger_window": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "target_table_ref",
+        "trigger_window",
+        "record_count",
+        "schema_digest",
+        "segment_digest",
+        "committed_at"
+      ],
+      "title": "ProvenanceLandingView",
+      "type": "object"
+    },
+    "ProvenanceMagnitudeCheckView": {
+      "additionalProperties": false,
+      "properties": {
+        "column_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "precision": {
+          "exclusiveMinimum": 0,
+          "title": "Precision",
+          "type": "integer"
+        },
+        "scale": {
+          "minimum": 0,
+          "title": "Scale",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "column_name",
+        "precision",
+        "scale"
+      ],
+      "title": "ProvenanceMagnitudeCheckView",
+      "type": "object"
+    },
+    "ProvenanceMaterializationView": {
+      "additionalProperties": false,
+      "description": "The receipt of the run that built the product, as the transform provider reported it.",
+      "properties": {
+        "committed_at": {
+          "$ref": "#/$defs/UtcDatetime"
+        },
+        "dbt_manifest_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "dbt_run_results_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "lineage_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "output_row_count": {
+          "minimum": 0,
+          "title": "Output Row Count",
+          "type": "integer"
+        },
+        "quality_assertion_count": {
+          "minimum": 0,
+          "title": "Quality Assertion Count",
+          "type": "integer"
+        },
+        "quality_disposition": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "output_row_count",
+        "quality_assertion_count",
+        "quality_disposition",
+        "lineage_digest",
+        "dbt_manifest_digest",
+        "dbt_run_results_digest",
+        "committed_at"
+      ],
+      "title": "ProvenanceMaterializationView",
+      "type": "object"
+    },
+    "ProvenanceParameterView": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "value_type": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "name",
+        "value_type"
+      ],
+      "title": "ProvenanceParameterView",
+      "type": "object"
+    },
+    "ProvenanceProductView": {
+      "additionalProperties": false,
+      "description": "The statement the compiler emitted to build the product, and what it promises of it.",
+      "properties": {
+        "compiled_sql": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "generation": {
+          "exclusiveMinimum": 0,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "magnitude_checks": {
+          "$ref": "#/$defs/JsonTuple_ProvenanceMagnitudeCheckView_"
+        },
+        "model_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "model_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "output_columns": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_"
+        },
+        "product_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "product_revision": {
+          "exclusiveMinimum": 0,
+          "title": "Product Revision",
+          "type": "integer"
+        },
+        "quality_tests": {
+          "$ref": "#/$defs/JsonTuple_ProvenanceQualityTestView_"
+        },
+        "target_schema": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "product_id",
+        "product_revision",
+        "generation",
+        "model_name",
+        "target_schema",
+        "output_columns",
+        "quality_tests",
+        "magnitude_checks",
+        "compiled_sql",
+        "model_digest"
+      ],
+      "title": "ProvenanceProductView",
+      "type": "object"
+    },
+    "ProvenanceQualityTestView": {
+      "additionalProperties": false,
+      "properties": {
+        "column_name": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "kind": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "column_name",
+        "kind"
+      ],
+      "title": "ProvenanceQualityTestView",
+      "type": "object"
+    },
+    "ProvenanceQueryView": {
+      "additionalProperties": false,
+      "description": "The statement the compiler emitted to answer the question, and the limits it carries.",
+      "properties": {
+        "allowlist_version": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "compiler_version": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "engine_kind": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "estimated_bytes": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Estimated Bytes"
+        },
+        "estimated_rows": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Estimated Rows"
+        },
+        "minimum_group_size": {
+          "exclusiveMinimum": 0,
+          "title": "Minimum Group Size",
+          "type": "integer"
+        },
+        "parameters": {
+          "$ref": "#/$defs/JsonTuple_ProvenanceParameterView_"
+        },
+        "plan_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "routing": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "row_limit": {
+          "exclusiveMinimum": 0,
+          "title": "Row Limit",
+          "type": "integer"
+        },
+        "scan_byte_ceiling": {
+          "exclusiveMinimum": 0,
+          "title": "Scan Byte Ceiling",
+          "type": "integer"
+        },
+        "scan_row_ceiling": {
+          "exclusiveMinimum": 0,
+          "title": "Scan Row Ceiling",
+          "type": "integer"
+        },
+        "signing_key_id": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "statement": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "statement_digest": {
+          "$ref": "#/$defs/Digest"
+        }
+      },
+      "required": [
+        "engine_kind",
+        "compiler_version",
+        "allowlist_version",
+        "statement",
+        "parameters",
+        "minimum_group_size",
+        "row_limit",
+        "scan_row_ceiling",
+        "scan_byte_ceiling",
+        "estimated_rows",
+        "estimated_bytes",
+        "routing",
+        "plan_digest",
+        "statement_digest",
+        "signing_key_id"
+      ],
+      "title": "ProvenanceQueryView",
+      "type": "object"
+    },
+    "ProvenanceSourceView": {
+      "additionalProperties": false,
+      "description": "The source the answer ultimately came from, and the shape this tenant agreed to read.",
+      "properties": {
+        "acquisition_modes": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_"
+        },
+        "capability_profile_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fields": {
+          "$ref": "#/$defs/JsonTuple_ProvenanceFieldView_"
+        },
+        "logical_object_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "operation_semantics": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "record_key_fields": {
+          "$ref": "#/$defs/JsonTuple_NonEmptyText_"
+        },
+        "schema_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "source_binding_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "source_observation_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_updated_at_field": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NonEmptyText"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "validated_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcDatetime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "source_binding_ref",
+        "logical_object_ref",
+        "source_observation_ref",
+        "capability_profile_digest",
+        "acquisition_modes",
+        "operation_semantics",
+        "record_key_fields",
+        "source_updated_at_field",
+        "schema_digest",
+        "fields",
+        "validated_at"
+      ],
+      "title": "ProvenanceSourceView",
+      "type": "object"
+    },
+    "ProvenanceView": {
+      "additionalProperties": false,
+      "description": "How one answer was produced, from the source to the rows.\n\nEvery section is what some service recorded while doing its own work, read back rather than\nnarrated: the acquisition contract's agreed object shape, the landing run's receipt, the\ncompiled transform and its materialization receipt, the compiled query and its execution.\nA section is absent when the step it describes has not happened for this request yet.",
+      "properties": {
+        "execution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProvenanceExecutionView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "landing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProvenanceLandingView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "materialization": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProvenanceMaterializationView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "product": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProvenanceProductView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "query": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProvenanceQueryView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "request_id": {
+          "$ref": "#/$defs/PublicId"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProvenanceSourceView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "warehouse": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProvenanceWarehouseView"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "request_id",
+        "warehouse",
+        "source",
+        "landing",
+        "product",
+        "materialization",
+        "query",
+        "execution"
+      ],
+      "title": "ProvenanceView",
+      "type": "object"
+    },
+    "ProvenanceWarehouseView": {
+      "additionalProperties": false,
+      "description": "The warehouse this answer was read from, as warehouse-control recorded it.\n\nADR-0003 admits no warehouse a tenant brought itself, so there is always a binding behind an\nanswer and it is always one a governing service provisioned. This is that binding.",
+      "properties": {
+        "binding_ref": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "capability_profile_digest": {
+          "$ref": "#/$defs/Digest"
+        },
+        "deployment_mode": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "engine_kind": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "lifecycle_state": {
+          "$ref": "#/$defs/NonEmptyText"
+        },
+        "provisioned_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UtcDatetime"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "region": {
+          "$ref": "#/$defs/NonEmptyText"
+        }
+      },
+      "required": [
+        "binding_ref",
+        "engine_kind",
+        "deployment_mode",
+        "region",
+        "lifecycle_state",
+        "capability_profile_digest",
+        "provisioned_at"
+      ],
+      "title": "ProvenanceWarehouseView",
       "type": "object"
     },
     "PublicId": {
@@ -6364,6 +6993,9 @@
     "proposal_preparation_command": {
       "$ref": "#/$defs/ProposalPreparationCommand"
     },
+    "provenance_response": {
+      "$ref": "#/$defs/ConsoleEnvelope_ProvenanceView_"
+    },
     "publishable_dashboards_response": {
       "$ref": "#/$defs/ConsoleEnvelope_PublishableDashboardsView_"
     },
@@ -6443,6 +7075,7 @@
     "operation_response",
     "product_intent_approval_response",
     "answer_result_response",
+    "provenance_response",
     "error_response",
     "warehouse_binding_command",
     "process_package_command",

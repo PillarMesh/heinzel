@@ -556,3 +556,94 @@
   /* Selectable as one unit, because a digest is only useful copied whole. */
   user-select: all;
 }
+
+/*
+ * The production chain.
+ *
+ * Seven stages, each one receipt, read top to bottom. The step marker sits on the panel header
+ * rather than in the title so the titles stay scannable as a list of what happened.
+ */
+.provenance__step {
+  color: var(--color-ink-muted);
+  font-size: var(--text-3xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.provenance-fields-frame {
+  overflow-x: auto;
+}
+
+.provenance-fields {
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  min-width: 100%;
+}
+
+.provenance-fields caption {
+  color: var(--color-ink-muted);
+  font-size: var(--text-2xs);
+  letter-spacing: var(--tracking-caps);
+  padding-bottom: var(--space-2);
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.provenance-fields th,
+.provenance-fields td {
+  border-bottom: 1px solid var(--color-line);
+  padding: var(--space-2) var(--space-3) var(--space-2) 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.provenance-fields thead th {
+  color: var(--color-ink-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.provenance-fields tbody th {
+  font-weight: var(--weight-medium);
+}
+
+.provenance-checks {
+  display: grid;
+  gap: var(--space-1);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.provenance-statement > summary {
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  font-size: var(--text-2xs);
+  padding-block: var(--space-1);
+}
+
+/*
+ * A generated statement wraps. The compiler emits one line of up to a few thousand characters,
+ * so honouring the newlines would make this a horizontal scrollbar with no statement visible.
+ */
+.provenance-statement > pre {
+  background: var(--color-sunken);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  margin: var(--space-2) 0 0;
+  max-height: 18rem;
+  overflow: auto;
+  padding: var(--space-3);
+}
+
+.provenance-statement code {
+  font-size: var(--text-2xs);
+  line-height: var(--leading-relaxed);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
