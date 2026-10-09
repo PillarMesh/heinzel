@@ -5,7 +5,7 @@
    * The middle column is the work. Measured at 1440 the three came out 190, 355 and 160 pixels
    * of content: the two columns beside the work held more of the page than the work did.
    */
-  grid-template-columns: minmax(14rem, 0.8fr) minmax(0, 2.4fr) minmax(13rem, 0.85fr);
+  grid-template-columns: minmax(14rem, 0.78fr) minmax(0, 2.3fr) minmax(15rem, 0.92fr);
 }
 
 .decision-workspace--medium,

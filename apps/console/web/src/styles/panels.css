@@ -453,3 +453,19 @@
 .lifecycle-timeline__earlier[open] > summary {
   margin-bottom: var(--space-2);
 }
+
+/*
+ * A panel in a narrow pane keeps its shape on less padding, and drops the tracking from its
+ * title: `DECISION EVIDENCE` at full letter-spacing wrapped to two lines in the rail, which
+ * made the header taller than the first fact under it.
+ */
+@container decision-pane (max-width: 24rem) {
+  .panel__header,
+  .panel__body {
+    padding-inline: var(--space-4);
+  }
+
+  .panel__title {
+    letter-spacing: 0.02em;
+  }
+}
