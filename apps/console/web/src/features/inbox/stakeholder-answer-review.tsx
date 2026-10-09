@@ -73,20 +73,51 @@ export function StakeholderAnswerReview({proposal}: StakeholderAnswerReviewProps
   const approvals = proposal.required_approvals ?? []
   const authorities = proposal.required_authorities ?? []
 
+  // Only the kinds that were actually cited. `0 metric references` is a fact about nothing,
+  // and three of them made the card's own value the longest line in the panel.
+  const citedSummary = (
+    [
+      [datasets.length, "governed dataset"],
+      [metricReferences.length, "metric reference"],
+      [lineageReferences.length, "lineage reference"],
+    ] as const
+  )
+    .filter(([count]) => count > 0)
+    .map(([count, noun]) => `${count} ${noun}${count === 1 ? "" : "s"}`)
+    .join(", ")
   const cited = datasets.length + metricReferences.length + lineageReferences.length
   const recorded = approvals.filter((approval) => approval.satisfied).length
+
+  // The verdict the four checks add up to, so the panel says at its head what it takes four
+  // readings to work out. Counted rather than written down twice: a card and this cannot
+  // disagree, because this is derived from the same conditions the cards are.
+  const unsettled =
+    (cited === 0 ? 1 : 0) +
+    (freshnessTone[proposal.freshness] === "attention" ? 1 : 0) +
+    (limitations.length > 0 ? 1 : 0) +
+    (approvals.length > 0 && recorded === approvals.length ? 0 : 1)
 
   return (
     <Panel
       ariaLabel="Stakeholder answer proposal"
+      aside={
+        <StatusPill tone={unsettled === 0 ? "ready" : "attention"}>
+          {unsettled === 0 ? "All checks clear" : `${unsettled} to read`}
+        </StatusPill>
+      }
       description="What the runtime composed from the governed scope, and what has to hold for it."
       title="Proposed stakeholder answer"
     >
-      {/* The answer itself, read first and at reading size. */}
-      <p className="proposal-review__candidate">{proposal.candidate}</p>
-      <p className="proposal-review__purpose">
-        Answers <strong>{proposal.purpose}</strong>
-      </p>
+      {/*
+        The answer and the question it answers, on their own surface. This is the thing being
+        decided, and it was previously a paragraph of the same weight as the grounds under it.
+      */}
+      <div className="proposal-review__subject">
+        <p className="proposal-review__candidate">{proposal.candidate}</p>
+        <p className="proposal-review__purpose">
+          <span>Answers</span> {proposal.purpose}
+        </p>
+      </div>
 
       <ReviewChecks>
         <ReviewCheck
@@ -96,13 +127,7 @@ export function StakeholderAnswerReview({proposal}: StakeholderAnswerReviewProps
             )
           }
           label="Grounds"
-          summary={
-            cited === 0
-              ? "Nothing was cited for this answer."
-              : `${datasets.length} governed dataset${datasets.length === 1 ? "" : "s"}, ` +
-                `${metricReferences.length} metric reference${metricReferences.length === 1 ? "" : "s"}, ` +
-                `${lineageReferences.length} lineage reference${lineageReferences.length === 1 ? "" : "s"}`
-          }
+          summary={cited === 0 ? "Nothing was cited for this answer." : citedSummary}
           tone={cited === 0 ? "attention" : "ready"}
         />
         <ReviewCheck
@@ -134,12 +159,6 @@ export function StakeholderAnswerReview({proposal}: StakeholderAnswerReviewProps
           tone={limitations.length === 0 ? "ready" : "attention"}
         />
         <ReviewCheck
-          detail={
-            <>
-              <ProposalApprovals approvals={approvals} />
-              {authorities.length === 0 ? null : <AuthorityList authorities={authorities} />}
-            </>
-          }
           label="Authorization"
           summary={
             approvals.length === 0
@@ -149,6 +168,23 @@ export function StakeholderAnswerReview({proposal}: StakeholderAnswerReviewProps
           tone={approvals.length > 0 && recorded === approvals.length ? "ready" : "attention"}
         />
       </ReviewChecks>
+
+      {/*
+        Who still has to sign, at full width below the cards. A list that grows with the
+        request does not belong in one cell of a grid of four: one tall card drags the row
+        it sits in, and the grid stops reading as a grid.
+      */}
+      {approvals.length === 0 && authorities.length === 0 ? null : (
+        <div className="proposal-review__signatures">
+          <ProposalApprovals approvals={approvals} />
+          {authorities.length === 0 ? null : (
+            <section aria-label="Required roles">
+              <h4>Required roles</h4>
+              <AuthorityList authorities={authorities} />
+            </section>
+          )}
+        </div>
+      )}
     </Panel>
   )
 }

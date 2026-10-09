@@ -810,43 +810,90 @@
 
 
 /*
- * The things that decide an approval, as a list of checks rather than a definition list.
+ * The subject of the decision, on its own surface.
  *
- * The mark is the first column and the only coloured thing in the row, so the reader's eye
- * runs down one edge and stops at whatever is not a tick. The label is fixed-width so the
- * summaries line up and can be compared without reading each label first.
+ * The answer was a paragraph with the same weight as the grounds beneath it, so the thing
+ * being approved looked like one more fact about itself.
+ */
+.proposal-review__subject {
+  background: var(--color-sunken);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-4) var(--space-5);
+}
+
+.proposal-review__candidate {
+  color: var(--color-ink-strong);
+  font-size: var(--text-lg);
+  line-height: var(--leading-snug);
+  margin: 0;
+  max-width: 58ch;
+}
+
+.proposal-review__purpose {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.proposal-review__purpose > span {
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+/*
+ * The four things that decide an approval, as cards.
+ *
+ * Stacked as rows they were a column of sentences down the left of a 784-pixel panel, with
+ * the right half of every row empty. Two by two they use the width the panel has, in half the
+ * height, and each is a thing to look at rather than a line to read through.
  */
 .review-checks {
   display: grid;
-  /*
-   * The columns live on the list, not on each row. Given to each row separately they were
-   * sized separately, so `AUTHORIZATION` set a wider label column than `QUALITY` and the
-   * summaries beside them started at different places -- four rows meant to be compared down
-   * a single edge, each indented by the length of its own label.
-   */
-  grid-template-columns: 1.25rem minmax(5rem, max-content) minmax(0, 1fr);
+  gap: var(--space-3);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   list-style: none;
-  margin: var(--space-5) 0 0;
+  margin: var(--space-4) 0 0;
   padding: 0;
 }
 
-.review-check {
-  border-top: 1px solid var(--color-line);
-  display: grid;
-  gap: var(--space-1) var(--space-3);
-  grid-column: 1 / -1;
-  grid-template-columns: subgrid;
-  padding: var(--space-3) 0;
+/* One column before a card is too narrow to hold its own value on one line. */
+@container decision-pane (max-width: 30rem) {
+  .review-checks {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
-.review-check:first-child {
-  border-top: 0;
+.review-check {
+  /*
+   * The cards in a row end level whatever their detail runs to, and the shorter one's rows
+   * stay together at the top: stretched, its detail drifted to the bottom of the card and
+   * read as a footnote rather than as a line under the value it explains.
+   */
+  align-content: start;
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: var(--space-1);
+  padding: var(--space-4);
+}
+
+.review-check__head {
+  align-items: center;
+  display: flex;
+  gap: var(--space-2);
+  margin: 0;
 }
 
 .review-check__mark {
   align-items: center;
   border-radius: var(--radius-pill);
   display: flex;
+  flex: 0 0 auto;
   height: 1.25rem;
   justify-content: center;
   width: 1.25rem;
@@ -877,19 +924,20 @@
   font-size: var(--text-3xs);
   font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-caps);
-  line-height: 1.6;
   text-transform: uppercase;
 }
 
+/* The value the card exists to carry, set above its own explanation. */
 .review-check__summary {
-  color: var(--color-ink);
+  color: var(--color-ink-strong);
+  font-size: var(--text-md);
+  line-height: var(--leading-snug);
+  margin: 0;
 }
 
-/* Under the summary and in its column, so the two read as one block set in from the label. */
 .review-check__detail {
   color: var(--color-ink-muted);
-  font-size: var(--text-sm);
-  grid-column: 3;
+  font-size: var(--text-xs);
 }
 
 .review-check__detail > p,
@@ -898,34 +946,31 @@
 }
 
 .review-check__detail > ul {
-  padding-left: var(--space-5);
+  display: grid;
+  gap: var(--space-1);
+  padding-left: var(--space-4);
 }
 
-.review-check__detail > * + * {
-  margin-top: var(--space-2);
+/* Who still has to sign. Full width under the cards, where a growing list does no harm. */
+.proposal-review__signatures {
+  display: grid;
+  gap: var(--space-5);
+  margin-top: var(--space-5);
 }
 
-/*
- * A heading inside a check restates the check's own label, so it is kept for the accessible
- * name of its region and taken out of the picture.
- */
-.review-check__detail h4 {
-  clip-path: inset(50%);
-  height: 1px;
-  overflow: hidden;
-  position: absolute;
-  white-space: nowrap;
-  width: 1px;
+.proposal-review__signatures h4 {
+  color: var(--color-ink-muted);
+  font-size: var(--text-3xs);
+  letter-spacing: var(--tracking-caps);
+  margin: 0 0 var(--space-3);
+  text-transform: uppercase;
 }
 
-/*
- * Each of these rows already ends in a state pill, which is the mark the eye follows. A bullet
- * beside it is a second mark that carries nothing.
- */
-.review-check__detail section > ul {
+.proposal-review__signatures section > ul {
   display: grid;
   gap: var(--space-2);
   list-style: none;
+  margin: 0;
   padding-left: 0;
 }
 
@@ -955,9 +1000,4 @@
   list-style: none;
   margin: 0;
   padding: 0;
-}
-
-.proposal-review__purpose {
-  color: var(--color-ink-muted);
-  margin: 0;
 }

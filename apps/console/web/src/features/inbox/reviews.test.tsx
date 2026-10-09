@@ -124,9 +124,13 @@ test("the stakeholder answer review states what would stop an approval, and what
 
   // The four things that decide an approval, each saying whether it is satisfied rather than
   // leaving the reader to know in advance which values are the ones that could stop them.
+  // The state is spoken with the label, so a reader hears what the card is and how it stands
+  // before its value, the way the mark and the heading read together on screen.
   const checks = screen.getByRole("list", {name: "Readiness"})
-  expect(checks).toHaveTextContent("Grounds")
-  expect(checks).toHaveTextContent("Current — satisfied")
+  expect(checks).toHaveTextContent("Grounds — satisfied")
+  expect(checks).toHaveTextContent("Freshness — satisfied")
+  expect(checks).toHaveTextContent("Quality — needs attention")
+  expect(checks).toHaveTextContent("1 governed dataset")
   expect(checks).toHaveTextContent(
     "Fixture values are synthetic and cannot support a real decision.",
   )
