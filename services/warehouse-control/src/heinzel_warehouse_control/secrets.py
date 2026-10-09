@@ -160,6 +160,38 @@ class WarehouseBackupRetirementCapability(Protocol):
     def is_retired(self) -> bool: ...
 
 
+class WarehouseSecretAuthority(Protocol):
+    """What holds a warehouse operation's secrets, and issues one capability at a time.
+
+    The authority is the writing side; `WarehouseSecretStore` is what a consumer is handed and
+    can do nothing with but resolve the one secret it was given. They are separate on purpose:
+    a provider is composed from capabilities, so nothing downstream of this ever holds the set.
+
+    Named here so a caller outside this service can depend on the surface rather than on the
+    implementation behind `open_encrypted_secret_authority`, which stays private.
+    """
+
+    def store(self, operation_id: str, secrets: WarehouseOperationSecrets) -> str: ...
+
+    def delete(self, secret_reference: str, *, operation_id: str) -> None: ...
+
+    def operation_capability(
+        self,
+        secret_reference: str,
+        *,
+        operation_id: str,
+        purpose: WarehouseOperationSecretPurpose,
+    ) -> WarehouseOperationSecretCapability: ...
+
+    def backup_command_capability(
+        self, secret_reference: str, *, operation_id: str
+    ) -> WarehouseBackupCommandSecretCapability: ...
+
+    def backup_retirement_capability(
+        self, secret_reference: str, *, operation_id: str
+    ) -> WarehouseBackupRetirementCapability: ...
+
+
 @dataclass(frozen=True, slots=True, repr=False)
 class _OperationSecretCapability:
     value: SecretStr
@@ -998,13 +1030,30 @@ def _same_inode(first: os.stat_result, second: os.stat_result) -> bool:
     return (first.st_dev, first.st_ino) == (second.st_dev, second.st_ino)
 
 
+def open_encrypted_secret_authority(*, directory: Path, key: SecretStr) -> WarehouseSecretAuthority:
+    """An authority that keeps its operations' secrets encrypted under `directory`.
+
+    The implementation stays private: a caller that could name the class could also be handed
+    one built another way and not notice. What it gets instead is the protocol above, which is
+    the whole surface, and a factory that refuses rather than half-opens -- an unusable key or
+    a directory anyone else can read raises `WarehouseSecretStorageError` here, before an
+    operation has stored anything under it.
+
+    `key` is a Fernet key. Whoever holds it can read every secret stored under `directory`, so
+    it belongs somewhere the directory is not.
+    """
+    return _EncryptedDirectoryWarehouseSecretAuthority(directory=directory, key=key)
+
+
 __all__ = [
     "WarehouseBackupCommandSecretCapability",
     "WarehouseBackupRetirementCapability",
     "WarehouseOperationSecretCapability",
     "WarehouseOperationSecretPurpose",
     "WarehouseOperationSecrets",
+    "WarehouseSecretAuthority",
     "WarehouseSecretRetiredError",
     "WarehouseSecretStorageError",
     "WarehouseSecretStore",
+    "open_encrypted_secret_authority",
 ]

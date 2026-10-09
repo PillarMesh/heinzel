@@ -58,7 +58,9 @@ from .secrets import (
     WarehouseOperationSecretCapability,
     WarehouseOperationSecretPurpose,
     WarehouseOperationSecrets,
+    WarehouseSecretAuthority,
     WarehouseSecretStore,
+    open_encrypted_secret_authority,
 )
 from .service import WarehouseControlService
 
@@ -102,6 +104,7 @@ __all__ = [
     "WarehouseRestoreVerification",
     "WarehouseResumeValidationEvidence",
     "WarehouseRetirementEvidence",
+    "WarehouseSecretAuthority",
     "WarehouseSecretRetiredError",
     "WarehouseSecretStorageError",
     "WarehouseSecretStore",
@@ -110,4 +113,5 @@ __all__ = [
     "WarehouseValidationProfile",
     "WarehouseValidationResult",
     "noop_warehouse_fault_hook",
+    "open_encrypted_secret_authority",
 ]

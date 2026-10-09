@@ -1707,3 +1707,39 @@ def test_secret_failures_and_masked_results_never_expose_private_canaries(
     ):
         assert canary not in rendered
         assert canary not in caplog.text
+
+
+def test_the_factory_opens_an_authority_without_naming_what_implements_it() -> None:
+    """A caller outside this service composes the store through the protocol, or not at all.
+
+    The class behind it stays unexported, so nothing downstream can depend on the encrypted
+    directory in particular: the surface is the protocol, and a deployment that keeps its
+    secrets somewhere else satisfies the same one.
+    """
+    assert "open_encrypted_secret_authority" in warehouse_control.__all__
+    assert not hasattr(warehouse_control, "_EncryptedDirectoryWarehouseSecretAuthority")
+
+
+def test_an_authority_opened_by_the_factory_issues_the_secret_it_stored(tmp_path: Path) -> None:
+    authority = warehouse_control.open_encrypted_secret_authority(
+        directory=tmp_path / "secrets", key=SecretStr(Fernet.generate_key().decode("ascii"))
+    )
+    operation_id = "wop-" + "a" * 24
+
+    reference = authority.store(operation_id, _secrets())
+    capability = authority.operation_capability(
+        reference, operation_id=operation_id, purpose="administration"
+    )
+
+    assert capability.resolve().get_secret_value() == "administration-secret-canary"
+
+
+def test_the_factory_refuses_a_key_it_cannot_use_rather_than_half_opening(tmp_path: Path) -> None:
+    """An authority that opened and then failed on its first store would have been handed to a
+    provisioning already under way, which is the worst moment to discover it."""
+    with pytest.raises(warehouse_control.WarehouseSecretStorageError) as raised:
+        warehouse_control.open_encrypted_secret_authority(
+            directory=tmp_path / "secrets", key=SecretStr("not-a-fernet-key")
+        )
+
+    _assert_sanitized(raised.value)
