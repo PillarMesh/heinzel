@@ -159,6 +159,42 @@ test("a digest stays folded away until it is asked for", async () => {
   expect(within(execution).getByText("5".repeat(64))).not.toBeVisible()
 })
 
+test("the chain is drawn as a chain, and every node reaches its own receipt", async () => {
+  renderPane(envelope)
+
+  const flow = await screen.findByRole("navigation", {name: "Production chain"})
+  const nodes = within(flow).getAllByRole("link")
+  expect(nodes.map((node) => node.textContent)).toEqual([
+    "Warehouse, recorded",
+    "Source schema, recorded",
+    "Landing run, recorded",
+    "Transform, recorded",
+    "Build, recorded",
+    "Query, recorded",
+    "Execution, recorded",
+  ])
+  // A node that points at nothing is a dead link in the middle of the page, and a renamed
+  // stage would make one silently -- so each anchor is checked against the panel it names.
+  for (const node of nodes) {
+    const target = node.getAttribute("href")?.slice(1) ?? ""
+    expect(document.getElementById(target)).not.toBeNull()
+  }
+  expect(
+    within(flow).getByText("7 of 7 steps recorded for this request"),
+  ).toBeVisible()
+})
+
+test("a step that has not run is drawn as not run, not left off the chain", async () => {
+  renderPane({...envelope, data: {...envelope.data, query: null, execution: null}})
+
+  const flow = await screen.findByRole("navigation", {name: "Production chain"})
+  expect(within(flow).getAllByRole("link")).toHaveLength(7)
+  expect(within(flow).getByText("5 of 7 steps recorded for this request")).toBeVisible()
+  expect(
+    within(flow).getByRole("link", {name: "Query, not yet recorded"}),
+  ).toBeVisible()
+})
+
 test("a compiled statement reads once it is asked for", async () => {
   const user = userEvent.setup()
   renderPane(envelope)

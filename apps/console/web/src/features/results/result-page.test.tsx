@@ -179,3 +179,35 @@ test("removes displayed rows when retention expires during pagination", async ()
   expect(screen.queryByRole("link", {name: "Download CSV"})).not.toBeInTheDocument()
   expect(screen.queryByText(result.answer_text!)).not.toBeInTheDocument()
 })
+
+test("draws the measure above the rows, without becoming the reading of record", async () => {
+  render(<ResultPage client={client()} requestId={result.request_id} />)
+
+  const figure = await screen.findByRole("figure", {hidden: true})
+  expect(within(figure).getByText("Net revenue")).toBeDefined()
+  // The tallest column is the only one labelled: a number on every cap is what makes a small
+  // chart unreadable, and the table below carries all of them.
+  expect(within(figure).getByText("1000.25")).toBeDefined()
+  expect(within(figure).queryByText("250.25")).toBeNull()
+
+  // Hidden from assistive technology on purpose. The table is the result; this is a second
+  // reading of it, so a screen reader is sent to the rows rather than to a row of blocks.
+  expect(figure.getAttribute("aria-hidden")).toBe("true")
+  expect(screen.getByRole("table", {name: "Result rows"})).toBeVisible()
+})
+
+test("a result the figure cannot state honestly is shown as rows alone", async () => {
+  render(
+    <ResultPage
+      client={client({
+        ...result,
+        row_count: 1,
+        rows: [["North", "1000.25"]],
+      })}
+      requestId={result.request_id}
+    />,
+  )
+
+  expect(await screen.findByRole("table", {name: "Result rows"})).toBeVisible()
+  expect(screen.queryByRole("figure", {hidden: true})).toBeNull()
+})

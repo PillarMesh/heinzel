@@ -1,9 +1,12 @@
 import {useEffect, useState} from "react"
 
+import {ColumnChart} from "../../components/column-chart"
 import {ConsoleApiError} from "../../api/client"
+import {chartForResult} from "./result-chart"
 import type {ResultClient, ResultView} from "./result-api"
 import {ResultProvenance} from "./result-provenance"
 import {ResultTable} from "./result-table"
+import "../../components/column-chart.css"
 import "./results.css"
 
 export type {ResultClient, ResultView} from "./result-api"
@@ -49,6 +52,8 @@ export function ResultPage({client, requestId}: ResultPageProps) {
   if (result.status === "expired") return <p role="status">This result has expired.</p>
   if (result.status === "failed") return <p role="alert">This result could not be completed.</p>
 
+  const chart = chartForResult(result.columns ?? [], rows)
+
   async function loadMore(): Promise<void> {
     if (nextCursor === null) return
     setLoadingMore(true)
@@ -90,6 +95,9 @@ export function ResultPage({client, requestId}: ResultPageProps) {
         <p className="result-empty">No rows matched this governed question.</p>
       ) : (
         <>
+          {/* Drawn first where the shape allows it, because the comparison is the answer and
+              the rows are the evidence for it. Absent otherwise, never approximated. */}
+          {chart === null ? null : <ColumnChart columns={chart.columns} measure={chart.measure} />}
           <ResultTable columns={result.columns ?? []} rows={rows} />
           {nextCursor === null ? null : (
             <button disabled={loadingMore} onClick={() => void loadMore()} type="button">

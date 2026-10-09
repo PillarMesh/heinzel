@@ -1,0 +1,163 @@
+/*
+ * A column chart whose geometry is percentages of its own track, so it needs no measurement
+ * pass and stays right at any width the pane gives it.
+ */
+.column-chart {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  /*
+   * A comparison, not a banner. Columns stretched across a full-width pane are lonely sticks a
+   * reader's eye has to travel between; held to a measure they read as one figure. The width
+   * itself comes from the column count, inline, and this is the ceiling it may reach. The
+   * table below keeps the full width, as a table should.
+   */
+  max-width: 42rem;
+}
+
+.column-chart__measure {
+  color: var(--color-ink-muted);
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  text-transform: uppercase;
+}
+
+.column-chart__plot {
+  display: grid;
+  gap: var(--space-2) var(--space-3);
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
+/* The ticks carry the values no column is labelled with, so each sits on its rule exactly. */
+.column-chart__scale {
+  color: var(--color-ink-muted);
+  font-size: var(--text-3xs);
+  font-variant-numeric: tabular-nums;
+  height: 11rem;
+  position: relative;
+  text-align: right;
+}
+
+.column-chart__gauge {
+  display: flex;
+  flex-direction: column;
+  visibility: hidden;
+}
+
+.column-chart__tick {
+  position: absolute;
+  right: 0;
+  /* Half a line below its own anchor, which puts the text's middle on the rule. */
+  transform: translateY(50%);
+}
+
+.column-chart__track {
+  height: 11rem;
+  position: relative;
+}
+
+.column-chart__rule {
+  background: var(--color-line);
+  height: 1px;
+  left: 0;
+  position: absolute;
+  right: 0;
+}
+
+.column-chart__columns {
+  align-items: end;
+  display: flex;
+  gap: var(--space-2);
+  height: 100%;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  position: relative;
+}
+
+.column-chart__column {
+  align-items: center;
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  height: 100%;
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.column-chart__value {
+  color: var(--color-ink);
+  font-size: var(--text-3xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+  line-height: 1.4;
+  /* Reserved whether or not this column is the labelled one, so no column is taller for it. */
+  min-height: 1.4em;
+}
+
+.column-chart__bar {
+  background: var(--color-series);
+  /* Square where it meets the baseline, rounded where the data ends. */
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  display: block;
+  height: var(--column-height);
+  /* Never fills its slot: the leftover is air, not a wider mark. */
+  max-width: 1.5rem;
+  min-height: 2px;
+  position: relative;
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .column-chart__bar {
+    animation: column-rise var(--duration-slow) var(--ease-entrance) both;
+    animation-delay: var(--column-delay);
+  }
+}
+
+@keyframes column-rise {
+  from {
+    height: 0;
+  }
+}
+
+.column-chart__tip {
+  background: var(--color-shell);
+  border-radius: var(--radius-sm);
+  bottom: calc(100% + var(--space-2));
+  color: var(--color-on-shell);
+  font-size: var(--text-3xs);
+  left: 50%;
+  opacity: 0;
+  padding: var(--space-1) var(--space-2);
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-50%);
+  transition: opacity var(--transition-fast);
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.column-chart__bar:hover > .column-chart__tip {
+  opacity: 1;
+}
+
+.column-chart__labels {
+  color: var(--color-ink-muted);
+  display: flex;
+  font-size: var(--text-3xs);
+  gap: var(--space-2);
+  /* Second row of the plot grid, under the track rather than under the ticks too. */
+  grid-column: 2;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.column-chart__labels > li {
+  flex: 1 1 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  text-align: center;
+}

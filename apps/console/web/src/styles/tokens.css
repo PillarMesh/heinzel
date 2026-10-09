@@ -85,6 +85,15 @@
   --color-neutral-surface: #e8ecf3;
   --color-neutral-line: #afbacb;
 
+  /*
+   * Drawn data. One hue, because every figure in this console plots a single measure, and a
+   * second hue would be identity the data does not have. The step is not the interface blue:
+   * it is the one that sits inside the mark lightness band for this surface and clears 3:1
+   * against it, checked rather than chosen by eye.
+   */
+  --color-series: #2155f5;
+  --color-series-wash: #dde6fe;
+
   /* Type. `wght` is a variable axis, so weights are continuous. */
   --font-body:
     "IBM Plex Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -220,6 +229,10 @@
     --color-neutral: #a3b0c6;
     --color-neutral-surface: #1b2432;
     --color-neutral-line: #44516a;
+
+    /* Stepped for the dark surface, not flipped: the light hue reads above the band here. */
+    --color-series: #6b8ef0;
+    --color-series-wash: #1d2a46;
 
     /*
      * A shadow tuned for white is invisible on near-black, so depth is carried by a hairline

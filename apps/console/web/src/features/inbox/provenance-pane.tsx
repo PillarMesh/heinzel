@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react"
+import {useEffect, useState, type CSSProperties} from "react"
 
 import {ArtifactDigest} from "./artifact-reference"
 import {Nothing, Panel} from "../../components/panel"
@@ -110,6 +110,17 @@ export function ProvenancePane({client, dataProvenance, requestId}: ProvenancePa
   const chain = state.chain
   return (
     <div className="panel-stack provenance">
+      <StageFlow
+        stages={[
+          {label: "Warehouse", recorded: chain.warehouse !== null},
+          {label: "Source schema", recorded: chain.source !== null},
+          {label: "Landing run", recorded: chain.landing !== null},
+          {label: "Transform", recorded: chain.product !== null},
+          {label: "Build", recorded: chain.materialization !== null},
+          {label: "Query", recorded: chain.query !== null},
+          {label: "Execution", recorded: chain.execution !== null},
+        ]}
+      />
       <Warehouse warehouse={chain.warehouse} />
       <Source source={chain.source} />
       <Landing landing={chain.landing} />
@@ -118,6 +129,67 @@ export function ProvenancePane({client, dataProvenance, requestId}: ProvenancePa
       <Query query={chain.query} />
       <Execution execution={chain.execution} />
     </div>
+  )
+}
+
+/** The anchor a stage's panel answers to, derived from its name so the two cannot drift. */
+function stageAnchor(label: string): string {
+  return `provenance-${label.toLowerCase().replaceAll(" ", "-")}`
+}
+
+interface StageDefinition {
+  readonly label: string
+  /** Whether the service that owns this step has written anything down for this request yet. */
+  readonly recorded: boolean
+}
+
+/**
+ * The chain as a chain.
+ *
+ * Seven panels in a column are seven panels; the thing they describe is a pipeline, and nothing
+ * on screen said so -- the reader assembled the shape from the words `Step 1` through `Step 7`.
+ * Drawn, the shape is the first thing read: how many steps there are, which of them have run,
+ * and where the one being read sits among them. It doubles as the way to reach a stage, so a
+ * reader after the query does not scroll past five receipts to find it.
+ */
+function StageFlow({stages}: {readonly stages: readonly StageDefinition[]}) {
+  const reached = stages.filter((stage) => stage.recorded).length
+  return (
+    <nav aria-label="Production chain" className="stage-flow">
+      <ol className="stage-flow__stages">
+        {stages.map((stage, index) => (
+          <li
+            className={`stage-flow__stage${stage.recorded ? " stage-flow__stage--recorded" : ""}`}
+            key={stage.label}
+            style={{"--stage-delay": `${index * 70}ms`} as CSSProperties}
+          >
+            <a
+              className="stage-flow__link"
+              data-plain-link=""
+              href={`#${stageAnchor(stage.label)}`}
+            >
+              <span aria-hidden="true" className="stage-flow__node">
+                {stage.recorded ? (
+                  <svg fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 16 16">
+                    <path d="M4 8.4l2.6 2.6L12 5.4" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                ) : (
+                  index + 1
+                )}
+              </span>
+              <span className="stage-flow__label">{stage.label}</span>
+              {/* The state in words, for the reader the colour and the tick do not reach. */}
+              <span className="visually-hidden">
+                {stage.recorded ? ", recorded" : ", not yet recorded"}
+              </span>
+            </a>
+          </li>
+        ))}
+      </ol>
+      <p className="stage-flow__tally">
+        {reached} of {stages.length} steps recorded for this request
+      </p>
+    </nav>
   )
 }
 
@@ -130,6 +202,7 @@ function Warehouse({warehouse}: {readonly warehouse: ProvenanceWarehouseView | n
   return (
     <Panel
       aside={<Step ordinal={1} />}
+      id="provenance-warehouse"
       title="Warehouse"
     >
       {warehouse === null ? (
@@ -171,6 +244,7 @@ function Source({source}: {readonly source: ProvenanceSourceView | null}) {
   return (
     <Panel
       aside={<Step ordinal={2} />}
+      id="provenance-source-schema"
       title="Source schema"
     >
       {source === null ? (
@@ -252,6 +326,7 @@ function Landing({landing}: {readonly landing: ProvenanceLandingView | null}) {
   return (
     <Panel
       aside={<Step ordinal={3} />}
+      id="provenance-landing-run"
       title="Landing run"
     >
       {landing === null ? (
@@ -283,6 +358,7 @@ function Product({product}: {readonly product: ProvenanceProductView | null}) {
   return (
     <Panel
       aside={<Step ordinal={4} />}
+      id="provenance-transform"
       title="Transform"
     >
       {product === null ? (
@@ -343,6 +419,7 @@ function Materialization({
   return (
     <Panel
       aside={<Step ordinal={5} />}
+      id="provenance-build"
       title="Build"
     >
       {materialization === null ? (
@@ -375,6 +452,7 @@ function Query({query}: {readonly query: ProvenanceQueryView | null}) {
   return (
     <Panel
       aside={<Step ordinal={6} />}
+      id="provenance-query"
       title="Query"
     >
       {query === null ? (
@@ -443,6 +521,7 @@ function Execution({execution}: {readonly execution: ProvenanceExecutionView | n
   return (
     <Panel
       aside={<Step ordinal={7} />}
+      id="provenance-execution"
       title="Execution"
     >
       {execution === null ? (

@@ -175,12 +175,32 @@ summary {
 }
 
 .product-navigation__link {
+  align-items: center;
   border-radius: var(--radius-sm);
   color: var(--color-on-shell-muted);
+  display: flex;
   font-weight: var(--weight-medium);
+  gap: var(--space-3);
   padding: var(--space-2) var(--space-3);
   text-decoration: none;
   transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+/*
+ * Quieter than its label until the item is the one in hand: the mark is for recognising a
+ * position in the list, and at full strength ten of them read as a column of artwork.
+ */
+.nav-icon {
+  flex: 0 0 auto;
+  height: 1.0625rem;
+  opacity: 0.72;
+  transition: opacity var(--transition-fast);
+  width: 1.0625rem;
+}
+
+.product-navigation__link:hover > .nav-icon,
+.product-navigation__link[aria-current="page"] > .nav-icon {
+  opacity: 1;
 }
 
 .product-navigation__link:hover {
@@ -227,6 +247,20 @@ summary {
 
 .governance-spine__disclosure[open] .governance-spine__summary {
   margin-bottom: var(--space-2);
+}
+
+/*
+ * The bar takes the row under the tally it restates. Its colours are the rail's, not the
+ * page's: the spine sits on the dark shell in both themes, and the light theme's ready green
+ * is a near-black against it.
+ */
+.governance-spine__summary > .meter {
+  background: var(--color-shell-line);
+  flex-basis: 100%;
+}
+
+.governance-spine__summary > .meter > .meter__fill {
+  background: var(--color-ready-line);
 }
 
 .governance-spine__title {
@@ -430,14 +464,22 @@ summary {
  * hundred pixels apart looked like two kinds of thing. The underline comes back on hover and
  * focus, where it is the affordance rather than the decoration.
  */
-.app-shell__surface a:not(.product-navigation__link):not(.skip-link) {
+/*
+ * `data-plain-link` is the opt-out for an anchor that is a control rather than prose -- a node
+ * on a diagram, a card, a tab. Without one, each such component has to be named in this
+ * selector, and a component class never wins against it: three negations score higher than the
+ * one class the component has to offer, so the feature stylesheet loses on specificity and the
+ * control turns blue. The attribute keeps that list from growing a name at a time.
+ */
+.app-shell__surface a:not(.product-navigation__link):not(.skip-link):not([data-plain-link]) {
   color: var(--color-primary);
   font-weight: var(--weight-medium);
   text-decoration-color: var(--color-primary-line);
   text-underline-offset: 0.18em;
 }
 
-.app-shell__surface a:not(.product-navigation__link):not(.skip-link):hover {
+.app-shell__surface
+  a:not(.product-navigation__link):not(.skip-link):not([data-plain-link]):hover {
   text-decoration-color: currentcolor;
 }
 

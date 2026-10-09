@@ -4,8 +4,11 @@ import {NavLink, useLocation} from "react-router-dom"
 import type {DataProvenance, SessionView, WorkspaceView} from "../api/generated"
 import {CapabilityState} from "./capability-state"
 import {ErrorBoundary} from "./error-boundary"
+import {Meter} from "./meter"
 import {ModeBanner} from "./mode-banner"
+import {NavIcon} from "./nav-icon"
 import {SkipLink} from "./skip-link"
+import "./meter.css"
 
 type LayoutMode = "wide" | "drawer" | "queue-detail"
 
@@ -162,7 +165,8 @@ export function AppShell({
         <nav aria-label="Product" className="product-navigation">
           {(session.active_role === "requester" ? [{label: "My requests", to: "/requests"}] : productNavigation).map((item) => (
             <NavLink className="product-navigation__link" key={item.to} to={item.to}>
-              {item.label}
+              <NavIcon to={item.to} />
+              <span>{item.label}</span>
             </NavLink>
           ))}
         </nav>
@@ -180,6 +184,12 @@ export function AppShell({
               <span className="governance-spine__tally">
                 {readyCapabilities.length} of {capabilities.length} ready
               </span>
+              {/* The same fraction as a proportion, so the tally reads without dividing it. */}
+              <Meter
+                label="Capabilities ready"
+                of={capabilities.length}
+                value={readyCapabilities.length}
+              />
             </summary>
             <ol>
               {capabilities.map((capability) => (

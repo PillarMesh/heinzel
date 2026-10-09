@@ -1,18 +1,9 @@
+import {displayDecimal} from "../../format/decimal"
 import type {ResultColumn, ResultValue} from "./result-api"
 
 interface ResultTableProps {
   readonly columns: readonly ResultColumn[]
   readonly rows: readonly (readonly ResultValue[])[]
-}
-
-function displayDecimal(value: string): string {
-  if (!/^-?\d+\.\d+$/.test(value)) return value
-  const [integer, fraction] = value.split(".") as [string, string]
-  let visibleFraction = fraction
-  while (visibleFraction.length > 2 && visibleFraction.endsWith("0")) {
-    visibleFraction = visibleFraction.slice(0, -1)
-  }
-  return `${integer}.${visibleFraction}`
 }
 
 function ResultCell({

@@ -1,0 +1,46 @@
+/*
+ * The unfilled track is a lighter step of the fill's own ramp rather than a grey, so the state
+ * reads across the whole bar instead of only across the part that is filled.
+ */
+.meter {
+  border-radius: var(--radius-pill);
+  height: 4px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.meter--progress {
+  background: var(--color-primary-line);
+}
+
+.meter--ready {
+  background: var(--color-ready-line);
+}
+
+.meter__fill {
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  transition: width var(--duration-slow) var(--ease-entrance);
+  width: var(--meter-fill);
+}
+
+.meter--progress > .meter__fill {
+  background: var(--color-primary);
+}
+
+.meter--ready > .meter__fill {
+  background: var(--color-ready);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .meter__fill {
+    animation: meter-fill var(--duration-slow) var(--ease-entrance) both;
+  }
+}
+
+@keyframes meter-fill {
+  from {
+    width: 0;
+  }
+}
