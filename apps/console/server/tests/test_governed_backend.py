@@ -47,6 +47,7 @@ from heinzel_console.governed_adapters import (
     AccessGrantCommands,
     AccessGrantReader,
     AccessGrantRevocationCommands,
+    AcquisitionRunNowCommands,
     CatalogBindingReader,
     CatalogSearchHealthReader,
     DashboardPublicationCommands,
@@ -487,6 +488,7 @@ def _backend(
     runs: TenantRunReader | None = None,
     run_lifecycle: TenantRunLifecycleReader | None = None,
     acquisition_receipts: TenantAcquisitionReceiptReader | None = None,
+    acquisition_commands: AcquisitionRunNowCommands | None = None,
     source_bindings: SourceBindingReader | None = None,
     enrolled_source_connections: EnrolledSourceConnectionReader | None = None,
     source_registration_commands: SourceRegistrationCommands | None = None,
@@ -522,6 +524,7 @@ def _backend(
         runs=runs,
         run_lifecycle=run_lifecycle,
         acquisition_receipts=acquisition_receipts,
+        acquisition_commands=acquisition_commands,
         source_bindings=source_bindings,
         enrolled_source_connections=enrolled_source_connections,
         source_registration_commands=source_registration_commands,
@@ -2013,6 +2016,36 @@ def test_a_tenant_with_no_acquisition_receipts_reads_an_empty_listing() -> None:
     backend = _backend(acquisition_receipts=_StubAcquisitionReceiptReader({}))
 
     assert backend.get_acquisition_receipts(_architect_context()).receipts == ()
+
+
+def test_the_receipt_listing_says_whether_a_run_can_be_commanded() -> None:
+    """A control is offered only where something could act on it.
+
+    A deployment can hold every receipt an acquisition ever wrote and still run no acquisition
+    application to ask for another. The listing says which it is, so the browser is told rather
+    than finding out by pressing and receiving `capability_not_delivered`.
+    """
+    from heinzel_console.contracts import AcquisitionModeView
+    from heinzel_runtime import AcquisitionPreparationResult
+
+    store = _StubAcquisitionReceiptReader({})
+
+    reads_only = _backend(acquisition_receipts=store)
+    assert reads_only.get_acquisition_receipts(_architect_context()).run_available is False
+
+    class _Commands:
+        def run_now(
+            self,
+            *,
+            tenant_id: str,
+            contract_ref: str,
+            trigger_window: str,
+            acquisition_mode: AcquisitionModeView,
+        ) -> AcquisitionPreparationResult:
+            raise AssertionError("the listing must not run an acquisition to report on one")
+
+    commands = _backend(acquisition_receipts=store, acquisition_commands=_Commands())
+    assert commands.get_acquisition_receipts(_architect_context()).run_available is True
 
 
 def test_reading_acquisition_receipts_without_a_store_is_not_delivered() -> None:

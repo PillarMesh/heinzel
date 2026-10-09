@@ -1761,7 +1761,8 @@ class GovernedConsoleBackend:
             raise _not_delivered("a durable acquisition evidence store")
         receipts = self._acquisition_receipts.list_acquisition_receipts(context.tenant_id)
         return AcquisitionReceiptsView(
-            receipts=tuple(self._acquisition_receipt_view(receipt) for receipt in receipts)
+            receipts=tuple(self._acquisition_receipt_view(receipt) for receipt in receipts),
+            run_available=self._acquisition_commands is not None,
         )
 
     def get_selectable_answer_terms(

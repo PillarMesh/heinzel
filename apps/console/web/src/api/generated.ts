@@ -41,6 +41,7 @@ export type AcquisitionReasonCodeView =
 export type JsonTuple_AcquisitionReasonCodeView_ = AcquisitionReasonCodeView[]
 export type ConsoleEnvelopeAcquisitionReceiptsView = ConsoleEnvelope_AcquisitionReceiptsView_
 export type JsonTuple_AcquisitionReceiptView_ = AcquisitionReceiptView[]
+export type RunAvailable = boolean
 export type ActiveRole1 = "data_architect" | "data_owner"
 export type ActorRole =
   "requester" | "data_architect" | "data_owner" | "policy_approver" | "budget_approver"
@@ -512,6 +513,7 @@ export interface ConsoleEnvelope_AcquisitionReceiptsView_ {
 }
 export interface AcquisitionReceiptsView {
   receipts?: JsonTuple_AcquisitionReceiptView_
+  run_available?: RunAvailable
 }
 /**
  * Ask the acquisition owner to prepare one run of an activated contract.

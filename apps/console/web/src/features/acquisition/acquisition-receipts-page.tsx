@@ -63,6 +63,8 @@ export function AcquisitionReceiptsPage({
   triggerWindowFactory = currentUtcHourWindow,
 }: AcquisitionReceiptsPageProps) {
   const [receipts, setReceipts] = useState<readonly AcquisitionReceiptView[] | null>(null)
+  // Whether a run could be commanded at all, as the read itself reported it.
+  const [runAvailable, setRunAvailable] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [contractRef, setContractRef] = useState("")
   const [runFailure, setRunFailure] = useState<string | null>(null)
@@ -78,7 +80,9 @@ export function AcquisitionReceiptsPage({
     client
       .getAcquisitionReceipts()
       .then((envelope) => {
-        if (!abandoned) setReceipts(envelope.data.receipts ?? [])
+        if (abandoned) return
+        setReceipts(envelope.data.receipts ?? [])
+        setRunAvailable(envelope.data.run_available ?? false)
       })
       .catch((error: unknown) => {
         if (abandoned) return
@@ -98,7 +102,16 @@ export function AcquisitionReceiptsPage({
     session?.active_role === "data_architect" || session?.active_role === "data_owner"
       ? session.active_role
       : null
-  const canRun = client.runAcquisitionNow !== undefined && activeRole !== null
+  /*
+    A control is offered only where something could act on it.
+
+    This page listed every receipt an acquisition ever wrote and then offered a form to ask for
+    another -- on a deployment that runs no acquisition application, where the press came back
+    `capability_not_delivered`. The read now says whether a run can be commanded, the same way
+    the publishable-dashboards read says whether publishing can be, so the browser is told
+    rather than finding out by pressing.
+  */
+  const canRun = runAvailable && client.runAcquisitionNow !== undefined && activeRole !== null
 
   const runAcquisition = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -160,6 +173,12 @@ export function AcquisitionReceiptsPage({
         Receipts recorded by acquisitions run for this tenant. A receipt records the work
         an acquisition performed; it does not assert that data was delivered anywhere.
       </p>
+      {canRun || receipts === null ? null : (
+        <p className="summary-page__guidance">
+          Acquisition runs are not commanded from this deployment. The receipts below record the
+          runs that have happened.
+        </p>
+      )}
       {canRun ? (
         <form className="summary-page__action" onSubmit={(event) => void runAcquisition(event)}>
           <label htmlFor="acquisition-contract-ref">Activated contract reference</label>

@@ -13,9 +13,10 @@ import {AcquisitionReceiptsPage} from "./acquisition-receipts-page"
 
 function envelope(
   receipts: readonly AcquisitionReceiptView[],
+  runAvailable = true,
 ): ConsoleEnvelopeAcquisitionReceiptsView {
   return {
-    data: {receipts: [...receipts]},
+    data: {receipts: [...receipts], run_available: runAvailable},
     meta: {data_provenance: "governed_local", correlation_id: "correlation-acquisition"},
   } as ConsoleEnvelopeAcquisitionReceiptsView
 }
@@ -125,7 +126,11 @@ test("an architect can run an activated contract and sees its receipt", async ()
       triggerWindowFactory={() => "2026-09-14T12:00:00Z/2026-09-14T13:00:00Z"}
     />,
   )
-  await user.type(screen.getByLabelText(/activated contract reference/i), "contract:orders:v1")
+  // Awaited, because the form is offered only once the read has said a run can be commanded.
+  await user.type(
+    await screen.findByLabelText(/activated contract reference/i),
+    "contract:orders:v1",
+  )
   await user.click(screen.getByRole("button", {name: /run acquisition/i}))
 
   await waitFor(() => expect(screen.getByText(/acquisition prepared/i)).toBeVisible())
@@ -142,4 +147,29 @@ test("an architect can run an activated contract and sees its receipt", async ()
     },
   )
   expect(screen.getByText(/prepared snapshot acquisition/i)).toBeVisible()
+})
+
+test("a deployment that commands no run offers no control, and says why", async () => {
+  // The page listed every receipt an acquisition ever wrote and then offered a form to ask for
+  // another, on a deployment whose answer to that ask is `capability_not_delivered`. The
+  // receipts are the page; the form is only offered where something could act on it.
+  const runAcquisitionNow = vi.fn()
+  render(
+    <AcquisitionReceiptsPage
+      client={{
+        getAcquisitionReceipts: vi.fn().mockResolvedValue(envelope([receipt], false)),
+        runAcquisitionNow,
+      }}
+      session={session}
+    />,
+  )
+
+  expect(
+    await screen.findByText(/acquisition runs are not commanded from this deployment/i),
+  ).toBeVisible()
+  expect(screen.queryByRole("button", {name: /run acquisition/i})).toBeNull()
+  expect(screen.queryByLabelText(/activated contract reference/i)).toBeNull()
+  expect(runAcquisitionNow).not.toHaveBeenCalled()
+  // The receipts themselves are untouched: the read is delivered, only the command is not.
+  expect(screen.getByRole("list", {name: "Acquisition receipts"})).toBeVisible()
 })

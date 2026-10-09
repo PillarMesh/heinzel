@@ -257,6 +257,11 @@
         "receipts": {
           "$ref": "#/$defs/JsonTuple_AcquisitionReceiptView_",
           "default": []
+        },
+        "run_available": {
+          "default": false,
+          "title": "Run Available",
+          "type": "boolean"
         }
       },
       "title": "AcquisitionReceiptsView",

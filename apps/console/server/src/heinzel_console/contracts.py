@@ -1265,6 +1265,11 @@ class AcquisitionReceiptView(StrictModel):
 
 class AcquisitionReceiptsView(StrictModel):
     receipts: JsonTuple[AcquisitionReceiptView] = Field(default=())
+    # Whether a run could be commanded at all. A deployment can hold every receipt an
+    # acquisition ever wrote and still have no acquisition application to ask for another, and a
+    # control offered there would refuse every press. The browser is told which it is rather
+    # than finding out by pressing.
+    run_available: bool = False
 
 
 class AcquisitionRunNowCommand(StrictModel):
