@@ -8,8 +8,15 @@
   grid-template-columns: minmax(14rem, 0.78fr) minmax(0, 2.3fr) minmax(15rem, 0.92fr);
 }
 
+/* Two columns when there is no evidence to carry; the work takes the width back. */
+.decision-workspace--no-evidence {
+  grid-template-columns: minmax(14rem, 0.78fr) minmax(0, 3fr);
+}
+
 .decision-workspace--medium,
-.decision-workspace--narrow {
+.decision-workspace--narrow,
+.decision-workspace--medium.decision-workspace--no-evidence,
+.decision-workspace--narrow.decision-workspace--no-evidence {
   grid-template-columns: minmax(0, 1fr);
 }
 

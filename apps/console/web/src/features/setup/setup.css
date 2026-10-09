@@ -586,6 +586,15 @@
   overflow-wrap: anywhere;
 }
 
+/*
+ * The fingerprint recedes. It names the exact statement the acceptance is recorded against,
+ * which is a fact about the record rather than the sentence the person is agreeing to -- and
+ * at the label's own weight it read as a second half of that sentence.
+ */
+.digest-confirmation .artifact-digest summary {
+  font-weight: var(--weight-regular);
+}
+
 .review-actions {
   display: flex;
   flex-wrap: wrap;

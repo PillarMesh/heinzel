@@ -225,6 +225,20 @@ const digestText = vi.fn(async (value: string) =>
   value.includes("conversation") ? conversationDigest : requestDigest,
 )
 
+/**
+ * The abbreviation the confirmation names its statement by.
+ *
+ * The label is what the requester is agreeing to, in their words; the statement it is bound to
+ * is named by this fingerprint rather than by sixty-four characters of hex in the sentence.
+ * Asserted separately from the label so these tests still fail if a confirmation is ever
+ * carried over to a different statement.
+ */
+function fingerprint(digest: string): string {
+  return `${digest.slice(0, 8)}…${digest.slice(-8)}`
+}
+
+const CONFIRMATION = /I have read this scope and accept it/
+
 function renderSurface(
   requestedRequestRef?: string,
   dataProvenance: "demo_fixture" | "governed_local" = "demo_fixture",
@@ -728,11 +742,9 @@ test("shows no proposal while the clarified outcome is unaccepted", async () => 
   expect(within(outcome).getByText("Explain the weekly net revenue movement.")).toBeVisible()
   expect(within(outcome).getByText("Synthetic aggregate revenue only.")).toBeVisible()
   expect(within(outcome).getByText("Customer and payment details.")).toBeVisible()
-  expect(
-    screen.getByRole("checkbox", {
-      name: `I confirm the exact clarified-outcome digest ${outcomeDigest}.`,
-    }),
-  ).toBeVisible()
+  expect(screen.getByRole("checkbox", {name: CONFIRMATION})).toBeVisible()
+  // The confirmation names the statement it is bound to, folded away rather than inline.
+  expect(within(outcome).getByText(fingerprint(outcomeDigest))).toBeVisible()
   expect(screen.getByRole("button", {name: "Accept clarified outcome"})).toBeDisabled()
   expect(
     screen.getByText("Review and accept the clarified scope before this request can be admitted."),
@@ -751,7 +763,7 @@ test("records acceptance as the requester and still withholds the answer without
 
   await user.click(
     await screen.findByRole("checkbox", {
-      name: `I confirm the exact clarified-outcome digest ${outcomeDigest}.`,
+      name: CONFIRMATION,
     }),
   )
   await user.click(screen.getByRole("button", {name: "Accept clarified outcome"}))
@@ -799,16 +811,16 @@ test("does not apply the decision on a stale digest and reloads the exact new ou
 
   await user.click(
     await screen.findByRole("checkbox", {
-      name: `I confirm the exact clarified-outcome digest ${outcomeDigest}.`,
+      name: CONFIRMATION,
     }),
   )
   await user.click(screen.getByRole("button", {name: "Accept clarified outcome"}))
 
-  expect(
-    await screen.findByRole("checkbox", {
-      name: `I confirm the exact clarified-outcome digest ${refreshedDigest}.`,
-    }),
-  ).not.toBeChecked()
+  const reset = await screen.findByRole("checkbox", {name: CONFIRMATION})
+  expect(reset).not.toBeChecked()
+  // Bound to the new statement, not carried over to it: the fingerprint changed with it.
+  expect(screen.getByText(fingerprint(refreshedDigest))).toBeVisible()
+  expect(screen.queryByText(fingerprint(outcomeDigest))).toBeNull()
   expect(screen.getByRole("button", {name: "Accept clarified outcome"})).toBeDisabled()
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "The clarified outcome changed; review the new statement before responding.",

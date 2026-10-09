@@ -1,3 +1,4 @@
+import {ArtifactDigest} from "../inbox/artifact-reference"
 import {useEffect, useState} from "react"
 
 import {ConsoleApiError, ConsoleMutationOutcomeUnknown} from "../../api/client"
@@ -170,7 +171,18 @@ export function ClarifiedOutcome({
               onChange={(event) => setConfirmed(event.currentTarget.checked)}
               type="checkbox"
             />
-            <span>I confirm the exact clarified-outcome digest {outcome.statement_digest}.</span>
+            {/*
+              What the person is confirming, in their words, with the fingerprint of the exact
+              statement folded underneath it. The label used to carry all sixty-four characters
+              of the digest inline -- on the screen of the person who asked the question, who
+              is not going to compare them, and for whom the sentence they must actually agree
+              to was the shortest thing on the line. The acceptance is still recorded against
+              this exact digest; nothing about what is sent has changed.
+            */}
+            <span>
+              I have read this scope and accept it.
+              <ArtifactDigest digest={outcome.statement_digest} label="Scope fingerprint" />
+            </span>
           </label>
           <div className="clarified-outcome__actions">
             <button

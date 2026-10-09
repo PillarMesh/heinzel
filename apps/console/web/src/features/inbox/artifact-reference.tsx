@@ -13,11 +13,25 @@ function abbreviate(digest: string): string {
   return digest.length <= 20 ? digest : `${digest.slice(0, 8)}…${digest.slice(-8)}`
 }
 
-export function ArtifactDigest({digest}: {readonly digest: string}) {
+/**
+ * A digest, folded away.
+ *
+ * `label` is what the summary calls it. `SHA-256` is right where the reader is an architect
+ * reconciling artifacts; it is jargon where the reader is the person who asked the question,
+ * and that surface printed all sixty-four characters inline. The abbreviation stays in the
+ * summary either way, so the control's accessible name still changes when the artifact does.
+ */
+export function ArtifactDigest({
+  digest,
+  label = "SHA-256",
+}: {
+  readonly digest: string
+  readonly label?: string
+}) {
   return (
     <details className="artifact-digest">
       <summary>
-        SHA-256 <code>{abbreviate(digest)}</code>
+        {label} <code>{abbreviate(digest)}</code>
       </summary>
       <code className="artifact-digest__full">{digest}</code>
     </details>

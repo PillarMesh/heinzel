@@ -35,6 +35,7 @@ import {
 import {ImpactPanel, type ImpactClient} from "../impact/impact-panel"
 import {DecisionQueue} from "./decision-queue"
 import {EvidenceDrawer, type EvidenceLayout} from "./evidence-drawer"
+import {hasEvidence} from "./evidence"
 import {LifecycleTimeline} from "./lifecycle-timeline"
 import {StakeholderAnswerReview} from "./stakeholder-answer-review"
 import "./inbox.css"
@@ -972,6 +973,9 @@ export function DecisionWorkspace({
   const detailIsCurrent = detail.requestId === selectedRequestId
   const detailFailed = detailIsCurrent && detail.failed
   const currentDetail = detailIsCurrent && !detail.failed ? detail.value : null
+  const showEvidence =
+    currentDetail !== null &&
+    hasEvidence(currentDetail.evidence, (currentDetail.lifecycle ?? []).length)
   const dashboardRef =
     currentDetail?.proposal?.kind === "access_preview" &&
     currentDetail.proposal.access_mode === "dashboard" &&
@@ -985,7 +989,11 @@ export function DecisionWorkspace({
     !dashboardAvailability.available
 
   return (
-    <div className={`decision-workspace decision-workspace--${effectiveLayout}`}>
+    <div
+      className={`decision-workspace decision-workspace--${effectiveLayout}${
+        showEvidence ? "" : " decision-workspace--no-evidence"
+      }`}
+    >
       {!showQueue ? null : inbox.failed ? (
         <section aria-label="Decision queue" className="decision-queue">
           <h2>Decision queue</h2>
@@ -1051,7 +1059,13 @@ export function DecisionWorkspace({
         </section>
       )}
 
-      {currentDetail === null ? null : (
+      {/*
+        The rail only when there is evidence to put in it. On a submitted request it stood as a
+        permanent third column whose entire height said `Not recorded`, `Unknown`, `0 datasets`,
+        `0 of 0 approvals`, `No immutable evidence reference exists yet` and `No lifecycle
+        events have been recorded` -- a column of nothing, taking width from the work.
+      */}
+      {currentDetail === null || !showEvidence ? null : (
         <EvidenceDrawer evidence={currentDetail.evidence} layout={effectiveLayout}>
           {(currentDetail.evidence.datasets ?? []).some((dataset) => !dataset.artifact_reference) && <h3>Catalog records</h3>}
           {(currentDetail.evidence.datasets ?? []).filter((dataset) => !dataset.artifact_reference).map((dataset) => (

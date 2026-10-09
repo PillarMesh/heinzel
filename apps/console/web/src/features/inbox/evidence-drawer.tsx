@@ -31,44 +31,55 @@ function EvidenceContent({
   const evidenceRefs = evidence.evidence_refs ?? []
 
   /*
-    A companion to the work, not a second copy of it.
+    A companion to the work, not a second copy of it, and only the facts that exist.
 
     The rail printed `as of`, `freshness`, `quality`, `lineage`, `authorization`, the governed
     datasets and the metric references -- every one of which the proposal beside it printed
     too, with the same values, on the same screen. Now that the work area carries one job at a
     time, the rail's job is the standing summary: whether the grounds are in order, and what
-    has happened to the request. The detail is one tab away, and the references the proposal
-    does not carry stay here.
+    has happened to the request. A row with nothing in it is left out rather than filled with
+    the word for nothing.
   */
-  const approvalsRecorded = (evidence.authorization_summary ?? "").trim()
+  const grounds = datasets.length + metricVersions.length
+  const authorization = (evidence.authorization_summary ?? "").trim()
 
   return (
     <div className="evidence-content">
       <dl className="record evidence-content__facts">
-        <dt>As of</dt>
-        <dd>
-          {evidence.as_of === null || evidence.as_of === undefined ? (
-            "Not recorded"
-          ) : (
-            <time dateTime={evidence.as_of}>{formatInstant(evidence.as_of)}</time>
-          )}
-        </dd>
-        <dt>Freshness</dt>
-        <dd>{freshnessLabels[evidence.freshness]}</dd>
-        <dt>Grounds</dt>
-        <dd>
-          {datasets.length} dataset{datasets.length === 1 ? "" : "s"} ·{" "}
-          {metricVersions.length} metric version{metricVersions.length === 1 ? "" : "s"}
-        </dd>
-        <dt>Authorization</dt>
-        <dd>{approvalsRecorded === "" ? "Not recorded" : approvalsRecorded}</dd>
+        {evidence.as_of === null || evidence.as_of === undefined ? null : (
+          <>
+            <dt>As of</dt>
+            <dd>
+              <time dateTime={evidence.as_of}>{formatInstant(evidence.as_of)}</time>
+            </dd>
+          </>
+        )}
+        {evidence.freshness === "unknown" ? null : (
+          <>
+            <dt>Freshness</dt>
+            <dd>{freshnessLabels[evidence.freshness]}</dd>
+          </>
+        )}
+        {grounds === 0 ? null : (
+          <>
+            <dt>Grounds</dt>
+            <dd>
+              {datasets.length} dataset{datasets.length === 1 ? "" : "s"} ·{" "}
+              {metricVersions.length} metric version{metricVersions.length === 1 ? "" : "s"}
+            </dd>
+          </>
+        )}
+        {authorization === "" ? null : (
+          <>
+            <dt>Authorization</dt>
+            <dd>{authorization}</dd>
+          </>
+        )}
       </dl>
 
-      <section className="evidence-content__group">
-        <h3>Immutable references</h3>
-        {evidenceRefs.length === 0 ? (
-          <p className="panel__nothing">No immutable evidence reference exists yet.</p>
-        ) : (
+      {evidenceRefs.length === 0 ? null : (
+        <section className="evidence-content__group">
+          <h3>Immutable references</h3>
           <ul aria-label="Immutable references">
             {evidenceRefs.map((reference) => (
               <li key={reference}>
@@ -76,8 +87,8 @@ function EvidenceContent({
               </li>
             ))}
           </ul>
-        )}
-      </section>
+        </section>
+      )}
 
       {children}
     </div>
