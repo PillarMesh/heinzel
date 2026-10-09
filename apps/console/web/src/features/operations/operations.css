@@ -10,10 +10,14 @@
   margin: 0;
 }
 
+/*
+ * A measure in characters, not in rems. At 52rem this line ran to 87 characters -- past the
+ * 72 the rest of the console holds to, and past where a reader reliably finds the next line.
+ */
 .operations-page__lead,
 .operations-page__empty {
   color: var(--color-ink-muted);
-  max-width: 52rem;
+  max-width: 68ch;
 }
 
 .incident-list {

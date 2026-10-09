@@ -1,6 +1,7 @@
+import {PageFailure} from "../../components/unavailable"
+import {asPageFailure, type PageFailureState} from "../../format/failure"
 import {useEffect, useState} from "react"
 
-import {ConsoleApiError} from "../../api/client"
 import type {
   ConsoleEnvelopeIncidentsView,
   IncidentAutomaticAction,
@@ -73,7 +74,7 @@ export function OperationsPage({
   session,
 }: OperationsPageProps) {
   const [incidents, setIncidents] = useState<readonly IncidentView[] | null>(null)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<PageFailureState | null>(null)
 
   useEffect(() => {
     let abandoned = false
@@ -84,11 +85,7 @@ export function OperationsPage({
       })
       .catch((error: unknown) => {
         if (!abandoned) {
-          setFailure(
-            error instanceof ConsoleApiError
-              ? error.message
-              : "The incident listing is unavailable.",
-          )
+          setFailure(asPageFailure(error, "The incident listing is unavailable."))
         }
       })
     return () => {
@@ -111,7 +108,7 @@ export function OperationsPage({
       <p className="operations-page__lead">
         Review failures and use only the recovery actions admitted by current run state.
       </p>
-      {failure === null ? null : <p role="alert">{failure}</p>}
+      <PageFailure expects="Failures from governed runs, with the recovery actions the current run state admits." failure={failure} />
       {failure !== null || incidents === null ? null : incidents.length === 0 ? (
         <div className="empty-state">
           <strong>No active incidents</strong>

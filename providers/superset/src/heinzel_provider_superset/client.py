@@ -766,13 +766,23 @@ def _form_data(
         }
     # A bar and a line are drawn along an axis. `DashboardDesiredState` refuses either without a
     # dimension, so reaching here with none would be an artifact that never should have stored.
-    return {
+    #
+    # One series needs no legend: the chart's title already names what is drawn, and a legend
+    # box for a single entry is a key to a lock with one key. Where there are two or more it
+    # comes back, because identity must never be carried by colour alone.
+    drawn = {
         **shared,
         "x_axis": dimensions[0],
         "metrics": metrics,
         "groupby": [],
         "row_limit": _ROW_LIMIT,
+        "show_legend": len(metrics) > 1,
     }
+    if visual_intent != "line":
+        return drawn
+    # Markers, because a reader has to be able to point at a value. A line through three daily
+    # points with marks only at its ends shows one of them as a bend in a stroke.
+    return {**drawn, "markerEnabled": True, "markerSize": 8}
 
 
 def _chart_key_prefix(definition: BiDashboardDefinition) -> str:
