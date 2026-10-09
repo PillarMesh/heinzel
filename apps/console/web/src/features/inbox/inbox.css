@@ -784,6 +784,12 @@
   color: var(--color-ink-muted);
   font-size: var(--text-3xs);
   margin: 0;
+  /*
+   * Prose is held to 72ch so a paragraph stays readable, which at this size is 518px -- and
+   * this is not prose but a caption under a rule that separates the track from it. Held to
+   * the measure, the rule stopped two thirds of the way across the card.
+   */
+  max-width: none;
   padding-top: var(--space-3);
   text-align: center;
 }
