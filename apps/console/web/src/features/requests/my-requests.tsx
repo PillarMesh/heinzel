@@ -1,3 +1,5 @@
+import {Link} from "react-router-dom"
+
 import {formatInstant} from "../../format/instant"
 import {StatusPill} from "../../components/status-pill"
 import {RecoveryPage} from "../../routes/recovery-page"
@@ -549,12 +551,12 @@ export function MyRequests({
             <p className="request-answer__lead">
               The answer to this request has been delivered and is recorded against its evidence.
             </p>
-            <a
+            <Link
               className="action-link"
-              href={`/requests/${encodeURIComponent(selected.request_id)}/result`}
+              to={`/requests/${encodeURIComponent(selected.request_id)}/result`}
             >
               View the delivered result
-            </a>
+            </Link>
           </section>
         ) : null}
         {revisedRequestDraft !== null && revisingRequest ? (
@@ -633,12 +635,15 @@ export function MyRequests({
                   <p className="request-list__denial">{request.denial_explanation}</p>
                 )}
                 <OwnDecisions request={request} />
-                <a
-                  aria-label={`Open ${request.title}`}
-                  href={`/requests/${request.request_id}`}
-                >
+                {/*
+                  A route change, not a page load. As a bare anchor it reloaded the whole
+                  application to move between two views of the same router -- a second of the
+                  page's own background while React mounted again, on the one path a
+                  stakeholder walks.
+                */}
+                <Link aria-label={`Open ${request.title}`} to={`/requests/${request.request_id}`}>
                   Open request
-                </a>
+                </Link>
               </li>
             ))}
           </ul>

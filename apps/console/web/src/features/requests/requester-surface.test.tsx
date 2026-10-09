@@ -1,3 +1,4 @@
+import {MemoryRouter} from "react-router-dom"
 import {render, screen, waitFor, within} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import {beforeEach, expect, test, vi} from "vitest"
@@ -229,16 +230,20 @@ function renderSurface(
   dataProvenance: "demo_fixture" | "governed_local" = "demo_fixture",
   dataAccessAvailable = true,
 ) {
+  // In a router, because the surface moves between its own views by changing the route rather
+  // than by reloading the application.
   return render(
-    <MyRequests
-      client={client}
-      dataAccessAvailable={dataAccessAvailable}
-      dataProvenance={dataProvenance}
-      digestText={digestText}
-      idempotencyKeyFactory={() => "idempotency-requester-fixed"}
-      requestedRequestRef={requestedRequestRef}
-      session={session}
-    />,
+    <MemoryRouter>
+      <MyRequests
+        client={client}
+        dataAccessAvailable={dataAccessAvailable}
+        dataProvenance={dataProvenance}
+        digestText={digestText}
+        idempotencyKeyFactory={() => "idempotency-requester-fixed"}
+        requestedRequestRef={requestedRequestRef}
+        session={session}
+      />
+    </MemoryRouter>,
   )
 }
 
