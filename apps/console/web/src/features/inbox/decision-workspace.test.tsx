@@ -940,3 +940,24 @@ test("reads the production chain only once the Lineage tab is opened", async () 
   await openTab("Lineage")
   await waitFor(() => expect(getRequestProvenance).toHaveBeenCalledWith("request-answer"))
 })
+
+
+test("the production chain takes the rail's width while it is open", async () => {
+  // The chain is seven stages and two generated statements read top to bottom. Three of those
+  // stages say what the rail says, at greater length, so the rail beside it was a third of the
+  // page repeating the work -- and the work was in the narrowest column on screen.
+  const client = createClient()
+  renderWorkspace(client, "request-answer")
+
+  await openTab("Request")
+  expect(await screen.findByRole("region", {name: "Decision evidence"})).toBeVisible()
+
+  await openTab("Lineage")
+  await waitFor(() =>
+    expect(screen.queryByRole("region", {name: "Decision evidence"})).toBeNull(),
+  )
+
+  // And it comes back: the rail is dropped for that one section, not for the request.
+  await openTab("Decision")
+  expect(await screen.findByRole("region", {name: "Decision evidence"})).toBeVisible()
+})

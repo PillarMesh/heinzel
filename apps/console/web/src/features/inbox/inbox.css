@@ -563,6 +563,36 @@
  * Seven stages, each one receipt, read top to bottom. The step marker sits on the panel header
  * rather than in the title so the titles stay scannable as a list of what happened.
  */
+/*
+ * The reclaimed width goes into the records, not into a second column of stages.
+ *
+ * Two columns of panels was tried and measured: each stage then sat in a cell half the pane
+ * wide, its record stacked to fit, and the extra height cancelled the column exactly -- 3.23
+ * screens against 3.19. The height is in the records, so that is where the width goes: two
+ * label-and-value pairs to a row wherever the pane can carry them, which halves the rows
+ * without narrowing a single value.
+ */
+@container decision-pane (min-width: 42rem) {
+  .provenance .record {
+    grid-template-columns: repeat(2, minmax(6rem, max-content) minmax(0, 1fr));
+  }
+
+  /*
+   * A value that is a statement, a list or a generated identifier takes the row to itself:
+   * paired, it wraps to four lines beside a one-word neighbour, which is taller than not
+   * pairing at all. The label is placed with it -- a `dd` sent to the full width on its own
+   * leaves its `dt` behind in the right-hand column, a heading above a value it no longer
+   * sits beside.
+   */
+  .provenance .record > dt.record__wide {
+    grid-column: 1;
+  }
+
+  .provenance .record > dd.record__wide {
+    grid-column: 2 / -1;
+  }
+}
+
 .provenance__step {
   color: var(--color-ink-muted);
   font-size: var(--text-3xs);

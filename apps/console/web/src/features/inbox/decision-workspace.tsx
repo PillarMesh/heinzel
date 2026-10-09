@@ -358,6 +358,8 @@ interface RequestDetailPanelProps {
   readonly detail: RequestDetailView
   readonly idempotencyKeyFactory: IdempotencyKeyFactory
   readonly onAuthoritativeDetail: (detail: RequestDetailView) => void
+  /** Which section is open, for the layout outside this panel that depends on it. */
+  readonly onSectionChange: (section: string) => void
   readonly requiredEvidenceUnavailable: boolean
   readonly session: SessionView
 }
@@ -368,6 +370,7 @@ function RequestDetailPanel({
   detail,
   idempotencyKeyFactory,
   onAuthoritativeDetail,
+  onSectionChange,
   requiredEvidenceUnavailable,
   session,
 }: RequestDetailPanelProps) {
@@ -825,6 +828,7 @@ function RequestDetailPanel({
       <Tabs
         ariaLabel="Request sections"
         initial={openOn}
+        onSelect={onSectionChange}
         tabs={[
           {content: requestTab, id: "request", label: "Request", badge: preparationCount > 0 ? preparationCount : undefined},
           {content: proposalTab, id: "proposal", label: "Proposal"},
@@ -876,6 +880,10 @@ export function DecisionWorkspace({
   const [dashboardAvailability, setDashboardAvailability] = useState<{
     readonly available: boolean
     readonly requestId: string
+  } | null>(null)
+  const [section, setSection] = useState<{
+    readonly requestId: string
+    readonly section: string
   } | null>(null)
   const detailRef = useRef<HTMLElement>(null)
 
@@ -979,6 +987,20 @@ export function DecisionWorkspace({
     [selectedRequestId],
   )
 
+  const onSectionChange = useCallback(
+    (opened: string) => {
+      if (selectedRequestId !== null) {
+        setSection({requestId: selectedRequestId, section: opened})
+      }
+    },
+    [selectedRequestId],
+  )
+
+  // Keyed to the request, like every other projection here: switching request remounts the
+  // panel and reopens it on its own first section, so a section remembered from the request
+  // before it is not this one's.
+  const openSection =
+    section !== null && section.requestId === selectedRequestId ? section.section : null
   const items = inbox.view?.items ?? []
   const showQueue = effectiveLayout !== "narrow" || selectedRequestId === null
   const showDetail = effectiveLayout !== "narrow" || selectedRequestId !== null
@@ -990,6 +1012,10 @@ export function DecisionWorkspace({
   const showEvidence =
     currentDetail !== null &&
     hasEvidence(currentDetail.evidence, (currentDetail.lifecycle ?? []).length)
+  // The chain is a reference, not a decision aid: seven stages and two generated statements
+  // read top to bottom, and the rail beside them was taking a third of the page to repeat
+  // what three of those stages already say in full. On that section the work takes the width.
+  const railVisible = showEvidence && openSection !== "lineage"
   const dashboardRef =
     currentDetail?.proposal?.kind === "access_preview" &&
     currentDetail.proposal.access_mode === "dashboard" &&
@@ -1005,7 +1031,7 @@ export function DecisionWorkspace({
   return (
     <div
       className={`decision-workspace decision-workspace--${effectiveLayout}${
-        showEvidence ? "" : " decision-workspace--no-evidence"
+        railVisible ? "" : " decision-workspace--no-evidence"
       }`}
     >
       {!showQueue ? null : inbox.failed ? (
@@ -1066,6 +1092,7 @@ export function DecisionWorkspace({
               idempotencyKeyFactory={idempotencyKeyFactory}
               key={currentDetail.request_id}
               onAuthoritativeDetail={onAuthoritativeDetail}
+              onSectionChange={onSectionChange}
               requiredEvidenceUnavailable={requiredEvidenceUnavailable}
               session={session}
             />
@@ -1079,7 +1106,7 @@ export function DecisionWorkspace({
         `0 of 0 approvals`, `No immutable evidence reference exists yet` and `No lifecycle
         events have been recorded` -- a column of nothing, taking width from the work.
       */}
-      {currentDetail === null || !showEvidence ? null : (
+      {currentDetail === null || !railVisible ? null : (
         <EvidenceDrawer evidence={currentDetail.evidence} layout={effectiveLayout}>
           {(currentDetail.evidence.datasets ?? []).some((dataset) => !dataset.artifact_reference) && <h3>Catalog records</h3>}
           {(currentDetail.evidence.datasets ?? []).filter((dataset) => !dataset.artifact_reference).map((dataset) => (

@@ -188,8 +188,8 @@ function Source({source}: {readonly source: ProvenanceSourceView | null}) {
             <dd>
               <code>{source.logical_object_ref}</code>
             </dd>
-            <dt>Read as</dt>
-            <dd>
+            <dt className="record__wide">Read as</dt>
+            <dd className="record__wide">
               {source.acquisition_modes.join(", ")} &middot;{" "}
               {source.operation_semantics.replaceAll("_", " ")}
             </dd>
@@ -271,8 +271,8 @@ function Landing({landing}: {readonly landing: ProvenanceLandingView | null}) {
           <dd>{landing.trigger_window.replaceAll("_", " ")}</dd>
           <dt>Committed</dt>
           <dd>{formatInstant(landing.committed_at)}</dd>
-          <dt>Attested</dt>
-          <dd>
+          <dt className="record__wide">Attested</dt>
+          <dd className="record__wide">
             <ArtifactDigest digest={landing.schema_digest} label="Schema" />
             <ArtifactDigest digest={landing.segment_digest} label="Records" />
           </dd>
@@ -299,16 +299,16 @@ function Product({product}: {readonly product: ProvenanceProductView | null}) {
               <code>{product.product_id}</code> revision {product.product_revision}, generation{" "}
               {product.generation}
             </dd>
-            <dt>Built as</dt>
-            <dd>
+            <dt className="record__wide">Built as</dt>
+            <dd className="record__wide">
               <code>
                 {product.target_schema}.{product.model_name}
               </code>
             </dd>
             <dt>Columns</dt>
             <dd>{product.output_columns.join(", ")}</dd>
-            <dt>Guarantees</dt>
-            <dd>
+            <dt className="record__wide">Guarantees</dt>
+            <dd className="record__wide">
               {product.quality_tests.length === 0 ? (
                 "No quality tests declared"
               ) : (
@@ -364,8 +364,8 @@ function Materialization({
           </dd>
           <dt>Committed</dt>
           <dd>{formatInstant(materialization.committed_at)}</dd>
-          <dt>Attested</dt>
-          <dd>
+          <dt className="record__wide">Attested</dt>
+          <dd className="record__wide">
             <ArtifactDigest digest={materialization.lineage_digest} label="Lineage" />
             <ArtifactDigest digest={materialization.dbt_manifest_digest} label="Manifest" />
             <ArtifactDigest digest={materialization.dbt_run_results_digest} label="Run results" />
@@ -389,8 +389,8 @@ function Query({query}: {readonly query: ProvenanceQueryView | null}) {
         <>
           <Statement label="Show the compiled query" open statement={query.statement} />
           <dl className="record">
-            <dt>Compiled by</dt>
-            <dd>
+            <dt className="record__wide">Compiled by</dt>
+            <dd className="record__wide">
               Compiler version {query.compiler_version}, for {query.engine_kind}, against
               allowlist {query.allowlist_version}
             </dd>
@@ -404,8 +404,8 @@ function Query({query}: {readonly query: ProvenanceQueryView | null}) {
                 </dd>
               </>
             )}
-            <dt>Limits</dt>
-            <dd>
+            <dt className="record__wide">Limits</dt>
+            <dd className="record__wide">
               At most {query.row_limit.toLocaleString()} rows returned, from a scan of at most{" "}
               {query.scan_row_ceiling.toLocaleString()} rows and{" "}
               {query.scan_byte_ceiling.toLocaleString()} bytes.
@@ -432,8 +432,8 @@ function Query({query}: {readonly query: ProvenanceQueryView | null}) {
             <dd>
               {query.routing.replaceAll("_", " ")}, signed by <code>{query.signing_key_id}</code>
             </dd>
-            <dt>Attested</dt>
-            <dd>
+            <dt className="record__wide">Attested</dt>
+            <dd className="record__wide">
               <ArtifactDigest digest={query.plan_digest} label="Plan" />
               <ArtifactDigest digest={query.statement_digest} label="Statement" />
             </dd>
@@ -455,14 +455,14 @@ function Execution({execution}: {readonly execution: ProvenanceExecutionView | n
         <Nothing>This request has no completed execution.</Nothing>
       ) : (
         <dl className="record">
-          <dt>Receipt</dt>
-          <dd>
+          <dt className="record__wide">Receipt</dt>
+          <dd className="record__wide">
             <code>{execution.execution_receipt_id}</code>
           </dd>
           <dt>Rows returned</dt>
           <dd>{execution.row_count.toLocaleString()}</dd>
-          <dt>Attested</dt>
-          <dd>
+          <dt className="record__wide">Attested</dt>
+          <dd className="record__wide">
             <ArtifactDigest digest={execution.result_digest} label="Rows" />
             <ArtifactDigest digest={execution.result_schema_digest} label="Columns" />
           </dd>
