@@ -34,12 +34,17 @@ from heinzel_console.auth import TrustedActorContext
 from heinzel_console.demo import ManagedWarehouseOption, ManagedWarehouseRefused
 from heinzel_console.demo.console import DemoConsole
 from heinzel_console.demo.managed_warehouse import (
-    _PURPOSE_FIELDS,
     DEMO_WAREHOUSE_CONTROL_COMPOSE_FILE,
     DEMO_WAREHOUSE_REGION,
+    _operation_secrets,
     provision_demo_managed_warehouse,
 )
 from heinzel_console.demo.publication import DEMO_TENANT_ID
+from heinzel_console.demo.warehouse_custody import (
+    WAREHOUSE_SECRET_DIRECTORY_NAME,
+    new_warehouse_operation_id,
+    open_demo_warehouse_secret_authority,
+)
 from heinzel_console.demo.warehouse_tls import generate_demo_warehouse_tls_material
 from heinzel_console.errors import ConsoleUnavailable
 from heinzel_console.governed_backend import CAPABILITY_NOT_DELIVERED
@@ -50,9 +55,10 @@ from heinzel_warehouse_control import (
     EngineKind,
     WarehouseBinding,
     WarehouseBindingState,
+    WarehouseOperationSecretPurpose,
 )
-from heinzel_warehouse_control import secrets as warehouse_secrets
 from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
+from pydantic import SecretStr
 
 _ARCHITECT = TrustedActorContext(
     tenant_id=DEMO_TENANT_ID,
@@ -546,15 +552,87 @@ def test_tls_material_is_refused_an_issue_time_that_is_not_utc() -> None:
         generate_demo_warehouse_tls_material(now=datetime(2026, 1, 1))
 
 
-def test_every_secret_purpose_resolves_the_credential_warehouse_control_stores_under_it() -> None:
-    """The purpose-to-credential mapping is warehouse-control's, not a second opinion on it.
+def test_every_secret_purpose_resolves_the_credential_warehouse_control_stores_under_it(
+    tmp_path: Path,
+) -> None:
+    """The purpose-to-credential mapping is warehouse-control's, and now only warehouse-control's.
 
-    Its own copy is private to the encrypted secret store this path does not use, so the two
-    are compared rather than shared. A purpose renamed there would otherwise leave this
-    resolving some other credential, and a provider connecting as one principal with another
-    principal's password fails as an authorization denial nobody would trace back here.
+    This path used to carry a copy of it, because the service's own was private to a secret
+    store the demonstration did not compose. It composes that store now, so the mapping is
+    resolved by the service that owns it and there is no second opinion left to disagree. What
+    is checked here is that every purpose the provider is composed from resolves the credential
+    it was stored under: a purpose wired to the wrong field fails as an authorization denial
+    nobody would trace back here.
     """
-    assert _PURPOSE_FIELDS == warehouse_secrets._PURPOSE_FIELDS
+    authority = open_demo_warehouse_secret_authority(tmp_path)
+    operation_id = new_warehouse_operation_id()
+    secrets = _operation_secrets(
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC), internal_hostnames=("localhost",)
+    )
+    reference = authority.store(operation_id, secrets)
+
+    purposes: tuple[tuple[WarehouseOperationSecretPurpose, SecretStr], ...] = (
+        ("administration", secrets.administration_password),
+        ("ingestion_runtime", secrets.ingestion_runtime_password),
+        ("transformation_runtime", secrets.transformation_runtime_password),
+        ("answer_runtime", secrets.answer_runtime_password),
+        ("customer_sql", secrets.customer_sql_probe_password),
+        ("catalog", secrets.catalog_password),
+        ("bi", secrets.bi_password),
+        ("tls_private_key", secrets.tls_private_key_pem),
+        ("tls_certificate", secrets.tls_certificate_pem),
+    )
+    for purpose, expected in purposes:
+        resolved = authority.operation_capability(
+            reference, operation_id=operation_id, purpose=purpose
+        ).resolve()
+        assert resolved.get_secret_value() == expected.get_secret_value(), purpose
+
+
+def test_a_warehouse_is_administrable_by_a_start_that_did_not_provision_it(
+    tmp_path: Path,
+) -> None:
+    """The credentials outlive the process, which is the whole point of keeping them.
+
+    A start used to mint its warehouse's secrets, rotate the administering login to one of
+    them, and write none of them down -- so the next start adopted a `ready` binding holding
+    nothing that warehouse accepts, reported `administration_dsn = None`, and answered
+    `not_delivered` to everything that needed to reach it. Two authorities over one directory
+    stand in for the two starts here: no container is needed to show that the second resolves
+    what the first stored.
+    """
+    first = open_demo_warehouse_secret_authority(tmp_path)
+    operation_id = new_warehouse_operation_id()
+    secrets = _operation_secrets(
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC), internal_hostnames=("localhost",)
+    )
+    reference = first.store(operation_id, secrets)
+
+    second = open_demo_warehouse_secret_authority(tmp_path)
+    resolved = second.operation_capability(
+        reference, operation_id=operation_id, purpose="administration"
+    ).resolve()
+
+    assert resolved.get_secret_value() == secrets.administration_password.get_secret_value()
+
+
+def test_the_secrets_a_start_keeps_are_unreadable_without_the_key_beside_them(
+    tmp_path: Path,
+) -> None:
+    """Encrypted at rest, and the plaintext never appears in the directory that holds it."""
+    authority = open_demo_warehouse_secret_authority(tmp_path)
+    secrets = _operation_secrets(
+        clock=lambda: datetime(2026, 1, 1, tzinfo=UTC), internal_hostnames=("localhost",)
+    )
+    authority.store(new_warehouse_operation_id(), secrets)
+
+    password = secrets.administration_password.get_secret_value().encode("ascii")
+    stored = [
+        path for path in (tmp_path / WAREHOUSE_SECRET_DIRECTORY_NAME).rglob("*") if path.is_file()
+    ]
+    assert stored, "the store wrote nothing"
+    for path in stored:
+        assert password not in path.read_bytes(), path
 
 
 def test_the_compose_project_pins_the_image_the_provider_verifies() -> None:

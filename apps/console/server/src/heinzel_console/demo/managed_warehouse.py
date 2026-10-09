@@ -79,12 +79,17 @@ from heinzel_warehouse_control import (
     WarehouseProviderError,
     WarehouseResourceCleanupStatus,
     WarehouseResourceCreationState,
+    WarehouseSecretAuthority,
 )
 from heinzel_warehouse_control.repository import SQLiteWarehouseRepository
 from pydantic import SecretStr
 
 from ..governed_adapters import InMemoryWorkspaceBindingDirectory, WarehouseControlBindingReader
 from .publication import DEMO_TENANT_ID
+from .warehouse_custody import (
+    new_warehouse_operation_id,
+    open_demo_warehouse_secret_authority,
+)
 from .warehouse_tls import generate_demo_warehouse_tls_material
 
 __all__ = [
@@ -134,6 +139,11 @@ _BACKUP_ENCRYPTION_KEY_BYTES: Final = 32
 # are always attributable to it. A second draft would create a second warehouse.
 _BINDING_RECORD_NAME: Final = "binding.json"
 _BINDING_RECORD_KEY: Final = "warehouse_binding_id"
+# The operation its secrets are stored under, and the reference the store returned for them.
+# Recorded with the binding because the three are only useful together: a binding nothing can
+# administer is the state a restart used to come back to.
+_OPERATION_RECORD_KEY: Final = "warehouse_operation_id"
+_SECRET_RECORD_KEY: Final = "warehouse_secret_reference"
 
 # What this path can do with a binding it finds already recorded. `READY` is the resume the
 # demonstration is built around: `WarehouseLifecycleOrchestrator.provision` closes it as a
@@ -230,58 +240,6 @@ class DemoManagedWarehouse:
         traceback: TracebackType | None,
     ) -> None:
         self.close()
-
-
-@dataclass(frozen=True, slots=True)
-class _HeldSecret:
-    """One secret capability, resolved from this process and from nowhere else.
-
-    A deployment resolves these from warehouse-control's encrypted operation secret store,
-    which binds a secret to the operation that minted it. This demonstration stores nothing, so
-    there is nothing for an operation identifier to key: the value is the one this start
-    generated, and it dies with the process.
-    """
-
-    value: SecretStr
-
-    def resolve(self) -> SecretStr:
-        return self.value
-
-
-@dataclass(frozen=True, slots=True)
-class _HeldBackupSecrets:
-    backup_restore: SecretStr
-    backup_encryption_key: SecretStr
-
-    def resolve_backup_restore_password(self) -> SecretStr:
-        return self.backup_restore
-
-    def resolve_backup_encryption_key(self) -> SecretStr:
-        return self.backup_encryption_key
-
-
-class _HeldBackupRetirement:
-    """Retirement of a backup encryption key that was never stored.
-
-    The provider retires the key and then asks whether it is retired, and refuses the
-    retirement if the answer is no. Holding the key in memory means retiring it is dropping it,
-    which is recorded here so that the provider's own check sees what it expects rather than a
-    capability that always claims success.
-    """
-
-    def __init__(self, *, resource_handle: str) -> None:
-        self._resource_handle = resource_handle
-        self._retired = False
-
-    @property
-    def resource_handle(self) -> str:
-        return self._resource_handle
-
-    def retire(self) -> None:
-        self._retired = True
-
-    def is_retired(self) -> bool:
-        return self._retired
 
 
 class _RepositoryResourceRecorder:
@@ -432,6 +390,7 @@ def _provision(
         readiness_policy=LocalAcceptanceWarehouseReadinessPolicy(),
     )
     record = directory / _BINDING_RECORD_NAME
+    authority = open_demo_warehouse_secret_authority(directory)
     binding = _resumable_binding(control, record=record)
     if binding is None:
         binding = control.create_draft(
@@ -440,31 +399,54 @@ def _provision(
             region=DEMO_WAREHOUSE_REGION,
             capacity_profile="mvp-fixed",
         )
-        _record_binding_id(record, binding.binding_id)
+        _write_record(
+            record,
+            _WarehouseRecord(
+                binding_id=binding.binding_id, operation_id=None, secret_reference=None
+            ),
+        )
     bindings = InMemoryWorkspaceBindingDirectory()
     bindings.bind_warehouse(tenant_id=DEMO_TENANT_ID, binding_id=binding.binding_id)
     reader = WarehouseControlBindingReader(service=control, directory=bindings)
     if binding.lifecycle_state is WarehouseBindingState.READY:
-        # Adopted from an earlier start, which took the only copy of this warehouse's
-        # administration secret with it: the binding is reportable and the warehouse is not
-        # reachable from here. `administration_dsn` is `None` and says so.
-        return DemoManagedWarehouse(
-            binding=binding,
+        # Adopted from an earlier start. Its secrets are in the store that start put them in,
+        # so the warehouse is administrable from here -- which is the whole point of keeping
+        # them. A binding recorded before this demonstration kept any says so by holding no
+        # operation, and is reportable and unreachable exactly as it was.
+        return _resumed(
+            binding,
+            directory,
+            authority=authority,
             bindings=reader,
+            compose_file=compose_file,
+            option=option,
+            record=record,
             repository=repository,
-            administration_dsn=None,
-            internal_hostname=PostgreSQLWarehouseProvider.internal_hostname(binding),
-            private_directory=None,
+            clock=clock,
         )
     internal_hostname = PostgreSQLWarehouseProvider.internal_hostname(binding)
     operation_secrets = _operation_secrets(clock=clock, internal_hostnames=(internal_hostname,))
+    # Stored before the warehouse is created, so that a start which dies during provisioning
+    # leaves its credentials recoverable rather than leaving a container nothing can reach.
+    operation_id = new_warehouse_operation_id()
+    secret_reference = authority.store(operation_id, operation_secrets)
+    _write_record(
+        record,
+        _WarehouseRecord(
+            binding_id=binding.binding_id,
+            operation_id=operation_id,
+            secret_reference=secret_reference,
+        ),
+    )
     provider = _build_provider(
         directory,
         compose_file=compose_file,
         option=option,
         repository=repository,
         binding_id=binding.binding_id,
-        operation_secrets=operation_secrets,
+        authority=authority,
+        operation_id=operation_id,
+        secret_reference=secret_reference,
         clock=clock,
     )
     orchestrator = WarehouseLifecycleOrchestrator(
@@ -478,9 +460,92 @@ def _provision(
         binding=ready,
         bindings=reader,
         repository=repository,
-        administration_dsn=_administration_dsn(provider, ready, secrets=operation_secrets),
+        administration_dsn=_administration_dsn(
+            provider,
+            ready,
+            administration=authority.operation_capability(
+                secret_reference, operation_id=operation_id, purpose="administration"
+            ),
+        ),
         internal_hostname=internal_hostname,
         private_directory=provider.connection_target(ready).root_certificate.parent,
+    )
+
+
+def _resumed(
+    binding: WarehouseBinding,
+    directory: Path,
+    *,
+    authority: WarehouseSecretAuthority,
+    bindings: WarehouseControlBindingReader,
+    compose_file: Path,
+    option: ManagedWarehouseOption,
+    record: Path,
+    repository: SQLiteWarehouseRepository,
+    clock: Callable[[], datetime],
+) -> DemoManagedWarehouse:
+    """A warehouse an earlier start provisioned, administered through the secrets it kept.
+
+    The coordinates come from the provider, which owns the private file layout and the port it
+    allocated, and reads both back off this same directory. The credentials come from the
+    store. Neither is re-derived here, so a resumed warehouse is reached exactly as a fresh one
+    is and nothing about this path can drift from that one.
+
+    A binding recorded before the demonstration kept any secrets names no operation. There is
+    then nothing to administer it with and nothing to be done about that from here, so it is
+    reported and left unreachable, which is what it was before.
+    """
+    written = _recorded(record)
+    internal_hostname = PostgreSQLWarehouseProvider.internal_hostname(binding)
+    if written is None or written.operation_id is None or written.secret_reference is None:
+        return DemoManagedWarehouse(
+            binding=binding,
+            bindings=bindings,
+            repository=repository,
+            administration_dsn=None,
+            internal_hostname=internal_hostname,
+            private_directory=None,
+        )
+    provider = _build_provider(
+        directory,
+        compose_file=compose_file,
+        option=option,
+        repository=repository,
+        binding_id=binding.binding_id,
+        authority=authority,
+        operation_id=written.operation_id,
+        secret_reference=written.secret_reference,
+        clock=clock,
+    )
+    try:
+        target = provider.connection_target(binding)
+    except KeyError:
+        # `ready` without the port the provisioning allocated: the binding store survived and
+        # the provider's own directory did not. Refusing here would stop a console that can
+        # still report the binding, which is what it could do before any of this.
+        return DemoManagedWarehouse(
+            binding=binding,
+            bindings=bindings,
+            repository=repository,
+            administration_dsn=None,
+            internal_hostname=internal_hostname,
+            private_directory=None,
+        )
+    return DemoManagedWarehouse(
+        binding=binding,
+        bindings=bindings,
+        repository=repository,
+        administration_dsn=_administration_dsn(
+            provider,
+            binding,
+            administration=authority.operation_capability(
+                written.secret_reference,
+                operation_id=written.operation_id,
+                purpose="administration",
+            ),
+        ),
+        internal_hostname=internal_hostname,
+        private_directory=target.root_certificate.parent,
     )
 
 
@@ -488,7 +553,7 @@ def _administration_dsn(
     provider: PostgreSQLWarehouseProvider,
     binding: WarehouseBinding,
     *,
-    secrets: WarehouseOperationSecrets,
+    administration: WarehouseOperationSecretCapability,
 ) -> str:
     """Administer the warehouse this provider provisioned, as the login it rotated.
 
@@ -508,7 +573,7 @@ def _administration_dsn(
         port=str(target.port),
         dbname=POSTGRESQL_WAREHOUSE_DATABASE_NAME,
         user=POSTGRESQL_WAREHOUSE_ADMINISTRATION_ROLE,
-        password=secrets.administration_password.get_secret_value(),
+        password=administration.resolve().get_secret_value(),
         sslmode="verify-full",
         sslrootcert=str(target.root_certificate),
         sslcert=str(target.client_certificate),
@@ -582,9 +647,10 @@ def _resumable_binding(
     this process cannot carry on from is refused rather than worked around: see the module
     docstring for why a part-way provisioning is not resumable here.
     """
-    binding_id = _recorded_binding_id(record)
-    if binding_id is None:
+    written = _recorded(record)
+    if written is None:
         return None
+    binding_id = written.binding_id
     try:
         binding = control.get(DEMO_TENANT_ID, binding_id)
     except KeyError:
@@ -603,7 +669,21 @@ def _resumable_binding(
     return binding
 
 
-def _recorded_binding_id(record: Path) -> str | None:
+@dataclass(frozen=True, slots=True)
+class _WarehouseRecord:
+    """What a previous start wrote down about the warehouse it made.
+
+    `operation_id` and `secret_reference` are absent for a binding recorded before this
+    demonstration kept its secrets, and for a draft that has not been provisioned yet. Absent
+    means the same thing in both: there is nothing stored to administer this warehouse with.
+    """
+
+    binding_id: str
+    operation_id: str | None
+    secret_reference: str | None
+
+
+def _recorded(record: Path) -> _WarehouseRecord | None:
     try:
         payload = json.loads(record.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -618,19 +698,31 @@ def _recorded_binding_id(record: Path) -> str | None:
     binding_id = payload.get(_BINDING_RECORD_KEY)
     if not isinstance(binding_id, str) or not binding_id:
         raise ManagedWarehouseRefused(f"{record} names no warehouse binding")
-    return binding_id
-
-
-def _record_binding_id(record: Path, binding_id: str) -> None:
-    """Write the binding identifier, flushing it before anything is created.
-
-    Not atomic-replace-and-rename, because there is never a previous record to preserve: this
-    is only ever written for a freshly created draft, and a torn write is caught by
-    `_recorded_binding_id` and reported as a state directory to discard.
-    """
-    record.write_text(
-        json.dumps({_BINDING_RECORD_KEY: binding_id}, sort_keys=True) + "\n", encoding="utf-8"
+    operation_id = payload.get(_OPERATION_RECORD_KEY)
+    secret_reference = payload.get(_SECRET_RECORD_KEY)
+    return _WarehouseRecord(
+        binding_id=binding_id,
+        operation_id=operation_id if isinstance(operation_id, str) and operation_id else None,
+        secret_reference=(
+            secret_reference if isinstance(secret_reference, str) and secret_reference else None
+        ),
     )
+
+
+def _write_record(record: Path, written: _WarehouseRecord) -> None:
+    """Write the record, flushed before the thing it describes is created.
+
+    Replaced rather than appended to: the draft is recorded before provisioning, and the
+    operation its secrets went to is only known once they have been stored, so the same file is
+    written twice. A torn write is caught by `_recorded` and reported as a state directory to
+    discard, which is the same answer either time.
+    """
+    payload: dict[str, str] = {_BINDING_RECORD_KEY: written.binding_id}
+    if written.operation_id is not None:
+        payload[_OPERATION_RECORD_KEY] = written.operation_id
+    if written.secret_reference is not None:
+        payload[_SECRET_RECORD_KEY] = written.secret_reference
+    record.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _require_compose_file(compose_file: Path) -> Path:
@@ -725,7 +817,9 @@ def _build_provider(
     option: ManagedWarehouseOption,
     repository: SQLiteWarehouseRepository,
     binding_id: str,
-    operation_secrets: WarehouseOperationSecrets,
+    authority: WarehouseSecretAuthority,
+    operation_id: str,
+    secret_reference: str,
     clock: Callable[[], datetime],
 ) -> PostgreSQLWarehouseProvider:
     """Compose the real provider over the demonstration's Compose project.
@@ -733,10 +827,10 @@ def _build_provider(
     Nothing here is a fixture. The passwords become the warehouse's real roles, the TLS
     material becomes its real certificate, and the Compose project is the one in `deploy/`.
 
-    The secrets are the caller's rather than minted here, because the caller needs the same
-    `administration` secret to reach the warehouse afterwards: provisioning rotates the
-    administering login to it, so a second set minted here would leave the caller holding a
-    password this warehouse never had.
+    Every secret arrives as a capability the store issues for one purpose, which is what the
+    provider's boundary takes and why nothing downstream ever holds the set. It also means this
+    composes identically whether the secrets were minted a moment ago or by a start that has
+    since exited -- a resumed warehouse is administered the same way a fresh one is.
     """
     settings = PostgreSQLWarehouseSettings(
         private_operation_directory=directory,
@@ -746,30 +840,34 @@ def _build_provider(
     )
     compose = _compose_process(compose_file, option=option)
     recorder = _RepositoryResourceRecorder(repository, binding_id=binding_id, clock=clock)
-    backup_secrets = _HeldBackupSecrets(
-        backup_restore=operation_secrets.backup_restore_password,
-        backup_encryption_key=operation_secrets.backup_encryption_key_b64,
-    )
+
+    def purpose(name: WarehouseOperationSecretPurpose) -> WarehouseOperationSecretCapability:
+        return authority.operation_capability(
+            secret_reference, operation_id=operation_id, purpose=name
+        )
+
     return PostgreSQLWarehouseProvider(
         settings=settings,
         compose=compose,
         resource_recorder=recorder,
-        administration_secret=_capability(operation_secrets, "administration"),
-        ingestion_runtime_secret=_capability(operation_secrets, "ingestion_runtime"),
-        transformation_runtime_secret=_capability(operation_secrets, "transformation_runtime"),
-        answer_runtime_secret=_capability(operation_secrets, "answer_runtime"),
-        customer_sql_secret=_capability(operation_secrets, "customer_sql"),
-        catalog_secret=_capability(operation_secrets, "catalog"),
-        bi_secret=_capability(operation_secrets, "bi"),
-        tls_private_key_secret=_capability(operation_secrets, "tls_private_key"),
-        tls_certificate_secret=_capability(operation_secrets, "tls_certificate"),
+        administration_secret=purpose("administration"),
+        ingestion_runtime_secret=purpose("ingestion_runtime"),
+        transformation_runtime_secret=purpose("transformation_runtime"),
+        answer_runtime_secret=purpose("answer_runtime"),
+        customer_sql_secret=purpose("customer_sql"),
+        catalog_secret=purpose("catalog"),
+        bi_secret=purpose("bi"),
+        tls_private_key_secret=purpose("tls_private_key"),
+        tls_certificate_secret=purpose("tls_certificate"),
         backup_commands=PostgreSQLBackupCommandBoundary(
             settings=settings,
             compose=compose,
             resource_recorder=recorder,
-            secrets=backup_secrets,
-            retirement=_HeldBackupRetirement(
-                resource_handle=f"demonstration-warehouse-{binding_id}#backup-encryption-key"
+            secrets=authority.backup_command_capability(
+                secret_reference, operation_id=operation_id
+            ),
+            retirement=authority.backup_retirement_capability(
+                secret_reference, operation_id=operation_id
             ),
             connect=option.connect,
             clock=clock,
@@ -797,31 +895,3 @@ def _compose_process(compose_file: Path, *, option: ManagedWarehouseOption) -> D
         timeout_seconds=_COMPOSE_TIMEOUT_SECONDS,
         termination_grace_seconds=_COMPOSE_TERMINATION_GRACE_SECONDS,
     )
-
-
-_PURPOSE_FIELDS: Final[dict[WarehouseOperationSecretPurpose, str]] = {
-    "administration": "administration_password",
-    "ingestion_runtime": "ingestion_runtime_password",
-    "transformation_runtime": "transformation_runtime_password",
-    "answer_runtime": "answer_runtime_password",
-    "customer_sql": "customer_sql_probe_password",
-    "catalog": "catalog_password",
-    "bi": "bi_password",
-    "tls_private_key": "tls_private_key_pem",
-    "tls_certificate": "tls_certificate_pem",
-}
-
-
-def _capability(
-    operation_secrets: WarehouseOperationSecrets, purpose: WarehouseOperationSecretPurpose
-) -> WarehouseOperationSecretCapability:
-    """The one secret this purpose resolves to, read from the validated model by name.
-
-    The mapping is warehouse-control's own, repeated here because its copy is private to the
-    secret store this path does not use. The test beside this module checks the two agree, so a
-    purpose that is renamed there cannot leave this resolving the wrong credential.
-    """
-    value = getattr(operation_secrets, _PURPOSE_FIELDS[purpose])
-    if not isinstance(value, SecretStr):
-        raise ManagedWarehouseRefused(f"the {purpose} secret is not a credential")
-    return _HeldSecret(value=value)
