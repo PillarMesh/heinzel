@@ -96,7 +96,7 @@ def test_the_seeded_contract_is_certified_over_the_answers_own_product_and_terms
         assert contract.data_product_versions == (PRODUCT_REF,)
         assert contract.metric_versions == (demo_metric_reference(publication.semantic_version),)
         assert contract.dimensions == (demo_dimension_reference(publication.semantic_version),)
-        assert contract.visual_intents == ("bar",)
+        assert contract.visual_intents == ("line",)
         # Verified by the real verifier under the identifier the stored contract names.
         assert (
             DashboardContractVerifier(demo_dashboard_contract_keys(signing_key)).verify(signed)

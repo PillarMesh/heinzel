@@ -1,7 +1,11 @@
 .decision-workspace {
   display: grid;
   gap: clamp(1rem, 2.5vw, 2rem);
-  grid-template-columns: minmax(16rem, 0.9fr) minmax(0, 2fr) minmax(15rem, 1fr);
+  /*
+   * The middle column is the work. Measured at 1440 the three came out 190, 355 and 160 pixels
+   * of content: the two columns beside the work held more of the page than the work did.
+   */
+  grid-template-columns: minmax(14rem, 0.8fr) minmax(0, 2.4fr) minmax(13rem, 0.85fr);
 }
 
 .decision-workspace--medium,

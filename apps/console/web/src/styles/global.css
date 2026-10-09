@@ -1,5 +1,6 @@
 @import "./tokens.css";
 @import "./controls.css";
+@import "./panels.css";
 
 * {
   box-sizing: border-box;
@@ -318,12 +319,29 @@ summary {
 }
 
 /*
+ * The queue holds one short card per request and the evidence rail runs as long as the
+ * lifecycle; neither should stretch to the height of the other, which left the queue column
+ * as seventeen hundred pixels of empty surface below its single card.
+ */
+.decision-workspace > .decision-queue,
+.decision-workspace > .evidence-drawer,
+.decision-workspace > .evidence-region {
+  align-self: start;
+}
+
+/*
  * The evidence rail was the narrowest column and carried the longest values, so a timestamp
  * broke across two lines and a digest across four. It takes a little from the queue, which
  * holds one short card per request.
  */
 .responsive-workspace--wide.responsive-workspace--has-queue.responsive-workspace--has-evidence {
-  grid-template-columns: minmax(13rem, 0.7fr) minmax(24rem, 2fr) minmax(17rem, 1.1fr);
+  /*
+   * The middle column is the work and takes the width accordingly. Measured at 1440 the three
+   * columns came out 190, 355 and 160 pixels of content -- the two columns beside the work
+   * holding more of the page than the work, and the evidence rail narrow enough to break
+   * `principal:data-architect-demo` across three lines.
+   */
+  grid-template-columns: minmax(13rem, 0.9fr) minmax(0, 2.2fr) minmax(14rem, 0.9fr);
 }
 
 .responsive-workspace--wide.responsive-workspace--has-queue:not(

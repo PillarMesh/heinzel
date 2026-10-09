@@ -1,3 +1,4 @@
+import {Panel} from "../../components/panel"
 import {useEffect, useState} from "react"
 
 import {ConsoleApiError} from "../../api/client"
@@ -92,13 +93,17 @@ export function ImpactPanel({client, dataProvenance, requestId}: ImpactPanelProp
     return null
   }
   if (state.kind === "unavailable") {
-    // Without the card. A bordered, padded panel is how a populated analysis presents itself,
-    // and wearing it for one sentence gave an absence the weight of a finding.
+    /*
+      A line, not a panel. This is the read having failed rather than there being no analysis
+      -- `none` renders nothing, and the difference matters, because an architect must not be
+      shown a request as though its impact were known to be empty when it could not be read.
+      But a bordered, padded card with a header, for one sentence, gave an absence the weight
+      of a finding on a page already full of cards.
+    */
     return (
-      <section aria-label="Impact analysis" className="impact-panel impact-panel--absent">
-        <h3>Impact analysis</h3>
-        <p role="status">Impact analysis is unavailable for this request.</p>
-      </section>
+      <p className="panel__nothing" role="status">
+        Impact analysis is unavailable for this request.
+      </p>
     )
   }
 
@@ -107,14 +112,13 @@ export function ImpactPanel({client, dataProvenance, requestId}: ImpactPanelProp
   const owners = state.impact.affected_owners ?? []
   const approvers = state.impact.added_approvers ?? []
   return (
-    <section aria-label="Impact analysis" className="impact-panel">
-      <header className="impact-panel__header">
-        <div>
-          <p className="eyebrow">{changeLabels[state.impact.change_type]}</p>
-          <h3>Impact analysis</h3>
-        </div>
-        <strong>{state.impact.subject_label}</strong>
-      </header>
+    <Panel
+      ariaLabel="Impact analysis"
+      aside={<strong>{state.impact.subject_label}</strong>}
+      className="impact-panel"
+      description={changeLabels[state.impact.change_type]}
+      title="Impact analysis"
+    >
 
       <div className="impact-panel__group impact-panel__group--validated">
         <h4>Validated impacts</h4>
@@ -145,6 +149,6 @@ export function ImpactPanel({client, dataProvenance, requestId}: ImpactPanelProp
           </ul>
         </div>
       </div>
-    </section>
+    </Panel>
   )
 }

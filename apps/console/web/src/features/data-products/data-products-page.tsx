@@ -1,7 +1,8 @@
+import {PageFailure} from "../../components/unavailable"
+import {asPageFailure, type PageFailureState} from "../../format/failure"
 import {formatInstant} from "../../format/instant"
 import {useEffect, useState} from "react"
 
-import {ConsoleApiError} from "../../api/client"
 import type {
   ConsoleEnvelopeDataProductsView,
   ConsoleEnvelopeDataProductView,
@@ -66,7 +67,7 @@ function ProductAvailability({product}: {readonly product: DataProductView}) {
 
 export function DataProductsPage({client, dataProductId}: DataProductsPageProps) {
   const [products, setProducts] = useState<readonly DataProductView[] | null>(null)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<PageFailureState | null>(null)
 
   useEffect(() => {
     let abandoned = false
@@ -80,11 +81,7 @@ export function DataProductsPage({client, dataProductId}: DataProductsPageProps)
       })
       .catch((error: unknown) => {
         if (!abandoned) {
-          setFailure(
-            error instanceof ConsoleApiError
-              ? error.message
-              : "The data product listing is unavailable.",
-          )
+          setFailure(asPageFailure(error, "The data product listing is unavailable."))
         }
       })
     return () => {
@@ -98,7 +95,7 @@ export function DataProductsPage({client, dataProductId}: DataProductsPageProps)
       <section aria-labelledby="data-product-title" className="summary-page">
         <a href="/data-products">Back to data products</a>
         <p className="eyebrow">Governed product</p>
-        {failure === null ? null : <p role="alert">{failure}</p>}
+        <PageFailure expects="Every data product this workspace's policy permits, with the governed state of each version." failure={failure} />
         {failure !== null || product === undefined ? null : (
           <>
             <h1 id="data-product-title">{product.name ?? "Publication pending"}</h1>
@@ -123,7 +120,7 @@ export function DataProductsPage({client, dataProductId}: DataProductsPageProps)
       <p className="eyebrow">Governed products</p>
       <h1 id="data-products-title">Data products</h1>
       <p className="summary-page__lead">Products permitted by this workspace&rsquo;s policy.</p>
-      {failure === null ? null : <p role="alert">{failure}</p>}
+      <PageFailure expects="Every data product this workspace's policy permits, with the governed state of each version." failure={failure} />
       {failure !== null || products === null ? null : products.length === 0 ? (
         <p className="summary-page__guidance">No data products are currently permitted.</p>
       ) : (

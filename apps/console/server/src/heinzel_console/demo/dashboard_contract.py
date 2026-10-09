@@ -126,7 +126,11 @@ def demo_dashboard_contract(
         metric_versions=(demo_metric_reference(semantic_version),),
         dimensions=(dimension_ref,),
         filters=(),
-        visual_intents=("bar",),
+        # A line, because the question is "what is the daily order value" -- a measure over a
+        # time dimension, whose job is trend. Drawn as a column chart, three days of a daily
+        # series were three slabs the width of a hand, and a fourth day would have made them
+        # narrower rather than telling anyone more.
+        visual_intents=("line",),
         drill_paths=((dimension_ref,),),
         freshness_requirement=FreshnessRequirement(maximum_age_seconds=_FRESHNESS_SECONDS),
         access_policy=access_policy_ref,

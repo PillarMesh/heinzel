@@ -235,6 +235,18 @@ function createClient(overrides: Partial<InboxClient> = {}): InboxClient {
   } as InboxClient
 }
 
+/**
+ * Open one of the request's sections.
+ *
+ * The detail used to be a single scrolling column holding every section at once, so a test
+ * could assert on any of them from the moment the request was selected. One job is on screen
+ * at a time now, and a reader reaches the others the way these tests do.
+ */
+async function openTab(name: string): Promise<void> {
+  const user = userEvent.setup()
+  await user.click(await screen.findByRole("tab", {name: new RegExp(`^${name}`)}))
+}
+
 function requireOption(option: HTMLElement | undefined): HTMLElement {
   if (option === undefined) {
     throw new Error("the queue did not render the expected option")
@@ -335,6 +347,7 @@ test("architect removes active access with its grant revision and refreshes the 
   const client = createClient({getRequestDetail, revokeAccess})
   renderWorkspace(client, "request-access")
 
+  await openTab("Request")
   await user.click(await screen.findByRole("button", {name: "Remove access"}))
   await user.type(screen.getByLabelText("Reason for removing access"), "Access no longer needed")
   await user.click(screen.getByRole("button", {name: "Confirm access removal"}))
@@ -379,6 +392,7 @@ test("shows the authorization-filtered impact analysis inside the selected decis
   })
   renderWorkspace(client, "request-answer")
 
+  await openTab("Request")
   const impact = await screen.findByRole("region", {name: "Impact analysis"})
   expect(within(impact).getByText("Revenue overview")).toBeVisible()
   expect(within(impact).getByText("Revenue data owner", {selector: "strong"})).toBeVisible()
@@ -472,6 +486,7 @@ test("typed intent review shows the full contract and blocks approval while requ
   })
   renderWorkspace(client, "request-answer")
 
+  await openTab("Proposal")
   const review = await screen.findByRole("region", {name: "Typed product intent"})
   expect(review).toHaveTextContent("Quarterly net revenue")
   expect(review).toHaveTextContent("billing-postgresql")
@@ -483,6 +498,8 @@ test("typed intent review shows the full contract and blocks approval while requ
   expect(review).toHaveTextContent("Source authorization is required.")
   expect(within(review).getByRole("button", {name: "Approve typed intent"})).toBeDisabled()
 
+  // The decision is recorded on its own tab; the intent is reviewed on the proposal's.
+  await openTab("Decision")
   await user.click(screen.getByRole("checkbox", {name: /I confirm the exact reviewed digest/}))
   expect(screen.getByRole("button", {name: "Approve"})).toBeDisabled()
 })
@@ -535,16 +552,20 @@ test("typed intent approval submits the exact reviewed digest and request revisi
   })
   renderWorkspace(client, "request-answer")
 
-  const review = await screen.findByRole("region", {name: "Typed product intent"})
-  const fulfillmentApproval = screen.getByRole("button", {name: "Approve"})
+  // The two live on different tabs now, so the fulfilment control is read again after the
+  // intent is approved rather than held across the switch. The claim is unchanged: approving
+  // the typed intent is what unblocks approving the answer.
+  await openTab("Decision")
   await user.click(screen.getByRole("checkbox", {name: /I confirm the exact reviewed digest/}))
+  expect(screen.getByRole("button", {name: "Approve"})).toBeDisabled()
 
-  expect(fulfillmentApproval).toBeDisabled()
-
+  await openTab("Proposal")
+  const review = await screen.findByRole("region", {name: "Typed product intent"})
   await user.click(within(review).getByRole("button", {name: "Approve typed intent"}))
-
   await waitFor(() => expect(review).toHaveTextContent("Typed intent approved"))
-  expect(fulfillmentApproval).toBeEnabled()
+
+  await openTab("Decision")
+  expect(screen.getByRole("button", {name: "Approve"})).toBeEnabled()
   expect(approveProductIntent).toHaveBeenCalledWith(
     "request-answer",
     {
@@ -569,16 +590,17 @@ test("a decision is displayed as applied only after the server returns the new p
   renderWorkspace(client, "request-answer")
 
   const detail = await screen.findByRole("region", {name: "Request detail"})
+  await openTab("Decision")
   await user.click(within(detail).getByRole("checkbox"))
   await user.click(within(detail).getByRole("button", {name: "Approve"}))
 
   expect(await within(detail).findByRole("button", {name: "Submitting decision…"})).toBeDisabled()
-  expect(detail).toHaveTextContent("proposed")
+  expect(detail).toHaveTextContent("Proposed")
   expect(detail).not.toHaveTextContent("execution ready")
 
   release(detailEnvelope({...answerDetail, revision: 3, state: "execution_ready"}))
 
-  await waitFor(() => expect(detail).toHaveTextContent("execution ready"))
+  await waitFor(() => expect(detail).toHaveTextContent("Execution ready"))
   expect(client.decideRequest).toHaveBeenCalledWith(
     "request-answer",
     {
@@ -720,6 +742,7 @@ test("the architect can reply in the clarification conversation", async () => {
   const client = createClient({appendConversationMessage})
   renderWorkspace(client, answerDetail.request_id)
 
+  await openTab("Conversation")
   const compose = await screen.findByRole("textbox", {name: "Architect message"})
   await user.type(compose, "Using the governed definition.")
   await user.click(screen.getByRole("button", {name: "Send architect message"}))
@@ -873,6 +896,7 @@ test("artifact display keys never become catalog or dashboard lookups", async ()
 
   renderWorkspace(client, "request-access")
 
+  await openTab("Proposal")
   expect(await screen.findByRole("region", {name: "Effective access preview"})).toHaveTextContent(reference.artifact_id)
   expect(getCatalogAsset).not.toHaveBeenCalled()
   expect(getDashboard).not.toHaveBeenCalled()

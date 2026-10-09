@@ -400,7 +400,7 @@ test("follows only the requester's own requests and no reviewer or evidence proj
   expect(items).toHaveLength(1)
   expect(items[0]).toHaveTextContent("Weekly net revenue movement")
   expect(items[0]).toHaveTextContent("Explain the weekly net revenue movement.")
-  expect(items[0]).toHaveTextContent("clarifying")
+  expect(items[0]).toHaveTextContent("Clarifying")
   expect(items[0]).toHaveTextContent("Clarified outcome statement")
   expect(within(items[0]!).getByRole("link", {name: "Open Weekly net revenue movement"})).toHaveAttribute(
     "href",
@@ -440,7 +440,7 @@ test("shows the original question and requester-safe no-valid-plan explanation",
   renderSurface("request-no-valid-plan")
 
   expect(await screen.findByText("What is the current MRR")).toBeVisible()
-  expect(screen.getByText("no valid plan")).toBeVisible()
+  expect(screen.getByText("No valid plan")).toBeVisible()
   expect(
     screen.getByText(
       "This local environment has no authoritative source configured for that question.",
@@ -462,7 +462,7 @@ test("shows a verified delivered answer and its governed references", async () =
   expect(
     await screen.findByRole("heading", {name: "Delivered answer"}),
   ).toBeVisible()
-  expect(screen.getByText("delivered")).toBeVisible()
+  expect(screen.getByText("Delivered")).toBeVisible()
   // The delivery step checks recorded state, not the live warehouse or catalog, so the page must
   // say what was checked rather than claim a verification that did not happen.
   expect(screen.queryByText(/verified/i)).not.toBeInTheDocument()
@@ -934,7 +934,7 @@ test("offers a result page only when the service authorizes it", async () => {
 
   renderSurface(deliveredRequest.request_id)
 
-  expect(await screen.findByRole("link", {name: "View results"})).toHaveAttribute(
+  expect(await screen.findByRole("link", {name: "View the delivered result"})).toHaveAttribute(
     "href", `/requests/${deliveredRequest.request_id}/result`,
   )
 })

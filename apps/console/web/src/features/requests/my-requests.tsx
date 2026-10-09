@@ -1,4 +1,5 @@
 import {formatInstant} from "../../format/instant"
+import {StatusPill} from "../../components/status-pill"
 import {RecoveryPage} from "../../routes/recovery-page"
 import {useCallback, useEffect, useState} from "react"
 
@@ -15,6 +16,7 @@ import type {
   ConversationMessageCommand,
   CreateRequestCommand,
   DataProvenance,
+  Decision2,
   RequesterRequestView,
   RequestWithdrawalCommand,
   SessionView,
@@ -87,7 +89,27 @@ function defaultIdempotencyKey(): string {
 }
 
 function stateLabel(request: RequesterRequestView): string {
-  return request.state.replaceAll("_", " ")
+  const words = request.state.replaceAll("_", " ")
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`
+}
+
+/**
+ * What the lifecycle state means to the person who asked.
+ *
+ * It was set in monospace in a sentence -- `Lifecycle state: Delivered · updated <iso>` -- so
+ * the one fact a requester comes to this page for wore the same treatment as a digest.
+ */
+function requestTone(request: RequesterRequestView): "ready" | "attention" | "danger" | "neutral" {
+  if (request.state === "delivered") {
+    return "ready"
+  }
+  if (request.state === "denied" || request.state === "failed" || request.state === "no_valid_plan") {
+    return "danger"
+  }
+  if (request.state === "cancelled" || request.state === "closed") {
+    return "neutral"
+  }
+  return "attention"
 }
 
 const terminalStates: ReadonlySet<RequesterRequestView["state"]> = new Set([
@@ -104,6 +126,13 @@ function isTerminal(request: RequesterRequestView): boolean {
   return terminalStates.has(request.state)
 }
 
+/** Said as the requester did it, because "request_changesd" is not a word. */
+const ownDecisionVerbs = {
+  approve: "accepted",
+  reject: "rejected",
+  request_changes: "asked for changes to",
+} satisfies Record<Decision2, string>
+
 function OwnDecisions({request}: {readonly request: RequesterRequestView}) {
   const decisions = request.own_decisions ?? []
   if (decisions.length === 0) {
@@ -111,10 +140,14 @@ function OwnDecisions({request}: {readonly request: RequesterRequestView}) {
   }
   return (
     <div aria-label="Your decisions" className="own-decisions">
+      {/*
+        Was `fulfillment: approve · 2026-10-09T00:42:32.576306Z` -- a key, a value and a stored
+        instant, printed as body text under the request.
+      */}
       {decisions.map((decision) => (
         <p key={`${decision.subject_label}:${decision.created_at}`}>
-          {decision.subject_label}: {decision.decision.replaceAll("_", " ")} ·{" "}
-          {decision.created_at}
+          You {ownDecisionVerbs[decision.decision]} {decision.subject_label} on{" "}
+          <time dateTime={decision.created_at}>{formatInstant(decision.created_at)}</time>
         </p>
       ))}
     </div>
@@ -440,14 +473,24 @@ export function MyRequests({
           <p className="eyebrow">Your request</p>
           <h1 id="request-title">{selected.title}</h1>
           <p className="request-summary__outcome">{selected.requested_outcome}</p>
-          {selected.question === null || selected.question === undefined ? null : (
+          {/*
+            Only when it differs from the title. The heading of this page is the question, and
+            `Original question` repeated it verbatim directly underneath on every request the
+            demonstration seeds.
+          */}
+          {selected.question === null ||
+          selected.question === undefined ||
+          selected.question.trim() === selected.title.trim() ? null : (
             <div className="request-summary__question">
               <p className="eyebrow">Original question</p>
               <p>{selected.question}</p>
             </div>
           )}
           <p className="request-summary__state">
-            Lifecycle state: <strong>{stateLabel(selected)}</strong> · updated {selected.updated_at}
+            <StatusPill tone={requestTone(selected)}>{stateLabel(selected)}</StatusPill>
+            <span>
+              Updated <time dateTime={selected.updated_at}>{formatInstant(selected.updated_at)}</time>
+            </span>
           </p>
           <details>
             <summary>Technical details</summary>
@@ -501,9 +544,18 @@ export function MyRequests({
         <DeliveredAnswer request={selected} />
         <DeliveredAccess request={selected} />
         {selected.result_page_available ? (
-          <p>
-            <a href={`/requests/${encodeURIComponent(selected.request_id)}/result`}>View results</a>
-          </p>
+          <section aria-label="Your answer" className="request-answer">
+            <p className="eyebrow">Your answer</p>
+            <p className="request-answer__lead">
+              The answer to this request has been delivered and is recorded against its evidence.
+            </p>
+            <a
+              className="action-link"
+              href={`/requests/${encodeURIComponent(selected.request_id)}/result`}
+            >
+              View the delivered result
+            </a>
+          </section>
         ) : null}
         {revisedRequestDraft !== null && revisingRequest ? (
           <RequestIntake
@@ -561,8 +613,11 @@ export function MyRequests({
                 <h2>{request.title}</h2>
                 <p>{request.requested_outcome}</p>
                 <p className="request-list__state">
-                  Lifecycle state: <strong>{stateLabel(request)}</strong> · updated{" "}
-                  {request.updated_at}
+                  <StatusPill tone={requestTone(request)}>{stateLabel(request)}</StatusPill>
+                  <span>
+                    Updated{" "}
+                    <time dateTime={request.updated_at}>{formatInstant(request.updated_at)}</time>
+                  </span>
                 </p>
                 {isTerminal(request) ||
                 request.clarified_outcome === null ||

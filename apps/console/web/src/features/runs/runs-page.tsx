@@ -1,3 +1,5 @@
+import {PageFailure} from "../../components/unavailable"
+import {asPageFailure, type PageFailureState} from "../../format/failure"
 import {formatInstant} from "../../format/instant"
 import {useEffect, useState} from "react"
 
@@ -7,7 +9,6 @@ import type {
   RunAttemptView,
   RunView,
 } from "../../api/generated"
-import {ConsoleApiError} from "../../api/client"
 
 /* The state vocabulary is the evidence store's own. Internal references stay in
  * the disclosure until an owning service can project a human product label. */
@@ -118,7 +119,7 @@ export function RunsPage({client}: RunsPageProps) {
   const [runs, setRuns] = useState<readonly RunView[] | null>(null)
   const [leasedRuns, setLeasedRuns] = useState<readonly LeasedRunView[]>([])
   const [leasedRunsAvailable, setLeasedRunsAvailable] = useState(true)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<PageFailureState | null>(null)
 
   useEffect(() => {
     let abandoned = false
@@ -133,7 +134,7 @@ export function RunsPage({client}: RunsPageProps) {
       .catch((error: unknown) => {
         if (abandoned) return
         // The server's own safe message, never one composed here.
-        setFailure(error instanceof ConsoleApiError ? error.message : "The run listing is unavailable.")
+        setFailure(asPageFailure(error, "The run listing is unavailable."))
       })
     return () => {
       abandoned = true
@@ -148,7 +149,7 @@ export function RunsPage({client}: RunsPageProps) {
         Runs owned by state under this tenant&rsquo;s contracts, and runs witnessed under the
         contracts it has activated.
       </p>
-      {failure === null ? null : <p role="alert">{failure}</p>}
+      <PageFailure expects="Accepted, running and terminal product operations, with the evidence each one recorded." failure={failure} />
       {failure !== null || runs === null || leasedRunsAvailable ? null : (
         <p role="status">State-owned runs are unavailable right now; witnessed runs are shown below.</p>
       )}

@@ -23,6 +23,8 @@ import type {
   SessionView,
 } from "../../api/generated"
 import {AccessPreviewReview} from "./access-preview-review"
+import {Nothing, Panel} from "../../components/panel"
+import {Tabs} from "../../components/tabs"
 import {CatalogEvidence, type CatalogEvidenceClient} from "./catalog-evidence"
 import {ConversationPanel, type ConversationPanelClient} from "./conversation-panel"
 import {DashboardPreview, type DashboardPreviewClient} from "./dashboard-preview"
@@ -36,6 +38,12 @@ import {EvidenceDrawer, type EvidenceLayout} from "./evidence-drawer"
 import {LifecycleTimeline} from "./lifecycle-timeline"
 import {StakeholderAnswerReview} from "./stakeholder-answer-review"
 import "./inbox.css"
+
+/** A lifecycle state as a person reads it, rather than as the identifier it travels under. */
+function stateLabel(state: string): string {
+  const words = state.replaceAll("_", " ")
+  return `${words.charAt(0).toUpperCase()}${words.slice(1)}`
+}
 
 const decisionLabels = {
   approve: "Approve",
@@ -513,31 +521,30 @@ function RequestDetailPanel({
           ? "Approving also needs the product intent approved against the digest under review."
           : null
 
-  return (
-    <div className="decision-detail__body">
-      <p className="eyebrow">{detail.kind.replaceAll("_", " ")}</p>
-      <h1>{detail.title}</h1>
-      <dl className="decision-detail__facts">
-        <div>
-          <dt>Lifecycle state</dt>
-          <dd>{detail.state.replaceAll("_", " ")}</dd>
-        </div>
-        <div>
-          <dt>Requester purpose</dt>
-          <dd>{detail.purpose}</dd>
-        </div>
-      </dl>
+  const conversationCount = (detail.conversation?.messages ?? []).length
+  const preparationCount = (detail.preparation_actions ?? []).length
+  const admissionOffered = detail.admission?.available === true
+  const decisionsWaiting = availableActions.length > 0 || admissionOffered
+  /*
+    The tab the architect lands on is the one with something to do on it. Opened on the first
+    tab every time, the product made them hunt for the control that was the whole reason the
+    request is in front of them.
+  */
+  const openOn = preparationCount > 0
+    ? "request"
+    : decisionsWaiting
+      ? "decision"
+      : detail.proposal === null || detail.proposal === undefined
+        ? "request"
+        : "proposal"
 
-      <AccessRevocationPanel
-        client={client}
-        dataProvenance={dataProvenance}
-        detail={detail}
-        idempotencyKeyFactory={idempotencyKeyFactory}
-        onAuthoritativeDetail={onAuthoritativeDetail}
-        session={session}
-      />
-
-      {detail.question ? <section className="proposal-review" aria-label="Original question"><h2>Original question</h2><p>{detail.question}</p></section> : null}
+  const requestTab = () => (
+    <div className="panel-stack">
+      {detail.question === null || detail.question === undefined ? null : (
+        <Panel title="Original question">
+          <p>{detail.question}</p>
+        </Panel>
+      )}
       <RequestPreparation
         key={`${detail.request_id}:${detail.revision}`}
         client={client}
@@ -547,6 +554,45 @@ function RequestDetailPanel({
         onAuthoritativeDetail={onAuthoritativeDetail}
         session={session}
       />
+      <ImpactPanel
+        client={client}
+        dataProvenance={dataProvenance}
+        key={detail.request_id}
+        requestId={detail.request_id}
+      />
+      <AccessRevocationPanel
+        client={client}
+        dataProvenance={dataProvenance}
+        detail={detail}
+        idempotencyKeyFactory={idempotencyKeyFactory}
+        onAuthoritativeDetail={onAuthoritativeDetail}
+        session={session}
+      />
+    </div>
+  )
+
+  const proposalTab = () => (
+    <div className="panel-stack">
+      {detail.proposal === null || detail.proposal === undefined ? (
+        <Panel title="Proposal">
+          <Nothing>
+            No proposal has been issued for this request. One is prepared from the Request tab.
+          </Nothing>
+        </Panel>
+      ) : detail.proposal.kind === "stakeholder_answer" ? (
+        <StakeholderAnswerReview proposal={detail.proposal} />
+      ) : detail.proposal.kind === "access_preview" ? (
+        <AccessPreviewReview proposal={detail.proposal} />
+      ) : (
+        <Panel ariaLabel="Disclosure denial proposal" title="Proposed disclosure denial">
+          <p>{detail.proposal.explanation}</p>
+          <dl className="record">
+            <dt>Reason</dt>
+            <dd>{detail.proposal.reason_code}</dd>
+          </dl>
+          <ProposalApprovals approvals={detail.proposal.required_approvals ?? []} />
+        </Panel>
+      )}
       {detail.product_intent === null || detail.product_intent === undefined ? null : (
         <ProductIntentReview
           client={client}
@@ -559,134 +605,102 @@ function RequestDetailPanel({
           session={session}
         />
       )}
+    </div>
+  )
 
-      <ImpactPanel
-        client={client}
-        dataProvenance={dataProvenance}
-        key={detail.request_id}
-        requestId={detail.request_id}
-      />
+  const conversationTab = () => (
+    /* The client is what makes a reply possible at all; without it the panel refuses every
+       message. The digest comes from the conversation itself. */
+    <ConversationPanel
+      client={client}
+      conversation={detail.conversation}
+      idempotencyKeyFactory={idempotencyKeyFactory}
+      session={session}
+    />
+  )
 
-      {blockingAuthority === undefined ? null : (
-        <p className="decision-detail__blocked" role="status">
-          Blocked on the requester. {blockingAuthority.reason} Until{" "}
-          {roleLabel(blockingAuthority.role)} acceptance is recorded, no architect decision can be
-          admitted.
-        </p>
-      )}
-
-      {detail.proposal === null || detail.proposal === undefined ? (
-        <p className="inbox-empty">No proposal has been issued for this request.</p>
-      ) : detail.proposal.kind === "stakeholder_answer" ? (
-        <StakeholderAnswerReview proposal={detail.proposal} />
-      ) : detail.proposal.kind === "access_preview" ? (
-        <AccessPreviewReview proposal={detail.proposal} />
-      ) : (
-        <section aria-label="Disclosure denial proposal" className="proposal-review">
-          <h2>Proposed disclosure denial</h2><p>{detail.proposal.explanation}</p>
-          <p>Reason: {detail.proposal.reason_code}</p>
-          <ProposalApprovals approvals={detail.proposal.required_approvals ?? []} />
-        </section>
-      )}
-
-      {/* The client is what makes a reply possible at all; without it the panel
-          refuses every message. The digest comes from the conversation itself. */}
-      <ConversationPanel
-        client={client}
-        conversation={detail.conversation}
-        idempotencyKeyFactory={idempotencyKeyFactory}
-        session={session}
-      />
-
-      {/*
-        Said before the field rather than after it. The comment stays writable -- a reviewer
-        drafts one while a request is blocked on somebody else -- but the reader learns that no
-        decision can be recorded yet before they type, not underneath what they typed.
-      */}
+  const decisionTab = () => (
+    <div className="panel-stack">
       {availableActions.length === 0 ? (
-        <p className="inbox-notice">No decision is admissible from this projection.</p>
-      ) : null}
-      <label className="decision-detail__comment">
-        <span>Review comment</span>
-        <textarea onChange={(event) => setComment(event.currentTarget.value)} value={comment} />
-      </label>
-      {refreshNotice === null ? null : <p className="inbox-notice">{refreshNotice}</p>}
-
-      {availableActions.length === 0 ? null : (
-        <>
-          {/*
-            The decision, as one thing. The confirmation, what is blocking it and the three
-            actions used to be three loose stacks at the foot of a long page, so the moment
-            the reviewer is here for looked like more of the reading they had just done.
-          */}
-          <section aria-label="Record a decision" className="decision-record">
-            <h2>Record a decision</h2>
-            <label className="decision-record__digest field--inline">
-              <input
-                checked={digestConfirmed}
-                onChange={(event) => setDigestConfirmed(event.currentTarget.checked)}
-                type="checkbox"
-              />
-              <span>
-                I confirm the exact reviewed digest
-                {proposalDigest === null || proposalDigest === undefined ? null : (
-                  // Sixty-four characters wrapped across two lines beside a checkbox, which
-                  // nobody read and nobody could have compared. Its ends, with the whole
-                  // value a disclosure away.
-                  <ArtifactDigest digest={proposalDigest} />
-                )}
-              </span>
-            </label>
-            {!requiredEvidenceUnavailable ? null : (
-              <p className="inbox-unavailable">
-                Required evidence is unavailable, so no decision can be recorded.
+        <Panel title="Record a decision">
+          <Nothing>
+            This request is not waiting on a decision from you in its current state.
+          </Nothing>
+        </Panel>
+      ) : (
+        <Panel
+          description="A decision is recorded against the exact proposal digest shown here."
+          title="Record a decision"
+        >
+          <label className="decision-record__digest field--inline">
+            <input
+              checked={digestConfirmed}
+              onChange={(event) => setDigestConfirmed(event.currentTarget.checked)}
+              type="checkbox"
+            />
+            <span>
+              I confirm the exact reviewed digest
+              {proposalDigest === null || proposalDigest === undefined ? null : (
+                // Sixty-four characters wrapped across two lines beside a checkbox, which
+                // nobody read and nobody could have compared. Its ends, with the whole
+                // value a disclosure away.
+                <ArtifactDigest digest={proposalDigest} />
+              )}
+            </span>
+          </label>
+          <label className="decision-detail__comment">
+            <span>Review comment</span>
+            <textarea onChange={(event) => setComment(event.currentTarget.value)} value={comment} />
+          </label>
+          {!requiredEvidenceUnavailable ? null : (
+            <p className="inbox-unavailable">
+              Required evidence is unavailable, so no decision can be recorded.
+            </p>
+          )}
+          {refreshNotice === null ? null : <p className="inbox-notice">{refreshNotice}</p>}
+          <div className="decision-record__actions">
+            {availableActions.map((action) => (
+              <button
+                className={decisionRank[action]}
+                disabled={actionsDisabled || (action === "approve" && productIntentApprovalBlocked)}
+                key={action}
+                onClick={() => void recordDecision(action)}
+                type="button"
+              >
+                {submitting === action ? "Submitting decision…" : decisionLabels[action]}
+              </button>
+            ))}
+            {/*
+              Why, beside the controls it is about. A row of disabled buttons with the
+              reason somewhere else is a reader guessing at what the product wants.
+            */}
+            {blockingReason === null ? null : (
+              <p className="decision-record__blocked" role="status">
+                {blockingReason}
               </p>
             )}
-            <div className="decision-record__actions">
-              {availableActions.map((action) => (
-                <button
-                  className={decisionRank[action]}
-                  disabled={
-                    actionsDisabled || (action === "approve" && productIntentApprovalBlocked)
-                  }
-                  key={action}
-                  onClick={() => void recordDecision(action)}
-                  type="button"
-                >
-                  {submitting === action ? "Submitting decision…" : decisionLabels[action]}
-                </button>
-              ))}
-              {/*
-                Why, beside the controls it is about. A row of disabled buttons with the
-                reason somewhere else is a reader guessing at what the product wants.
-              */}
-              {blockingReason === null ? null : (
-                <p className="decision-record__blocked" role="status">
-                  {blockingReason}
-                </p>
-              )}
-            </div>
-          </section>
-        </>
+          </div>
+        </Panel>
       )}
 
       {detail.admission === null || detail.admission === undefined ? null : (
-        <div className="decision-detail__admission">
-          <h2>Admission to execution</h2>
+        <Panel title="Admission to execution">
           {detail.admission.available && detail.admission.pending_delivery === true ? (
             <>
               <p>
                 This answer was admitted, but its delivery has not completed. Retry delivery once
                 the cause is resolved; the admission is not recorded a second time.
               </p>
-              <button
-                className="primary-action"
-                disabled={admitting || proposalDigest === null || proposalDigest === undefined}
-                onClick={() => void admitProposal()}
-                type="button"
-              >
-                {admitting ? "Retrying delivery…" : "Retry delivery"}
-              </button>
+              <div className="decision-record__actions">
+                <button
+                  className="primary-action"
+                  disabled={admitting || proposalDigest === null || proposalDigest === undefined}
+                  onClick={() => void admitProposal()}
+                  type="button"
+                >
+                  {admitting ? "Retrying delivery…" : "Retry delivery"}
+                </button>
+              </div>
             </>
           ) : detail.admission.available ? (
             <>
@@ -694,19 +708,21 @@ function RequestDetailPanel({
                 Every required approval is recorded against this proposal. Admission is the
                 separate transaction that carries it into execution.
               </p>
-              <button
-                className="primary-action"
-                disabled={admitting || proposalDigest === null || proposalDigest === undefined}
-                onClick={() => void admitProposal()}
-                type="button"
-              >
-                {admitting ? "Admitting…" : "Admit to execution"}
-              </button>
+              <div className="decision-record__actions">
+                <button
+                  className="primary-action"
+                  disabled={admitting || proposalDigest === null || proposalDigest === undefined}
+                  onClick={() => void admitProposal()}
+                  type="button"
+                >
+                  {admitting ? "Admitting…" : "Admit to execution"}
+                </button>
+              </div>
             </>
           ) : (
-            <p className="inbox-unavailable" role="status">
+            <Nothing>
               {detail.admission.blocking_reason ?? "This proposal cannot be admitted yet."}
-            </p>
+            </Nothing>
           )}
           {admissionReconciliation === null ? null : (
             <div className="decision-detail__reconciliation">
@@ -723,8 +739,29 @@ function RequestDetailPanel({
               </button>
             </div>
           )}
-        </div>
+        </Panel>
       )}
+
+      {/*
+        Publishing sits with the actions rather than in the evidence rail. It is the last thing
+        the architect does to a delivered answer, and it was the one control on the page filed
+        under evidence -- in a hundred-and-sixty-pixel column that broke its identifiers across
+        three lines each.
+      */}
+      <Panel
+        description="A certified dashboard may be published from a delivered answer."
+        title="Publish a dashboard"
+      >
+        <DashboardPublication
+          client={client}
+          key={`${detail.request_id}:${detail.revision}`}
+          mutationContext={() => ({
+            csrfToken: session.csrf_token,
+            idempotencyKey: idempotencyKeyFactory(),
+          })}
+          requestId={detail.request_id}
+        />
+      </Panel>
 
       {reconciliation === null ? null : (
         <div className="decision-detail__reconciliation">
@@ -744,6 +781,43 @@ function RequestDetailPanel({
         </div>
       )}
       {failure === null ? null : <p role="alert">{failure}</p>}
+    </div>
+  )
+
+  return (
+    <div className="decision-detail__body">
+      {/*
+        A page header, then one job at a time. These five jobs -- read the question, read the
+        impact, read the proposal, hold a conversation, decide -- used to be a single column
+        two and a half screens tall, with nothing grouped and nothing deferred.
+      */}
+      <header className="work-header">
+        <p className="eyebrow">{detail.kind.replaceAll("_", " ")}</p>
+        <h1>{detail.title}</h1>
+        <dl className="record work-header__facts">
+          <dt>Lifecycle state</dt>
+          <dd>{stateLabel(detail.state)}</dd>
+          <dt>Requester purpose</dt>
+          <dd>{detail.purpose}</dd>
+        </dl>
+      </header>
+      {blockingAuthority === undefined ? null : (
+        <p className="decision-detail__blocked" role="status">
+          <strong>Blocked on the requester.</strong> {blockingAuthority.reason} Until{" "}
+          {roleLabel(blockingAuthority.role)} acceptance is recorded, no architect decision can
+          be admitted.
+        </p>
+      )}
+      <Tabs
+        ariaLabel="Request sections"
+        initial={openOn}
+        tabs={[
+          {content: requestTab, id: "request", label: "Request", badge: preparationCount > 0 ? preparationCount : undefined},
+          {content: proposalTab, id: "proposal", label: "Proposal"},
+          {content: conversationTab, id: "conversation", label: "Conversation", badge: conversationCount > 0 ? conversationCount : undefined},
+          {content: decisionTab, id: "decision", label: "Decision", badge: decisionsWaiting ? "•" : undefined},
+        ]}
+      />
     </div>
   )
 }
@@ -999,23 +1073,6 @@ export function DecisionWorkspace({
               />
             </>
           )}
-          <h3>Publish a dashboard</h3>
-          {/*
-            Keyed on the revision as well as the request, because what is publishable is a
-            function of both. The offering is read once per mount, so an architect who admitted
-            a request and stayed on the page was left looking at the answer that had just been
-            delivered beside a panel still saying nothing could be published from it -- the
-            offering it was showing had been composed before the admission existed.
-          */}
-          <DashboardPublication
-            client={client}
-            key={`${currentDetail.request_id}:${currentDetail.revision}`}
-            mutationContext={() => ({
-              csrfToken: session.csrf_token,
-              idempotencyKey: idempotencyKeyFactory(),
-            })}
-            requestId={currentDetail.request_id}
-          />
           <h3>Lifecycle</h3>
           <LifecycleTimeline events={currentDetail.lifecycle ?? []} />
         </EvidenceDrawer>

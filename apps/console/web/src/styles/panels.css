@@ -1,0 +1,455 @@
+/*
+ * Panels, tabs and the stated absence.
+ *
+ * The three pieces the console was missing. Before these, a section of work was an `h3` and
+ * some content on the page background; the only surfaces on the screen belonged to the things
+ * beside the work. Everything here is a container with one padding, one edge and one header
+ * treatment, so a page is read as a set of parts rather than as a column of prose.
+ */
+
+.panel {
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.panel__header {
+  align-items: start;
+  border-bottom: 1px solid var(--color-line);
+  display: flex;
+  gap: var(--space-4);
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-5);
+}
+
+.panel__heading {
+  display: grid;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.panel__title {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.panel__description {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  margin: 0;
+  /* A panel's own prose keeps a readable measure however wide its column is. */
+  max-width: 68ch;
+}
+
+.panel__aside {
+  align-items: center;
+  display: flex;
+  flex: 0 0 auto;
+  gap: var(--space-2);
+}
+
+.panel__body {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-5);
+}
+
+.panel__body > :where(p) {
+  margin: 0;
+  max-width: 68ch;
+}
+
+.panel--flush > .panel__body {
+  padding: 0;
+}
+
+/*
+ * An absence, said once and quietly. These were fourteen differently-worded sentences on one
+ * screen, each at body weight, so the page's loudest content was the list of what it lacked.
+ */
+.panel__nothing {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+/* A stack of panels inside a column or a tab. */
+.panel-stack {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* Two panels across when the column is wide enough to carry them, one when it is not. */
+.panel-row {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr));
+  min-width: 0;
+}
+
+.tabs {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.tabs__strip {
+  border-bottom: 1px solid var(--color-line);
+  display: flex;
+  gap: var(--space-1);
+  /* A strip that outgrows its column scrolls rather than wrapping into a second row of tabs. */
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+/*
+ * Written at full weight rather than inside `:where()`: a tab is not a button that happens to
+ * be in the surface, and the control layer's own button rules would otherwise paint it as one.
+ */
+.app-shell__surface .tabs__strip button.tabs__tab {
+  align-items: center;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--color-ink-muted);
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  gap: var(--space-2);
+  min-height: var(--control-height);
+  padding: 0 var(--space-3);
+  transition: color var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+.app-shell__surface .tabs__strip button.tabs__tab:hover:not([aria-selected="true"]) {
+  background: none;
+  color: var(--color-ink);
+}
+
+.app-shell__surface .tabs__strip button.tabs__tab[aria-selected="true"] {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-ink-strong);
+}
+
+.tabs__badge {
+  background: var(--color-sunken);
+  border-radius: var(--radius-pill);
+  color: var(--color-ink-muted);
+  font-size: var(--text-3xs);
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--weight-semibold);
+  padding: 0.05rem var(--space-2);
+}
+
+.tabs__tab[aria-selected="true"] .tabs__badge {
+  background: var(--color-primary-wash);
+  color: var(--color-primary-strong);
+}
+
+.tabs__panel {
+  min-width: 0;
+}
+
+/* A tab panel is focusable so the keyboard lands in it; it needs no ring of its own at rest. */
+.tabs__panel:focus-visible {
+  border-radius: var(--radius-lg);
+  outline: 2px solid var(--color-focus);
+  outline-offset: var(--space-2);
+}
+
+.unavailable {
+  display: grid;
+  /* Held near the top rather than centred in the viewport: a reader who arrived from the
+     navigation is looking where the content of every other page starts. */
+  justify-items: start;
+  padding-block: var(--space-6);
+}
+
+.unavailable__card {
+  background: var(--color-raised);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: var(--space-3);
+  max-width: 44rem;
+  padding: var(--space-6);
+}
+
+.unavailable__badge {
+  /* A pill, not a bar. In a grid, `align-self` is the block axis; the badge needs the inline. */
+  justify-self: start;
+  background: var(--color-neutral-surface);
+  border: 1px solid var(--color-neutral-line);
+  border-radius: var(--radius-pill);
+  color: var(--color-neutral);
+  font-size: var(--text-3xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  margin: 0;
+  padding: 0.15rem var(--space-3);
+  text-transform: uppercase;
+}
+
+.unavailable__expects {
+  color: var(--color-ink-strong);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  margin: 0;
+  max-width: 60ch;
+}
+
+.unavailable__reason {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  margin: 0;
+  max-width: 68ch;
+}
+
+.unavailable__onward {
+  color: var(--color-ink-muted);
+  font-size: var(--text-sm);
+  margin: 0;
+}
+
+.unavailable__onward p {
+  margin: 0;
+  max-width: 68ch;
+}
+
+/*
+ * A definition list as a two-column record, which is what every fact block in this console is.
+ * They were being written as loose label-and-value pairs whose label wrapped to two lines while
+ * the value stayed on the first, so the two columns never lined up.
+ */
+.record {
+  display: grid;
+  gap: var(--space-2) var(--space-5);
+  grid-template-columns: minmax(7rem, max-content) minmax(0, 1fr);
+  margin: 0;
+}
+
+.record > dt {
+  color: var(--color-ink-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  /* Aligned to the value's first line, whatever each of them wraps to. */
+  line-height: var(--leading-normal);
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.record > dd {
+  margin: 0;
+  min-width: 0;
+  /* Digests and identifiers are long and unbreakable; they wrap rather than widen the column. */
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 759px) {
+  .record {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1) 0;
+  }
+
+  .record > dd {
+    margin-bottom: var(--space-3);
+  }
+}
+
+/*
+ * A page header: what this is, then one job at a time underneath it.
+ */
+.work-header {
+  display: grid;
+  gap: var(--space-2);
+  padding-bottom: var(--space-2);
+}
+
+.work-header h1 {
+  margin: 0;
+}
+
+.work-header__facts {
+  /* Beside each other while the column is wide; the record stacks for itself when it is not. */
+  grid-template-columns: minmax(6rem, max-content) minmax(0, 1fr);
+  font-size: var(--text-sm);
+}
+
+/*
+ * Fields laid side by side when the column can carry them. Three stacked textareas were most
+ * of a screen for three short sentences.
+ */
+.field-grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+}
+
+.field-grid > label {
+  min-width: 0;
+}
+
+/* The answer, at reading size, before the facts that ground it. */
+.proposal-review__candidate {
+  color: var(--color-ink-strong);
+  font-size: var(--text-lg);
+  line-height: var(--leading-tight);
+  margin: 0;
+  max-width: 60ch;
+}
+
+/*
+ * The grounds, in columns rather than in a stack. Eight headings down a single column -- half
+ * of them reporting that there was nothing to report -- were the page's height and none of
+ * its meaning.
+ */
+.proposal-review__grounds {
+  display: grid;
+  gap: var(--space-4) var(--space-6);
+  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+}
+
+.proposal-review__ground {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.proposal-review__ground h4 {
+  color: var(--color-ink-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.proposal-review__ground ul {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+}
+
+.proposal-review__ground li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The rail's own groups, which are no longer a second copy of the work beside them. */
+.evidence-content__group {
+  display: grid;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.evidence-content__group h3 {
+  color: var(--color-ink-muted);
+  font-size: var(--text-2xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-caps);
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.evidence-content__group ul {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.evidence-content__group li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/*
+ * A record in a narrow pane stacks. The evidence rail is the narrowest column on the page and
+ * carries the longest values, so two columns there wrapped `Not applicable` to three lines and
+ * one word of `recorded for this proposal` per line. The panes already declare themselves as
+ * containers, so this measures the pane rather than the window.
+ */
+@container decision-pane (max-width: 24rem) {
+  .record {
+    gap: var(--space-1) 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .record > dd {
+    margin-bottom: var(--space-3);
+  }
+}
+
+/* The history, one line an entry. */
+.lifecycle-timeline {
+  display: grid;
+  gap: var(--space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.lifecycle-timeline li {
+  border-left: 2px solid var(--color-line);
+  display: grid;
+  gap: 0.1rem;
+  padding-left: var(--space-3);
+}
+
+.lifecycle-timeline__head {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  justify-content: space-between;
+}
+
+.lifecycle-timeline li > span {
+  color: var(--color-ink-muted);
+  font-size: var(--text-2xs);
+}
+
+.lifecycle-timeline strong {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  text-transform: capitalize;
+}
+
+.lifecycle-timeline time {
+  color: var(--color-ink-muted);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.lifecycle-timeline__earlier {
+  margin-bottom: var(--space-2);
+}
+
+.lifecycle-timeline__earlier > summary {
+  color: var(--color-ink-muted);
+  cursor: pointer;
+  font-size: var(--text-2xs);
+  padding-block: var(--space-1);
+}
+
+.lifecycle-timeline__earlier[open] > summary {
+  margin-bottom: var(--space-2);
+}

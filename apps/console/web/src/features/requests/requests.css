@@ -33,10 +33,17 @@
 }
 
 .request-list__state,
+/*
+ * The state as a state, not as a sentence in monospace. The one fact a requester comes to this
+ * page for was set in the same face as a digest and ran into the timestamp beside it.
+ */
 .request-summary__state {
-  font-family: var(--font-utility);
-  font-size: var(--text-xs);
-  text-transform: none;
+  align-items: center;
+  color: var(--color-ink-muted);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  gap: var(--space-3);
 }
 
 .request-list__state strong,
@@ -310,3 +317,24 @@
     transition: none;
   }
 }
+
+/*
+ * The answer, as the thing the request was for. It was a bare `View results` link floating on
+ * the page background under every other card, outside any container.
+ */
+.request-answer {
+  background: var(--color-primary-wash);
+  border: 1px solid var(--color-primary-line);
+  border-radius: var(--radius-lg);
+  display: grid;
+  gap: var(--space-2);
+  justify-items: start;
+  padding: var(--space-5);
+}
+
+.request-answer__lead {
+  color: var(--color-ink);
+  margin: 0;
+  max-width: 60ch;
+}
+

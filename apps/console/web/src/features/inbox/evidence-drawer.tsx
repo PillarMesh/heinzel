@@ -1,5 +1,5 @@
+import {Panel} from "../../components/panel"
 import {formatInstant} from "../../format/instant"
-import {ArtifactReference, ArtifactReferences} from "./artifact-reference"
 import {useEffect, useRef, useState, type ReactNode} from "react"
 
 import type {EvidenceContextView, FreshnessState} from "../../api/generated"
@@ -30,76 +30,54 @@ function EvidenceContent({
   const metricVersions = evidence.metric_versions ?? []
   const evidenceRefs = evidence.evidence_refs ?? []
 
+  /*
+    A companion to the work, not a second copy of it.
+
+    The rail printed `as of`, `freshness`, `quality`, `lineage`, `authorization`, the governed
+    datasets and the metric references -- every one of which the proposal beside it printed
+    too, with the same values, on the same screen. Now that the work area carries one job at a
+    time, the rail's job is the standing summary: whether the grounds are in order, and what
+    has happened to the request. The detail is one tab away, and the references the proposal
+    does not carry stay here.
+  */
+  const approvalsRecorded = (evidence.authorization_summary ?? "").trim()
+
   return (
     <div className="evidence-content">
-      <dl className="evidence-content__facts">
-        <div>
-          <dt>As of</dt>
-          <dd>
-            {evidence.as_of === null || evidence.as_of === undefined ? (
-              "Not recorded"
-            ) : (
-              <time dateTime={evidence.as_of}>{formatInstant(evidence.as_of)}</time>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>Freshness</dt>
-          <dd>{freshnessLabels[evidence.freshness]}</dd>
-        </div>
-        <div>
-          <dt>Quality</dt>
-          <dd>{evidence.quality_summary}</dd>
-        </div>
-        <div>
-          <dt>Lineage</dt>
-          <dd>{evidence.lineage_summary}</dd>
-        </div>
-        <div>
-          <dt>Authorization</dt>
-          <dd>{evidence.authorization_summary}</dd>
-        </div>
+      <dl className="record evidence-content__facts">
+        <dt>As of</dt>
+        <dd>
+          {evidence.as_of === null || evidence.as_of === undefined ? (
+            "Not recorded"
+          ) : (
+            <time dateTime={evidence.as_of}>{formatInstant(evidence.as_of)}</time>
+          )}
+        </dd>
+        <dt>Freshness</dt>
+        <dd>{freshnessLabels[evidence.freshness]}</dd>
+        <dt>Grounds</dt>
+        <dd>
+          {datasets.length} dataset{datasets.length === 1 ? "" : "s"} ·{" "}
+          {metricVersions.length} metric version{metricVersions.length === 1 ? "" : "s"}
+        </dd>
+        <dt>Authorization</dt>
+        <dd>{approvalsRecorded === "" ? "Not recorded" : approvalsRecorded}</dd>
       </dl>
 
-      <h3>Governed datasets</h3>
-      {datasets.length === 0 ? (
-        <p className="inbox-empty">No governed dataset was recorded.</p>
-      ) : (
-        <ul aria-label="Evidence datasets">
-          {datasets.map((dataset) => (
-            <li key={dataset.dataset_ref}>
-              {dataset.artifact_reference ? <ArtifactReference reference={dataset.artifact_reference} /> : <>{dataset.display_name} <code>{dataset.dataset_ref}</code></>}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <ArtifactReferences label="Metric references" references={evidence.metric_references ?? []} />
-      {(metricVersions.length > 0 || (evidence.metric_references ?? []).length === 0) && <h3>Metric versions</h3>}
-      {(metricVersions.length === 0 && (evidence.metric_references ?? []).length === 0) ? (
-        <p className="inbox-empty">No metric version was recorded.</p>
-      ) : (
-        <ul aria-label="Metric versions">
-          {metricVersions.map((version) => (
-            <li key={version}>
-              <code>{version}</code>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <h3>Immutable references</h3>
-      {evidenceRefs.length === 0 ? (
-        <p className="inbox-empty">No immutable evidence reference exists yet.</p>
-      ) : (
-        <ul aria-label="Immutable references">
-          {evidenceRefs.map((reference) => (
-            <li key={reference}>
-              <code>{reference}</code>
-            </li>
-          ))}
-        </ul>
-      )}
+      <section className="evidence-content__group">
+        <h3>Immutable references</h3>
+        {evidenceRefs.length === 0 ? (
+          <p className="panel__nothing">No immutable evidence reference exists yet.</p>
+        ) : (
+          <ul aria-label="Immutable references">
+            {evidenceRefs.map((reference) => (
+              <li key={reference}>
+                <code>{reference}</code>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       {children}
     </div>
@@ -125,10 +103,12 @@ export function EvidenceDrawer({children, evidence, layout}: EvidenceDrawerProps
 
   if (layout === "wide") {
     return (
-      <section aria-label="Decision evidence" className="evidence-region">
-        <h2>Decision evidence</h2>
-        <EvidenceContent evidence={evidence}>{children}</EvidenceContent>
-      </section>
+      /* A panel like every other section, rather than a heading over loose content. */
+      <div className="evidence-region">
+        <Panel ariaLabel="Decision evidence" headingLevel={2} title="Decision evidence">
+          <EvidenceContent evidence={evidence}>{children}</EvidenceContent>
+        </Panel>
+      </div>
     )
   }
 

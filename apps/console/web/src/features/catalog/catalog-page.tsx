@@ -1,6 +1,7 @@
+import {PageFailure} from "../../components/unavailable"
+import {asPageFailure, type PageFailureState} from "../../format/failure"
 import {useEffect, useState} from "react"
 
-import {ConsoleApiError} from "../../api/client"
 import type {
   CatalogAssetView,
   ConsoleEnvelopeCatalogAssetsView,
@@ -19,7 +20,7 @@ interface CatalogPageProps {
 
 export function CatalogPage({assetRef, client}: CatalogPageProps) {
   const [assets, setAssets] = useState<readonly CatalogAssetView[] | null>(null)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<PageFailureState | null>(null)
 
   useEffect(() => {
     let abandoned = false
@@ -33,11 +34,7 @@ export function CatalogPage({assetRef, client}: CatalogPageProps) {
       })
       .catch((error: unknown) => {
         if (!abandoned) {
-          setFailure(
-            error instanceof ConsoleApiError
-              ? error.message
-              : "The catalog listing is unavailable.",
-          )
+          setFailure(asPageFailure(error, "The catalog listing is unavailable."))
         }
       })
     return () => {
@@ -50,7 +47,7 @@ export function CatalogPage({assetRef, client}: CatalogPageProps) {
       <p className="eyebrow">Governed catalog</p>
       <h1 id="catalog-title">Catalog</h1>
       <p className="summary-page__lead">Published meaning, ownership, and lineage.</p>
-      {failure === null ? null : <p role="alert">{failure}</p>}
+      <PageFailure expects="Published meaning, ownership and lineage for every governed asset." failure={failure} />
       {failure !== null || assets === null ? null : assets.length === 0 ? (
         <p className="summary-page__guidance">No catalog assets have been published.</p>
       ) : (

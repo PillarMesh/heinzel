@@ -76,6 +76,13 @@
 .setup-progress__item button > span:last-of-type {
   display: grid;
   gap: 0.1rem;
+  /*
+   * A step is a button whose label is three lines of prose, and the control layer stops a
+   * button's label from wrapping -- which is right for a button and wrong here: the reason a
+   * step is blocked ran up to a hundred and thirty pixels outside the card, measured on four
+   * of the seven steps.
+   */
+  white-space: normal;
 }
 
 .setup-progress__item strong {

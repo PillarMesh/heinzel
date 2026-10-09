@@ -40,3 +40,26 @@ export function formatInstant(value: string): string {
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? value : INSTANT.format(parsed)
 }
+
+const timeOfDay = new Intl.DateTimeFormat("en-US", {
+  hour: "2-digit",
+  hourCycle: "h23",
+  minute: "2-digit",
+  second: "2-digit",
+  timeZone: "UTC",
+  timeZoneName: "short",
+})
+
+/**
+ * The time of day alone, for a column where every entry shares the request's date.
+ *
+ * Falls back to the whole instant when it cannot be parsed, for the same reason `formatInstant`
+ * does: a value the console cannot read is still a value the reader may need.
+ */
+export function formatTimeOfDay(value: string): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) {
+    return value
+  }
+  return timeOfDay.format(parsed)
+}

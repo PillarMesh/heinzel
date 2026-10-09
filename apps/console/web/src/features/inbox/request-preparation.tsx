@@ -1,5 +1,7 @@
 import {useState} from "react"
 
+import {Panel} from "../../components/panel"
+
 import {ConsoleApiError, ConsoleMutationOutcomeUnknown} from "../../api/client"
 import type {MutationRequestContext} from "../../api/client"
 import type {
@@ -92,29 +94,43 @@ export function RequestPreparation({client, dataProvenance, detail, idempotencyK
   }
 
   const clarificationInvalid = [restatedRequest, inScope, outOfScope].some(value => !value.trim() || value.length > 4000)
+  const heading = actions.includes("clarify")
+    ? "Clarify this request"
+    : actions.includes("prepare_answer")
+      ? "Prepare an answer"
+      : actions.includes("prepare_access")
+        ? "Prepare an access scope"
+        : "Submit for approval"
   return (
-    <section className="proposal-review" aria-label="Request preparation">
-      <h3>Prepare this request</h3>
-      {notes.map(note => <p key={note} role="status">{note}</p>)}
-      {actions.length === 0 ? null : actions.includes("clarify") ? (
-        <>
-          <p>Record the intended outcome and its boundaries for the requester to review.</p>
-          <label className="decision-detail__comment"><span>Clarified request</span><textarea maxLength={4000} value={restatedRequest} onChange={event => setRestatedRequest(event.currentTarget.value)} disabled={busy || reloadRequired} /></label>
-          <label className="decision-detail__comment"><span>In scope</span><textarea maxLength={4000} value={inScope} onChange={event => setInScope(event.currentTarget.value)} disabled={busy || reloadRequired} /></label>
-          <label className="decision-detail__comment"><span>Out of scope</span><textarea maxLength={4000} value={outOfScope} onChange={event => setOutOfScope(event.currentTarget.value)} disabled={busy || reloadRequired} /></label>
-        </>
-      ) : actions.includes("prepare_answer") ? (
-        <p>Prepare an answer from the governed semantic scope and policy. Review the resulting proposal before submitting it for approval.</p>
-      ) : actions.includes("prepare_access") ? (
-        <p>Prepare the least-privilege access scope from the governed product and current policy. Review the resulting proposal before submitting it for approval.</p>
-      ) : (
-        <p>Submit the displayed proposal so its required authorities can review it.</p>
+    <Panel
+      ariaLabel="Request preparation"
+      className="proposal-review"
+      description={
+        actions.includes("clarify")
+          ? "Record the intended outcome and its boundaries for the requester to review."
+          : actions.includes("prepare_answer")
+            ? "Composed from the governed semantic scope and policy. Review the result before submitting it."
+            : actions.includes("prepare_access")
+              ? "The least-privilege scope from the governed product and current policy. Review it before submitting."
+              : "Submit the displayed proposal so its required authorities can review it."
+      }
+      title={heading}
+    >
+      {notes.map(note => <p className="panel__nothing" key={note} role="status">{note}</p>)}
+      {!actions.includes("clarify") ? null : (
+        <div className="field-grid">
+          <label className="decision-detail__comment"><span>Clarified request</span><textarea maxLength={4000} placeholder="What this request will answer, in one sentence." rows={2} value={restatedRequest} onChange={event => setRestatedRequest(event.currentTarget.value)} disabled={busy || reloadRequired} /></label>
+          <label className="decision-detail__comment"><span>In scope</span><textarea maxLength={4000} placeholder="What the answer will cover." rows={2} value={inScope} onChange={event => setInScope(event.currentTarget.value)} disabled={busy || reloadRequired} /></label>
+          <label className="decision-detail__comment"><span>Out of scope</span><textarea maxLength={4000} placeholder="What it deliberately will not cover." rows={2} value={outOfScope} onChange={event => setOutOfScope(event.currentTarget.value)} disabled={busy || reloadRequired} /></label>
+        </div>
       )}
-      <div className="decision-detail__actions">
-        {actions.map(action => <button key={action} className="primary-action" type="button" disabled={busy || reloadRequired || (action === "clarify" && clarificationInvalid)} onClick={() => void submit(action)}>{busy ? "Working…" : labels[action]}</button>)}
-      </div>
+      {actions.length === 0 ? null : (
+        <div className="decision-record__actions">
+          {actions.map(action => <button key={action} className="primary-action" type="button" disabled={busy || reloadRequired || (action === "clarify" && clarificationInvalid)} onClick={() => void submit(action)}>{busy ? "Working…" : labels[action]}</button>)}
+        </div>
+      )}
       {failure === null ? null : <p role="alert" className="inbox-unavailable">{failure}</p>}
       {reloadRequired ? <button type="button" disabled={busy} onClick={() => void reload()}>Reload request</button> : null}
-    </section>
+    </Panel>
   )
 }

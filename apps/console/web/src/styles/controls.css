@@ -352,3 +352,29 @@
 .governance-spine__disclosure[open] > .governance-spine__summary::before {
   transform: rotate(90deg);
 }
+
+/*
+ * A link that is the page's action.
+ *
+ * Written with the surface's own link exclusions so it outweighs them. The generic link rule
+ * is `.app-shell__surface a:not(.product-navigation__link):not(.skip-link)` -- three classes
+ * and a type -- so a feature stylesheet that reached for one class on the anchor tied with it
+ * and lost on order, which painted the accent colour on an accent-coloured button.
+ */
+.app-shell__surface a.action-link:not(.product-navigation__link):not(.skip-link) {
+  align-items: center;
+  background: var(--color-primary);
+  border-radius: var(--radius-md);
+  color: var(--color-on-primary);
+  display: inline-flex;
+  font-weight: var(--weight-semibold);
+  min-height: var(--control-height);
+  padding: 0 var(--space-5);
+  text-decoration: none;
+  transition: background var(--duration-fast) var(--ease-out);
+}
+
+.app-shell__surface a.action-link:not(.product-navigation__link):not(.skip-link):hover {
+  background: var(--color-primary-strong);
+  color: var(--color-on-primary);
+}

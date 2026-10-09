@@ -804,13 +804,13 @@ def _chart_stable_key(resource: Mapping[str, object]) -> str | None:
 
 # Superset's grid is twelve columns across, and a unit of height is eight pixels.
 #
-# A lone chart is 720 pixels tall. The canvas under the chrome is a little over 800 on a laptop,
-# so it fills the view it is opened in without being the only thing that ever fits: a shorter row
-# left a band of empty grid under the answer, which reads the same way the corner did. A paired
-# row is shorter because two of them sit side by side and a reader takes in both at once.
+# A lone chart is 400 pixels tall, which is a chart. At 464 it sat in the corner of an empty
+# canvas; at 720 three days of a daily series became three slabs the height of a door. Height
+# is not the thing that makes a single answer fill a dashboard -- a chart that reads at a
+# glance is -- and a canvas with air under it is a canvas, not a mistake.
 _GRID_COLUMNS: Final = 12
-_ROW_HEIGHT_UNITS: Final = 90
-_ROW_HEIGHT_UNITS_PAIRED: Final = 50
+_ROW_HEIGHT_UNITS: Final = 50
+_ROW_HEIGHT_UNITS_PAIRED: Final = 44
 
 
 def _position_json(definition: BiDashboardDefinition, placed: tuple[tuple[int, str], ...]) -> str:

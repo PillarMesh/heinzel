@@ -1,7 +1,8 @@
+import {PageFailure} from "../../components/unavailable"
+import {asPageFailure, type PageFailureState} from "../../format/failure"
 import {formatInstant} from "../../format/instant"
 import {useEffect, useState} from "react"
 
-import {ConsoleApiError} from "../../api/client"
 import type {
   ConsoleEnvelopeDashboardView,
   ConsoleEnvelopeDashboardsView,
@@ -73,7 +74,7 @@ function DashboardRecord({
 
 export function DashboardsPage({client, dashboardRef}: DashboardsPageProps) {
   const [dashboards, setDashboards] = useState<readonly DashboardView[] | null>(null)
-  const [failure, setFailure] = useState<string | null>(null)
+  const [failure, setFailure] = useState<PageFailureState | null>(null)
 
   useEffect(() => {
     let abandoned = false
@@ -86,11 +87,7 @@ export function DashboardsPage({client, dashboardRef}: DashboardsPageProps) {
       })
       .catch((error: unknown) => {
         if (!abandoned) {
-          setFailure(
-            error instanceof ConsoleApiError
-              ? error.message
-              : "The dashboard listing is unavailable.",
-          )
+          setFailure(asPageFailure(error, "The dashboard listing is unavailable."))
         }
       })
     return () => {
@@ -104,7 +101,7 @@ export function DashboardsPage({client, dashboardRef}: DashboardsPageProps) {
       <section aria-labelledby="dashboard-title" className="summary-page">
         <a href="/dashboards">Back to dashboards</a>
         <p className="eyebrow">Managed dashboard</p>
-        {failure === null ? null : <p role="alert">{failure}</p>}
+        <PageFailure expects="Dashboards published from governed products, and what each one reads." failure={failure} />
         {failure !== null || dashboard === undefined ? null : (
           <>
             <h1 id="dashboard-title">{dashboard.display_name}</h1>
@@ -127,7 +124,7 @@ export function DashboardsPage({client, dashboardRef}: DashboardsPageProps) {
       <p className="summary-page__guidance">
         Provider administration and unrestricted dashboard authoring remain outside this shell.
       </p>
-      {failure === null ? null : <p role="alert">{failure}</p>}
+      <PageFailure expects="Dashboards published from governed products, and what each one reads." failure={failure} />
       {failure !== null || dashboards === null ? null : dashboards.length === 0 ? (
         <p className="summary-page__guidance">No dashboards have been published.</p>
       ) : (

@@ -1,3 +1,5 @@
+import {Panel} from "../../components/panel"
+import {StatusPill} from "../../components/status-pill"
 import {formatInstant} from "../../format/instant"
 import {useState} from "react"
 
@@ -102,13 +104,18 @@ export function ConversationPanel({
   }
 
   return (
-    <section aria-label="Clarification conversation" className="conversation-panel">
-      <h3>Clarification conversation</h3>
-      <p className="conversation-panel__awaiting">
-        {active.awaiting_role === null || active.awaiting_role === undefined
-          ? "No participant is awaited."
-          : `Awaiting ${active.awaiting_role.replaceAll("_", " ")}`}
-      </p>
+    <Panel
+      ariaLabel="Clarification conversation"
+      aside={
+        <StatusPill tone={active.awaiting_role === null || active.awaiting_role === undefined ? "neutral" : "attention"}>
+          {active.awaiting_role === null || active.awaiting_role === undefined
+            ? "Nobody awaited"
+            : `Awaiting ${active.awaiting_role.replaceAll("_", " ")}`}
+        </StatusPill>
+      }
+      className="conversation-panel"
+      title="Clarification conversation"
+    >
       <ol aria-label="Conversation messages" className="conversation-panel__messages">
         {messages.map((message) => (
           <li
@@ -145,6 +152,6 @@ export function ConversationPanel({
         </p>
       )}
       {failure === null ? null : <p role="alert">{failure}</p>}
-    </section>
+    </Panel>
   )
 }
