@@ -1,4 +1,5 @@
 import {render, screen, waitFor, within} from "@testing-library/react"
+import userEvent from "@testing-library/user-event"
 import {vi} from "vitest"
 
 import {ConsoleApiError} from "../../api/client"
@@ -135,11 +136,12 @@ test("shows every recorded stage from the warehouse to the rows", async () => {
   const build = screen.getByRole("region", {name: "Build"})
   expect(within(build).getByText("3 assertions passed")).toBeVisible()
 
-  // The generated statement itself, open, because it is what a reviewer came to see.
+  // The generated statement is in the page, folded like the transform's: both are a screenful
+  // of SQL, and the stage reads as a record of limits and attestations until one is asked for.
   const query = screen.getByRole("region", {name: "Query"})
   expect(
     within(query).getByText('SELECT "ordered_on" FROM "contract_fe27"."orders_daily_g1"'),
-  ).toBeVisible()
+  ).not.toBeVisible()
   expect(within(query).getByText("At most 100 rows returned", {exact: false})).toBeVisible()
   expect(within(query).getByText("policy admitted", {exact: false})).toBeVisible()
 
@@ -155,6 +157,17 @@ test("a digest stays folded away until it is asked for", async () => {
   expect(rows).toBeVisible()
   // The whole digest is in the page for anyone who opens it, and not on the reading line.
   expect(within(execution).getByText("5".repeat(64))).not.toBeVisible()
+})
+
+test("a compiled statement reads once it is asked for", async () => {
+  const user = userEvent.setup()
+  renderPane(envelope)
+
+  const query = await screen.findByRole("region", {name: "Query"})
+  await user.click(within(query).getByText("Show the compiled query", {selector: "summary"}))
+  expect(
+    within(query).getByText('SELECT "ordered_on" FROM "contract_fe27"."orders_daily_g1"'),
+  ).toBeVisible()
 })
 
 test("a step that has not happened says so rather than describing it", async () => {

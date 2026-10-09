@@ -381,7 +381,6 @@ function Query({query}: {readonly query: ProvenanceQueryView | null}) {
         <Nothing>No query has been compiled for this request.</Nothing>
       ) : (
         <>
-          <Statement label="Show the compiled query" open statement={query.statement} />
           <dl className="record">
             <dt className="record__wide">Compiled by</dt>
             <dd className="record__wide">
@@ -432,6 +431,8 @@ function Query({query}: {readonly query: ProvenanceQueryView | null}) {
               <ArtifactDigest digest={query.statement_digest} label="Statement" />
             </dd>
           </dl>
+          {/* Below the record, where the transform's sits: both are folded, so both read alike. */}
+          <Statement label="Show the compiled query" statement={query.statement} />
         </>
       )}
     </Panel>
@@ -474,15 +475,13 @@ function Execution({execution}: {readonly execution: ProvenanceExecutionView | n
  */
 function Statement({
   label,
-  open = false,
   statement,
 }: {
   readonly label: string
-  readonly open?: boolean
   readonly statement: string
 }) {
   return (
-    <details className="provenance-statement" open={open}>
+    <details className="provenance-statement">
       <summary>{label}</summary>
       <pre>
         <code>{statement}</code>
