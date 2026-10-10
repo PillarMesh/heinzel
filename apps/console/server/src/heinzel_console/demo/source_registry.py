@@ -30,11 +30,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
-from heinzel_connection_broker import SourceBindingService, SQLiteSourceBindingRepository
+from heinzel_connection_broker import (
+    SourceBindingService,
+    SourceConnectionBinding,
+    SourceConnectionBindingState,
+    SQLiteSourceBindingRepository,
+)
 from heinzel_provider_postgresql import PostgreSQLSourceCapabilityProbe
 from pydantic import SecretStr
 
-from ..governed_adapters import EnrolledSourceConnection
+from ..governed_adapters import BrokerSourceRegistrationCommands, EnrolledSourceConnection
 from .generation import (
     DEMO_LOGICAL_OBJECT,
     DEMO_SOURCE_CONNECTION_HANDLE,
@@ -50,6 +55,7 @@ __all__ = [
     "SOURCE_BINDING_DATABASE_FILENAME",
     "DemoEnrolledSourceConnections",
     "DemoSourceRegistry",
+    "ensure_registered_demo_source",
     "open_demo_source_registry",
 ]
 
@@ -150,4 +156,50 @@ def open_demo_source_registry(
         repository=repository,
         store=store,
         enrolled=DemoEnrolledSourceConnections(store),
+    )
+
+
+def ensure_registered_demo_source(registry: DemoSourceRegistry) -> SourceConnectionBinding:
+    """The ready binding the demonstration acquires under, registering it if there is none.
+
+    This is the demonstration standing in for an architect, and only because the acquisition
+    runs before anyone can open the console. In a deployment the order is the other way round:
+    an architect registers a source, and an acquisition runs later under the binding they
+    registered. Registering here runs that same path -- the broker's three transactions and the
+    provider's two probes against the real source -- so the binding the acquisition then uses
+    carries a capability profile that was measured rather than one the demonstration invented,
+    which is the whole point of doing it at all.
+
+    An already-registered binding is returned rather than registered again. The broker derives
+    the binding identifier from the tenant, the provider and the handle, so a second
+    registration of the same handle is a conflict; a restart over an existing state directory
+    therefore reads back the binding the first start registered.
+    """
+    registered = registry.repository.list_for_tenant(DEMO_TENANT_ID)
+    ready = next(
+        (
+            binding
+            for binding in registered
+            if binding.lifecycle_state is SourceConnectionBindingState.READY
+        ),
+        None,
+    )
+    if ready is not None:
+        return ready
+    if registered:
+        # A binding exists and is not ready, which means an earlier start registered it and
+        # the probe refused or the process died between transactions. The broker owns the
+        # recovery and this is not it: re-registering would be refused as a conflict, and
+        # forcing it would discard whatever the broker recorded about why.
+        raise RuntimeError(
+            "the demonstration's source binding exists and is not ready, so there is no "
+            "validated capability to acquire under. Discard the state directory and the "
+            "warehouse together with `docker compose down -v`."
+        )
+    return BrokerSourceRegistrationCommands(registry.service).register_source(
+        tenant_id=DEMO_TENANT_ID,
+        connection_handle=DEMO_SOURCE_CONNECTION_HANDLE,
+        provider_kind="postgresql",
+        account_mode="not_applicable",
+        approved_object_refs=(DEMO_LOGICAL_OBJECT,),
     )

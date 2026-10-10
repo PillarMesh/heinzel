@@ -261,35 +261,39 @@ class DemoConsole:
             # not delivered, which is the same honest answer they give with no warehouse at all,
             # rather than a connection failure during startup.
             answering_dsn = warehouse_dsn if managed is None else managed.administration_dsn
-            governed_answer = (
+            # The connection broker, over the demonstration's own source role. Opened before
+            # the answer because the answer is composed over a generation, and that generation
+            # is acquired under a binding this register holds: the acquisition reads it back
+            # out of here, and so does the console's sources stage.
+            #
+            # Opening it enrols and nothing more -- no connection is made, so this is safe
+            # before the warehouse exists. Registering is what reaches the source, and that
+            # happens inside the generation below, after provisioning has set the role
+            # passwords the enrolled detail names.
+            #
+            # Offered only on a path that has a warehouse, because the source the demonstration
+            # registers is a role inside it. With no warehouse there is nothing to enrol, and
+            # the sources stage reports a missing broker rather than offering a handle that
+            # resolves to nothing.
+            sources = (
                 None
                 if answering_dsn is None
+                else self._open_source_registry(state_dir, warehouse_dsn=answering_dsn)
+            )
+            self.sources = sources
+            governed_answer = (
+                None
+                if answering_dsn is None or sources is None
                 else self._compose_governed_answer(
                     state_dir,
                     warehouse_dsn=answering_dsn,
+                    sources=sources,
                     principals=principals,
                     dashboard_route=_demo_warehouse_route(os.environ, managed=managed),
                 )
             )
             self.governed_answer = governed_answer
             runtime = None if governed_answer is None else governed_answer.runtime
-            # The connection broker, over the demonstration's own source role. Composed after
-            # the answer because composing the answer is what provisions the warehouse and
-            # sets the role passwords, and the detail this enrols is one of those logins: an
-            # enrolment written before provisioning would name a credential the server has not
-            # been given yet, and `enroll_connection` is immutable, so it could never be
-            # corrected without discarding the state directory.
-            #
-            # Offered only on a path that has a warehouse, because the source the demonstration
-            # registers is a role inside it. With no warehouse there is nothing to enrol, and the
-            # sources stage reports a missing broker rather than offering a handle that resolves
-            # to nothing.
-            sources = (
-                None
-                if answering_dsn is None or governed_answer is None
-                else self._open_source_registry(state_dir, warehouse_dsn=answering_dsn)
-            )
-            self.sources = sources
             # Access-control over the demonstration's own stores. Composed only alongside a
             # governed answer, and for the same reason the publishable dashboards are: the grant is
             # narrowed against the entitlement the answer resolves through, and one tenant,
@@ -500,6 +504,7 @@ class DemoConsole:
         state_dir: Path,
         *,
         warehouse_dsn: str,
+        sources: DemoSourceRegistry,
         principals: InMemoryWorkspacePrincipalDirectory,
         dashboard_route: DemoWarehouseRoute | None,
     ) -> DemoGovernedAnswer:
@@ -517,6 +522,7 @@ class DemoConsole:
             )
         generation = ensure_demo_generation(
             bootstrap_dsn=warehouse_dsn,
+            sources=sources,
             stores=self._stores,
             publication=self.publication,
             dbt_executable=Path(dbt_executable),

@@ -20,6 +20,7 @@ import pytest
 from heinzel_console.demo import bootstrap, warehouse
 from heinzel_console.demo.collaborators import demo_clock
 from heinzel_console.demo.publication import build_demo_publication
+from heinzel_console.demo.source_registry import open_demo_source_registry
 from heinzel_console.demo.stores import DemoStores
 from heinzel_console.demo.warehouse import (
     WarehouseUnreachable,
@@ -194,12 +195,20 @@ def test_the_bootstrap_waits_before_it_connects_to_anything(
     """
     monkeypatch.setattr(bootstrap, "wait_for_demo_warehouse", _raise_waited)
     stores = DemoStores(tmp_path / "state")
+    # Opened, not driven: opening the register enrols a connection detail and reaches nothing,
+    # which is what lets it be composed before the warehouse is known to be up.
+    sources = open_demo_source_registry(
+        tmp_path / "state",
+        acquisition_dsn="postgresql://acquisition_runtime@127.0.0.1:1/heinzel",
+        clock=demo_clock,
+    )
     try:
         publication = build_demo_publication(stores, clock=demo_clock)
         with pytest.raises(_Waited):
             bootstrap.ensure_demo_generation(
                 # Port 1 on loopback, which nothing serves.
                 bootstrap_dsn="postgresql://postgres@127.0.0.1:1/heinzel",
+                sources=sources,
                 stores=stores,
                 publication=publication,
                 dbt_executable=tmp_path / "dbt",
@@ -208,6 +217,7 @@ def test_the_bootstrap_waits_before_it_connects_to_anything(
                 clock=demo_clock,
             )
     finally:
+        sources.close()
         stores.close()
 
 

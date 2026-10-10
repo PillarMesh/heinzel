@@ -12,11 +12,13 @@ import asyncio
 import base64
 import secrets
 import shutil
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 
 import psycopg
 import pytest
+from heinzel_connection_broker import SourceConnectionBindingState
 from heinzel_console.demo.bootstrap import ensure_demo_generation
 from heinzel_console.demo.catalog import (
     compose_demo_product_catalog,
@@ -31,6 +33,12 @@ from heinzel_console.demo.materialization import (
     unadmitted_decision_digest,
 )
 from heinzel_console.demo.publication import build_demo_publication
+from heinzel_console.demo.role_passwords import role_passwords
+from heinzel_console.demo.source_registry import (
+    DemoSourceRegistry,
+    ensure_registered_demo_source,
+    open_demo_source_registry,
+)
 from heinzel_console.demo.stores import DemoStores
 from heinzel_console.demo.warehouse import (
     DEMO_SOURCE_DAYS,
@@ -63,6 +71,56 @@ def _stores(state_dir: Path) -> DemoStores:
     and the acquisition refuses rather than acquiring into nothing.
     """
     return DemoStores(state_dir, cursor_cipher_factory=DemoCursorCipher)
+
+
+@pytest.fixture(name="open_sources")
+def _open_sources() -> Iterator[Callable[[Path, str], DemoSourceRegistry]]:
+    """A factory for the connection broker `ensure_demo_generation` registers through.
+
+    Opening is all it does: the enrolled detail is derived from the state directory's own role
+    root, which is the same derivation the bootstrap makes, and nothing connects. Registering
+    happens inside the bootstrap, after it has provisioned the warehouse the enrolled login
+    belongs to.
+
+    One registry per state directory, closed at teardown, because several of these tests call
+    the bootstrap more than once over one directory and two open registers over one SQLite
+    file is a needless second handle.
+    """
+    opened: dict[Path, DemoSourceRegistry] = {}
+
+    def open_for(state_dir: Path, bootstrap_dsn: str) -> DemoSourceRegistry:
+        existing = opened.get(state_dir)
+        if existing is not None:
+            return existing
+        password = role_passwords(state_dir, DEMO_WAREHOUSE_ROLES)[DEMO_WAREHOUSE_ROLES.acquisition]
+        registry = open_demo_source_registry(
+            state_dir,
+            acquisition_dsn=role_dsn(bootstrap_dsn, DEMO_WAREHOUSE_ROLES.acquisition, password),
+            clock=lambda: datetime.now(UTC),
+        )
+        opened[state_dir] = registry
+        return registry
+
+    try:
+        yield open_for
+    finally:
+        for registry in opened.values():
+            registry.close()
+
+
+def _registered(state_dir: Path, acquisition_dsn: str) -> DemoSourceRegistry:
+    """The connection broker, with this cluster's source registered through it.
+
+    The real path, not a double: the broker drives `draft -> validating -> ready` and
+    `PostgreSQLSourceCapabilityProbe` observes the cluster -- the declared relation reachable,
+    and every relation outside the declaration refused by the server. So an acquisition below
+    that runs under this binding runs under authority that was measured here.
+    """
+    registry = open_demo_source_registry(
+        state_dir, acquisition_dsn=acquisition_dsn, clock=lambda: datetime.now(UTC)
+    )
+    ensure_registered_demo_source(registry)
+    return registry
 
 
 def _provisioned(bootstrap_dsn: str) -> dict[str, str]:
@@ -169,18 +227,22 @@ def test_acquisition_and_landing_produce_a_generation_the_ledger_records(
     """
     with _fresh_postgresql_cluster(tmp_path) as bootstrap_dsn:
         passwords = _provisioned(bootstrap_dsn)
+        acquisition_dsn = role_dsn(
+            bootstrap_dsn,
+            DEMO_WAREHOUSE_ROLES.acquisition,
+            passwords[DEMO_WAREHOUSE_ROLES.acquisition],
+        )
         stores = _stores(tmp_path / "state")
+        sources = _registered(tmp_path / "state", acquisition_dsn)
         try:
             publication = build_demo_publication(
                 stores, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
             )
             contract = publication.contract
             acquisition = DemoAcquisition(
-                role_dsn(
-                    bootstrap_dsn,
-                    DEMO_WAREHOUSE_ROLES.acquisition,
-                    passwords[DEMO_WAREHOUSE_ROLES.acquisition],
-                ),
+                acquisition_dsn,
+                binding=ensure_registered_demo_source(sources),
+                bindings=sources.repository,
                 publication=publication,
                 stores=stores,
                 # The real clock, not the publication's: the intent must be admitted no
@@ -243,7 +305,22 @@ def test_acquisition_and_landing_produce_a_generation_the_ledger_records(
                     (landed.receipt.generation_id,),
                 ).fetchone()
             assert landed_rows == (5,)
+
+            # And the binding it all ran under is the broker's own, read back out of the
+            # register at the revision the broker committed it at, carrying the capability
+            # profile the probe measured rather than one this demonstration composed.
+            (registered,) = sources.repository.list_for_tenant(contract.tenant_id)
+            assert registered.binding_id == record.acknowledgement.source_binding_ref
+            assert registered.lifecycle_state is SourceConnectionBindingState.READY
+            assert registered.revision == 3
+            assert registered.capability_profile_digest is not None
+            evidence_for_binding = sources.repository.load_validation(
+                contract.tenant_id, registered.binding_id, 2
+            )
+            assert evidence_for_binding.positive_probe_succeeded is True
+            assert evidence_for_binding.denial_probe_succeeded is True
         finally:
+            sources.close()
             stores.close()
 
 
@@ -271,6 +348,13 @@ def test_a_privilege_outside_the_declaration_refuses_the_whole_acquisition(
             passwords[DEMO_WAREHOUSE_ROLES.acquisition],
         )
 
+        # Registered while the grant is still exactly the declaration, so the binding both
+        # halves run under is one the probe admitted. Registering after the widening would be
+        # refused by the denial probe instead, which is a different refusal from the one under
+        # test -- the acquisition's own, on a source it was already cleared to read.
+        sources = _registered(tmp_path / "broker", acquisition_dsn)
+        binding = ensure_registered_demo_source(sources)
+
         # Provisioned as it stands, the acquisition succeeds.
         granted = _stores(tmp_path / "granted")
         try:
@@ -279,6 +363,8 @@ def test_a_privilege_outside_the_declaration_refuses_the_whole_acquisition(
             )
             prepared = DemoAcquisition(
                 acquisition_dsn,
+                binding=binding,
+                bindings=sources.repository,
                 publication=publication,
                 stores=granted,
                 clock=lambda: datetime.now(UTC),
@@ -302,6 +388,8 @@ def test_a_privilege_outside_the_declaration_refuses_the_whole_acquisition(
             with pytest.raises(AcquisitionProviderError) as refusal:
                 DemoAcquisition(
                     acquisition_dsn,
+                    binding=binding,
+                    bindings=sources.repository,
                     publication=publication,
                     stores=widened,
                     clock=lambda: datetime.now(UTC),
@@ -312,6 +400,7 @@ def test_a_privilege_outside_the_declaration_refuses_the_whole_acquisition(
             assert widened.acquisition_lifecycle.list_contracts("tenant-demo") == ()
         finally:
             widened.close()
+            sources.close()
 
 
 def test_the_demonstration_materializes_and_publishes_one_generation(tmp_path: Path) -> None:
@@ -334,6 +423,14 @@ def test_the_demonstration_materializes_and_publishes_one_generation(tmp_path: P
         database_name = psycopg.conninfo.conninfo_to_dict(bootstrap_dsn)["dbname"]
         assert isinstance(database_name, str)
         stores = _stores(tmp_path / "state")
+        sources = _registered(
+            tmp_path / "state",
+            role_dsn(
+                bootstrap_dsn,
+                DEMO_WAREHOUSE_ROLES.acquisition,
+                passwords[DEMO_WAREHOUSE_ROLES.acquisition],
+            ),
+        )
         try:
             published = build_demo_publication(
                 stores, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
@@ -346,6 +443,8 @@ def test_the_demonstration_materializes_and_publishes_one_generation(tmp_path: P
                     DEMO_WAREHOUSE_ROLES.acquisition,
                     passwords[DEMO_WAREHOUSE_ROLES.acquisition],
                 ),
+                binding=ensure_registered_demo_source(sources),
+                bindings=sources.repository,
                 publication=published,
                 stores=stores,
                 clock=lambda: datetime.now(UTC),
@@ -500,6 +599,7 @@ def test_the_demonstration_materializes_and_publishes_one_generation(tmp_path: P
                     ):
                         connection.execute(statement)
         finally:
+            sources.close()
             stores.close()
 
 
@@ -568,7 +668,9 @@ def test_every_provisioned_role_may_reach_a_database_that_grants_public_nothing(
             assert public_may_connect is not None and public_may_connect[0] is False
 
 
-def test_a_seed_inside_the_acquisition_lag_bound_is_refused(tmp_path: Path) -> None:
+def test_a_seed_inside_the_acquisition_lag_bound_is_refused(
+    tmp_path: Path, open_sources: Callable[[Path, str], DemoSourceRegistry]
+) -> None:
     """Seeding at the current instant would make the acquisition read nothing, silently.
 
     The provider's snapshot stops at `snapshot_time - max_write_transaction_duration`, because a
@@ -590,7 +692,7 @@ def test_a_seed_inside_the_acquisition_lag_bound_is_refused(tmp_path: Path) -> N
 
 
 def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
-    tmp_path: Path,
+    tmp_path: Path, open_sources: Callable[[Path, str], DemoSourceRegistry]
 ) -> None:
     """The whole startup path, twice, and then with its state directory thrown away.
 
@@ -610,6 +712,7 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
             )
             first = ensure_demo_generation(
                 bootstrap_dsn=bootstrap_dsn,
+                sources=open_sources(tmp_path / "state", bootstrap_dsn),
                 stores=stores,
                 publication=publication,
                 dbt_executable=Path(dbt_executable),
@@ -619,6 +722,7 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
             )
             second = ensure_demo_generation(
                 bootstrap_dsn=bootstrap_dsn,
+                sources=open_sources(tmp_path / "state", bootstrap_dsn),
                 stores=stores,
                 publication=publication,
                 dbt_executable=Path(dbt_executable),
@@ -751,6 +855,7 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
             with pytest.raises(ProvisioningRefused, match="disagree"):
                 ensure_demo_generation(
                     bootstrap_dsn=bootstrap_dsn,
+                    sources=open_sources(tmp_path / "state", bootstrap_dsn),
                     stores=discarded,
                     publication=build_demo_publication(
                         discarded, clock=lambda: datetime(2026, 9, 12, tzinfo=UTC)
@@ -765,7 +870,9 @@ def test_the_bootstrap_chain_publishes_one_generation_and_is_safe_to_run_again(
 
 
 def test_a_start_that_fails_after_landing_can_still_start_again(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    open_sources: Callable[[Path, str], DemoSourceRegistry],
 ) -> None:
     """The window between landing and publishing, which a dbt failure lands a start in.
 
@@ -800,6 +907,7 @@ def test_a_start_that_fails_after_landing_can_still_start_again(
             with pytest.raises(RuntimeError, match="dbt failed"):
                 ensure_demo_generation(
                     bootstrap_dsn=bootstrap_dsn,
+                    sources=open_sources(tmp_path / "state", bootstrap_dsn),
                     stores=stores,
                     publication=publication,
                     dbt_executable=Path(dbt_executable),
@@ -815,6 +923,7 @@ def test_a_start_that_fails_after_landing_can_still_start_again(
             # store that is immutable.
             resumed = ensure_demo_generation(
                 bootstrap_dsn=bootstrap_dsn,
+                sources=open_sources(tmp_path / "state", bootstrap_dsn),
                 stores=stores,
                 publication=publication,
                 dbt_executable=Path(dbt_executable),
@@ -828,7 +937,9 @@ def test_a_start_that_fails_after_landing_can_still_start_again(
 
 
 def test_a_restarted_start_publishes_what_it_landed_without_acquiring_again(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    open_sources: Callable[[Path, str], DemoSourceRegistry],
 ) -> None:
     """Landing acknowledges the batch, so a later start must never reach acquisition again.
 
@@ -867,6 +978,7 @@ def test_a_restarted_start_publishes_what_it_landed_without_acquiring_again(
             with pytest.raises(RuntimeError, match="dbt failed"):
                 ensure_demo_generation(
                     bootstrap_dsn=bootstrap_dsn,
+                    sources=open_sources(tmp_path / "state", bootstrap_dsn),
                     stores=stores,
                     publication=publication,
                     dbt_executable=Path(dbt_executable),
@@ -907,6 +1019,7 @@ def test_a_restarted_start_publishes_what_it_landed_without_acquiring_again(
             with pytest.raises(RuntimeError, match="dbt failed"):
                 ensure_demo_generation(
                     bootstrap_dsn=bootstrap_dsn,
+                    sources=open_sources(tmp_path / "state", bootstrap_dsn),
                     stores=stores,
                     publication=publication,
                     dbt_executable=Path(dbt_executable),

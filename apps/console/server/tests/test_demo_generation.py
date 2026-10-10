@@ -13,8 +13,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
 from heinzel_console.demo.cursor_cipher import DemoCursorCipher
-from heinzel_console.demo.generation import DemoAcquisition
+from heinzel_console.demo.generation import (
+    DEMO_LOGICAL_OBJECT,
+    DEMO_SOURCE_CONNECTION_HANDLE,
+    DemoAcquisition,
+    DemoSourceBindingReader,
+)
 from heinzel_console.demo.publication import DemoPublication, build_demo_publication
 from heinzel_console.demo.stores import DemoStores
 from heinzel_console.demo.warehouse import ProvisioningRefused
@@ -40,6 +46,50 @@ def _publication(stores: DemoStores) -> DemoPublication:
     return build_demo_publication(stores, clock=lambda: _NOW)
 
 
+_BINDING_REF = "src-0123456789abcdef01234567"
+
+
+def _binding(tenant_id: str) -> SourceConnectionBinding:
+    """A ready binding shaped as the broker commits one, with probed authority on it.
+
+    Built here rather than driven through `SourceBindingService`, because what these two tests
+    are about happens before anything the broker owns: they need a binding the acquisition
+    accepts so that the refusal under test is the one that fires.
+    """
+    return SourceConnectionBinding(
+        binding_id=_BINDING_REF,
+        tenant_id=tenant_id,
+        provider_kind="postgresql",
+        connection_handle=DEMO_SOURCE_CONNECTION_HANDLE,
+        account_mode="not_applicable",
+        lifecycle_state=SourceConnectionBindingState.READY,
+        approved_object_refs=(DEMO_LOGICAL_OBJECT,),
+        capability_profile_digest="a" * 64,
+        source_observation_ref="source-observation:postgresql:" + "b" * 64,
+        credential_revision=1,
+        revision=3,
+        created_at=_NOW,
+        updated_at=_NOW,
+    )
+
+
+class _Bindings:
+    """The broker's register, as the acquisition runtime reads it."""
+
+    def __init__(self, binding: SourceConnectionBinding) -> None:
+        self._binding = binding
+
+    def load(self, tenant_id: str, binding_id: str) -> SourceConnectionBinding:
+        if (tenant_id, binding_id) != (self._binding.tenant_id, self._binding.binding_id):
+            raise KeyError("no such source binding")
+        return self._binding
+
+
+def _bindings(binding: SourceConnectionBinding) -> DemoSourceBindingReader:
+    """The double, seen as `DemoAcquisition` takes it, so the type checker answers for it."""
+    return _Bindings(binding)
+
+
 def test_an_acquisition_with_nowhere_to_encrypt_its_cursor_is_refused(tmp_path: Path) -> None:
     """No cipher means no state store, and a source cursor may not be kept unencrypted.
 
@@ -50,9 +100,13 @@ def test_an_acquisition_with_nowhere_to_encrypt_its_cursor_is_refused(tmp_path: 
     stores = DemoStores(tmp_path / "state")
     try:
         with pytest.raises(ProvisioningRefused, match="no cursor cipher"):
+            publication = _publication(stores)
+            binding = _binding(publication.contract.tenant_id)
             DemoAcquisition(
                 _UNREACHABLE_DSN,
-                publication=_publication(stores),
+                binding=binding,
+                bindings=_bindings(binding),
+                publication=publication,
                 stores=stores,
                 clock=lambda: _NOW,
             )
@@ -79,7 +133,7 @@ def test_a_second_acquisition_over_an_acknowledged_source_is_refused_with_what_t
     acknowledged = SourceCheckpointState(
         tenant_id=contract.tenant_id,
         contract_digest=digest(contract),
-        source_binding_ref="source-demo-orders",
+        source_binding_ref=_BINDING_REF,
         provider_kind="postgresql",
         cursor_version="1",
         revision=1,
@@ -96,10 +150,67 @@ def test_a_second_acquisition_over_an_acknowledged_source_is_refused_with_what_t
         lambda *_arguments: acknowledged,
     )
 
+    binding = _binding(contract.tenant_id)
     with pytest.raises(ProvisioningRefused) as refusal:
         DemoAcquisition(
-            _UNREACHABLE_DSN, publication=publication, stores=stores, clock=lambda: _NOW
+            _UNREACHABLE_DSN,
+            binding=binding,
+            bindings=_bindings(binding),
+            publication=publication,
+            stores=stores,
+            clock=lambda: _NOW,
         )
 
     assert "already acquired and acknowledged" in str(refusal.value)
     assert "docker compose down -v" in str(refusal.value)
+
+
+def test_an_acquisition_under_an_unvalidated_binding_is_refused_by_name(
+    stores: DemoStores,
+) -> None:
+    """A binding that is not ready carries no capability authority, so there is nothing to run
+    under.
+
+    The composition further in refuses it too, as `composition_binding_not_ready` -- a reason
+    code about an assembly, which says nothing about what an operator should do. This refusal
+    is the one worth reading, and it comes before anything connects.
+    """
+    publication = _publication(stores)
+    draft = _binding(publication.contract.tenant_id).model_copy(
+        update={
+            "lifecycle_state": SourceConnectionBindingState.DRAFT,
+            "capability_profile_digest": None,
+            "source_observation_ref": None,
+            "revision": 1,
+        }
+    )
+
+    with pytest.raises(ProvisioningRefused, match="not ready"):
+        DemoAcquisition(
+            _UNREACHABLE_DSN,
+            binding=draft,
+            bindings=_bindings(draft),
+            publication=publication,
+            stores=stores,
+            clock=lambda: _NOW,
+        )
+
+
+def test_an_acquisition_under_another_tenants_binding_is_refused(stores: DemoStores) -> None:
+    """One tenant's contract may not be acquired under another tenant's source.
+
+    Checked here rather than left to the composition for the same reason as above, and because
+    this one is a boundary: the tenant on the binding is the tenant whose source is read.
+    """
+    publication = _publication(stores)
+    foreign = _binding("tenant-somebody-else")
+
+    with pytest.raises(ProvisioningRefused, match="another tenant"):
+        DemoAcquisition(
+            _UNREACHABLE_DSN,
+            binding=foreign,
+            bindings=_bindings(foreign),
+            publication=publication,
+            stores=stores,
+            clock=lambda: _NOW,
+        )

@@ -39,6 +39,7 @@ from .materialization import (
 from .model_authority import SignedModelAuthority
 from .publication import DemoPublication
 from .role_passwords import role_passwords
+from .source_registry import DemoSourceRegistry, ensure_registered_demo_source
 from .stores import DemoLandedGeneration, DemoStores
 from .warehouse import (
     DEMO_MAX_WRITE_TRANSACTION_DURATION,
@@ -117,6 +118,7 @@ def _acquire_and_land(
     bootstrap_dsn: str,
     *,
     publication: DemoPublication,
+    sources: DemoSourceRegistry,
     stores: DemoStores,
     passwords: Mapping[str, str],
     clock: Callable[[], datetime],
@@ -125,6 +127,11 @@ def _acquire_and_land(
 
     Observing the source, activating the contract and preparing the batch happen in one object
     because they must happen in one process; see `DemoAcquisition`.
+
+    The binding comes out of the connection broker's own register rather than being assembled
+    here. That is what `source_bindings=sources.repository` is for as well: the runtime loads
+    the binding back when it acknowledges, and loading it from the register is what makes the
+    acquisition's own read and the console's read the same read.
 
     `asyncio.run` rather than an awaited call, because this whole chain runs once before the
     server starts and has no loop of its own. Calling it from inside a running loop would raise,
@@ -136,6 +143,8 @@ def _acquire_and_land(
             DEMO_WAREHOUSE_ROLES.acquisition,
             passwords[DEMO_WAREHOUSE_ROLES.acquisition],
         ),
+        binding=ensure_registered_demo_source(sources),
+        bindings=sources.repository,
         publication=publication,
         stores=stores,
         clock=clock,
@@ -157,6 +166,7 @@ def _landed_generation(
     bootstrap_dsn: str,
     *,
     publication: DemoPublication,
+    sources: DemoSourceRegistry,
     stores: DemoStores,
     passwords: Mapping[str, str],
     clock: Callable[[], datetime],
@@ -191,6 +201,7 @@ def _landed_generation(
     landed = _acquire_and_land(
         bootstrap_dsn,
         publication=publication,
+        sources=sources,
         stores=stores,
         passwords=passwords,
         clock=clock,
@@ -279,6 +290,7 @@ def _readable(
 def ensure_demo_generation(
     *,
     bootstrap_dsn: str,
+    sources: DemoSourceRegistry,
     stores: DemoStores,
     publication: DemoPublication,
     dbt_executable: Path,
@@ -348,6 +360,7 @@ def ensure_demo_generation(
     receipt, watermark_at = _landed_generation(
         bootstrap_dsn,
         publication=publication,
+        sources=sources,
         stores=stores,
         passwords=passwords,
         clock=clock,

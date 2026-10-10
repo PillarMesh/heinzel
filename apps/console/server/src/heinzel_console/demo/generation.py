@@ -22,6 +22,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Protocol
 
 from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
 from heinzel_contract_model import ArtifactReference, digest
@@ -81,6 +82,7 @@ __all__ = [
     "DEMO_RAW_TABLE",
     "DEMO_SOURCE_CONNECTION_HANDLE",
     "DemoAcquisition",
+    "DemoSourceBindingReader",
     "LandedDemoGeneration",
     "PreparedDemoAcquisition",
     "demo_source_acquisition_settings",
@@ -92,11 +94,9 @@ DEMO_LOGICAL_OBJECT = "customer_orders"
 
 DEMO_RAW_TABLE = "raw_customer_orders"
 
-# The source the demonstration acquires under, and the handle the provider connects by. The
-# observation the contract is activated over is published under its own reference, because a
-# ready binding carries one and the runner resolves the observation through it.
-_SOURCE_BINDING_REF = "source-demo-orders"
-_SOURCE_OBSERVATION_REF = "source-observation-demo-orders"
+# The handle the provider connects by. The binding itself is no longer named here: it is the
+# one the connection broker registered under this handle, so its identifier is derived from the
+# tenant, the provider and the handle by the broker rather than chosen by the demonstration.
 DEMO_SOURCE_CONNECTION_HANDLE = "demo-source"
 
 # The destination the rows are landed into, and the consumer whose acknowledgement advances
@@ -162,23 +162,15 @@ class LandedDemoGeneration:
     watermark_at: datetime
 
 
-class _DemoSourceBindingReader:
-    """Serves the demonstration's one source binding, as connection-broker would.
+class DemoSourceBindingReader(Protocol):
+    """The one read the acquisition runtime makes of a connection broker.
 
-    The binding is constructed rather than driven through `SQLiteSourceBindingRepository`,
-    because reaching `READY` there requires a private source capability and the two-probe
-    validation evidence a broker records -- neither of which this demonstration has, and
-    neither of which it may invent. So the binding this demonstration stands behind is
-    assembled here and served from the one read the acquisition runtime makes of a broker.
+    `SQLiteSourceBindingRepository` satisfies it directly, which is the point: the binding the
+    acquisition runs under is read out of the broker's own register, at the revision the broker
+    committed it at, rather than assembled by this demonstration and served from memory.
     """
 
-    def __init__(self, binding: SourceConnectionBinding) -> None:
-        self._binding = binding
-
-    def load(self, tenant_id: str, binding_id: str) -> SourceConnectionBinding:
-        if tenant_id != self._binding.tenant_id or binding_id != self._binding.binding_id:
-            raise KeyError("the demonstration has no such source binding")
-        return self._binding
+    def load(self, tenant_id: str, binding_id: str) -> SourceConnectionBinding: ...
 
 
 class DemoAcquisition:
@@ -201,17 +193,32 @@ class DemoAcquisition:
         self,
         acquisition_dsn: str,
         *,
+        binding: SourceConnectionBinding,
+        bindings: DemoSourceBindingReader,
         publication: DemoPublication,
         stores: DemoStores,
         clock: Callable[[], datetime],
     ) -> None:
         contract = publication.contract
+        if binding.tenant_id != contract.tenant_id:
+            raise ProvisioningRefused(
+                "the demonstration's source binding belongs to another tenant than its contract"
+            )
+        if binding.lifecycle_state is not SourceConnectionBindingState.READY:
+            # Reachable only through a caller that did not register before acquiring. Named
+            # rather than left to `compose_activated_acquisition_contract`, whose refusal is a
+            # reason code about a composition and says nothing about what to do.
+            raise ProvisioningRefused(
+                "the demonstration's source binding is not ready, so there is no validated "
+                "capability authority to acquire under. Register the source first."
+            )
         state = _require_acquisition_state(stores)
         _refuse_a_second_acquisition(
             stores,
             tenant_id=contract.tenant_id,
             contract_ref=contract.contract_id,
             contract_digest=digest(contract),
+            source_binding_ref=binding.binding_id,
             state=state,
         )
         self._stores = stores
@@ -219,15 +226,27 @@ class DemoAcquisition:
         self._contract_ref = contract.contract_id
         self._contract_revision = contract.version
         provider = _acquisition_provider(acquisition_dsn)
+        # Observed under the broker's binding identifier, because the activation refuses an
+        # observation of any other binding -- and because the receipt this acquisition leaves
+        # behind then names the binding an architect can read in the console.
         observation = provider.observe_source(
             SourceObservationRequest(
                 tenant_id=self._tenant_id,
-                source_binding_ref=_SOURCE_BINDING_REF,
+                source_binding_ref=binding.binding_id,
                 object_refs=(DEMO_LOGICAL_OBJECT,),
             )
         )
         activated_at = clock()
-        binding = _source_binding(tenant_id=self._tenant_id, observed_at=activated_at)
+        # The reference the probe published when it validated this binding. The activation
+        # pins it as the authority the acquisition runs under, and pins `digest(observation)`
+        # beside it as what was actually read -- two different facts, which is why the
+        # resolver below answers for the probe's reference with the acquisition's observation.
+        source_observation_ref = binding.source_observation_ref
+        if source_observation_ref is None:
+            raise ProvisioningRefused(
+                "the demonstration's source binding is ready and carries no probed "
+                "observation, which the broker's own model does not permit"
+            )
         activated = _activated_contract(
             publication=publication,
             binding=binding,
@@ -260,15 +279,13 @@ class DemoAcquisition:
         # `admit_authority` refuses a contract it has never been told about.
         state.activate_contract_authority(self._tenant_id, activated.contract_digest)
 
-        bindings = _DemoSourceBindingReader(binding)
-
         def resolve_observation(tenant_id: str, reference: str) -> AcquisitionSourceObservation:
-            if (tenant_id, reference) != (self._tenant_id, _SOURCE_OBSERVATION_REF):
+            if (tenant_id, reference) != (self._tenant_id, source_observation_ref):
                 raise KeyError("the demonstration has no such source observation")
             return observation
 
         def resolve_provider(resolved: SourceConnectionBinding) -> PostgreSQLAcquisitionProvider:
-            if resolved.binding_id != _SOURCE_BINDING_REF:
+            if resolved.binding_id != binding.binding_id:
                 raise KeyError("the demonstration has no provider for that source binding")
             return provider
 
@@ -468,31 +485,6 @@ def _acquisition_provider(acquisition_dsn: str) -> PostgreSQLAcquisitionProvider
     )
 
 
-def _source_binding(*, tenant_id: str, observed_at: datetime) -> SourceConnectionBinding:
-    """The ready source binding the demonstration acquires under.
-
-    `capability_profile_digest` is derived from a purpose label rather than from a capability
-    profile, because the demonstration runs no connection broker and so has no profile to
-    hash. A ready binding must carry one, so this names what it is instead of pretending to
-    be the real thing -- the same posture the rest of the demonstration's placeholders take.
-    """
-    return SourceConnectionBinding(
-        binding_id=_SOURCE_BINDING_REF,
-        tenant_id=tenant_id,
-        provider_kind="postgresql",
-        connection_handle=DEMO_SOURCE_CONNECTION_HANDLE,
-        account_mode="not_applicable",
-        lifecycle_state=SourceConnectionBindingState.READY,
-        approved_object_refs=(DEMO_LOGICAL_OBJECT,),
-        capability_profile_digest=demo_placeholder_digest("source-capability-profile"),
-        source_observation_ref=_SOURCE_OBSERVATION_REF,
-        credential_revision=1,
-        revision=1,
-        created_at=observed_at,
-        updated_at=observed_at,
-    )
-
-
 def _activated_contract(
     *,
     publication: DemoPublication,
@@ -569,6 +561,7 @@ def _refuse_a_second_acquisition(
     tenant_id: str,
     contract_ref: str,
     contract_digest: str,
+    source_binding_ref: str,
     state: SQLiteAcquisitionStateRepository,
 ) -> None:
     """Refuse an acquisition this state directory has already made, with what to do about it.
@@ -585,7 +578,7 @@ def _refuse_a_second_acquisition(
     points into were kept, so the two are discarded together.
     """
     try:
-        state.load_checkpoint(tenant_id, contract_digest, _SOURCE_BINDING_REF)
+        state.load_checkpoint(tenant_id, contract_digest, source_binding_ref)
     except AcquisitionStateNotFoundError:
         pass
     else:

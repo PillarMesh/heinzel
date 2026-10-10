@@ -30,9 +30,11 @@ from heinzel_console.demo.collaborators import (
 from heinzel_console.demo.cursor_cipher import DemoCursorCipher
 from heinzel_console.demo.materialization import DEMO_GROUP_COLUMN, DEMO_MEASURE_COLUMN
 from heinzel_console.demo.publication import DEMO_TENANT_ID, build_demo_publication
+from heinzel_console.demo.role_passwords import role_passwords
 from heinzel_console.demo.seed import seed_demo_request
+from heinzel_console.demo.source_registry import open_demo_source_registry
 from heinzel_console.demo.stores import DemoStores
-from heinzel_console.demo.warehouse import DEMO_SOURCE_DAYS
+from heinzel_console.demo.warehouse import DEMO_SOURCE_DAYS, DEMO_WAREHOUSE_ROLES, role_dsn
 from heinzel_console.governed_adapters import InMemoryWorkspacePrincipalDirectory
 from heinzel_request_management import (
     RequestManagementService,
@@ -64,6 +66,20 @@ def test_the_demonstration_answers_its_own_seeded_question(tmp_path: Path) -> No
         # The cipher that seals the source cursors: without one the governed acquisition has
         # no state store to admit a checkpoint into and refuses to run at all.
         stores = DemoStores(tmp_path / "state", cursor_cipher_factory=DemoCursorCipher)
+        # The connection broker the bootstrap registers its source through. Opening it enrols
+        # the acquisition login under the handle and reaches nothing; the bootstrap registers
+        # it once the warehouse that login belongs to exists.
+        sources = open_demo_source_registry(
+            tmp_path / "state",
+            acquisition_dsn=role_dsn(
+                bootstrap_dsn,
+                DEMO_WAREHOUSE_ROLES.acquisition,
+                role_passwords(tmp_path / "state", DEMO_WAREHOUSE_ROLES)[
+                    DEMO_WAREHOUSE_ROLES.acquisition
+                ],
+            ),
+            clock=_clock,
+        )
         try:
             publication = build_demo_publication(stores, clock=_clock)
             requests = RequestManagementService(stores.requests, clock=_clock)
@@ -83,6 +99,7 @@ def test_the_demonstration_answers_its_own_seeded_question(tmp_path: Path) -> No
 
             generation = ensure_demo_generation(
                 bootstrap_dsn=bootstrap_dsn,
+                sources=sources,
                 stores=stores,
                 publication=publication,
                 dbt_executable=Path(dbt_executable),
@@ -161,4 +178,5 @@ def test_the_demonstration_answers_its_own_seeded_question(tmp_path: Path) -> No
                 # its own group, so a suppressed group would mean the query grouped wrongly.
                 assert snapshot.row_count == 3
         finally:
+            sources.close()
             stores.close()
