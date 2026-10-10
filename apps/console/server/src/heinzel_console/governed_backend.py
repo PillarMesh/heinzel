@@ -3939,7 +3939,6 @@ class GovernedConsoleBackend:
         }
         for stage in _UNDELIVERED_STAGES:
             states[stage] = "blocked"
-        prerequisites_ready = foundation == "complete" and managed == "complete"
         # A registered source is one the broker drove to `ready`, which only recorded two-probe
         # validation evidence reaches. A draft or a binding still validating leaves the stage
         # where it was: work started is not work done, and the stage must not read complete over
@@ -3961,11 +3960,16 @@ class GovernedConsoleBackend:
             if foundation == "complete"
             else "not_started"
         )
+        # Like `sources`, it waits on the foundation and not on the managed services. A
+        # business process narrative is uploaded, digested and read back; no part of that
+        # reaches a catalog, so a deployment whose catalog is unresolved can still record what
+        # its process is. Without the command wired the stage is blocked, which is the one
+        # thing that genuinely stops it.
         states["business_process"] = (
             "complete"
             if process_package_recorded
             else "current"
-            if process_package_available and prerequisites_ready
+            if process_package_available and foundation == "complete"
             else "blocked"
         )
         return states

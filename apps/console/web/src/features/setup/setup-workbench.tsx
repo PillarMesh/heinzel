@@ -154,6 +154,7 @@ export function SetupWorkbench({
             client={client}
             digestFile={digestFile}
             idempotencyKeyFactory={idempotencyKeyFactory}
+            onProjectionsChanged={settledIn("business_process")}
             pollTimer={pollTimer}
             session={session}
             setup={setup}

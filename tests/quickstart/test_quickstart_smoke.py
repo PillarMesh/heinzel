@@ -391,13 +391,15 @@ def _assert_the_gap_register_states_what_this_deployment_reports() -> None:
     )
 
     # And the sentence under the table: seven stages, the warehouse and the source complete,
-    # the other five blocked.
+    # the business process the current work, the other four blocked.
     setup = _read("/api/v1/setup", actor=ARCHITECT)
     stages = {stage["stage"]: stage["state"] for stage in setup["stages"]}
     assert len(stages) == 7, stages
     assert stages["foundation"] == "complete", stages
     assert stages["sources"] == "complete", stages
-    assert sum(state == "blocked" for state in stages.values()) == 5, stages
+    assert stages["business_process"] == "current", stages
+    assert setup["process_package"] is None, setup["process_package"]
+    assert sum(state == "blocked" for state in stages.values()) == 4, stages
     # The source is registered because the acquisition that built this deployment's product ran
     # under the binding, and nothing is left to enrol. What makes that binding real rather than
     # a state word: the broker drove it to ready on evidence its probe returned, so it carries a

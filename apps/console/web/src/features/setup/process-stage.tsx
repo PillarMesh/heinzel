@@ -76,6 +76,8 @@ interface ProcessStageProps {
   readonly client: SetupClient
   readonly digestFile?: DigestFile | undefined
   readonly idempotencyKeyFactory: IdempotencyKeyFactory
+  /** Re-read the stage after a submission changes which package is current. */
+  readonly onProjectionsChanged?: (() => void) | undefined
   readonly pollTimer?: PollTimer | undefined
   readonly session: SessionView
   readonly setup: SetupView
@@ -85,6 +87,7 @@ export function ProcessStage({
   client,
   digestFile = sha256File,
   idempotencyKeyFactory,
+  onProjectionsChanged,
   pollTimer,
   session,
   setup,
@@ -273,6 +276,7 @@ export function ProcessStage({
         <OperationStatus
           client={client}
           label="Process package operation"
+          onSettled={onProjectionsChanged === undefined ? undefined : () => onProjectionsChanged()}
           operation={operation}
           pollTimer={pollTimer}
         />

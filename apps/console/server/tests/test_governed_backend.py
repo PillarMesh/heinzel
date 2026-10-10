@@ -59,6 +59,7 @@ from heinzel_console.governed_adapters import (
     GovernedWorkspaceIdentity,
     InMemoryWorkspacePrincipalDirectory,
     PolicyPermittedDataProductReader,
+    ProcessPackageCommands,
     ProductPublicationDefinitionReader,
     PublishableDashboard,
     PublishableDashboardOffering,
@@ -87,6 +88,11 @@ from heinzel_console.operation_handles import (
     mint_console_handle,
 )
 from heinzel_contract_model import ArtifactReference, digest
+from heinzel_contract_service import (
+    BusinessProcessManifest,
+    ProcessPackageReceipt,
+    ProcessPackageSnapshot,
+)
 from heinzel_evidence import (
     AcquisitionEvidenceOutcome,
     AcquisitionEvidenceReceipt,
@@ -503,6 +509,7 @@ def _backend(
     dashboard_publication_commands: DashboardPublicationCommands | None = None,
     publishable_dashboards: PublishableDashboardReader | None = None,
     request_provenance: RequestProvenanceReader | None = None,
+    process_package_commands: ProcessPackageCommands | None = None,
     principals: InMemoryWorkspacePrincipalDirectory | None = None,
 ) -> GovernedConsoleBackend:
     """Inject doubles under the backend's own parameter types.
@@ -539,6 +546,7 @@ def _backend(
         dashboard_publication_commands=dashboard_publication_commands,
         publishable_dashboards=publishable_dashboards,
         request_provenance=request_provenance,
+        process_package_commands=process_package_commands,
         principals=principals,
     )
 
@@ -3031,3 +3039,55 @@ def test_only_a_data_architect_reads_the_production_chain() -> None:
 
     with pytest.raises(ConsoleNotFound):
         backend.get_request_provenance(_requester_context(), "req-00000000000000000002")
+
+
+class _ProcessPackages:
+    """Contract-service's process package surface, with nothing uploaded through it yet.
+
+    Annotated at the call site as the protocol the backend takes, so the type checker answers
+    for this satisfying what `ProcessPackageService` publishes rather than a comment claiming
+    it does.
+    """
+
+    def upload(
+        self,
+        tenant_id: str,
+        original: bytes,
+        media_type: str,
+        manifest: BusinessProcessManifest,
+        uploader_id: str,
+    ) -> ProcessPackageReceipt:
+        raise AssertionError("the stage read must not upload anything")
+
+    def latest(self, tenant_id: str) -> ProcessPackageSnapshot | None:
+        return None
+
+
+def test_the_business_process_stage_waits_on_the_foundation_and_not_on_the_catalog() -> None:
+    """A wired command with nothing uploaded is the current work once there is a warehouse.
+
+    Uploading a narrative is digested, stored and read back; no part of it reaches a catalog.
+    Holding the stage shut until the catalog resolves would be the console choosing the order
+    rather than reporting a dependency -- and because the console disables a stage that is
+    neither active nor started, that order would be a door an architect could not open.
+    """
+    packages: ProcessPackageCommands = _ProcessPackages()
+
+    setup = _backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
+        process_package_commands=packages,
+    ).get_setup(_architect_context())
+
+    stage = next(item for item in setup.stages if item.stage == "business_process")
+    assert stage.state == "current"
+    assert setup.process_package is None
+
+
+def test_the_business_process_stage_is_blocked_with_no_command_behind_it() -> None:
+    """The one dependency it has: without the command the stage is a door onto nothing."""
+    setup = _backend(warehouse_bindings=_StaticWarehouseBindingReader(_binding())).get_setup(
+        _architect_context()
+    )
+
+    stage = next(item for item in setup.stages if item.stage == "business_process")
+    assert stage.state == "blocked"

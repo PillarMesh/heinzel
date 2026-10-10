@@ -809,3 +809,71 @@ test("keeps the stage an architect opened when the projection changes underneath
 
   expect(screen.getByRole("heading", {level: 1, name: "Registered sources"})).toBeVisible()
 })
+
+test("re-reads the stage after a process submission settles, and stays in it", async () => {
+  /**
+   * The stage took no `onProjectionsChanged` at all, so a submission that reached the server
+   * left the page showing no current package and offering the same submission again. It was
+   * unreachable while the capability was undelivered -- the control refused every press -- and
+   * became reachable the moment contract-service's process package service was composed.
+   */
+  const user = userEvent.setup()
+  setupClient.submitProcessPackage.mockResolvedValue({
+    envelope: {
+      meta: setupEnvelope.meta,
+      data: {
+        operation_id: "bpp-0123456789abcdef01234567",
+        revision: 1,
+        state: "succeeded",
+        phase: "process_package_recorded",
+        summary: "Business process package saved.",
+        recovery_actions: [],
+        evidence_ref: null,
+        failure: null,
+        operation_digest: null,
+        retry_token: null,
+      },
+    },
+    kind: "settled",
+    state: "succeeded",
+    status: 200,
+  })
+  const reRead = vi.fn()
+
+  render(
+    <SetupWorkbench
+      client={setupClient}
+      idempotencyKeyFactory={() => "idempotency-process-settles"}
+      onProjectionsChanged={reRead}
+      session={sessionEnvelope.data}
+      setupEnvelope={{...setupEnvelope, data: {...setup, active_stage: "business_process"}}}
+    />,
+  )
+
+  await user.upload(
+    screen.getByLabelText("Process package"),
+    new File(["original bytes"], "revenue-process.md", {type: "text/markdown"}),
+  )
+  fireEvent.change(screen.getByLabelText("Business process manifest (JSON)"), {
+    target: {
+      value: JSON.stringify({
+        process_name: "Revenue to cash",
+        owner: "Finance operations",
+        participants: ["Billing"],
+        outcomes: ["Settled invoice"],
+        entities: ["Invoice"],
+        events: ["Invoice settled"],
+        states: ["settled"],
+        rules: ["Only settled invoices close"],
+        source_references: ["billing-postgresql"],
+        unresolved_questions: [],
+      }),
+    },
+  })
+  await user.click(await screen.findByRole("button", {name: "Submit process package"}))
+
+  await waitFor(() => expect(reRead).toHaveBeenCalledTimes(1))
+  // And the stage the submission was made in is still the one on screen, rather than whichever
+  // one the refreshed projection calls current.
+  expect(screen.getByRole("heading", {level: 1, name: "Describe the business process"})).toBeVisible()
+})

@@ -18,6 +18,7 @@ from heinzel_bi_control import (
 from heinzel_catalog_control import SQLiteCatalogRepository
 from heinzel_contract_service import (
     SQLiteAcquisitionContractLifecycleRepository,
+    SQLiteProcessPackageRepository,
     SQLiteSourceFreshnessObservationRepository,
 )
 from heinzel_evidence import SQLiteStore
@@ -285,6 +286,13 @@ class DemoStores:
                 str(state_dir / "acquisition-lifecycle.sqlite3")
             )
             opened.append(self.acquisition_lifecycle)
+            # The business process narrative an architect uploads, with the manifest that
+            # describes it and the digest over the bytes. Like the lifecycle above, this
+            # repository opens its own connection with the thread check already off.
+            self.process_packages = SQLiteProcessPackageRepository(
+                str(state_dir / "process-packages.sqlite3")
+            )
+            opened.append(self.process_packages)
             # How far each source has been read, as an encrypted cursor beside the authority
             # that admitted it. The connection is supplied rather than left to the
             # repository's default `sqlite3.connect`, which keeps the thread check on and

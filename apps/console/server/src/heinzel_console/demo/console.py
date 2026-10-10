@@ -25,6 +25,7 @@ from heinzel_bi_control import (
     DashboardContractVerifier,
     SQLiteDashboardConnectionRepository,
 )
+from heinzel_contract_service import ProcessPackageService
 from heinzel_provider_postgresql import POSTGRESQL_WAREHOUSE_CONTAINER_PORT
 from heinzel_request_management import (
     FulfillmentReadService,
@@ -458,6 +459,13 @@ class DemoConsole:
                 access_grants=None if access is None else access.grants,
                 access_revocation_commands=(None if access is None else access.revocation_commands),
                 data_access_intake_available=access is not None,
+                # The business process narrative, through contract-service's own process
+                # package service. Wired unconditionally rather than behind a warehouse,
+                # because uploading a narrative and reading back the latest one touches no
+                # warehouse: a deployment with none can still record what its process is.
+                process_package_commands=ProcessPackageService(
+                    self._stores.process_packages, clock=demo_clock
+                ),
                 # The connection broker's three surfaces, which move together: the register of
                 # what is bound, the offering of what an operator enrolled, and the command that
                 # takes one from the second to the first. A stage given the reads and not the

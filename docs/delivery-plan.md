@@ -15,9 +15,9 @@ Taken from the live console on 2026-10-10, not from documentation.
 
 | Reported by | Reading |
 | --- | --- |
-| Capability register (`GET /api/v1/workspace`) | 16 capabilities, 9 `ready`, 7 `not_delivered` |
-| Setup surface (`GET /api/v1/setup`) | 7 stages, 1 complete, 1 current, 5 blocked |
-| Gap register | 41 rows, 14 closed, 27 open |
+| Capability register (`GET /api/v1/workspace`) | 16 capabilities, 10 `ready`, 6 `not_delivered` |
+| Setup surface (`GET /api/v1/setup`) | 7 stages, 2 complete, 1 current, 4 blocked |
+| Gap register | 41 rows, 14 closed, 27 open (one of them now partly closed) |
 | Warehouse (`psql` against the provisioned instance) | 5 least-privilege roles, 5 landed rows, 1 landing receipt, a built product of 3 rows |
 
 One lane works end to end and is attested at every step. What is missing is breadth and
@@ -36,6 +36,10 @@ Phase 1's first row and Phase 2's first row, in that order, because the second n
   ready binding and its two-probe evidence survive a restart. `source-registration` reports
   `ready`, and the sources stage reports `complete` once a source is registered.
 
+* **The business process package.** Contract-service's `ProcessPackageService` was written,
+  repositoried and tested, and nothing composed it -- the fourth time in this programme that
+  the gap was a composition rather than a build. Composed, the capability is `ready`, the
+  stage is reachable, and an architect uploads a narrative and reads the stored version back.
 * **The acquisition under the registered binding.** It observes the source under the broker's
   binding identifier, activates its contract over the capability profile the probe measured,
   and reads the binding back out of the broker's register. The acquisition receipts an
@@ -131,8 +135,8 @@ nine destinations and six are closed doors.
 | --- | --- | --- |
 | ~~Source enrolment and registration end to end, broker-backed~~ **Done.** All three rows: the registration surface, the enrolment, and the acquisition running under the binding the broker registered. | 3 rows | — |
 | Warehouse engine options: real regions and capacity profiles | 1 row | 1 |
-| `meaning`, `data_product`, `activation` stage states from their own reads | 1 row | 2–3 |
-| Business process package command delegation | capability | 2 |
+| `meaning`, `data_product`, `activation` stage states from their own reads | part of 1 row (`sources` and `business_process` now derive theirs) | 2–3 |
+| ~~Business process package command delegation~~ **Done.** `ProcessPackageService` existed, with its repository and its tests, and nothing composed it. Composed, the capability reports `ready` and an architect uploads a narrative, sees its digest, and reads the stored version back. | `process-package`; one of the three remaining setup stages | — |
 
 Ship criterion: an architect adds a warehouse, enrols a source and registers it, from the UI,
 with no startup bootstrap involved.

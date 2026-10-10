@@ -54,14 +54,15 @@ four while five differed, which is this same drift inside the paragraph warning 
 | `catalog-asset-preview` | not_delivered | not_delivered |
 | `analyst-dashboard` | ready | ready |
 | `dashboard-publication` | not_delivered | ready |
-| `process-package` | not_delivered | not_delivered |
+| `process-package` | ready | ready |
 | `data-access-intake` | not_delivered | ready |
 | `operation-retry` | not_delivered | not_delivered |
 
 Without a warehouse the setup surface refuses the whole read: there is no binding to report a
 stage against. With one it answers seven stages: `foundation` and `sources` are complete -- the
 second because the deployment registered its own source through the connection broker on the
-way up, which is what its acquisition then ran under -- and the other five are blocked.
+way up, which is what its acquisition then ran under -- `business_process` is the current work
+with nothing uploaded to it yet, and the other four are blocked.
 
 ## The demonstration answers the question that was composed, and only a composed one
 
@@ -97,7 +98,7 @@ offering one would assert a grain the publication never stated.
 | The opt-in path's live provisioning is proved by no test in this repository. The offline suite proves the Compose operations it issues and their order, that a failure at each one is classified and reported, and that the setup surface answers from a binding already `ready`; it does not start a container. | Unbuilt | `apps/console/server/tests/test_demo_managed_warehouse.py` |
 | ~~The opt-in path and the answering path are exclusive, so no single console both reports a managed warehouse and answers a question over it.~~ **Delivered, and it publishes the dashboard too.** The console composes its governed answer over the warehouse warehouse-control provisioned, so the one path that produces a binding that service owns is the one the demonstration answers from, as ADR-0003 requires. The provider says where its warehouse listens, which name it answers to on its own container network and which certificates reach it; it never hands out the password, because provisioning rotates the administering login to the `administration` operation secret and whoever minted that secret already holds it. Superset reaches that warehouse by name over mutual TLS and reads the product as `dashboard_reader`. Two manual steps are needed because Superset and the console run in different Compose projects: putting Superset on the warehouse's network, and letting it make the `0600` copy of the client key libpq requires of the user presenting it. The quickstart README gives both. | Delivered | `_administration_dsn`, `internal_hostname` and `share_warehouse_client_material`; [quickstart README](../deploy/quickstart/README.md) |
 | ~~The opt-in path answers only in the start that provisioned the warehouse. Provisioning rotates the administering login to an operation secret minted per start and written nowhere.~~ **Delivered.** The secrets are kept, in warehouse-control's own encrypted operation secret store, which that service already implemented and nothing composed: the only way to obtain one was to name a private class, so the demonstration minted its warehouse's credentials in process instead. A start now records the operation its secrets went to beside the binding, and a later start composes its provider from the capabilities that store issues -- so a resumed warehouse is administered exactly as a fresh one is, by the same code path. The Fernet key sits beside the store under owner-only creation, which is a demonstration's answer and not a deployment's: a key in the directory it protects is a key whoever reached the directory already has. | Delivered | `_resumable_binding` and `_administration_dsn` in `demo/managed_warehouse.py` 
-| The `meaning`, `data_product` and `activation` setup stages are reported blocked unconditionally. `sources` no longer is: its state derives from the connection-broker read, and it reports blocked with its own dependency named when no reader is wired. | Unbuilt | `_UNDELIVERED_STAGES` and `_stage_states` in `governed_backend.py` |
+| The `meaning`, `data_product` and `activation` setup stages are reported blocked unconditionally. `sources` and `business_process` no longer are: each derives its state from the service behind it and reports blocked with its own dependency named when that service is not wired. Both also wait on the foundation alone rather than on the whole prefix of the sequence, because neither reads a catalog -- gating them on the managed-services stage made a stage an architect could act in into a door the console disabled. | Unbuilt for three of five | `_UNDELIVERED_STAGES` and `_stage_states` in `governed_backend.py` |
 | The engine options carry a fixed region and one capacity profile. | Unbuilt | `WarehouseOptionView` construction in `governed_backend.py` |
 
 warehouse-control itself provisions, validates, backs up, restores, suspends, resumes and retires
