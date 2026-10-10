@@ -2034,7 +2034,6 @@ def test_the_receipt_listing_says_whether_a_run_can_be_commanded() -> None:
     than finding out by pressing and receiving `capability_not_delivered`.
     """
     from heinzel_console.contracts import AcquisitionModeView
-    from heinzel_runtime import AcquisitionPreparationResult
 
     store = _StubAcquisitionReceiptReader({})
 
@@ -2049,7 +2048,7 @@ def test_the_receipt_listing_says_whether_a_run_can_be_commanded() -> None:
             contract_ref: str,
             trigger_window: str,
             acquisition_mode: AcquisitionModeView,
-        ) -> AcquisitionPreparationResult:
+        ) -> AcquisitionEvidenceReceipt:
             raise AssertionError("the listing must not run an acquisition to report on one")
 
     commands = _backend(acquisition_receipts=store, acquisition_commands=_Commands())

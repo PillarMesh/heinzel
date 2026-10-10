@@ -111,7 +111,6 @@ from heinzel_runtime import (
     AcquisitionContractError,
     AcquisitionIntegrityError,
     AcquisitionOwnershipError,
-    AcquisitionPreparationResult,
     AcquisitionStaleRevision,
     AcquisitionThrottledError,
     AcquisitionTransientError,
@@ -726,7 +725,18 @@ class TenantAcquisitionReceiptReader(Protocol):
 
 
 class AcquisitionRunNowCommands(Protocol):
-    """The exact command surface published by the acquisition application."""
+    """One commanded acquisition, run to whatever it comes to, reported as its own receipt.
+
+    The receipt rather than a preparation result, because a run that only prepared would
+    leave a verified batch in a staging store with nothing in the product able to land it.
+    What this returns is therefore the receipt the run ended on: `acknowledged` for a batch
+    that landed and advanced the source checkpoint, or the preparation's own `no_valid_plan`
+    or `resynchronization_required` for a run the runtime governed to no batch at all.
+
+    `AcquisitionApplication.run_now` publishes the same four arguments and returns the
+    preparation, so an implementation is the application plus whatever lands what it
+    prepared. It is not the application on its own.
+    """
 
     def run_now(
         self,
@@ -735,7 +745,45 @@ class AcquisitionRunNowCommands(Protocol):
         contract_ref: str,
         trigger_window: str,
         acquisition_mode: AcquisitionModeView,
-    ) -> AcquisitionPreparationResult: ...
+    ) -> AcquisitionEvidenceReceipt: ...
+
+
+def refuse_a_snapshot_of_an_already_acquired_source(
+    *,
+    tenant_id: str,
+    contract_ref: str,
+    acquisition_mode: AcquisitionModeView,
+    receipts: TenantAcquisitionReceiptReader,
+) -> None:
+    """Refuse a snapshot of a source that has already been acquired, in the operator's terms.
+
+    A snapshot is admitted only from checkpoint revision 0, and acknowledging a landed batch
+    moves the checkpoint off it. Asked for anyway, the provider refuses with
+    `permanent_configuration` and the console can only report that the governing service
+    returned state it cannot trust -- a "contact support" for someone who picked the wrong
+    one of two modes.
+
+    An `acknowledged` receipt is exactly the record of a checkpoint having advanced, so this
+    reads them rather than the cursor store, which the console holds no reader for. It is a
+    better error and not a boundary: the runtime still refuses what it would have refused,
+    and an acknowledgement whose receipt did not land falls through to that refusal.
+    """
+    if acquisition_mode != "snapshot":
+        return
+    if not any(
+        receipt.contract_ref == contract_ref and receipt.outcome == "acknowledged"
+        for receipt in receipts.list_acquisition_receipts(tenant_id)
+    ):
+        return
+    raise ConsoleInvalidRequest(
+        code="acquisition_mode_not_available",
+        safe_message=(
+            "This source has already been acquired, so no snapshot can be taken from it. "
+            "Acquire the changes since the last run instead."
+        ),
+        recovery_action="correct_input",
+        field="acquisition_mode",
+    )
 
 
 class VerifiedAnswerReader(Protocol):

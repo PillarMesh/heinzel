@@ -32,7 +32,7 @@ because the flow above cannot be shown without closing them.
   the row because the product changed -- never to make a check pass.
 -->
 
-The demonstration runs in two shapes and reports different capabilities in each. **Seven
+The demonstration runs in two shapes and reports different capabilities in each. **Eight
 capabilities differ**, which is how this page came to claim that dashboard publication was
 unwired while the recorded journey was publishing a dashboard: the row described the shape with
 no warehouse, and the demonstration everyone watches is the other one. A gap below that names a
@@ -50,7 +50,7 @@ four while five differed, which is this same drift inside the paragraph warning 
 | `acquisition-evidence` | not_delivered | ready |
 | `question-term-builder` | not_delivered | ready |
 | `source-registration` | not_delivered | ready |
-| `source-acquisition` | not_delivered | not_delivered |
+| `source-acquisition` | not_delivered | ready |
 | `catalog-asset-preview` | not_delivered | ready |
 | `analyst-dashboard` | ready | ready |
 | `dashboard-publication` | not_delivered | ready |
@@ -141,7 +141,8 @@ the only path would have replaced a startup this repository proves with one it c
 | ~~The demonstration acquires one seeded source at startup under a source binding it constructs by hand.~~ Closed. The acquisition runs under the binding the connection broker registered: it observes the source under that binding's identifier, activates its contract over the capability profile the probe measured, and loads the binding back out of the broker's register when it acknowledges. The receipts an architect reads in the console name that binding, which is the same one the sources stage shows. What remains is **when**: the acquisition is still a startup step, so the demonstration registers the source on its own way up rather than waiting for an architect to. Moving it is the refresh work in section 2 below, not this row. | Delivered | `DemoAcquisition` in `demo/generation.py`; `ensure_registered_demo_source` in `demo/source_registry.py` |
 | The Stripe provider reads object snapshots and events against a mocked API, is not composed into acquisition, and has no live test. | Unbuilt | `providers/stripe`, [status.md](status.md) |
 | No owning service binds a contract to its destination; LAND routing is deployment configuration. | Unbuilt | [status.md](status.md) |
-| One generation, materialized once by the startup. No refresh, no second generation, and no scheduler: `services/trigger` holds trigger policies and nothing runs them. Acquiring is a startup step rather than something an architect or a trigger asks for, which is the same gap seen from the other side: the console publishes `POST /api/v1/acquisitions/run-now` and reports `source-acquisition` not delivered, because nothing composes an acquisition application behind it. The first precondition is now met: the source observation an acquisition contract is activated over is held durably, so a process other than the one that observed can satisfy that contract. | Unbuilt, one precondition met | `services/trigger`; `run_acquisition_now` in `governed_backend.py`; `ensure_demo_generation` in `demo/bootstrap.py`; `SQLiteAcquisitionSourceObservationRepository` |
+| ~~Acquiring is a startup step rather than something an architect asks for, and the console publishes `POST /api/v1/acquisitions/run-now` over nothing.~~ Closed on the warehouse path. An architect commands a run and the demonstration acquires under the contract its first acquisition activated, lands what it read as a raw generation and advances the source checkpoint, all after startup and without a restart. Two preconditions had to be met first: the reading a contract was activated over is now held durably, and activating is now separate from acquiring, so an acquisition can be composed over a checkpoint that has already advanced. The console offers the mode the source admits rather than always asking for a snapshot, and refuses a snapshot of an acquired source in the operator's own terms. | Delivered | `demo/acquisition_commands.py`; `DemoAcquisition` and `ensure_activated_demo_contract` in `demo/generation.py`; `run_acquisition_now` in `governed_backend.py` |
+| **No refresh and no scheduler.** A commanded acquisition lands a raw generation and stops there: nothing materializes a product over it, so the answer an architect reads is still the one the startup built, and the Catalog still describes that generation. Nothing runs the trigger policies `services/trigger` holds either, so every run is a press. | Unbuilt, its acquisition half delivered | `services/trigger`; `ensure_demo_generation` in `demo/bootstrap.py`; `product_materialization.py` |
 
 ## 3. Define the product
 

@@ -30,7 +30,11 @@ from heinzel_provider_sdk import LandReceipt
 
 from .bi_provider import DemoWarehouseRoute, demo_superset_database_uri
 from .catalog import compose_demo_product_catalog, demo_source_freshness_observation
-from .generation import DemoAcquisition, LandedDemoGeneration
+from .generation import (
+    DemoAcquisition,
+    LandedDemoGeneration,
+    ensure_activated_demo_contract,
+)
 from .materialization import (
     DEMO_GROUP_COLUMN,
     DEMO_MEASURE_COLUMN,
@@ -125,8 +129,10 @@ def _acquire_and_land(
 ) -> LandedDemoGeneration:
     """Acquire the approved source columns and land them, under the runtime's governance.
 
-    Observing the source, activating the contract and preparing the batch happen in one object
-    because they must happen in one process; see `DemoAcquisition`.
+    This is the demonstration's first acquisition, so it activates the contract before
+    acquiring under it. Activating is a single act and is separate for that reason; a run
+    commanded later composes a `DemoAcquisition` over this same activation and does not come
+    back through here.
 
     The binding comes out of the connection broker's own register rather than being assembled
     here. That is what `source_bindings=sources.repository` is for as well: the runtime loads
@@ -137,13 +143,22 @@ def _acquire_and_land(
     server starts and has no loop of its own. Calling it from inside a running loop would raise,
     which is the right failure: landing is startup work, not something a request handler does.
     """
+    acquisition_dsn = role_dsn(
+        bootstrap_dsn,
+        DEMO_WAREHOUSE_ROLES.acquisition,
+        passwords[DEMO_WAREHOUSE_ROLES.acquisition],
+    )
+    binding = ensure_registered_demo_source(sources)
+    ensure_activated_demo_contract(
+        acquisition_dsn,
+        binding=binding,
+        publication=publication,
+        stores=stores,
+        clock=clock,
+    )
     acquisition = DemoAcquisition(
-        role_dsn(
-            bootstrap_dsn,
-            DEMO_WAREHOUSE_ROLES.acquisition,
-            passwords[DEMO_WAREHOUSE_ROLES.acquisition],
-        ),
-        binding=ensure_registered_demo_source(sources),
+        acquisition_dsn,
+        binding=binding,
         bindings=sources.repository,
         publication=publication,
         stores=stores,

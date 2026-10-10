@@ -15,9 +15,9 @@ Taken from the live console on 2026-10-10, not from documentation.
 
 | Reported by | Reading |
 | --- | --- |
-| Capability register (`GET /api/v1/workspace`) | 16 capabilities, 11 `ready`, 5 `not_delivered` |
+| Capability register (`GET /api/v1/workspace`) | 16 capabilities, 12 `ready`, 4 `not_delivered` |
 | Setup surface (`GET /api/v1/setup`) | 7 stages, 2 complete, 1 current, 4 blocked |
-| Gap register | 41 rows, 14 closed, 27 open (one of them now partly closed) |
+| Gap register | 42 rows, 15 closed, 27 open |
 | Warehouse (`psql` against the provisioned instance) | 5 least-privilege roles, 5 landed rows, 1 landing receipt, a built product of 3 rows |
 
 One lane works end to end and is attested at every step. What is missing is breadth and
@@ -49,12 +49,20 @@ Phase 1's first row and Phase 2's first row, in that order, because the second n
   architect reads name the binding the sources stage shows. The hand-built binding and the
   reader that served it are gone.
 
+* **An acquisition on command.** `POST /api/v1/acquisitions/run-now` now runs: it prepares a
+  batch under the activated contract, lands it as a raw generation and advances the source
+  checkpoint, after startup and without a restart. Two preconditions had to go in first -- the
+  reading a contract was activated over is held durably, and activating is separate from
+  acquiring -- and the landing had to be composed behind the command, because the acquisition
+  application prepares and nothing more. `source-acquisition` reports `ready`.
+
 Making those the same binding needed one of the two to move: the acquisition out of startup, or
-the registration into it. The registration moved, because moving the acquisition is not one
-change but three -- a command that acquires, materializes and publishes; a console that
+the registration into it. The registration moved first, because moving the acquisition was not
+one change but three -- a command that acquires, materializes and publishes; a console that
 recomposes its governed answer over the new generation rather than the one it was built on; and
-an operation surface for a dbt run that takes longer than a request. Those three are Phase 3's
-refresh, and they are worth doing as that rather than as a prelude to it.
+an operation surface for a dbt run that takes longer than a request. The first of those three is
+now done, and the acquisition has moved out of startup as well: startup still takes the first
+one, and every later one is a command.
 
 What this costs is honest to state: the demonstration registers its own source on the way up, so
 the sources stage opens complete and the architect's registration is a path the product has and
@@ -78,7 +86,7 @@ the offering "can publish to nothing". The capability register reports `Dashboar
 ready`, and the recorded journey publishes a dashboard that Superset then draws. It is accurate
 only for a deployment given no Superset. Correct the row before planning against it.
 
-**So: 31 open rows, 1 stale, 3 decisions, 27 to build.**
+**So: 27 open rows -- 1 stale, 3 decisions, 23 to build.** The earlier arithmetic here read 31 open and 27 to build, which counted the stale row and the three decisions twice. Both counts are taken from the register's own tables rather than from this sentence.
 
 ### The composition gaps are exhausted
 
@@ -97,10 +105,17 @@ and none of them is that shape:
 | `catalog-binding` | Nothing implements `CatalogProvisioner` or `CatalogValidator`, and a ready binding takes validation evidence. The demonstration runs no catalog to provision or observe, so this is Root B below. |
 | `semantic-review` | `SemanticReviewService` exists, but `create_bundle` takes a verified candidate set derived from stored observations. The demonstration produces no ontology candidates, so the bundle to review does not exist yet. |
 | `data-product-runs` | `RunService` would compose in a line, over a run repository nothing writes to. The page would list nothing, which is what `not_delivered` exists to say. |
-| `source-acquisition` | Phase 3's first row. |
+| ~~`source-acquisition`~~ | **Wrong, and now closed.** Calling it a build was the one mistake in this table. The acquisition application, the route, the command contract and the browser form all existed; what was missing was something to land what the application prepared, and two preconditions underneath. See below. |
 | `operation-retry` | `RecoveryCommandService` composes in a line and then refuses most presses: its three recovery collaborators are unimplemented, so the capability would read ready and the buttons would be dead. |
 
-Read the sizes below as sizes again. They are no longer hiding anything already built.
+Read the sizes below as sizes again, with one correction. `source-acquisition` was called a
+build here and was not one: it closed in a day. The giveaway was in the table's own wording --
+every other row names a service that does not exist or has no input, and that one named a phase.
+Composing `AcquisitionApplication` alone really would have been a half-capability, because it
+prepares a batch and nothing in the product could then land one; what closed the row was
+composing the landing behind the same command. The lesson is narrower than "check for
+compositions again": it is that a row whose justification is a plan rather than a missing
+service has not been checked.
 
 ## Three root causes under most of the 27
 
@@ -168,25 +183,44 @@ with no startup bootstrap involved.
 
 ### Phase 3 — The pipeline becomes a pipeline
 
-Today it is a one-shot: one generation, materialized once, by the bootstrap. Phase 1 and 2
-cleared everything in front of this, so it is now the top of the list rather than a thing to
-reach. Its first row is three changes, and worth naming as three: a command that acquires,
-materializes and publishes a generation; a console that recomposes its governed answer over the
-newest generation instead of the one it started on; and an operation surface for a run that
-takes longer than a request will wait.
+It was a one-shot: one generation, acquired, landed and materialized once, by the bootstrap.
+The acquisition half of that is now a command. An architect presses Run acquisition, the
+demonstration reads its source under the contract the first acquisition activated, lands what
+it read as a second raw generation and advances the source checkpoint. Nothing is restarted and
+nothing is discarded.
 
-Underneath all three was a precondition the plan did not name, found by reading the acquisition
-rather than the register: **the source observation was never persisted.** An activated contract
-pins `digest(observation)`, the provider stamps a wall clock into every reading, and nothing
-held the reading -- so the only process that could satisfy an activated contract was the one
-that activated it. No second acquisition, no resumption, no trigger. That is now built, and it
-also closes a failure mode of its own: a start that died between activating and landing used to
-demand that the state directory and the warehouse be discarded together, and now resumes.
+The row was planned as three changes and had two unplanned preconditions under it, both found
+by reading the acquisition rather than the register.
+
+**The source observation was never persisted.** An activated contract pins
+`digest(observation)`, the provider stamps a wall clock into every reading, and nothing held the
+reading -- so the only process that could satisfy an activated contract was the one that
+activated it. It also closes a failure mode of its own: a start that died between activating and
+landing used to demand that the state directory and the warehouse be discarded together, and now
+resumes.
+
+**Activating and acquiring were one object.** Constructing the demonstration's acquisition
+observed the source and wrote the activation, so a later start could not compose one over a
+checkpoint that had already advanced -- which is every start after the first. Separating them
+made the object a handle to the capability rather than the first half of one run, which is what
+a command needs.
+
+What is left of the row is the product: a commanded run lands a raw generation and stops there.
+The answer an architect reads is still the one the startup built, because nothing materializes
+over what landed and the console composes its answer once, at startup. That and the operation
+surface for a run longer than a request are the two rows below.
+
+One thing this made visible and did not fix: each run writes two receipts, a `prepared` and an
+`acknowledged`, and the Acquisition page lists all of them flat. Five runs read as ten entries.
+Grouping a run's receipts is a page change, not a pipeline one, and is not sized here.
 
 | Work | Closes | Size |
 | --- | --- | --- |
 | ~~A durable source observation~~ **Done.** The reading an acquisition contract is activated over is kept in contract-service, so a process other than the one that observed can satisfy that contract. Nothing else in this row was reachable without it. | precondition | — |
-| An acquisition the console runs: `POST /api/v1/acquisitions/run-now` composed over a real acquisition application, with the three changes above | 1 row; `source-acquisition` | 3–4 |
+| ~~Activating separated from acquiring~~ **Done.** Activating a contract is a single act and acquiring under it is repeatable, and one object did both as it was constructed -- so composing an acquisition over a source whose checkpoint had advanced refused outright. The second precondition, and the reason the first was not enough. | precondition | — |
+| ~~An acquisition the console runs: `POST /api/v1/acquisitions/run-now`~~ **Done.** An architect commands a run; it prepares a batch under the activated contract, lands it as a raw generation and advances the source checkpoint, and reports the receipt the run ended on. The console offers the mode the source admits and refuses a snapshot of an acquired source in the operator's terms rather than the provider's. | `source-acquisition` | — |
+| A product over the generation a commanded run landed: materialize, publish, and recompose the console's governed answer over the newest generation rather than the one it started on | 1 row | 2–3 |
+| An operation surface for a run that takes longer than a request will wait | part of the row above | 1–2 |
 | Trigger execution: a scheduler that runs the policies `services/trigger` already holds | 1 row | 3 |
 | Refresh producing a second generation, and the console showing both | 1 row (with the above) | 2 |
 | An owning service binding a contract to its destination | 1 row | 2 |
@@ -194,7 +228,9 @@ demand that the state directory and the warehouse be discarded together, and now
 | Stripe provider composed into acquisition, with a live test | 1 row | 2–3 |
 
 Ship criterion: a second generation appears without anyone restarting anything, and the lineage
-chain shows two.
+chain shows two. The first half holds: a second **raw** generation appears on command, with its
+own identifier and its own landing receipt beside the first. The lineage chain still shows one,
+because the product has not been rebuilt over it.
 
 ### Phase 4 — Expressiveness
 
@@ -245,16 +281,18 @@ until the lanes beneath it are wide.
 
 ```
 secret custody ─┬─> source enrolment ─> source registration ─> broker-backed acquisition ─┐
-   (done)       │        (done)               (done)                    (done)             ├─> refresh / second generation
+   (done)       │        (done)               (done)                    (done)            │
                 └─> warehouse resumption (done)                                            │
+                                                                                           ├─> commanded acquisition (done) ─> a product over what it landed
 identity ───────┬─> fulfillment admission                                                  │
                 ├─> Superset SSO                                                           │
                 └─> MCP adapters                                                           │
 catalog + compiler admission ──────────────────────────────────────────────────────────────┘
 ```
 
-The custody branch is clear. Everything it blocked is built, and the next node on it -- refresh,
-a second generation -- is now the top of Phase 3 with nothing in front of it.
+The custody branch is clear and so is the node after it: an acquisition runs on command and
+lands a generation. What that generation has no path into is the product, which is now the top
+of Phase 3 with nothing in front of it.
 
 Phase 4 remains independent of identity and custody, so it can run in parallel with Phase 2 by a
 second pair of hands.

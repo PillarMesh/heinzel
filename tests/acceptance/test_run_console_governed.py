@@ -2176,6 +2176,14 @@ def test_a_tenant_with_no_acquisitions_reads_an_empty_receipt_listing(
 def test_run_now_performs_a_fresh_composed_source_acquisition(
     deployment: GovernedConsoleDeployment,
 ) -> None:
+    """A commanded run acquires and is taken, so the receipt it reports is acknowledged.
+
+    `prepared` was what this reported while the console was wired to the acquisition
+    application alone. The application prepares and nothing more, so what that reported was a
+    verified batch left in a staging store with nothing able to take it -- and a capability
+    that read `ready` over it. The run now ends where a run ends: the batch is consumed, the
+    source checkpoint advances, and the receipt says `acknowledged`.
+    """
     approval = _approve_managed_source(deployment)
     command = {
         "active_role": "data_architect",
@@ -2192,21 +2200,65 @@ def test_run_now_performs_a_fresh_composed_source_acquisition(
             "Idempotency-Key": "run-managed-source-2026-09-14-12",
         }
         first = client.post("/api/v1/acquisitions/run-now", headers=headers, json=command)
-        replay = client.post("/api/v1/acquisitions/run-now", headers=headers, json=command)
         receipts = client.get("/api/v1/acquisition-receipts")
 
     assert first.status_code == 200
-    assert replay.status_code == 200
-    assert first.json()["data"]["outcome"] == "prepared"
+    assert first.json()["data"]["outcome"] == "acknowledged"
     # The contract the run acquired under is the one the approved intent activated.
     (activated,) = deployment.lifecycles.list_contracts(TENANT)
     assert activated.contract.product_intent_ref == approval.artifact_reference
-    assert replay.json()["data"]["outcome"] == "prepared"
     assert deployment.source_acquisition.source_provider_resolutions == 1
     assert deployment.source_acquisition.artifact_count() > 0
-    assert first.json()["data"]["evidence_id"] in {
-        receipt["evidence_id"] for receipt in receipts.json()["data"]["receipts"]
+    # Both receipts the run wrote: the preparation and the acknowledgement that closed it.
+    recorded = {receipt["evidence_id"] for receipt in receipts.json()["data"]["receipts"]}
+    assert first.json()["data"]["evidence_id"] in recorded
+    assert {receipt["outcome"] for receipt in receipts.json()["data"]["receipts"]} == {
+        "prepared",
+        "acknowledged",
     }
+
+
+def test_a_second_snapshot_of_an_acquired_source_is_refused_in_the_operator_s_terms(
+    deployment: GovernedConsoleDeployment,
+) -> None:
+    """Pressing run again for the same window names the mode, not the governing service.
+
+    A snapshot is admitted only from checkpoint revision 0, and the first run moved the
+    checkpoint off it. Left to the provider, this came back `permanent_configuration`, which
+    the console can only publish as state it cannot trust -- a "contact support" for someone
+    who picked the wrong one of two modes.
+    """
+    _approve_managed_source(deployment)
+    command = {
+        "active_role": "data_architect",
+        "contract_ref": "contract:managed-business-data:v1",
+        "trigger_window": "2026-09-14T12:00:00Z/2026-09-14T13:00:00Z",
+        "acquisition_mode": "snapshot",
+    }
+
+    with TestClient(deployment.build_app()) as client:
+        session = client.get("/api/v1/session").json()["data"]
+        headers = {
+            "Origin": "http://127.0.0.1:8000",
+            "X-CSRF-Token": session["csrf_token"],
+        }
+        first = client.post(
+            "/api/v1/acquisitions/run-now",
+            headers={**headers, "Idempotency-Key": "run-first"},
+            json=command,
+        )
+        again = client.post(
+            "/api/v1/acquisitions/run-now",
+            headers={**headers, "Idempotency-Key": "run-again"},
+            json=command,
+        )
+
+    assert first.status_code == 200
+    assert again.status_code == 422
+    error = again.json()["error"]
+    assert error["code"] == "acquisition_mode_not_available"
+    assert error["recovery_action"] == "correct_input"
+    assert error["field"] == "acquisition_mode"
 
 
 def test_a_receipt_the_acquisition_runtime_recorded_reaches_the_console(

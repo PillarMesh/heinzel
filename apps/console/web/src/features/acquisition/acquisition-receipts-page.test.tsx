@@ -173,3 +173,72 @@ test("a deployment that commands no run offers no control, and says why", async 
   // The receipts themselves are untouched: the read is delivered, only the command is not.
   expect(screen.getByRole("list", {name: "Acquisition receipts"})).toBeVisible()
 })
+
+test("a source that has been acquired is offered the changes since, not a second snapshot", async () => {
+  /*
+   * A snapshot is admitted only from checkpoint revision 0, and an acknowledged receipt is the
+   * record of a checkpoint having advanced. The form sent `snapshot` whatever the state of the
+   * source, so every press after the first one was refused -- and the refusal, left to the
+   * provider, read as state the console could not trust.
+   */
+  const user = userEvent.setup()
+  const acknowledged: AcquisitionReceiptView = {
+    ...receipt,
+    evidence_id: "evidence-ref:acknowledged-1",
+    outcome: "acknowledged",
+  }
+  const runAcquisitionNow = vi.fn().mockResolvedValue({
+    data: {...acknowledged, evidence_id: "evidence-ref:acknowledged-2"},
+    meta: {data_provenance: "governed_local", correlation_id: "correlation-run"},
+  } satisfies ConsoleEnvelopeAcquisitionReceiptView)
+  const client = {
+    getAcquisitionReceipts: vi.fn().mockResolvedValue(envelope([acknowledged])),
+    runAcquisitionNow,
+  }
+
+  render(
+    <AcquisitionReceiptsPage
+      client={client}
+      idempotencyKeyFactory={() => "acquisition-run-test-key"}
+      session={session}
+      triggerWindowFactory={() => "2026-09-14T12:00:00Z/2026-09-14T13:00:00Z"}
+    />,
+  )
+  await user.type(
+    await screen.findByLabelText(/activated contract reference/i),
+    "contract:orders:v1",
+  )
+
+  expect(screen.getByLabelText(/what to acquire/i)).toHaveValue("incremental")
+  expect(screen.getByText(/only what has changed since can be acquired/i)).toBeVisible()
+
+  await user.click(screen.getByRole("button", {name: /run acquisition/i}))
+
+  await waitFor(() => expect(runAcquisitionNow).toHaveBeenCalled())
+  expect(runAcquisitionNow.mock.calls[0]?.[0]).toMatchObject({
+    acquisition_mode: "incremental",
+    contract_ref: "contract:orders:v1",
+  })
+  // What the run did, and what it did not do. A landed generation is not a rebuilt product.
+  expect(await screen.findByText(/landed as a new generation/i)).toBeVisible()
+  expect(screen.getByText(/building a product over that generation is a separate step/i)).toBeVisible()
+})
+
+test("a contract with no acknowledged receipt is still offered the whole source", async () => {
+  // The complement, and the first run of a governed deployment: nothing has been acquired, so
+  // a snapshot is the one mode the source admits.
+  const user = userEvent.setup()
+  const client = {
+    getAcquisitionReceipts: vi.fn().mockResolvedValue(envelope([receipt])),
+    runAcquisitionNow: vi.fn(),
+  }
+
+  render(<AcquisitionReceiptsPage client={client} session={session} />)
+  await user.type(
+    await screen.findByLabelText(/activated contract reference/i),
+    "contract:orders:v1",
+  )
+
+  expect(screen.getByLabelText(/what to acquire/i)).toHaveValue("snapshot")
+  expect(screen.getByText(/has not been acquired yet/i)).toBeVisible()
+})

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, Protocol, cast
 from urllib.parse import urlsplit
 
 from heinzel_access_control import (
@@ -71,6 +71,7 @@ from heinzel_console.governed_adapters import (
     WarehouseControlBindingReader,
     WarehouseControlLifecycleCommands,
     WarehouseRepositoryOperationReader,
+    refuse_a_snapshot_of_an_already_acquired_source,
 )
 from heinzel_console.governed_backend import GovernedConsoleBackend
 from heinzel_console.impact_projection import (
@@ -97,7 +98,11 @@ from heinzel_contract_service import (
     SQLiteSourceObservationRepository,
     ValidatedSourceBinding,
 )
-from heinzel_evidence import SQLiteAcquisitionEvidenceWriter, SQLiteStore
+from heinzel_evidence import (
+    AcquisitionEvidenceReceipt,
+    SQLiteAcquisitionEvidenceWriter,
+    SQLiteStore,
+)
 from heinzel_knowledge_graph import (
     ContextEdge,
     ContextGraphProjector,
@@ -111,7 +116,10 @@ from heinzel_provider_sdk import (
     AccessEffectCommand,
     AccessEffectProviderError,
     AccessEffectResult,
+    AcquisitionAcknowledgement,
+    AcquisitionIntent,
 )
+from heinzel_provider_sdk.acquisition_models import AcquisitionMode
 from heinzel_request_management import (
     AccessGrantAdmissionBinding,
     AccessGrantEffectTarget,
@@ -148,10 +156,16 @@ from heinzel_request_management import (
     StakeholderQuestion,
 )
 from heinzel_runtime import (
+    AcquisitionApplication,
+    AcquisitionPreparationResult,
+    AcquisitionRunner,
+    AcquisitionRunPreparation,
     AnswerResultAccessEffectProvider,
     AnswerResultAccessTarget,
+    activated_contract_resolver,
     compose_acquisition_application,
     opaque_reference_factory,
+    source_binding_resolver,
 )
 from heinzel_semantic_registry import (
     FulfillmentAuthorityObservation,
@@ -1252,6 +1266,80 @@ class _PersistedWorkspaceBindingDirectory(InMemoryWorkspaceBindingDirectory):
         os.replace(temporary_path, self._path)
 
 
+class _AcknowledgementConsumer(Protocol):
+    """What takes a prepared batch where there is no warehouse to land it into."""
+
+    def acknowledge(
+        self, intent: AcquisitionIntent, preparation: AcquisitionPreparationResult
+    ) -> AcquisitionAcknowledgement: ...
+
+
+class _ConsumedAcquisitionRun:
+    """One commanded acquisition, prepared and then consumed and acknowledged.
+
+    The console's run-now surface reports the receipt a run ended on, not a preparation,
+    because a run that only prepared would leave a verified batch staged with nothing able to
+    take it. This deployment's destination boundary refuses every write on purpose, so what
+    takes the batch here is the acknowledgement consumer the offline acquisition journey uses,
+    rather than a landing into a warehouse.
+
+    A preparation the runtime governed to no batch comes back as its own receipt: a run of a
+    source nothing has written to since the last one is a `No Valid Plan`, not a failure.
+    """
+
+    def __init__(
+        self,
+        *,
+        application: AcquisitionApplication,
+        consumer: _AcknowledgementConsumer,
+        acknowledger: AcquisitionRunner,
+        evidence: SQLiteStore,
+    ) -> None:
+        self._application = application
+        self._consumer = consumer
+        self._acknowledger = acknowledger
+        self._evidence = evidence
+
+    def run_now(
+        self,
+        *,
+        tenant_id: str,
+        contract_ref: str,
+        trigger_window: str,
+        acquisition_mode: AcquisitionMode,
+    ) -> AcquisitionEvidenceReceipt:
+        refuse_a_snapshot_of_an_already_acquired_source(
+            tenant_id=tenant_id,
+            contract_ref=contract_ref,
+            acquisition_mode=acquisition_mode,
+            receipts=self._evidence,
+        )
+        preparation: AcquisitionRunPreparation = self._application.prepare_now(
+            tenant_id=tenant_id,
+            contract_ref=contract_ref,
+            trigger_window=trigger_window,
+            acquisition_mode=acquisition_mode,
+        )
+        if preparation.result.batch_manifest is None:
+            return preparation.result.evidence
+        acknowledgement = self._consumer.acknowledge(preparation.intent, preparation.result)
+        checkpoint = self._acknowledger.acknowledge(preparation.intent, acknowledgement)
+        receipt = next(
+            (
+                item
+                for item in self._evidence.list_acquisition_receipts(tenant_id)
+                if item.checkpoint_receipt_ref == checkpoint.checkpoint_receipt_id
+            ),
+            None,
+        )
+        if receipt is None:
+            raise AssertionError(
+                "the acknowledgement committed and no receipt in the console's evidence "
+                "store names it"
+            )
+        return receipt
+
+
 class GovernedConsoleDeployment:
     """The owning services, their databases, and the console that projects them."""
 
@@ -1584,6 +1672,8 @@ class GovernedConsoleDeployment:
             directory / "source-acquisition",
             check_same_thread=False,
         )
+        acquisition_references = opaque_reference_factory()
+        acquisition_evidence = SQLiteAcquisitionEvidenceWriter(self.evidence)
         self.acquisition = compose_acquisition_application(
             contract_repository=self.lifecycles,
             binding_repository=self.source_acquisition,
@@ -1591,9 +1681,38 @@ class GovernedConsoleDeployment:
             provider_resolver=self.source_acquisition.resolve_provider,
             state_store=self.source_acquisition.state,
             artifact_store=self.source_acquisition.artifact_store,
-            evidence_writer=SQLiteAcquisitionEvidenceWriter(self.evidence),
-            reference_factory=opaque_reference_factory(),
+            evidence_writer=acquisition_evidence,
+            reference_factory=acquisition_references,
             clock=self.source_acquisition.clock,
+        )
+        # A commanded run has to end somewhere. The application prepares and nothing more,
+        # so a console wired to it alone reports the capability delivered and leaves every
+        # batch staged. This deployment has no warehouse to land into -- its destination
+        # boundary refuses outright, on purpose -- but it has the consumer and the
+        # acknowledgement that close a run, which is what advances the source checkpoint and
+        # makes the receipt an `acknowledged` one.
+        #
+        # A second runner rather than the harness's own, because the harness writes its
+        # evidence to a store of its own and the console reads this one. The resolvers are
+        # the application's, so both halves of a run admit the same authorities.
+        self.acquisition_acknowledger = AcquisitionRunner(
+            binding_resolver=source_binding_resolver(self.source_acquisition),
+            contract_resolver=lambda tenant_id, contract_ref: (
+                activated_contract_resolver(self.lifecycles)(tenant_id, contract_ref).contract
+            ),
+            observation_resolver=self.source_acquisition.load_observation,
+            provider_resolver=self.source_acquisition.resolve_provider,
+            state_store=self.source_acquisition.state,
+            artifact_store=self.source_acquisition.artifact_store,
+            evidence_writer=acquisition_evidence,
+            reference_factory=acquisition_references,
+            clock=self.source_acquisition.clock,
+        )
+        self.acquisition_commands = _ConsumedAcquisitionRun(
+            application=self.acquisition,
+            consumer=self.source_acquisition.consumer,
+            acknowledger=self.acquisition_acknowledger,
+            evidence=self.evidence,
         )
         if self.bindings.catalog_binding_id(TENANT) is None:
             # Only when the workspace has none: catalog-control publishes no way to
@@ -1700,7 +1819,7 @@ class GovernedConsoleDeployment:
             # own tenant, so unlike a run there is nothing to derive and no adapter
             # whose only purpose would be to rename the call.
             acquisition_receipts=self.evidence,
-            acquisition_commands=self.acquisition,
+            acquisition_commands=self.acquisition_commands,
             actors=actors,
             data_products=PolicyPermittedDataProductReader(
                 repository=self.fulfillment_repository, requests=self.requests

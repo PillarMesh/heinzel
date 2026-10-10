@@ -52,6 +52,7 @@ from ..governed_adapters import (
 from ..governed_backend import GovernedConsoleBackend
 from ..operation_handles import InMemoryOperationHandleRepository
 from .access import DemoAccessControl, build_demo_access_control
+from .acquisition_commands import DemoAcquisitionCommands
 from .answer_runtime import DemoGovernedAnswer, demo_governed_answer
 from .bi_provider import (
     SUPERSET_TLS_DIRECTORY_VARIABLE,
@@ -80,6 +81,7 @@ from .dashboard_contract import (
     resolve_dashboard_contract_key,
     seed_demo_dashboard_contract,
 )
+from .generation import DemoAcquisition
 from .managed_warehouse import (
     DemoManagedWarehouse,
     ManagedWarehouseOption,
@@ -89,7 +91,11 @@ from .provenance import DemoProvenanceSubject, DemoRequestProvenanceReader
 from .publication import DEMO_TENANT_ID, build_demo_publication
 from .role_passwords import role_passwords
 from .seed import seed_demo_request
-from .source_registry import DemoSourceRegistry, open_demo_source_registry
+from .source_registry import (
+    DemoSourceRegistry,
+    ensure_registered_demo_source,
+    open_demo_source_registry,
+)
 from .stores import DemoStores
 from .warehouse import DEMO_WAREHOUSE_ROLES, role_dsn
 
@@ -420,6 +426,19 @@ class DemoConsole:
                 acquisition_receipts=(
                     None if governed_answer is None else self._stores.acquisition_evidence
                 ),
+                # A second acquisition under the contract the first one activated. Offered
+                # alongside the receipts and for the same reason: the contract is activated by
+                # the first acquisition, so before there is one there is nothing to run. It
+                # prepares a batch and lands it; building a product over what lands is a
+                # separate step, and the capability detail says so rather than implying a
+                # refreshed product.
+                acquisition_commands=(
+                    None
+                    if governed_answer is None or sources is None or answering_dsn is None
+                    else self._compose_acquisition_commands(
+                        state_dir, warehouse_dsn=answering_dsn, sources=sources
+                    )
+                ),
                 # The approved terms a question may be composed from, read from the composed
                 # answer's own bindings so what the builder offers is exactly what the
                 # interpreter resolves and the validation admits.
@@ -518,6 +537,45 @@ class DemoConsole:
         )
         self._closing.callback(registry.close)
         return registry
+
+    def _compose_acquisition_commands(
+        self, state_dir: Path, *, warehouse_dsn: str, sources: DemoSourceRegistry
+    ) -> DemoAcquisitionCommands:
+        """The run-now surface, over the contract the first acquisition activated.
+
+        Composed after the generation, because the contract has to be activated before
+        anything can acquire under it and the first acquisition is what activates it. The
+        binding is the broker's registered one, read back rather than registered again --
+        `ensure_registered_demo_source` returns the ready binding it already holds.
+
+        Two roles, as the first acquisition used: one reads the source and one writes the
+        landing. The passwords are derived from the kept root the same way the registry
+        derives its own, so these are the same logins, not a second pair.
+        """
+        passwords = role_passwords(state_dir, DEMO_WAREHOUSE_ROLES)
+        contract = self.publication.contract
+        return DemoAcquisitionCommands(
+            DemoAcquisition(
+                role_dsn(
+                    warehouse_dsn,
+                    DEMO_WAREHOUSE_ROLES.acquisition,
+                    passwords[DEMO_WAREHOUSE_ROLES.acquisition],
+                ),
+                binding=ensure_registered_demo_source(sources),
+                bindings=sources.repository,
+                publication=self.publication,
+                stores=self._stores,
+                clock=demo_clock,
+            ),
+            tenant_id=contract.tenant_id,
+            contract_ref=contract.contract_id,
+            landing_dsn=role_dsn(
+                warehouse_dsn,
+                DEMO_WAREHOUSE_ROLES.landing,
+                passwords[DEMO_WAREHOUSE_ROLES.landing],
+            ),
+            stores=self._stores,
+        )
 
     def _compose_governed_answer(
         self,

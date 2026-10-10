@@ -30,6 +30,37 @@ const outcomeLabels = {
   failed: "Failed",
 } satisfies Record<AcquisitionReceiptView["outcome"], string>
 
+/*
+ * The two modes a run can be commanded in here, and what each one means to the person
+ * pressing. `reconciliation` is a third the command surface accepts and this page does not
+ * offer: it is a repair of a disagreement between source and destination, not a refresh.
+ */
+type AcquisitionRunMode = Extract<
+  AcquisitionRunNowCommand["acquisition_mode"],
+  "snapshot" | "incremental"
+>
+
+const modeLabels = {
+  snapshot: "Acquire the whole source",
+  incremental: "Acquire what has changed since the last run",
+} satisfies Record<AcquisitionRunMode, string>
+
+/*
+ * A snapshot is admitted only from checkpoint revision 0, and an acknowledged receipt is the
+ * record of a checkpoint having advanced. So a contract with one has been acquired, and asking
+ * for a snapshot of it is refused -- which is why this decides the default rather than leaving
+ * the page on the mode that happens to work once.
+ */
+function defaultModeFor(
+  receipts: readonly AcquisitionReceiptView[] | null,
+  contractRef: string,
+): AcquisitionRunMode {
+  const acquired = (receipts ?? []).some(
+    (receipt) => receipt.contract_ref === contractRef && receipt.outcome === "acknowledged",
+  )
+  return acquired ? "incremental" : "snapshot"
+}
+
 export interface AcquisitionReceiptsClient {
   getAcquisitionReceipts(): Promise<ConsoleEnvelopeAcquisitionReceiptsView>
   runAcquisitionNow?(
@@ -47,6 +78,18 @@ interface AcquisitionReceiptsPageProps {
 
 function defaultIdempotencyKey(): string {
   return `acquisition-${globalThis.crypto.randomUUID()}`
+}
+
+function runMessageFor(outcome: AcquisitionReceiptView["outcome"]): string {
+  if (outcome === "acknowledged") {
+    // Said once, in the guidance above the control, where it sets the expectation rather
+    // than correcting one.
+    return "Acquisition landed as a new generation, and the source now reads from after it."
+  }
+  if (outcome === "prepared") {
+    return "Acquisition prepared. Its verified artifacts and evidence are ready for the next stage."
+  }
+  return `Acquisition recorded: ${outcomeLabels[outcome]}.`
 }
 
 function currentUtcHourWindow(): string {
@@ -67,6 +110,7 @@ export function AcquisitionReceiptsPage({
   const [runAvailable, setRunAvailable] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
   const [contractRef, setContractRef] = useState("")
+  const [modeSelection, setModeSelection] = useState<AcquisitionRunMode | null>(null)
   const [runFailure, setRunFailure] = useState<string | null>(null)
   const [runMessage, setRunMessage] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -112,6 +156,10 @@ export function AcquisitionReceiptsPage({
     rather than finding out by pressing.
   */
   const canRun = runAvailable && client.runAcquisitionNow !== undefined && activeRole !== null
+  // The chosen mode, or the one this contract's own receipts say is the available one. A
+  // choice survives a change of contract only while it remains the right default for it.
+  const defaultMode = defaultModeFor(receipts, contractRef.trim())
+  const mode = modeSelection ?? defaultMode
 
   const runAcquisition = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -132,7 +180,7 @@ export function AcquisitionReceiptsPage({
     try {
       const response = await client.runAcquisitionNow(
         {
-          acquisition_mode: "snapshot",
+          acquisition_mode: mode,
           active_role: activeRole,
           contract_ref: normalizedContractRef,
           trigger_window: triggerWindow,
@@ -146,11 +194,8 @@ export function AcquisitionReceiptsPage({
         return [response.data, ...withoutReplay]
       })
       setUncertainRun(null)
-      setRunMessage(
-        response.data.outcome === "prepared"
-          ? "Acquisition prepared. Its verified artifacts and evidence are ready for the next stage."
-          : `Acquisition recorded: ${outcomeLabels[response.data.outcome]}.`,
-      )
+      setModeSelection(null)
+      setRunMessage(runMessageFor(response.data.outcome))
     } catch (error: unknown) {
       if (error instanceof ConsoleMutationOutcomeUnknown) {
         setUncertainRun({idempotencyKey, triggerWindow})
@@ -191,6 +236,16 @@ export function AcquisitionReceiptsPage({
             required
             value={contractRef}
           />
+          <label htmlFor="acquisition-mode">What to acquire</label>
+          <select
+            disabled={submitting || uncertainRun !== null}
+            id="acquisition-mode"
+            onChange={(event) => setModeSelection(event.target.value as AcquisitionRunMode)}
+            value={mode}
+          >
+            <option value="incremental">{modeLabels.incremental}</option>
+            <option value="snapshot">{modeLabels.snapshot}</option>
+          </select>
           <button disabled={submitting || contractRef.trim().length === 0} type="submit">
             {submitting
               ? "Running acquisition…"
@@ -199,8 +254,11 @@ export function AcquisitionReceiptsPage({
                 : "Reconcile acquisition"}
           </button>
           <p className="summary-page__guidance">
-            Runs the current activated revision for this UTC hour. Repeating the same hour is
-            replay safe.
+            {defaultMode === "incremental"
+              ? "This source has been acquired, so only what has changed since can be acquired from it."
+              : "This source has not been acquired yet, so the whole of it can be acquired once."}{" "}
+            A run lands what it acquires as a new generation. Building a product over that
+            generation is a separate step.
           </p>
           {runFailure === null ? null : <p role="alert">{runFailure}</p>}
           {runMessage === null ? null : <p role="status">{runMessage}</p>}

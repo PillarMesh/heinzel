@@ -99,7 +99,6 @@ from heinzel_contract_service import (
     SQLiteProcessPackageRepository,
 )
 from heinzel_evidence import AcquisitionEvidenceReceipt
-from heinzel_provider_sdk import AcquisitionNoValidPlan
 from heinzel_provider_sdk.bi import BiApplyResult, BiDashboardDefinition
 from heinzel_provider_sdk.errors import AcquisitionProviderError, AcquisitionProviderKind
 from heinzel_request_management import (
@@ -132,7 +131,7 @@ from heinzel_request_management.fulfillment_models import (
     DisclosureDenial,
 )
 from heinzel_request_management.requester_view import OwnDecisionView
-from heinzel_runtime import AcquisitionOwnershipError, AcquisitionPreparationResult
+from heinzel_runtime import AcquisitionOwnershipError
 from heinzel_semantic_registry import OntologyReviewBundle, OntologyReviewItem
 from heinzel_semantic_registry.review import ReviewItemDecision
 from heinzel_warehouse_control import (
@@ -2016,12 +2015,19 @@ def test_data_access_preparation_delegates_to_the_access_proposal_boundary(
 
 
 class _RecordingAcquisitionCommands:
+    """The run-now surface, reporting the receipt a run ended on.
+
+    A receipt rather than a preparation result, because a run that only prepared would leave
+    a verified batch staged with nothing in the product able to take it. This one reports a
+    governed `No Valid Plan`, which is a run that ended without a batch to take.
+    """
+
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
 
-    def run_now(self, **values: object) -> AcquisitionPreparationResult:
+    def run_now(self, **values: object) -> AcquisitionEvidenceReceipt:
         self.calls.append(values)
-        evidence = AcquisitionEvidenceReceipt(
+        return AcquisitionEvidenceReceipt(
             evidence_id="evidence:acquisition:orders",
             tenant_id=str(values["tenant_id"]),
             run_intent_ref="a" * 64,
@@ -2036,15 +2042,6 @@ class _RecordingAcquisitionCommands:
             reason_codes=("acquisition_mode_not_admitted",),
             outcome="no_valid_plan",
             created_at=_FIXED_TIME,
-        )
-        return AcquisitionPreparationResult(
-            evidence=evidence,
-            prepared_receipt=None,
-            batch_manifest=None,
-            governed_outcome=AcquisitionNoValidPlan(
-                reason_codes=("acquisition_mode_not_admitted",),
-                failed_constraints=("contract.acquisition_modes",),
-            ),
         )
 
 

@@ -1,9 +1,10 @@
 """What the demonstration's governed acquisition refuses, before it reaches a warehouse.
 
 The acquisition itself needs a cluster and is covered by the live suite. These are its
-preconditions: an acquisition that could not store its cursor, and a second acquisition over
-a source this state directory has already acknowledged. Both are decided before anything
-connects, so both are asked here rather than at the cost of a cluster.
+preconditions, and they divide the way the code does: what activating a contract refuses, and
+what composing an acquisition under an activated one refuses. Every one of them is decided
+before anything connects, so all of them are asked here rather than at the cost of a cluster.
+The DSN names a port nothing serves, which is what makes that claim checkable.
 """
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ from heinzel_console.demo.generation import (
     DEMO_SOURCE_CONNECTION_HANDLE,
     DemoAcquisition,
     DemoSourceBindingReader,
+    ensure_activated_demo_contract,
 )
 from heinzel_console.demo.publication import DemoPublication, build_demo_publication
 from heinzel_console.demo.stores import DemoStores
@@ -121,25 +123,17 @@ def test_an_acquisition_with_nowhere_to_encrypt_its_cursor_is_refused(tmp_path: 
         stores.close()
 
 
-def test_a_second_acquisition_over_an_acknowledged_source_is_refused_with_what_to_do(
-    stores: DemoStores, monkeypatch: pytest.MonkeyPatch
+def _acknowledged_checkpoint(
+    stores: DemoStores, monkeypatch: pytest.MonkeyPatch, *, publication: DemoPublication
 ) -> None:
-    """Acknowledging a landing moves the checkpoint, and no snapshot may be taken from there.
+    """Report this source's checkpoint as advanced, as a landed and acknowledged batch leaves it.
 
-    The provider admits a snapshot only at checkpoint revision 0 and reports anything else as
-    `permanent_configuration`, which names nothing an operator could act on. Reaching
-    acquisition with a checkpoint already present means the record of what was landed was lost
-    while the stores it points into were kept, so the two are to be discarded together -- and
-    the refusal has to say that.
-
-    The checkpoint is served from the real `SourceCheckpointState`, so this cannot pass on a
-    shape the repository would never return.
+    Served from the real `SourceCheckpointState`, so this cannot pass on a shape the
+    repository would never return.
     """
-    publication = _publication(stores)
-    contract = publication.contract
     acknowledged = SourceCheckpointState(
-        tenant_id=contract.tenant_id,
-        contract_digest=digest(contract),
+        tenant_id=publication.contract.tenant_id,
+        contract_digest=digest(publication.contract),
         source_binding_ref=_BINDING_REF,
         provider_kind="postgresql",
         cursor_version="1",
@@ -152,13 +146,83 @@ def test_a_second_acquisition_over_an_acknowledged_source_is_refused_with_what_t
     )
     assert stores.acquisition_state is not None
     monkeypatch.setattr(
-        stores.acquisition_state,
-        "load_checkpoint",
-        lambda *_arguments: acknowledged,
+        stores.acquisition_state, "load_checkpoint", lambda *_arguments: acknowledged
     )
 
-    binding = _binding(contract.tenant_id)
+
+def test_activating_a_contract_whose_source_was_already_acquired_is_refused_with_what_to_do(
+    stores: DemoStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Acknowledging a landing moves the checkpoint, and no snapshot may be taken from there.
+
+    So reaching activation with a checkpoint already present means the record of what the
+    first acquisition landed was lost while the stores it points into were kept, and the two
+    are to be discarded together. The provider would report `permanent_configuration`, which
+    names nothing an operator could act on, so this refuses first and says what happened.
+
+    This is about activating, not about acquiring: a run commanded after the first one
+    acquires under the activation that is already there and never comes through here.
+    """
+    publication = _publication(stores)
+    _acknowledged_checkpoint(stores, monkeypatch, publication=publication)
+
     with pytest.raises(ProvisioningRefused) as refusal:
+        ensure_activated_demo_contract(
+            _UNREACHABLE_DSN,
+            binding=_binding(publication.contract.tenant_id),
+            publication=publication,
+            stores=stores,
+            clock=lambda: _NOW,
+        )
+
+    assert "already acquired and acknowledged" in str(refusal.value)
+    assert "docker compose down -v" in str(refusal.value)
+
+
+def test_an_acquisition_composes_over_a_source_whose_checkpoint_has_already_advanced(
+    stores: DemoStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A second acquisition is what an advanced checkpoint is for, not what it forbids.
+
+    This used to refuse: the whole object activated as it constructed, so composing one over
+    an acknowledged source meant a snapshot nobody could take. Activating is separate now, so
+    an advanced checkpoint is just a source that has been read once -- which is the state
+    every commanded run starts from.
+
+    The DSN names a port nothing serves, so composing successfully is the assertion: it
+    reached no source and wrote no activation.
+    """
+    publication = _publication(stores)
+    contract = publication.contract
+    binding = _binding(contract.tenant_id)
+    assert binding.source_observation_ref is not None
+    stores.source_observations.store(
+        observation_ref=binding.source_observation_ref,
+        observation=_observation(contract.tenant_id, binding.binding_id),
+    )
+    _already_activated(stores, monkeypatch, contract_ref=contract.contract_id)
+    _acknowledged_checkpoint(stores, monkeypatch, publication=publication)
+
+    acquisition = DemoAcquisition(
+        _UNREACHABLE_DSN,
+        binding=binding,
+        bindings=_bindings(binding),
+        publication=publication,
+        stores=stores,
+        clock=lambda: _NOW,
+    )
+
+    assert acquisition is not None
+
+
+def test_an_acquisition_over_a_contract_nothing_activated_is_refused_by_name(
+    stores: DemoStores,
+) -> None:
+    """Composing one is not activating one, and the refusal says where activating happens."""
+    publication = _publication(stores)
+    binding = _binding(publication.contract.tenant_id)
+
+    with pytest.raises(ProvisioningRefused, match="not activated"):
         DemoAcquisition(
             _UNREACHABLE_DSN,
             binding=binding,
@@ -167,9 +231,6 @@ def test_a_second_acquisition_over_an_acknowledged_source_is_refused_with_what_t
             stores=stores,
             clock=lambda: _NOW,
         )
-
-    assert "already acquired and acknowledged" in str(refusal.value)
-    assert "docker compose down -v" in str(refusal.value)
 
 
 def test_an_acquisition_under_an_unvalidated_binding_is_refused_by_name(

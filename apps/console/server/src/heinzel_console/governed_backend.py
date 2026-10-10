@@ -862,14 +862,16 @@ class GovernedConsoleBackend:
                 label="Source acquisition",
                 state="ready" if self._acquisition_commands is not None else "not_delivered",
                 detail=(
-                    "An activated contract can be run now through the acquisition application."
+                    "An activated contract is acquired on command: a batch is prepared under "
+                    "it, landed as a raw generation, and the source checkpoint advanced. "
+                    "Building a product over what landed is a separate step."
                     if self._acquisition_commands is not None
                     else "No acquisition application command interface is wired."
                 ),
                 dependency=(
                     None
                     if self._acquisition_commands is not None
-                    else "a composed acquisition application"
+                    else "a composed acquisition application, and a destination to land into"
                 ),
             ),
             CapabilityView(
@@ -1814,7 +1816,7 @@ class GovernedConsoleBackend:
         commands = self._acquisition_commands
         if commands is None:
             raise _not_delivered("command delegation to the acquisition application")
-        result = self._guarded(
+        receipt = self._guarded(
             lambda: commands.run_now(
                 tenant_id=context.tenant_id,
                 contract_ref=command.contract_ref,
@@ -1822,7 +1824,7 @@ class GovernedConsoleBackend:
                 acquisition_mode=command.acquisition_mode,
             )
         )
-        return self._acquisition_receipt_view(result.evidence)
+        return self._acquisition_receipt_view(receipt)
 
     @staticmethod
     def _acquisition_receipt_view(receipt: AcquisitionEvidenceReceipt) -> AcquisitionReceiptView:
