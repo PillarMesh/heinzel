@@ -79,9 +79,11 @@ from .warehouse import (
 __all__ = [
     "DEMO_LOGICAL_OBJECT",
     "DEMO_RAW_TABLE",
+    "DEMO_SOURCE_CONNECTION_HANDLE",
     "DemoAcquisition",
     "LandedDemoGeneration",
     "PreparedDemoAcquisition",
+    "demo_source_acquisition_settings",
 ]
 
 # The logical object the contract's mapping names, so the landed relation and the semantic
@@ -95,7 +97,7 @@ DEMO_RAW_TABLE = "raw_customer_orders"
 # ready binding carries one and the runner resolves the observation through it.
 _SOURCE_BINDING_REF = "source-demo-orders"
 _SOURCE_OBSERVATION_REF = "source-observation-demo-orders"
-_CONNECTION_HANDLE = "demo-source"
+DEMO_SOURCE_CONNECTION_HANDLE = "demo-source"
 
 # The destination the rows are landed into, and the consumer whose acknowledgement advances
 # the source checkpoint. One name because one component does both here:
@@ -420,28 +422,43 @@ class DemoAcquisition:
         return max(watermarks)
 
 
+def demo_source_acquisition_settings(
+    connection_handle: str, dsn: SecretStr
+) -> PostgreSQLAcquisitionSettings:
+    """The declaration this demonstration acquires its one source object under.
+
+    Taken as `(handle, dsn)` rather than read from anywhere, because that is the shape a
+    capability authority composes settings in: the broker resolves a reference pair into a
+    connection detail and asks the deployment what it declared for that handle. The acquisition
+    provider and the source capability probe are built from this one function, so a binding the
+    probe admits is a binding the acquisition can read -- if they declared different objects, a
+    probe could pass on a source the acquisition is then refused.
+    """
+    return PostgreSQLAcquisitionSettings(
+        dsn=dsn,
+        connection_handle=connection_handle,
+        objects=(
+            PostgreSQLSourceObjectDeclaration(
+                logical_object_ref=DEMO_LOGICAL_OBJECT,
+                schema_name=SOURCE_SCHEMA,
+                table_name=SOURCE_TABLE,
+                field_names=tuple(field.name for field in _APPROVED_FIELDS),
+                key_name="order_id",
+                source_updated_at_field="updated_at",
+            ),
+        ),
+        # The schema acquisition must never reach into. The provider proves least
+        # privilege against it: it refuses the acquisition unless the connecting role
+        # holds no privilege on a relation outside its declaration, so `warehouse.py`
+        # creates this schema and a relation in it for the check to have a subject.
+        unrelated_schema_name="private_admin",
+        max_write_transaction_duration=DEMO_MAX_WRITE_TRANSACTION_DURATION,
+    )
+
+
 def _acquisition_provider(acquisition_dsn: str) -> PostgreSQLAcquisitionProvider:
     return PostgreSQLAcquisitionProvider(
-        PostgreSQLAcquisitionSettings(
-            dsn=SecretStr(acquisition_dsn),
-            connection_handle=_CONNECTION_HANDLE,
-            objects=(
-                PostgreSQLSourceObjectDeclaration(
-                    logical_object_ref=DEMO_LOGICAL_OBJECT,
-                    schema_name=SOURCE_SCHEMA,
-                    table_name=SOURCE_TABLE,
-                    field_names=tuple(field.name for field in _APPROVED_FIELDS),
-                    key_name="order_id",
-                    source_updated_at_field="updated_at",
-                ),
-            ),
-            # The schema acquisition must never reach into. The provider proves least
-            # privilege against it: it refuses the acquisition unless the connecting role
-            # holds no privilege on a relation outside its declaration, so `warehouse.py`
-            # creates this schema and a relation in it for the check to have a subject.
-            unrelated_schema_name="private_admin",
-            max_write_transaction_duration=DEMO_MAX_WRITE_TRANSACTION_DURATION,
-        ),
+        demo_source_acquisition_settings(DEMO_SOURCE_CONNECTION_HANDLE, SecretStr(acquisition_dsn)),
         private_boundary_reference_factory=lambda tenant, reference: (
             f"private://{tenant}/{reference}"
         ),
@@ -463,7 +480,7 @@ def _source_binding(*, tenant_id: str, observed_at: datetime) -> SourceConnectio
         binding_id=_SOURCE_BINDING_REF,
         tenant_id=tenant_id,
         provider_kind="postgresql",
-        connection_handle=_CONNECTION_HANDLE,
+        connection_handle=DEMO_SOURCE_CONNECTION_HANDLE,
         account_mode="not_applicable",
         lifecycle_state=SourceConnectionBindingState.READY,
         approved_object_refs=(DEMO_LOGICAL_OBJECT,),

@@ -78,14 +78,26 @@ export function SetupWorkbench({
   setupEnvelope,
 }: SetupWorkbenchProps) {
   const setup = setupEnvelope.data
-  const [stageSelection, setStageSelection] = useState<{
-    readonly setupDigest: string
-    readonly stage: SetupStage
-  } | null>(null)
-  const visibleStage =
-    stageSelection?.setupDigest === setup.setup_digest
-      ? stageSelection.stage
-      : setup.active_stage
+  const [stageSelection, setStageSelection] = useState<SetupStage | null>(null)
+  // A chosen stage survives the projection changing underneath it, as long as the projection
+  // still has that stage. Keying it to the digest alone ejected an architect from the stage they
+  // had just acted in: completing a stage changes the digest and moves `active_stage` on, so the
+  // confirmation they were reading was replaced by a different stage's panel. Nothing stale is
+  // shown by keeping it -- every panel renders from the projection in hand, not from the one the
+  // selection was made against.
+  const offered = setup.stages.some((stage) => stage.stage === stageSelection)
+  const visibleStage = stageSelection !== null && offered ? stageSelection : setup.active_stage
+  // A command that settles in a stage pins the view to that stage before the re-read lands.
+  // Completing a stage moves `active_stage` on, and an unpinned view follows it -- so pressing
+  // the button in the stage you are reading replaced its confirmation with the next stage's
+  // panel, and the only evidence the command had worked was a tick in the rail. Where to go
+  // next is the architect's to choose, which is what the rail is for.
+  function settledIn(stage: SetupStage): () => void {
+    return () => {
+      setStageSelection(stage)
+      onProjectionsChanged?.()
+    }
+  }
   const reviewRefs =
     requestedReviewRef === undefined ? (setup.pending_review_refs ?? []) : [requestedReviewRef]
 
@@ -102,9 +114,7 @@ export function SetupWorkbench({
             >
               <button
                 disabled={stage.stage !== setup.active_stage && stage.state === "not_started"}
-                onClick={() =>
-                  setStageSelection({setupDigest: setup.setup_digest, stage: stage.stage})
-                }
+                onClick={() => setStageSelection(stage.stage)}
                 type="button"
               >
                 <span className="setup-progress__number">{index + 1}</span>
@@ -123,7 +133,7 @@ export function SetupWorkbench({
           <FoundationStage
             client={client}
             idempotencyKeyFactory={idempotencyKeyFactory}
-            onProjectionsChanged={onProjectionsChanged}
+            onProjectionsChanged={settledIn("foundation")}
             pollTimer={pollTimer}
             session={session}
             setup={setup}
@@ -134,7 +144,7 @@ export function SetupWorkbench({
           <SourcesStage
             client={client}
             idempotencyKeyFactory={idempotencyKeyFactory}
-            onProjectionsChanged={onProjectionsChanged}
+            onProjectionsChanged={settledIn("sources")}
             pollTimer={pollTimer}
             session={session}
             setup={setup}

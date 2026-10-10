@@ -107,3 +107,37 @@ def test_the_setup_surface_refuses_entirely_without_a_warehouse(tmp_path: Path) 
 
     assert response.status_code == 503, response.text
     assert response.json()["error"]["code"] == "capability_not_delivered"
+
+
+_DIFFERING_COUNT: Final = re.compile(r"\*\*(?P<count>\w+)\s+capabilities differ\*\*")
+
+_NUMBERS: Final = {
+    "One": 1,
+    "Two": 2,
+    "Three": 3,
+    "Four": 4,
+    "Five": 5,
+    "Six": 6,
+    "Seven": 7,
+    "Eight": 8,
+    "Nine": 9,
+    "Ten": 10,
+}
+
+
+def test_the_register_counts_the_capabilities_that_differ_between_the_two_shapes() -> None:
+    """One sentence of the prose that can be checked, so it is.
+
+    The number above the table was written once and read as settled; it was wrong by the time
+    anyone looked, because a capability had moved in one column and the sentence did not. It is
+    the same drift the table exists to catch, in the paragraph introducing the table.
+    """
+    page = REGISTER.read_text(encoding="utf-8")
+    match = _DIFFERING_COUNT.search(page)
+    assert match is not None, f"{REGISTER} no longer says how many capabilities differ"
+    stated = _NUMBERS.get(match["count"].capitalize())
+    assert stated is not None, f"the register states a count this test cannot read: {match[0]}"
+
+    differing = sum(1 for without, managed in _claimed().values() if without != managed)
+
+    assert stated == differing, f"the register says {match[0]} and its own table shows {differing}"

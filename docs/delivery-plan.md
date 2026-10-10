@@ -11,17 +11,36 @@ not be built at all.
 
 ## The state it plans from
 
-Taken from the live console on 2026-10-09, not from documentation.
+Taken from the live console on 2026-10-10, not from documentation.
 
 | Reported by | Reading |
 | --- | --- |
-| Capability register (`GET /api/v1/workspace`) | 16 capabilities, 8 `ready`, 8 `not_delivered` |
-| Setup surface (`GET /api/v1/setup`) | 7 stages, 1 complete, 6 blocked |
-| Gap register | 41 rows, 10 closed, 31 open |
+| Capability register (`GET /api/v1/workspace`) | 16 capabilities, 9 `ready`, 7 `not_delivered` |
+| Setup surface (`GET /api/v1/setup`) | 7 stages, 1 complete, 1 current, 5 blocked |
+| Gap register | 41 rows, 13 closed, 28 open |
 | Warehouse (`psql` against the provisioned instance) | 5 least-privilege roles, 5 landed rows, 1 landing receipt, a built product of 3 rows |
 
 One lane works end to end and is attested at every step. What is missing is breadth and
 operability, which is a different problem from correctness and wants different work.
+
+### What has shipped against this plan
+
+Phase 1's first row and Phase 2's first row, in that order, because the second needed the first.
+
+* **Secret custody.** The warehouse's operation secrets are kept in warehouse-control's own
+  encrypted store, and the role passwords are derived from one kept root rather than minted per
+  start. A restart adopts its warehouse and answers, which was the ship criterion for that row.
+* **Source enrolment and registration.** The console composes the connection broker over its own
+  register. An architect sees the deployment's enrolled connection, registers it, and the broker
+  drives `draft -> validating -> ready` with the PostgreSQL probe observing the real source. The
+  ready binding and its two-probe evidence survive a restart. `source-registration` reports
+  `ready`, and the sources stage reports `complete` once a source is registered.
+
+What is left of Phase 2's first row is the acquisition: it still runs at startup under a binding
+assembled by hand, and the registered binding is a second, real one beside it. Making them the
+same binding means moving one of the two -- either the acquisition out of startup, or the
+registration into it -- and the first is the one worth doing, because it is also what Phase 3
+needs for a refresh.
 
 ## Rows that are decisions, not work
 
@@ -46,15 +65,17 @@ only for a deployment given no Superset. Correct the row before planning against
 
 Closing these does not close rows directly. It is what makes the rows closable.
 
-### A. No persistent secret custody
+### A. No persistent secret custody -- closed
 
-Role passwords are minted fresh each start and written nowhere, and enrolment is immutable per
-handle, so a handle enrolled on one start is refused on the next. This is why the demonstration
-enrols no source connection, which is why it offers nothing to register, which is why it
-acquires under a source binding it builds by hand rather than one a broker registered.
+Role passwords were minted fresh each start and written nowhere, and enrolment is immutable per
+handle, so a handle enrolled on one start was refused on the next. That is why the demonstration
+enrolled no source connection, why it offered nothing to register, and why it acquires under a
+source binding it builds by hand rather than one a broker registered.
 
-Blocks: source enrolment, source registration, broker-registered acquisition, warehouse
-resumption across restarts.
+The first three of those are now done: the secrets are kept, the enrolment holds across starts,
+and a registration reaches `ready` on probed evidence. Broker-registered **acquisition** is the
+one consequence still open, and it is no longer blocked by custody -- it is blocked by the order
+the demonstration does things in, which is the paragraph above.
 
 ### B. Doubles where services belong
 
@@ -83,7 +104,7 @@ first.
 
 | Work | Closes or unblocks | Size |
 | --- | --- | --- |
-| Secret custody service: durable, rotatable, never on the state volume | Root A; closes the warehouse-resumption row as a consequence | 3–4 |
+| ~~Secret custody: durable, the same across starts~~ **Done.** Kept in warehouse-control's own encrypted store, with the role passwords derived from one kept root. Not rotatable, and on the state volume -- a deployment puts the key in a key management service, which is the difference between this and custody. | Root A; closed the warehouse-resumption row as a consequence | — |
 | Authentication and a workspace principal directory | Root C; closes *no authentication* | 4–6 **?** |
 
 Ship criterion: a restart adopts its warehouse and answers; two real identities sign in and the
@@ -96,7 +117,7 @@ nine destinations and six are closed doors.
 
 | Work | Closes | Size |
 | --- | --- | --- |
-| Source enrolment and registration end to end, broker-backed | 3 rows (registration wiring, enrolment, hand-built binding) | 3–4 |
+| ~~Source enrolment and registration end to end, broker-backed~~ **Mostly done.** Two of the three rows closed: the registration surface and the enrolment. The third -- the acquisition running under the registered binding -- waits on the acquisition moving out of startup, which is Phase 3's first row anyway. | 2 of 3 rows | 1 (remainder) |
 | Warehouse engine options: real regions and capacity profiles | 1 row | 1 |
 | `meaning`, `data_product`, `activation` stage states from their own reads | 1 row | 2–3 |
 | Business process package command delegation | capability | 2 |
@@ -168,17 +189,20 @@ until the lanes beneath it are wide.
 
 ```
 secret custody ─┬─> source enrolment ─> source registration ─> broker-backed acquisition ─┐
-                │                                                                          ├─> refresh / second generation
-                └─> warehouse resumption                                                   │
+   (done)       │        (done)               (done)                                       ├─> refresh / second generation
+                └─> warehouse resumption (done)                                            │
 identity ───────┬─> fulfillment admission                                                  │
                 ├─> Superset SSO                                                           │
                 └─> MCP adapters                                                           │
 catalog + compiler admission ──────────────────────────────────────────────────────────────┘
 ```
 
-Nothing in Phases 3–7 is safely startable before Phase 1. Phase 4 is the exception: compiler
-expressiveness is independent of identity and custody, so it can run in parallel with Phase 2 by
-a second pair of hands.
+The custody branch is clear to its last node. Broker-backed acquisition and refresh are now one
+piece of work rather than two: both want the acquisition to stop being a startup step, and
+neither wants anything from identity.
+
+Phase 4 remains independent of identity and custody, so it can run in parallel with Phase 2 by a
+second pair of hands.
 
 ## Rough total
 

@@ -471,20 +471,28 @@ def _publication_operation(record: DashboardPublicationRecord) -> OperationView:
     )
 
 
-def _stage_detail(stage: SetupStage, *, source_reader_available: bool) -> str | None:
+def _stage_detail(
+    stage: SetupStage, *, source_reader_available: bool, source_registered: bool
+) -> str | None:
     """What an architect is told about a stage beyond its state.
 
     `sources` names its own dependency rather than borrowing the sentence an unbuilt stage
     carries: a wired reader that has found nothing registered is a different situation from a
     stage with no implementation behind it, and the two must not read alike. When the reader is
-    wired, the detail says where a connection comes from, because the console never holds one
-    and must not leave an architect guessing that it does.
+    wired and nothing is registered yet, the detail says where a connection comes from, because
+    the console never holds one and must not leave an architect guessing that it does.
+
+    Once a source is registered the detail goes, like `foundation`'s: it was an instruction for
+    work that is now done, and a finished stage still telling someone how to start it reads as
+    though the console had not noticed.
     """
     if stage in _UNDELIVERED_STAGES:
         return "No governed implementation is wired for this stage."
     if stage == "sources":
         if not source_reader_available:
             return "No connection broker read is wired for this stage."
+        if source_registered:
+            return None
         return (
             "An operator enrols a connection in this deployment's secret custody before it can "
             "be registered. Registering validates the enrolled handle against the source; the "
@@ -1033,7 +1041,11 @@ class GovernedConsoleBackend:
                     stage=stage,
                     label=stage.replace("_", " ").capitalize(),
                     state=stage_states[stage],
-                    detail=_stage_detail(stage, source_reader_available=source_reader is not None),
+                    detail=_stage_detail(
+                        stage,
+                        source_reader_available=source_reader is not None,
+                        source_registered=stage_states["sources"] == "complete",
+                    ),
                 )
                 for stage in _SETUP_STAGES
             ),
@@ -3933,13 +3945,20 @@ class GovernedConsoleBackend:
         # where it was: work started is not work done, and the stage must not read complete over
         # a source nothing has probed. Without a reader the stage stays blocked, because the
         # console cannot tell a tenant that has registered nothing from a register it cannot see.
+        #
+        # It waits on the foundation and not on the managed services. Registering a source
+        # validates a connection against the source itself and records a binding in the
+        # connection broker; no part of that reads a catalog. Gating it on the whole prefix of
+        # the sequence would leave an architect looking at a stage they could act in, disabled
+        # behind one they cannot -- the console deciding the order rather than reporting a
+        # dependency, which is a closed door it has no reason to close.
         states["sources"] = (
             "blocked"
             if not source_reader_available
             else "complete"
             if source_registered
             else "current"
-            if prerequisites_ready
+            if foundation == "complete"
             else "not_started"
         )
         states["business_process"] = (

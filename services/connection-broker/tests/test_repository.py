@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -796,3 +797,46 @@ def test_a_closed_repository_reports_a_listing_failure_as_transient() -> None:
         repository.list_for_tenant("tenant-a")
 
     assert not isinstance(captured.value, SourceBindingIntegrityError)
+
+
+def test_a_register_opened_for_one_thread_refuses_another(tmp_path: Path) -> None:
+    """The default, stated as a test: a connection carries the affinity of its opening thread.
+
+    Asserted because the opposite is what a host composing this register needs, and a default
+    that silently changed would make the opt-in below look unnecessary.
+    """
+    repository = SQLiteSourceBindingRepository(str(tmp_path / "bindings.sqlite3"))
+    refused: list[SourceBindingPersistenceError] = []
+
+    def read() -> None:
+        try:
+            repository.list_for_tenant("tenant-a")
+        except SourceBindingPersistenceError as error:
+            refused.append(error)
+
+    thread = threading.Thread(target=read)
+    thread.start()
+    thread.join()
+
+    assert [type(error) for error in refused] == [SourceBindingPersistenceError]
+    repository.close()
+
+
+def test_a_register_opened_across_threads_serves_another(tmp_path: Path) -> None:
+    """The opt-in a host opening the register once at startup needs.
+
+    A console reads on the thread it was composed on and runs commands on a threadpool, so the
+    register has to answer both. Nothing is relaxed about the data: SQLite's serialized threading
+    mode is what this relies on, and the write below is read back here to show it committed.
+    """
+    repository = SQLiteSourceBindingRepository(
+        str(tmp_path / "bindings.sqlite3"), check_same_thread=False
+    )
+    thread = threading.Thread(target=lambda: repository.create(binding(), capability()))
+    thread.start()
+    thread.join()
+
+    (stored,) = repository.list_for_tenant("tenant-a")
+    assert stored.binding_id == "source-binding-a"
+    assert stored.lifecycle_state is SourceConnectionBindingState.DRAFT
+    repository.close()

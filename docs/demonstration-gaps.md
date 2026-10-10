@@ -32,11 +32,12 @@ because the flow above cannot be shown without closing them.
   the row because the product changed -- never to make a check pass.
 -->
 
-The demonstration runs in two shapes and reports different capabilities in each. **Four
+The demonstration runs in two shapes and reports different capabilities in each. **Six
 capabilities differ**, which is how this page came to claim that dashboard publication was
 unwired while the recorded journey was publishing a dashboard: the row described the shape with
 no warehouse, and the demonstration everyone watches is the other one. A gap below that names a
-capability is about one of these columns, and says which.
+capability is about one of these columns, and says which. That number is now a test: it said
+four while five differed, which is this same drift inside the paragraph warning about it.
 
 | Capability | Without a warehouse | With a managed warehouse |
 | --- | --- | --- |
@@ -48,7 +49,7 @@ capability is about one of these columns, and says which.
 | `data-product-runs` | not_delivered | not_delivered |
 | `acquisition-evidence` | not_delivered | ready |
 | `question-term-builder` | not_delivered | ready |
-| `source-registration` | not_delivered | not_delivered |
+| `source-registration` | not_delivered | ready |
 | `source-acquisition` | not_delivered | not_delivered |
 | `catalog-asset-preview` | not_delivered | not_delivered |
 | `analyst-dashboard` | ready | ready |
@@ -58,8 +59,9 @@ capability is about one of these columns, and says which.
 | `operation-retry` | not_delivered | not_delivered |
 
 Without a warehouse the setup surface refuses the whole read: there is no binding to report a
-stage against. With one it answers seven stages, of which `foundation` is complete and the
-other six are blocked.
+stage against. With one it answers seven stages: `foundation` is complete, `sources` is the
+current work with the deployment's own enrolled connection offered to register, and the other
+five are blocked.
 
 ## The demonstration answers the question that was composed, and only a composed one
 
@@ -133,9 +135,9 @@ the only path would have replaced a startup this repository proves with one it c
 
 | Gap | Kind | Established by |
 | --- | --- | --- |
-| The console registers a source, and the demonstration reaches that surface only on the opt-in warehouse-control path. It lists the bindings the broker holds for a tenant, offers the enrolled connections no binding names yet, and registers one by driving `draft -> validating -> ready` through `SourceBindingService`. It is reached through `GET /api/v1/setup` and `POST /api/v1/setup/sources`; on the default path both answer `capability_not_delivered` for the warehouse-binding reason in section 1 above, and on the opt-in path `get_setup` answers and the next row is what is still missing. | Wiring | `register_source` in `governed_backend.py`; `_require_warehouse_binding_reader` refuses `get_setup` at `governed_backend.py:864` |
-| The demonstration enrols no source connection, so it would offer nothing to register even past the setup refusal. Its role passwords are minted fresh on every start and written nowhere, and enrolment is immutable per handle -- so a handle enrolled on one start is refused on the next, and enrolling at all would put a credential on the state volume the demonstration deliberately keeps clear of one. | Unbuilt | `_fresh_passwords` in `demo/bootstrap.py:86-96`, applied again at `:303-305`; `enroll_connection` in `demo/source_secrets.py:151-173` |
-| The demonstration acquires one seeded source at startup under a source binding it constructs by hand, rather than one the broker registered. | Unbuilt | `_DemoSourceBindingReader` and `_source_binding` in `demo/generation.py`, `demo/seed.py` |
+| ~~The console registers a source, and the demonstration reaches that surface only on the opt-in warehouse-control path, where it has nothing to offer.~~ Closed on the warehouse path, which now composes the connection broker over its own register: an architect reads `GET /api/v1/setup`, sees the deployment's enrolled connection offered, and `POST /api/v1/setup/sources` drives `draft -> validating -> ready` through `SourceBindingService` with `PostgreSQLSourceCapabilityProbe` observing the real source. The ready binding carries the capability profile the probe measured and the evidence of both probes, and it is read back after a restart. Without a warehouse the capability stays `not_delivered`, because the source the demonstration registers is a role inside one. | Delivered | `demo/source_registry.py`; `register_source` in `governed_backend.py`; `tests/integration/test_source_binding_registration_live.py` |
+| ~~The demonstration enrols no source connection, so it would offer nothing to register even past the setup refusal.~~ Closed. The role passwords are derived from one kept root instead of minted per start, so the detail behind a handle is the same on every start and the immutable enrolment accepts it; the warehouse path enrols its own acquisition role on the way up, which is the step a deployment's operator takes out of band. The credential is on the state volume, in the demonstration's own owner-only secret store rather than a secret manager -- which `demo/source_secrets.py` states as the one thing it does not stand in for. | Delivered | `demo/role_passwords.py`; `open_demo_source_registry` in `demo/source_registry.py`; `enroll_connection` in `demo/source_secrets.py` |
+| The demonstration acquires one seeded source at startup under a source binding it constructs by hand, rather than the one the broker now registers. The broker-registered binding exists and is validated; the acquisition does not yet run under it, because the acquisition happens at startup and the registration is the architect's step afterwards -- so one of the two has to move before they can be the same binding. | Unbuilt | `_DemoSourceBindingReader` and `_source_binding` in `demo/generation.py` |
 | The Stripe provider reads object snapshots and events against a mocked API, is not composed into acquisition, and has no live test. | Unbuilt | `providers/stripe`, [status.md](status.md) |
 | No owning service binds a contract to its destination; LAND routing is deployment configuration. | Unbuilt | [status.md](status.md) |
 | One generation, materialized once. No refresh, no second generation, and no scheduler: `services/trigger` holds trigger policies and nothing runs them. | Unbuilt | `services/trigger`, [quickstart README](../deploy/quickstart/README.md) |

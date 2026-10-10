@@ -2469,27 +2469,45 @@ def _sources_stage(setup: object) -> SetupStageView:
     return next(item for item in setup.stages if item.stage == "sources")
 
 
-def test_the_sources_stage_waits_on_its_prerequisites_before_it_is_the_current_work() -> None:
-    """A wired reader with nothing registered is not started until the stages before it are done.
+def test_the_sources_stage_waits_on_the_foundation_and_not_on_the_managed_catalog() -> None:
+    """A wired reader with nothing registered is the current work as soon as there is a warehouse.
 
-    The same shape `managed_services` derives: a stage cannot be the work in front of an architect
-    while the warehouse and the managed catalog it needs are still unresolved.
+    Not the shape `business_process` derives. Registering a source validates a connection against
+    the source and records a binding in the connection broker; nothing in that reads a catalog,
+    so a deployment whose catalog is unresolved can still register one. Holding the stage shut
+    behind the whole prefix of the sequence would be the console ordering the work rather than
+    reporting a dependency -- and the console disables a stage that is neither active nor
+    started, so the order it chose would be a door an architect could not open.
     """
     reader = _StaticSourceBindingReader()
     without_catalog = _backend(
         warehouse_bindings=_StaticWarehouseBindingReader(_binding()), source_bindings=reader
     ).get_setup(_architect_context())
 
-    assert _sources_stage(without_catalog).state == "not_started"
+    assert _sources_stage(without_catalog).state == "current"
+    # And it is the stage the console opens on, because it is the first one with work in it.
+    assert without_catalog.active_stage == "sources"
 
-    ready = _backend(
+    with_catalog = _backend(
         warehouse_bindings=_StaticWarehouseBindingReader(_binding()),
         catalog_bindings=_CatalogReader(),
         source_bindings=reader,
     ).get_setup(_architect_context())
 
-    assert _sources_stage(ready).state == "current"
+    assert _sources_stage(with_catalog).state == "current"
     assert reader.asked == [_TENANT, _TENANT]
+
+
+def test_the_sources_stage_is_not_started_until_there_is_a_warehouse() -> None:
+    """The one dependency it does have, and the reason: a stage with nothing behind it."""
+    setup = _backend(
+        warehouse_bindings=_StaticWarehouseBindingReader(
+            _binding(state=WarehouseBindingState.PROVISIONING)
+        ),
+        source_bindings=_StaticSourceBindingReader(),
+    ).get_setup(_architect_context())
+
+    assert _sources_stage(setup).state == "not_started"
 
 
 def test_the_sources_stage_is_complete_only_once_a_registered_source_is_ready() -> None:

@@ -763,3 +763,49 @@ test("asks the shell to re-read its projections once provisioning settles", asyn
 
   await waitFor(() => expect(onProjectionsChanged).toHaveBeenCalled())
 })
+
+test("keeps the stage an architect opened when the projection changes underneath it", async () => {
+  /**
+   * Acting in a stage changes the projection: the digest moves and `active_stage` moves with it.
+   * Dropping the selection then threw the architect out of the stage they had just acted in,
+   * replacing the confirmation they were reading with a different stage's panel -- which was
+   * reachable for the first time when source registration went live, because registering is the
+   * first command that completes the stage it is issued from.
+   */
+  const user = userEvent.setup()
+  // Rebuilt rather than mapped: the projection types the stage list as a non-empty tuple, and
+  // a mapped array is not one.
+  const [foundation, ...rest] = setup.stages
+  const reachable: SetupView = {
+    ...setup,
+    stages: [
+      foundation,
+      ...rest.map((stage) =>
+        stage.stage === "sources" ? {...stage, state: "current" as const} : stage,
+      ),
+    ],
+  }
+  const {rerender} = render(
+    <SetupWorkbench
+      client={setupClient}
+      session={sessionEnvelope.data}
+      setupEnvelope={{...setupEnvelope, data: reachable}}
+    />,
+  )
+
+  await user.click(screen.getByRole("button", {name: /Sources/}))
+  expect(screen.getByRole("heading", {level: 1, name: "Registered sources"})).toBeVisible()
+
+  rerender(
+    <SetupWorkbench
+      client={setupClient}
+      session={sessionEnvelope.data}
+      setupEnvelope={{
+        ...setupEnvelope,
+        data: {...reachable, setup_digest: "b".repeat(64), active_stage: "business_process"},
+      }}
+    />,
+  )
+
+  expect(screen.getByRole("heading", {level: 1, name: "Registered sources"})).toBeVisible()
+})

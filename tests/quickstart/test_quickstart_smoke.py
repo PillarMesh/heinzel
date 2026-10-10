@@ -390,12 +390,20 @@ def _assert_the_gap_register_states_what_this_deployment_reports() -> None:
         f"report (capability: claimed, reported): {drifted}"
     )
 
-    # And the sentence under the table: seven stages, one complete, the rest blocked.
+    # And the sentence under the table: seven stages, the warehouse complete, the sources stage
+    # waiting on an architect with a connection enrolled for it, and the other five blocked.
     setup = _read("/api/v1/setup", actor=ARCHITECT)
-    states = [stage["state"] for stage in setup["stages"]]
-    assert len(states) == 7, states
-    assert states.count("complete") == 1, states
-    assert states.count("blocked") == 6, states
+    stages = {stage["stage"]: stage["state"] for stage in setup["stages"]}
+    assert len(stages) == 7, stages
+    assert stages["foundation"] == "complete", stages
+    assert stages["sources"] == "current", stages
+    assert sum(state == "blocked" for state in stages.values()) == 5, stages
+    # The stage is current rather than blocked because there is something to do in it: the
+    # deployment enrolled its own source, and registering it is the architect's step. It is the
+    # stage the console opens on for the same reason.
+    assert setup["active_stage"] == "sources", setup["active_stage"]
+    assert [item["connection_handle"] for item in setup["enrollable_sources"]] == ["demo-source"]
+    assert setup["sources"] == [], setup["sources"]
 
 
 def _assert_the_production_chain_reads_back(request_id: str) -> None:

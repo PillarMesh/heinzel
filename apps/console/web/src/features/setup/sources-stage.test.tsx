@@ -1,3 +1,5 @@
+import {useState} from "react"
+
 import {render, screen} from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import {beforeEach, expect, test, vi} from "vitest"
@@ -283,4 +285,94 @@ test("no rendered byte of the stage carries a connection detail", () => {
   expect(container.innerHTML).not.toContain("postgresql://")
   expect(container.innerHTML).not.toContain("endpoint-ref:")
   expect(container.innerHTML).not.toContain("credential-ref:")
+})
+
+test("announces one settlement however often the shell re-renders the stage", async () => {
+  /**
+   * The loop this closes was measured on the live console: a registration settled, the shell
+   * re-read its projections, that re-render handed the status component a new inline callback,
+   * and the new identity re-fired the announcement. Five thousand session reads in ten seconds,
+   * each cancelling the one before it, so the page that asked for fresh data never got any.
+   *
+   * The shell here is the real one in miniature: it re-renders on every announcement and passes
+   * a fresh arrow each time, which is exactly what `App` does.
+   */
+  const user = userEvent.setup()
+  setupClient.registerSource.mockResolvedValue({
+    envelope: {meta: setupEnvelope.meta, data: acceptedOperation},
+    kind: "settled",
+    state: "succeeded",
+    status: 200,
+  })
+  const announced = vi.fn()
+
+  function Shell() {
+    const [reads, setReads] = useState(0)
+    return (
+      <SetupWorkbench
+        client={setupClient}
+        idempotencyKeyFactory={() => "idempotency-source-loop"}
+        // A new function on every render, as every caller writes it.
+        onProjectionsChanged={() => {
+          announced()
+          setReads((current) => current + 1)
+        }}
+        session={session}
+        setupEnvelope={{...setupEnvelope, data: {...setup, revision: setup.revision + reads}}}
+      />
+    )
+  }
+
+  render(<Shell />)
+  await user.click(screen.getByRole("button", {name: "Register source"}))
+  expect(await screen.findByText("Completed")).toBeVisible()
+  await new Promise((resolve) => globalThis.setTimeout(resolve, 50))
+
+  expect(announced).toHaveBeenCalledTimes(1)
+})
+
+test("stays in the stage after a registration settles, with the confirmation still shown", async () => {
+  /**
+   * Completing a stage moves `active_stage` on, and a view that followed it replaced the
+   * confirmation an architect had just produced with the next stage's panel. Measured on the
+   * live console: pressing Register landed on Managed services, and the only sign the command
+   * had worked was a tick in the rail.
+   */
+  const user = userEvent.setup()
+  setupClient.registerSource.mockResolvedValue({
+    envelope: {meta: setupEnvelope.meta, data: acceptedOperation},
+    kind: "settled",
+    state: "succeeded",
+    status: 200,
+  })
+
+  function Shell() {
+    const [registered, setRegistered] = useState(false)
+    // What the server answers once the registration lands: the stage is complete and the
+    // console's idea of the current work has moved to the next unfinished stage.
+    const data: SetupView = registered
+      ? {
+          ...setup,
+          setup_digest: "c".repeat(64),
+          active_stage: "business_process",
+          enrollable_sources: [],
+        }
+      : setup
+    return (
+      <SetupWorkbench
+        client={setupClient}
+        idempotencyKeyFactory={() => "idempotency-source-stay"}
+        onProjectionsChanged={() => setRegistered(true)}
+        session={session}
+        setupEnvelope={{...setupEnvelope, data}}
+      />
+    )
+  }
+
+  render(<Shell />)
+  await user.click(screen.getByRole("button", {name: "Register source"}))
+
+  expect(await screen.findByText("Completed")).toBeVisible()
+  expect(screen.getByRole("heading", {level: 1, name: "Registered sources"})).toBeVisible()
+  expect(screen.queryByRole("button", {name: "Register source"})).toBeNull()
 })

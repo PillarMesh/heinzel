@@ -2390,7 +2390,10 @@ def test_a_registered_source_is_shown_and_stops_being_offered_for_registration(
     assert registered.approved_object_refs == (_SOURCE_OBJECT,)
     assert registered.capability_authority_digest == "3" * 64
     assert [item.connection_handle for item in after.enrollable_sources] == ["enrolled-billing"]
-    assert next(item for item in after.stages if item.stage == "sources").state == "complete"
+    stage = next(item for item in after.stages if item.stage == "sources")
+    assert stage.state == "complete"
+    # The sentence telling an architect to enrol something goes once something is registered.
+    assert stage.detail is None
     assert enrolled.asked == [_TENANT, _TENANT, _TENANT]
     registry.repository.close()
 

@@ -131,9 +131,19 @@ class SourceBindingRepository(Protocol):
 
 
 class SQLiteSourceBindingRepository:
-    def __init__(self, database_path: str) -> None:
+    """The register, in one SQLite database.
+
+    `check_same_thread` is the caller's to decide and defaults to SQLite's own answer. A
+    connection otherwise carries the affinity of the thread that opened it, which is the right
+    default for a service that opens its register where it serves from. A host that opens the
+    register once at startup and then serves requests on a threadpool -- which is what a console
+    composing this does -- opens it with `False` and relies on SQLite's serialized threading
+    mode, the same opt-in the other owning services offer for the same reason.
+    """
+
+    def __init__(self, database_path: str, *, check_same_thread: bool = True) -> None:
         try:
-            connection = sqlite3.connect(database_path)
+            connection = sqlite3.connect(database_path, check_same_thread=check_same_thread)
         except sqlite3.Error as error:
             raise SourceBindingPersistenceError(
                 operation="initialize source binding repository"

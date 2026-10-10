@@ -38,6 +38,7 @@ from starlette.requests import Request
 from ..app import create_app
 from ..auth import TrustedActorContext
 from ..governed_adapters import (
+    BrokerSourceRegistrationCommands,
     ContractPublishableDashboardReader,
     GovernedWorkspaceIdentity,
     InMemoryWorkspaceActorDirectory,
@@ -85,8 +86,11 @@ from .managed_warehouse import (
 )
 from .provenance import DemoProvenanceSubject, DemoRequestProvenanceReader
 from .publication import DEMO_TENANT_ID, build_demo_publication
+from .role_passwords import role_passwords
 from .seed import seed_demo_request
+from .source_registry import DemoSourceRegistry, open_demo_source_registry
 from .stores import DemoStores
+from .warehouse import DEMO_WAREHOUSE_ROLES, role_dsn
 
 __all__ = ["DEMO_ACTOR_HEADER", "DemoConsole"]
 
@@ -269,6 +273,23 @@ class DemoConsole:
             )
             self.governed_answer = governed_answer
             runtime = None if governed_answer is None else governed_answer.runtime
+            # The connection broker, over the demonstration's own source role. Composed after
+            # the answer because composing the answer is what provisions the warehouse and
+            # sets the role passwords, and the detail this enrols is one of those logins: an
+            # enrolment written before provisioning would name a credential the server has not
+            # been given yet, and `enroll_connection` is immutable, so it could never be
+            # corrected without discarding the state directory.
+            #
+            # Offered only on a path that has a warehouse, because the source the demonstration
+            # registers is a role inside it. With no warehouse there is nothing to enrol, and the
+            # sources stage reports a missing broker rather than offering a handle that resolves
+            # to nothing.
+            sources = (
+                None
+                if answering_dsn is None or governed_answer is None
+                else self._open_source_registry(state_dir, warehouse_dsn=answering_dsn)
+            )
+            self.sources = sources
             # Access-control over the demonstration's own stores. Composed only alongside a
             # governed answer, and for the same reason the publishable dashboards are: the grant is
             # narrowed against the entitlement the answer resolves through, and one tenant,
@@ -433,6 +454,15 @@ class DemoConsole:
                 access_grants=None if access is None else access.grants,
                 access_revocation_commands=(None if access is None else access.revocation_commands),
                 data_access_intake_available=access is not None,
+                # The connection broker's three surfaces, which move together: the register of
+                # what is bound, the offering of what an operator enrolled, and the command that
+                # takes one from the second to the first. A stage given the reads and not the
+                # command would show an enrolled connection beside a control that refuses.
+                source_bindings=None if sources is None else sources.service,
+                enrolled_source_connections=None if sources is None else sources.enrolled,
+                source_registration_commands=(
+                    None if sources is None else BrokerSourceRegistrationCommands(sources.service)
+                ),
                 actors=actors,
                 principals=principals,
                 clock=demo_clock,
@@ -444,6 +474,26 @@ class DemoConsole:
             with suppress(Exception):
                 self._stores.close()
             raise
+
+    def _open_source_registry(self, state_dir: Path, *, warehouse_dsn: str) -> DemoSourceRegistry:
+        """Open the broker with the warehouse's acquisition role enrolled as the source.
+
+        The password is derived again rather than carried down from provisioning. It is the same
+        derivation over the same root, so it is the same password -- and deriving it here keeps
+        the console from holding a credential it would otherwise have to thread through the
+        answer composition, which has no business with one.
+        """
+        registry = open_demo_source_registry(
+            state_dir,
+            acquisition_dsn=role_dsn(
+                warehouse_dsn,
+                DEMO_WAREHOUSE_ROLES.acquisition,
+                role_passwords(state_dir, DEMO_WAREHOUSE_ROLES)[DEMO_WAREHOUSE_ROLES.acquisition],
+            ),
+            clock=demo_clock,
+        )
+        self._closing.callback(registry.close)
+        return registry
 
     def _compose_governed_answer(
         self,

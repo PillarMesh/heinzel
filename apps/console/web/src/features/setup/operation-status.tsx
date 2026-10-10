@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react"
+import {useEffect, useRef, useState} from "react"
 
 import type {OperationView} from "../../api/generated"
 import type {SetupClient} from "./setup-workbench"
@@ -61,16 +61,34 @@ export function OperationStatus({
   pollTimer = browserPollTimer,
 }: OperationStatusProps) {
   const [currentOperation, setCurrentOperation] = useState(operation)
+  // Held in a ref rather than named as a dependency below. A caller that passes an inline
+  // arrow - which every caller does - hands this a new function on every render, and the
+  // announcement re-reads the projections, which re-renders, which hands it another one.
+  // That is a loop with a network call in it: measured at five thousand reads in ten
+  // seconds, each one cancelling the last, so the page that asked for fresh data never
+  // received any.
+  const announce = useRef(onSettled)
+  useEffect(() => {
+    announce.current = onSettled
+  })
+  // And announced once per settled outcome, not once per render that happens to see one.
+  const announced = useRef<string | null>(null)
 
   // The surfaces this operation changed - the stage list, the governance spine, the
   // workspace state - belong to the shell, not to this component. Announcing the
   // settlement lets the shell re-read them; without it the page kept offering the
   // command it had just completed.
   useEffect(() => {
-    if (!isPending(currentOperation)) {
-      onSettled?.(currentOperation)
+    if (isPending(currentOperation)) {
+      return
     }
-  }, [currentOperation, onSettled])
+    const settlement = `${currentOperation.operation_id}:${currentOperation.state}:${currentOperation.revision}`
+    if (announced.current === settlement) {
+      return
+    }
+    announced.current = settlement
+    announce.current?.(currentOperation)
+  }, [currentOperation])
 
   useEffect(() => {
     if (!isPending(operation)) {
