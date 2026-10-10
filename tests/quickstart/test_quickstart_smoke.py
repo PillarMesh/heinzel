@@ -414,6 +414,18 @@ def _assert_the_gap_register_states_what_this_deployment_reports() -> None:
     assert receipts, "the deployment recorded no acquisition receipt"
     assert {receipt["source_binding_ref"] for receipt in receipts} == {registered["source_ref"]}
 
+    # A delivered capability that lists nothing is the thing `not_delivered` exists to say, so
+    # the catalog is asked for its assets rather than only for its state. These are the terms
+    # the published generation carries: the entity, its dimension, its metric and the
+    # classification over them.
+    assets = _read("/api/v1/catalog", actor=ARCHITECT)["assets"]
+    assert sorted(asset["display_name"] for asset in assets) == [
+        "Commercial",
+        "Daily order value",
+        "Order",
+        "Order day",
+    ], assets
+
 
 def _assert_the_production_chain_reads_back(request_id: str) -> None:
     """Every stage from the warehouse to the rows, joined from what each service recorded.

@@ -32,7 +32,7 @@ because the flow above cannot be shown without closing them.
   the row because the product changed -- never to make a check pass.
 -->
 
-The demonstration runs in two shapes and reports different capabilities in each. **Six
+The demonstration runs in two shapes and reports different capabilities in each. **Seven
 capabilities differ**, which is how this page came to claim that dashboard publication was
 unwired while the recorded journey was publishing a dashboard: the row described the shape with
 no warehouse, and the demonstration everyone watches is the other one. A gap below that names a
@@ -51,7 +51,7 @@ four while five differed, which is this same drift inside the paragraph warning 
 | `question-term-builder` | not_delivered | ready |
 | `source-registration` | not_delivered | ready |
 | `source-acquisition` | not_delivered | not_delivered |
-| `catalog-asset-preview` | not_delivered | not_delivered |
+| `catalog-asset-preview` | not_delivered | ready |
 | `analyst-dashboard` | ready | ready |
 | `dashboard-publication` | not_delivered | ready |
 | `process-package` | ready | ready |

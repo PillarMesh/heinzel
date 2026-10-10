@@ -459,6 +459,18 @@ class DemoConsole:
                 access_grants=None if access is None else access.grants,
                 access_revocation_commands=(None if access is None else access.revocation_commands),
                 data_access_intake_available=access is not None,
+                # The catalog assets a published generation left behind, read out of
+                # semantic-registry's own publication repository. The receipt and the
+                # observations under it are what the materialization published; nothing
+                # between the console and that store composes a view of its own.
+                #
+                # Offered only once there is a composed answer, for the same reason the
+                # acquisition receipts are: without a published generation the store holds
+                # nothing, and a capability that looks delivered and lists nothing is what
+                # `not_delivered` exists to say instead.
+                catalog_publications=(
+                    None if governed_answer is None else self._stores.publications
+                ),
                 # The business process narrative, through contract-service's own process
                 # package service. Wired unconditionally rather than behind a warehouse,
                 # because uploading a narrative and reading back the latest one touches no

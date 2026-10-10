@@ -15,7 +15,7 @@ Taken from the live console on 2026-10-10, not from documentation.
 
 | Reported by | Reading |
 | --- | --- |
-| Capability register (`GET /api/v1/workspace`) | 16 capabilities, 10 `ready`, 6 `not_delivered` |
+| Capability register (`GET /api/v1/workspace`) | 16 capabilities, 11 `ready`, 5 `not_delivered` |
 | Setup surface (`GET /api/v1/setup`) | 7 stages, 2 complete, 1 current, 4 blocked |
 | Gap register | 41 rows, 14 closed, 27 open (one of them now partly closed) |
 | Warehouse (`psql` against the provisioned instance) | 5 least-privilege roles, 5 landed rows, 1 landing receipt, a built product of 3 rows |
@@ -36,6 +36,9 @@ Phase 1's first row and Phase 2's first row, in that order, because the second n
   ready binding and its two-probe evidence survive a restart. `source-registration` reports
   `ready`, and the sources stage reports `complete` once a source is registered.
 
+* **Catalog asset preview.** One line: the publication repository the materialization already
+  writes its receipt into, handed to the console read that was already written against it. The
+  Catalog destination lists the four assets the published generation left behind.
 * **The business process package.** Contract-service's `ProcessPackageService` was written,
   repositoried and tested, and nothing composed it -- the fourth time in this programme that
   the gap was a composition rather than a build. Composed, the capability is `ready`, the
@@ -76,6 +79,28 @@ ready`, and the recorded journey publishes a dashboard that Superset then draws.
 only for a deployment given no Superset. Correct the row before planning against it.
 
 **So: 31 open rows, 1 stale, 3 decisions, 27 to build.**
+
+### The composition gaps are exhausted
+
+Six times in this programme the gap was that nothing composed a service that was already
+written, repositoried and tested: warehouse-control's encrypted secret store, the console's
+source registration, the demonstration's source secret store, the connection broker itself,
+contract-service's process package service, and semantic-registry's publication read. Each
+closed in hours rather than the weeks the register implied, because the week was already spent
+somewhere else.
+
+Every remaining `not_delivered` capability has now been checked against the service behind it,
+and none of them is that shape:
+
+| Capability | Why it is a build |
+| --- | --- |
+| `catalog-binding` | Nothing implements `CatalogProvisioner` or `CatalogValidator`, and a ready binding takes validation evidence. The demonstration runs no catalog to provision or observe, so this is Root B below. |
+| `semantic-review` | `SemanticReviewService` exists, but `create_bundle` takes a verified candidate set derived from stored observations. The demonstration produces no ontology candidates, so the bundle to review does not exist yet. |
+| `data-product-runs` | `RunService` would compose in a line, over a run repository nothing writes to. The page would list nothing, which is what `not_delivered` exists to say. |
+| `source-acquisition` | Phase 3's first row. |
+| `operation-retry` | `RecoveryCommandService` composes in a line and then refuses most presses: its three recovery collaborators are unimplemented, so the capability would read ready and the buttons would be dead. |
+
+Read the sizes below as sizes again. They are no longer hiding anything already built.
 
 ## Three root causes under most of the 27
 
