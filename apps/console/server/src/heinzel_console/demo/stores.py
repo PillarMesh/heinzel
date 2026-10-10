@@ -18,6 +18,7 @@ from heinzel_bi_control import (
 from heinzel_catalog_control import SQLiteCatalogRepository
 from heinzel_contract_service import (
     SQLiteAcquisitionContractLifecycleRepository,
+    SQLiteAcquisitionSourceObservationRepository,
     SQLiteProcessPackageRepository,
     SQLiteSourceFreshnessObservationRepository,
 )
@@ -293,6 +294,14 @@ class DemoStores:
                 str(state_dir / "process-packages.sqlite3")
             )
             opened.append(self.process_packages)
+            # The provider's reading of the source that each acquisition contract was
+            # activated over. Durable because the activation pins `digest(observation)` and
+            # the provider stamps a wall clock into every reading: without this, the only
+            # process that could satisfy an activated contract was the one that activated it.
+            self.source_observations = SQLiteAcquisitionSourceObservationRepository(
+                str(state_dir / "source-observations.sqlite3"), check_same_thread=False
+            )
+            opened.append(self.source_observations)
             # How far each source has been read, as an encrypted cursor beside the authority
             # that admitted it. The connection is supplied rather than left to the
             # repository's default `sqlite3.connect`, which keeps the thread check on and

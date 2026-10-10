@@ -175,8 +175,17 @@ materializes and publishes a generation; a console that recomposes its governed 
 newest generation instead of the one it started on; and an operation surface for a run that
 takes longer than a request will wait.
 
+Underneath all three was a precondition the plan did not name, found by reading the acquisition
+rather than the register: **the source observation was never persisted.** An activated contract
+pins `digest(observation)`, the provider stamps a wall clock into every reading, and nothing
+held the reading -- so the only process that could satisfy an activated contract was the one
+that activated it. No second acquisition, no resumption, no trigger. That is now built, and it
+also closes a failure mode of its own: a start that died between activating and landing used to
+demand that the state directory and the warehouse be discarded together, and now resumes.
+
 | Work | Closes | Size |
 | --- | --- | --- |
+| ~~A durable source observation~~ **Done.** The reading an acquisition contract is activated over is kept in contract-service, so a process other than the one that observed can satisfy that contract. Nothing else in this row was reachable without it. | precondition | — |
 | An acquisition the console runs: `POST /api/v1/acquisitions/run-now` composed over a real acquisition application, with the three changes above | 1 row; `source-acquisition` | 3–4 |
 | Trigger execution: a scheduler that runs the policies `services/trigger` already holds | 1 row | 3 |
 | Refresh producing a second generation, and the console showing both | 1 row (with the above) | 2 |

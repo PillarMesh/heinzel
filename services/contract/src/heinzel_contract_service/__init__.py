@@ -42,6 +42,7 @@ from .service import (
 from .source_observation import (
     SourceFreshnessObservation,
     SourceObservation,
+    SQLiteAcquisitionSourceObservationRepository,
     SQLiteSourceFreshnessObservationRepository,
     SQLiteSourceObservationRepository,
     ValidatedSourceBinding,
@@ -75,6 +76,7 @@ __all__ = [
     "ProcessPackageSnapshot",
     "ProductIntentBoundActivationService",
     "SQLiteAcquisitionContractLifecycleRepository",
+    "SQLiteAcquisitionSourceObservationRepository",
     "SQLiteProcessPackageRepository",
     "SQLiteSourceFreshnessObservationRepository",
     "SQLiteSourceObservationRepository",

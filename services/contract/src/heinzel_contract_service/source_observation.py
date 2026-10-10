@@ -7,6 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from heinzel_contract_model import ArtifactModel, ArtifactReference, canonical_bytes, digest
+from heinzel_provider_sdk import AcquisitionSourceObservation
 from pydantic import ConfigDict, Field, field_validator, model_validator
 
 _DIGEST_PATTERN = r"^[0-9a-f]{64}$"
@@ -232,4 +233,90 @@ class SQLiteSourceFreshnessObservationRepository:
             or observation.input_generation_digest != input_generation_digest
         ):
             raise ValueError("source freshness observation index does not match its payload")
+        return observation
+
+
+class SQLiteAcquisitionSourceObservationRepository:
+    """Keeps the source observation an acquisition contract was activated over.
+
+    The observation is the provider's reading of the source at the moment of activation, and
+    the activated contract pins `digest(observation)`. Nothing durably held it, so the runner
+    could only resolve it from the process that made it: a start that activated a contract and
+    then failed before landing left a contract no later start could satisfy, and the only
+    recovery was discarding the state directory. A second acquisition under the same contract
+    was unreachable for the same reason.
+
+    It is immutable per reference. Two readings of an unchanged source are not equal -- the
+    provider stamps a wall-clock `observed_at` into each object observation -- so overwriting
+    one would silently change the digest a contract was activated against, which is the one
+    thing the activation exists to pin. Storing the identical bytes again is a no-op, so a
+    retried write is safe; storing different bytes under a reference already taken is refused.
+    """
+
+    def __init__(self, database_path: str, *, check_same_thread: bool = True) -> None:
+        self._connection = sqlite3.connect(database_path, check_same_thread=check_same_thread)
+        self._connection.execute(
+            "CREATE TABLE IF NOT EXISTS acquisition_source_observations ("
+            "tenant_id TEXT NOT NULL, observation_ref TEXT NOT NULL, "
+            "source_binding_ref TEXT NOT NULL, payload BLOB NOT NULL, "
+            "PRIMARY KEY (tenant_id, observation_ref))"
+        )
+        self._connection.commit()
+
+    def close(self) -> None:
+        self._connection.close()
+
+    def store(
+        self, *, observation_ref: str, observation: AcquisitionSourceObservation
+    ) -> AcquisitionSourceObservation:
+        """Record this observation under this reference, or confirm the recorded one is it."""
+        if not observation_ref:
+            raise ValueError("acquisition source observation reference must not be empty")
+        payload = canonical_bytes(observation)
+        try:
+            self._connection.execute(
+                "INSERT INTO acquisition_source_observations "
+                "(tenant_id, observation_ref, source_binding_ref, payload) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(tenant_id, observation_ref) DO NOTHING",
+                (
+                    observation.tenant_id,
+                    observation_ref,
+                    observation.source_binding_ref,
+                    payload,
+                ),
+            )
+            row = self._connection.execute(
+                "SELECT payload FROM acquisition_source_observations "
+                "WHERE tenant_id = ? AND observation_ref = ?",
+                (observation.tenant_id, observation_ref),
+            ).fetchone()
+            if row is None or bytes(row[0]) != payload:
+                raise ValueError("acquisition source observation reference is immutable")
+            self._connection.commit()
+        except BaseException:
+            with suppress(sqlite3.Error):
+                self._connection.rollback()
+            raise
+        return observation
+
+    def read(self, *, tenant_id: str, observation_ref: str) -> AcquisitionSourceObservation | None:
+        """The observation recorded under this reference, or `None` where none is."""
+        row = self._connection.execute(
+            "SELECT tenant_id, source_binding_ref, payload FROM acquisition_source_observations "
+            "WHERE tenant_id = ? AND observation_ref = ?",
+            (tenant_id, observation_ref),
+        ).fetchone()
+        if row is None:
+            return None
+        observation = AcquisitionSourceObservation.model_validate_json(row[2])
+        # The index is derived from the payload on the way in, so a disagreement means the row
+        # was written by something other than `store` -- which is a corrupted record, not a
+        # miss. Reporting it as a miss would have the caller observe the source again and
+        # activate a contract the stored one contradicts.
+        if (
+            row[0] != observation.tenant_id
+            or row[1] != observation.source_binding_ref
+            or observation.tenant_id != tenant_id
+        ):
+            raise ValueError("acquisition source observation index does not match its payload")
         return observation

@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from heinzel_connection_broker import SourceConnectionBinding, SourceConnectionBindingState
@@ -25,6 +26,12 @@ from heinzel_console.demo.publication import DemoPublication, build_demo_publica
 from heinzel_console.demo.stores import DemoStores
 from heinzel_console.demo.warehouse import ProvisioningRefused
 from heinzel_contract_model import digest
+from heinzel_provider_sdk import (
+    AcquisitionObjectObservation,
+    AcquisitionSourceObservation,
+    ColumnObservation,
+    ProviderObservation,
+)
 from heinzel_state import SourceCheckpointState
 
 _NOW = datetime(2026, 9, 13, tzinfo=UTC)
@@ -214,3 +221,126 @@ def test_an_acquisition_under_another_tenants_binding_is_refused(stores: DemoSto
             stores=stores,
             clock=lambda: _NOW,
         )
+
+
+def _observation(tenant_id: str, binding_id: str) -> AcquisitionSourceObservation:
+    """A provider reading of the demonstration's one source object.
+
+    Shaped as `observe_source` returns one, because the resumption under test hands exactly
+    this back to the runner and the activated contract pins its digest.
+    """
+    return AcquisitionSourceObservation(
+        tenant_id=tenant_id,
+        source_binding_ref=binding_id,
+        provider_kind="postgresql",
+        object_observations=(
+            AcquisitionObjectObservation(
+                logical_object_ref=DEMO_LOGICAL_OBJECT,
+                provider_observation=ProviderObservation(
+                    provider="postgresql",
+                    connection_handle=DEMO_SOURCE_CONNECTION_HANDLE,
+                    object_identity="source_data.customer_orders",
+                    object_kind="base_table",
+                    schema_digest="d" * 64,
+                    columns=(
+                        ColumnObservation(name="order_id", type_name="BIGINT", nullable=False),
+                    ),
+                    key_name="order_id",
+                    key_type="BIGINT",
+                    key_nullable=False,
+                    key_constraint="primary_key",
+                    stable_key_order=True,
+                    read_only=True,
+                    capabilities=("snapshot",),
+                    observed_at=_NOW,
+                    snapshot_semantics="snapshot",
+                    commit_ledger_object_kind=None,
+                    commit_ledger_columns=None,
+                    commit_ledger_key_name=None,
+                    commit_ledger_key_constraint=None,
+                    evidence_safe=True,
+                ),
+            ),
+        ),
+    )
+
+
+def _already_activated(
+    stores: DemoStores, monkeypatch: pytest.MonkeyPatch, *, contract_ref: str
+) -> None:
+    """Report this contract as activated, as a start that died before landing would leave it.
+
+    The lifecycle read is substituted rather than a real activation driven, because reaching a
+    real one takes a source to observe: what is under test is the branch taken on the way in,
+    before anything connects.
+    """
+    record = SimpleNamespace(contract_ref=contract_ref)
+    monkeypatch.setattr(stores.acquisition_lifecycle, "list_contracts", lambda _tenant: (record,))
+
+
+def test_a_start_resumes_the_contract_an_earlier_one_activated(
+    stores: DemoStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The window between activating and landing is one a start can come back into.
+
+    It could not be before: the activation pins `digest(observation)`, the provider stamps a
+    wall clock into every reading, and nothing held the reading -- so the contract admitted
+    only an observation no later process could reproduce. The window is not rare, because a
+    dbt run sits in it.
+
+    The DSN names a port nothing serves, so observing the source again would raise
+    `psycopg.OperationalError` here. Constructing successfully is therefore the assertion: it
+    resumed rather than observed.
+    """
+    publication = _publication(stores)
+    contract = publication.contract
+    binding = _binding(contract.tenant_id)
+    assert binding.source_observation_ref is not None
+    stores.source_observations.store(
+        observation_ref=binding.source_observation_ref,
+        observation=_observation(contract.tenant_id, binding.binding_id),
+    )
+    _already_activated(stores, monkeypatch, contract_ref=contract.contract_id)
+
+    acquisition = DemoAcquisition(
+        _UNREACHABLE_DSN,
+        binding=binding,
+        bindings=_bindings(binding),
+        publication=publication,
+        stores=stores,
+        clock=lambda: _NOW,
+    )
+
+    assert acquisition is not None
+    # And it activated nothing further: the record it found is the only one there is.
+    assert [
+        record.contract_ref
+        for record in stores.acquisition_lifecycle.list_contracts(contract.tenant_id)
+    ] == [contract.contract_id]
+
+
+def test_an_activated_contract_whose_observation_is_lost_is_refused_with_what_to_do(
+    stores: DemoStores, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A state directory written before the observation was kept, or deleted from.
+
+    Observing again would produce a reading the activated contract does not admit, so this
+    refuses rather than trying -- and says which two things to discard, because the warehouse
+    holds what the contract was activated against.
+    """
+    publication = _publication(stores)
+    contract = publication.contract
+    _already_activated(stores, monkeypatch, contract_ref=contract.contract_id)
+
+    with pytest.raises(ProvisioningRefused) as refusal:
+        DemoAcquisition(
+            _UNREACHABLE_DSN,
+            binding=_binding(contract.tenant_id),
+            bindings=_bindings(_binding(contract.tenant_id)),
+            publication=publication,
+            stores=stores,
+            clock=lambda: _NOW,
+        )
+
+    assert "is not held" in str(refusal.value)
+    assert "docker compose down -v" in str(refusal.value)

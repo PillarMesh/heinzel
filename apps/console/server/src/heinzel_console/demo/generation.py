@@ -213,30 +213,6 @@ class DemoAcquisition:
                 "capability authority to acquire under. Register the source first."
             )
         state = _require_acquisition_state(stores)
-        _refuse_a_second_acquisition(
-            stores,
-            tenant_id=contract.tenant_id,
-            contract_ref=contract.contract_id,
-            contract_digest=digest(contract),
-            source_binding_ref=binding.binding_id,
-            state=state,
-        )
-        self._stores = stores
-        self._tenant_id = contract.tenant_id
-        self._contract_ref = contract.contract_id
-        self._contract_revision = contract.version
-        provider = _acquisition_provider(acquisition_dsn)
-        # Observed under the broker's binding identifier, because the activation refuses an
-        # observation of any other binding -- and because the receipt this acquisition leaves
-        # behind then names the binding an architect can read in the console.
-        observation = provider.observe_source(
-            SourceObservationRequest(
-                tenant_id=self._tenant_id,
-                source_binding_ref=binding.binding_id,
-                object_refs=(DEMO_LOGICAL_OBJECT,),
-            )
-        )
-        activated_at = clock()
         # The reference the probe published when it validated this binding. The activation
         # pins it as the authority the acquisition runs under, and pins `digest(observation)`
         # beside it as what was actually read -- two different facts, which is why the
@@ -247,42 +223,78 @@ class DemoAcquisition:
                 "the demonstration's source binding is ready and carries no probed "
                 "observation, which the broker's own model does not permit"
             )
-        activated = _activated_contract(
-            publication=publication,
-            binding=binding,
-            observation=observation,
-            activated_at=activated_at,
+        self._stores = stores
+        self._tenant_id = contract.tenant_id
+        self._contract_ref = contract.contract_id
+        self._contract_revision = contract.version
+        provider = _acquisition_provider(acquisition_dsn)
+        resumed = _resumable_activation(
+            stores,
+            tenant_id=contract.tenant_id,
+            contract_ref=contract.contract_id,
+            contract_digest=digest(contract),
+            source_binding_ref=binding.binding_id,
+            source_observation_ref=source_observation_ref,
+            state=state,
         )
-        stores.acquisition_lifecycle.activate_contract(
-            idempotency_key=_ACTIVATION_IDEMPOTENCY_KEY,
-            contract=activated,
-            approval=AcquisitionActivationApproval(
-                tenant_id=self._tenant_id,
-                process_package_ref=activated.process_package_ref,
-                product_intent_ref=activated.product_intent_ref,
-                destination_product_ref=activated.destination_product_ref,
-                approved_by=activated.activated_by,
-                approved_at=activated_at,
-            ),
-            source_validation=ValidatedSourceBinding(
-                tenant_id=self._tenant_id,
-                source_binding_ref=binding.binding_id,
-                source_binding_revision=binding.revision,
-                credential_revision=binding.credential_revision,
-                capability_profile_digest=activated.capability_profile_digest,
-                source_observation_ref=activated.source_observation_ref,
-                source_observation_digest=activated.source_observation_digest,
-                validated_at=activated_at,
-            ),
-        )
-        # The state store keeps its own record of which contracts may acquire, and
-        # `admit_authority` refuses a contract it has never been told about.
-        state.activate_contract_authority(self._tenant_id, activated.contract_digest)
+        if resumed is None:
+            # Observed under the broker's binding identifier, because the activation refuses an
+            # observation of any other binding -- and because the receipt this acquisition
+            # leaves behind then names the binding an architect can read in the console.
+            observation = provider.observe_source(
+                SourceObservationRequest(
+                    tenant_id=self._tenant_id,
+                    source_binding_ref=binding.binding_id,
+                    object_refs=(DEMO_LOGICAL_OBJECT,),
+                )
+            )
+            activated_at = clock()
+            # Stored before the contract that pins its digest is activated. The other order
+            # would leave a start that died between the two with an activated contract whose
+            # observation nothing holds, which is the state this store exists to prevent.
+            stores.source_observations.store(
+                observation_ref=source_observation_ref, observation=observation
+            )
+            activated = _activated_contract(
+                publication=publication,
+                binding=binding,
+                observation=observation,
+                activated_at=activated_at,
+            )
+            stores.acquisition_lifecycle.activate_contract(
+                idempotency_key=_ACTIVATION_IDEMPOTENCY_KEY,
+                contract=activated,
+                approval=AcquisitionActivationApproval(
+                    tenant_id=self._tenant_id,
+                    process_package_ref=activated.process_package_ref,
+                    product_intent_ref=activated.product_intent_ref,
+                    destination_product_ref=activated.destination_product_ref,
+                    approved_by=activated.activated_by,
+                    approved_at=activated_at,
+                ),
+                source_validation=ValidatedSourceBinding(
+                    tenant_id=self._tenant_id,
+                    source_binding_ref=binding.binding_id,
+                    source_binding_revision=binding.revision,
+                    credential_revision=binding.credential_revision,
+                    capability_profile_digest=activated.capability_profile_digest,
+                    source_observation_ref=activated.source_observation_ref,
+                    source_observation_digest=activated.source_observation_digest,
+                    validated_at=activated_at,
+                ),
+            )
+            # The state store keeps its own record of which contracts may acquire, and
+            # `admit_authority` refuses a contract it has never been told about.
+            state.activate_contract_authority(self._tenant_id, activated.contract_digest)
 
         def resolve_observation(tenant_id: str, reference: str) -> AcquisitionSourceObservation:
-            if (tenant_id, reference) != (self._tenant_id, source_observation_ref):
+            # Read from the store rather than from whatever this process observed, so the
+            # resumed path and the fresh one resolve by exactly the same route -- and so a
+            # fresh start proves on every run that what it stored is what the runner gets.
+            stored = stores.source_observations.read(tenant_id=tenant_id, observation_ref=reference)
+            if tenant_id != self._tenant_id or stored is None:
                 raise KeyError("the demonstration has no such source observation")
-            return observation
+            return stored
 
         def resolve_provider(resolved: SourceConnectionBinding) -> PostgreSQLAcquisitionProvider:
             if resolved.binding_id != binding.binding_id:
@@ -555,27 +567,43 @@ def _require_acquisition_state(stores: DemoStores) -> SQLiteAcquisitionStateRepo
     return state
 
 
-def _refuse_a_second_acquisition(
+def _resumable_activation(
     stores: DemoStores,
     *,
     tenant_id: str,
     contract_ref: str,
     contract_digest: str,
     source_binding_ref: str,
+    source_observation_ref: str,
     state: SQLiteAcquisitionStateRepository,
-) -> None:
-    """Refuse an acquisition this state directory has already made, with what to do about it.
+) -> AcquisitionSourceObservation | None:
+    """Whether this acquisition is a fresh one, a resumed one, or one to refuse outright.
 
-    Acknowledging a landed batch advances the source checkpoint to revision 1, and a snapshot
-    is admitted only from revision 0 -- so the provider refuses the second attempt with
-    `permanent_configuration`, and the state store refuses to replay an acknowledged
-    preparation as pending. A second activation is refused too, because an activated
-    contract's digest is unique per tenant and this demonstration's is fixed. All three report
-    themselves in the vocabulary of the component that refused, which names nothing an
-    operator can act on, so the demonstration says what happened instead.
+    `None` means fresh: nothing of this contract is on record, so observing and activating is
+    the thing to do. An observation means an earlier start activated this contract and did not
+    finish landing, and its reading of the source is still held -- so this start prepares under
+    the contract that start activated rather than activating a second one.
 
-    Reaching here at all means the record of what was landed was lost while the stores it
-    points into were kept, so the two are discarded together.
+    Resuming used to be impossible and the refusal said so. An activated contract pins
+    `digest(observation)`, the provider stamps a wall clock into every reading, and nothing
+    held the reading -- so the contract admitted only an observation that no later process
+    could reproduce, and the only way out was discarding the state directory. Now the reading
+    is kept, and the window between activating and landing is a window a start can come back
+    into. That window is not rare: the materialization between them runs dbt.
+
+    Two situations still refuse, because neither is a resumption:
+
+    * An advanced source checkpoint. Acknowledging a landed batch moves it to revision 1, and a
+      snapshot is admitted only from revision 0 -- so the provider refuses with
+      `permanent_configuration` and the state store refuses to replay an acknowledged
+      preparation as pending. Reaching here with a checkpoint means the record of what was
+      landed was lost while the stores it points into were kept, so the two go together.
+    * An activated contract whose observation is not held. That is a state directory written
+      before this store existed, or one it was deleted from. Observing again would produce a
+      reading the activated contract does not admit.
+
+    Both report themselves in the vocabulary of whichever component refuses next, which names
+    nothing an operator can act on, so this says what happened instead.
     """
     try:
         state.load_checkpoint(tenant_id, contract_digest, source_binding_ref)
@@ -588,13 +616,19 @@ def _refuse_a_second_acquisition(
             "it landed is gone. Discard the state directory and the warehouse together with "
             "`docker compose down -v`."
         )
-    if any(
+    if not any(
         record.contract_ref == contract_ref
         for record in stores.acquisition_lifecycle.list_contracts(tenant_id)
     ):
+        return None
+    resumed = stores.source_observations.read(
+        tenant_id=tenant_id, observation_ref=source_observation_ref
+    )
+    if resumed is None:
         raise ProvisioningRefused(
             "an earlier start activated the demonstration's acquisition contract and did not "
-            "finish landing. That contract admits only the source observation it was "
-            "activated over, which no later start can reproduce. Discard the state directory "
-            "and the warehouse together with `docker compose down -v`."
+            "finish landing, and the source observation it was activated over is not held. "
+            "That contract admits no other, so no later start can satisfy it. Discard the "
+            "state directory and the warehouse together with `docker compose down -v`."
         )
+    return resumed
