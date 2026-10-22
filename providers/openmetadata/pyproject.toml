@@ -11,7 +11,7 @@ classifiers = [
   "Operating System :: POSIX",
 ]
 dependencies = [
-  "cryptography>=50.0.1,<51",
+  "cryptography>=50.0.2,<51",
   "httpx>=0.28,<1",
   "heinzel-catalog-control",
   "heinzel-contract-model",
