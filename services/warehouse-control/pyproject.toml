@@ -12,7 +12,7 @@ classifiers = [
 ]
 dependencies = [
   # Fernet provides authenticated encryption for bounded operation-secret bundles.
-  "cryptography>=50.0.1,<51",
+  "cryptography>=50.0.2,<51",
   "heinzel-contract-model",
   "pydantic>=2.13.5,<3",
 ]

@@ -10,7 +10,7 @@ classifiers = [
   "Programming Language :: Python :: 3.13",
   "Operating System :: POSIX",
 ]
-dependencies = ["cryptography>=50.0.1,<51", "heinzel-contract-model"]
+dependencies = ["cryptography>=50.0.2,<51", "heinzel-contract-model"]
 
 [project.urls]
 Repository = "https://github.com/PillarMesh/heinzel"
