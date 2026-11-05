@@ -11,7 +11,7 @@ classifiers = [
   "Operating System :: POSIX",
 ]
 dependencies = [
-  "cryptography>=50.0.1,<51",
+  "cryptography>=50.0.2,<51",
   "dbt-clickhouse==1.10.3",
   "dbt-core==1.10.13",
   "dbt-postgres==1.10.2",
